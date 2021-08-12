@@ -3,11 +3,15 @@ use bevy::prelude::*;
 mod fly_by_camera;
 use fly_by_camera::FlyByCameraPlugin;
 
+mod world;
+use world::WorldPlugin;
+
 fn main() {
     App::new()
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_plugin(FlyByCameraPlugin)
+        .add_plugin(WorldPlugin)
         .add_startup_system(setup)
         .run();
 }
@@ -29,3 +33,5 @@ fn setup(
         ..Default::default()
     });
 }
+
+
