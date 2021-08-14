@@ -123,7 +123,7 @@ fn compute_voxel_occlusion(
                     neighbor_pos.z as usize,
                 );
 
-                assert!(neighbor_idx < CHUNK_AXIS_SIZE);
+                assert!(neighbor_idx < CHUNK_BUFFER_SIZE);
 
                 if types.0[neighbor_idx] == 0 {
                     occlusion[side as usize] = true;
@@ -179,19 +179,19 @@ struct ChunkVertices([Vec<[f32; 3]>; 6]);
 
 fn compute_vertices(
     mut commands: Commands,
-    query: Query<(Entity, &ChunkTypes), (With<ChunkTypes>, Without<ChunkVertices>)>,
+    query: Query<(Entity, &ChunkVoxelOcclusion), (With<ChunkTypes>, Without<ChunkVertices>)>,
 ) {
-    for (e, _) in query.iter() {
+    for (e, occlusions) in query.iter() {
         let mut computed_vertices: [Vec<[f32; 3]>; 6] =
             [vec![], vec![], vec![], vec![], vec![], vec![]];
 
-        for i in 0..CHUNK_BUFFER_SIZE {
-            let x = (i & X_MASK) >> X_SHIFT;
-            let y = (i & Y_MASK) >> Y_SHIFT;
-            let z = (i & Z_MASK) >> Z_SHIFT;
+        for (index, occlusion) in occlusions.0.iter().enumerate() {
+            let pos = to_xyz_ivec3(index);
 
             for side in VOXEL_SIDES {
-                // TODO: Check if side is ocludded
+                if occlusion[side as usize] {
+                    continue;
+                }
 
                 let side_idx = side as usize;
 
@@ -199,9 +199,9 @@ fn compute_vertices(
                     let vertices = &VERTICES[idx];
 
                     computed_vertices[side_idx].push([
-                        vertices[0] + x as f32,
-                        vertices[1] + y as f32,
-                        vertices[2] + z as f32,
+                        vertices[0] + pos.x as f32,
+                        vertices[1] + pos.y as f32,
+                        vertices[2] + pos.z as f32,
                     ]);
                 }
             }
@@ -222,17 +222,22 @@ fn generate_mesh(
     for (e, vertices) in q.iter() {
         let mut mesh = Mesh::new(bevy::render::pipeline::PrimitiveTopology::TriangleList);
 
-        let mut v: Vec<[f32; 3]> = vec![];
+        let mut positions: Vec<[f32; 3]> = vec![];
+        let mut normals: Vec<[f32; 3]> = vec![];
+
         for side in VOXEL_SIDES {
             let side_idx = side as usize;
+            let side_vertices = &vertices.0[side_idx];
 
-            v.extend(&vertices.0[side_idx]);
+            positions.extend(side_vertices);
+            normals.extend(vec![get_side_normal(side); side_vertices.len()])
         }
 
-        let vertex_count = v.len();
+        let vertex_count = positions.len();
 
         mesh.set_indices(Some(Indices::U32(compute_indices(vertex_count))));
-        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, v);
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
         commands
             .entity(e)
@@ -268,6 +273,17 @@ fn compute_indices(vertex_count: usize) -> Vec<u32> {
     }
 
     res
+}
+
+fn get_side_normal(side: VoxelSides) -> [f32; 3] {
+    match side {
+        VoxelSides::Right => [1.0, 0.0, 0.0],
+        VoxelSides::Left => [-1.0, 0.0, 0.0],
+        VoxelSides::Up => [0.0, 1.0, 0.0],
+        VoxelSides::Down => [0.0, -1.0, 0.0],
+        VoxelSides::Front => [0.0, 0.0, 1.0],
+        VoxelSides::Back => [0.0, 0.0, -1.0],
+    }
 }
 
 // UTILITIES
