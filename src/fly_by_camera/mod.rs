@@ -1,6 +1,11 @@
 use std::f32::consts::PI;
 
-use bevy::{ecs::{schedule::ShouldRun, system::QuerySingleError}, input::mouse::MouseMotion, prelude::*, render::camera::Camera};
+use bevy::{
+    ecs::{schedule::ShouldRun, system::QuerySingleError},
+    input::mouse::MouseMotion,
+    prelude::*,
+    render::camera::Camera,
+};
 
 pub struct FlyByCameraPlugin;
 
@@ -42,15 +47,17 @@ fn fly_by_camera_setup(mut commands: Commands, q: Query<Entity, With<Camera>>) {
         Ok(e) => {
             warn!("Camera already exists, adding FlyByCamera to it");
             commands.entity(e).insert(FlyByCamera::default());
-        },
+        }
         Err(QuerySingleError::MultipleEntities(_)) => {
             error!("Multiple camera already exists. Unable to setup FlyByCamera");
-        },
+        }
         Err(QuerySingleError::NoEntities(_)) => {
-            commands.spawn_bundle(PerspectiveCameraBundle {
-                transform: Transform::from_xyz(0.0, 0.0, 4.0),
-                ..Default::default()
-            }).insert(FlyByCamera::default());
+            commands
+                .spawn_bundle(PerspectiveCameraBundle {
+                    transform: Transform::from_xyz(-10.0, 25.0, 20.0),
+                    ..Default::default()
+                })
+                .insert(FlyByCamera::default());
         }
     }
 }
