@@ -125,7 +125,7 @@ fn compute_voxel_occlusion(
 
                 assert!(neighbor_idx < CHUNK_BUFFER_SIZE);
 
-                if types.0[neighbor_idx] == 0 {
+                if types.0[neighbor_idx] == 1 {
                     occlusion[side as usize] = true;
                 }
             }
@@ -170,7 +170,7 @@ const VERTICES_INDICES: [[usize; 4]; 6] = [
     [5, 1, 2, 6], //RIGHT
     [0, 4, 7, 3], //LEFT
     [7, 6, 2, 3], //UP
-    [0, 4, 5, 1], //DOWN
+    [0, 1, 5, 4], //DOWN
     [4, 5, 6, 7], //FRONT
     [0, 3, 2, 1], //BACK
 ];
