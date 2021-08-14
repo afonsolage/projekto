@@ -6,10 +6,14 @@ use fly_by_camera::FlyByCameraPlugin;
 mod world;
 use world::WorldPlugin;
 
+mod debug;
+use debug::DebugPlugin;
+
 fn main() {
     App::new()
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
+        .add_plugin(DebugPlugin)
         .add_plugin(FlyByCameraPlugin)
         .add_plugin(WorldPlugin)
         .add_startup_system(setup)
