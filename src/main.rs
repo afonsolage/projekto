@@ -23,8 +23,8 @@ fn setup(
 ) {
     // cube
     commands.spawn_bundle(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
-        material: materials.add(Color::rgb(0.3, 0.8, 0.3).into()),
+        mesh: meshes.add(Mesh::from(shape::Cube { size: 0.1 })),
+        material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
         ..Default::default()
     });
 
