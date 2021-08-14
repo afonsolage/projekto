@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use bevy::{
     prelude::*,
     render::{
@@ -14,6 +16,7 @@ impl Plugin for WorldPlugin {
         app.add_startup_system(setup)
             .add_startup_system(setup_render_pipeline)
             .add_system(generate_chunk)
+            .add_system(compute_voxel_occlusion)
             .add_system(compute_vertices)
             .add_system(generate_mesh);
     }
@@ -62,23 +65,77 @@ fn generate_chunk(mut commands: Commands, q: Query<Entity, (With<Chunk>, Without
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 enum VoxelSides {
-    RIGHT = 0,
-    LEFT = 1,
-    UP = 2,
-    DOWN = 3,
-    FRONT = 4,
-    BACK = 5,
+    Right = 0,
+    Left = 1,
+    Up = 2,
+    Down = 3,
+    Front = 4,
+    Back = 5,
+}
+
+impl VoxelSides {
+    // fn opposite(&self) -> VoxelSides {
+    //     match self {
+    //         VoxelSides::Right => VoxelSides::Left,
+    //         VoxelSides::Left => VoxelSides::Right,
+    //         VoxelSides::Up => VoxelSides::Down,
+    //         VoxelSides::Down => VoxelSides::Up,
+    //         VoxelSides::Front => VoxelSides::Back,
+    //         VoxelSides::Back => VoxelSides::Front,
+    //     }
+    // }
 }
 
 const VOXEL_SIDES: [VoxelSides; 6] = [
-    VoxelSides::RIGHT,
-    VoxelSides::LEFT,
-    VoxelSides::UP,
-    VoxelSides::DOWN,
-    VoxelSides::FRONT,
-    VoxelSides::BACK,
+    VoxelSides::Right,
+    VoxelSides::Left,
+    VoxelSides::Up,
+    VoxelSides::Down,
+    VoxelSides::Front,
+    VoxelSides::Back,
 ];
+
+struct ChunkVoxelOcclusion([[bool; 6]; CHUNK_BUFFER_SIZE]);
+
+fn compute_voxel_occlusion(
+    mut commands: Commands,
+    q: Query<(Entity, &ChunkTypes), (With<Chunk>, Without<ChunkVoxelOcclusion>)>,
+) {
+    for (e, types) in q.iter() {
+        let mut voxel_occlusions = [[false; 6]; CHUNK_BUFFER_SIZE];
+
+        for (index, occlusion) in voxel_occlusions.iter_mut().enumerate() {
+            let pos = to_xyz_ivec3(index);
+
+            for side in VOXEL_SIDES {
+                let dir = get_side_dir(side);
+                let neighbor_pos = pos + dir;
+
+                if !is_within_cubic_bounds(neighbor_pos, 0, CHUNK_AXIS_SIZE as i32 - 1) {
+                    continue;
+                }
+
+                let neighbor_idx = to_index(
+                    neighbor_pos.x as usize,
+                    neighbor_pos.y as usize,
+                    neighbor_pos.z as usize,
+                );
+
+                assert!(neighbor_idx < CHUNK_AXIS_SIZE);
+
+                if types.0[neighbor_idx] == 0 {
+                    occlusion[side as usize] = true;
+                }
+            }
+        }
+
+        commands
+            .entity(e)
+            .insert(ChunkVoxelOcclusion(voxel_occlusions));
+    }
+}
 
 /*
      v3               v2
@@ -122,10 +179,11 @@ struct ChunkVertices([Vec<[f32; 3]>; 6]);
 
 fn compute_vertices(
     mut commands: Commands,
-    q: Query<(Entity, &ChunkTypes), (With<ChunkTypes>, Without<ChunkVertices>)>,
+    query: Query<(Entity, &ChunkTypes), (With<ChunkTypes>, Without<ChunkVertices>)>,
 ) {
-    for (e, _) in q.iter() {
-        let mut vertices: [Vec<[f32; 3]>; 6] = [vec![], vec![], vec![], vec![], vec![], vec![]];
+    for (e, _) in query.iter() {
+        let mut computed_vertices: [Vec<[f32; 3]>; 6] =
+            [vec![], vec![], vec![], vec![], vec![], vec![]];
 
         for i in 0..CHUNK_BUFFER_SIZE {
             let x = (i & X_MASK) >> X_SHIFT;
@@ -138,14 +196,18 @@ fn compute_vertices(
                 let side_idx = side as usize;
 
                 for idx in VERTICES_INDICES[side_idx] {
-                    let v = &VERTICES[idx];
+                    let vertices = &VERTICES[idx];
 
-                    vertices[side_idx].push([v[0] + x as f32, v[1] + y as f32, v[2] + z as f32]);
+                    computed_vertices[side_idx].push([
+                        vertices[0] + x as f32,
+                        vertices[1] + y as f32,
+                        vertices[2] + z as f32,
+                    ]);
                 }
             }
         }
 
-        commands.entity(e).insert(ChunkVertices(vertices));
+        commands.entity(e).insert(ChunkVertices(computed_vertices));
     }
 }
 
@@ -166,7 +228,7 @@ fn generate_mesh(
 
             v.extend(&vertices.0[side_idx]);
         }
-        
+
         let vertex_count = v.len();
 
         mesh.set_indices(Some(Indices::U32(compute_indices(vertex_count))));
@@ -206,4 +268,98 @@ fn compute_indices(vertex_count: usize) -> Vec<u32> {
     }
 
     res
+}
+
+// UTILITIES
+fn to_xyz(index: usize) -> (usize, usize, usize) {
+    (
+        (index & X_MASK) >> X_SHIFT,
+        (index & Y_MASK) >> Y_SHIFT,
+        (index & Z_MASK) >> Z_SHIFT,
+    )
+}
+
+fn to_xyz_ivec3(index: usize) -> IVec3 {
+    let (x, y, z) = to_xyz(index);
+    IVec3::new(x as i32, y as i32, z as i32)
+}
+
+fn to_index(x: usize, y: usize, z: usize) -> usize {
+    x << X_SHIFT | y << Y_SHIFT | z << Z_SHIFT
+}
+
+fn get_side_dir(side: VoxelSides) -> IVec3 {
+    match side {
+        VoxelSides::Right => IVec3::X,
+        VoxelSides::Left => -IVec3::X,
+        VoxelSides::Up => IVec3::Y,
+        VoxelSides::Down => -IVec3::Y,
+        VoxelSides::Front => IVec3::Z,
+        VoxelSides::Back => -IVec3::Z,
+    }
+}
+
+fn is_within_cubic_bounds(pos: IVec3, min: i32, max: i32) -> bool {
+    pos.min_element() >= min && pos.max_element() <= max
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::{to_index, to_xyz, CHUNK_AXIS_SIZE};
+
+    #[test]
+    fn index_to_xyz() {
+        assert_eq!((0, 0, 0), to_xyz(0));
+        assert_eq!((0, 1, 0), to_xyz(1));
+        assert_eq!((0, 2, 0), to_xyz(2));
+
+        assert_eq!((0, 0, 1), to_xyz(CHUNK_AXIS_SIZE));
+        assert_eq!((0, 1, 1), to_xyz(CHUNK_AXIS_SIZE + 1));
+        assert_eq!((0, 2, 1), to_xyz(CHUNK_AXIS_SIZE + 2));
+
+        assert_eq!((1, 0, 0), to_xyz(CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE));
+        assert_eq!((1, 1, 0), to_xyz(CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + 1));
+        assert_eq!((1, 2, 0), to_xyz(CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + 2));
+
+        assert_eq!(
+            (1, 0, 1),
+            to_xyz(CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + CHUNK_AXIS_SIZE)
+        );
+        assert_eq!(
+            (1, 1, 1),
+            to_xyz(CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + CHUNK_AXIS_SIZE + 1)
+        );
+        assert_eq!(
+            (1, 2, 1),
+            to_xyz(CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + CHUNK_AXIS_SIZE + 2)
+        );
+    }
+
+    #[test]
+    fn xyz_to_index() {
+        assert_eq!(to_index(0, 0, 0), 0);
+        assert_eq!(to_index(0, 1, 0), 1);
+        assert_eq!(to_index(0, 2, 0), 2);
+
+        assert_eq!(to_index(0, 0, 1), CHUNK_AXIS_SIZE);
+        assert_eq!(to_index(0, 1, 1), CHUNK_AXIS_SIZE + 1);
+        assert_eq!(to_index(0, 2, 1), CHUNK_AXIS_SIZE + 2);
+
+        assert_eq!(to_index(1, 0, 0), CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE);
+        assert_eq!(to_index(1, 1, 0), CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + 1);
+        assert_eq!(to_index(1, 2, 0), CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + 2);
+
+        assert_eq!(
+            to_index(1, 0, 1),
+            CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + CHUNK_AXIS_SIZE
+        );
+        assert_eq!(
+            to_index(1, 1, 1),
+            CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + CHUNK_AXIS_SIZE + 1
+        );
+        assert_eq!(
+            to_index(1, 2, 1),
+            CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + CHUNK_AXIS_SIZE + 2
+        );
+    }
 }
