@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity)]
 
 use bevy::{
+    math,
     prelude::*,
     render::{
         mesh::Indices,
@@ -42,6 +43,7 @@ fn setup(mut commands: Commands) {
 }
 
 const CHUNK_AXIS_SIZE: usize = 16;
+const CHUNK_AXIS_OFFSET: usize = CHUNK_AXIS_SIZE / 2;
 const CHUNK_BUFFER_SIZE: usize = CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE;
 
 const X_MASK: usize = 0b_1111_0000_0000;
@@ -319,9 +321,87 @@ fn is_within_cubic_bounds(pos: IVec3, min: i32, max: i32) -> bool {
     pos.min_element() >= min && pos.max_element() <= max
 }
 
+fn is_on_chunk_bounds(pos: IVec3) -> bool {
+    is_within_cubic_bounds(pos, 0, CHUNK_AXIS_SIZE as i32 - 1)
+}
+
+struct RaycastTraversal {
+    dir: Vec3,
+    next: Vec3,
+}
+
+impl RaycastTraversal {
+    fn new(origin: Vec3, dir: Vec3) -> Self {
+        Self {
+            dir: dir.normalize(),
+            next: origin,
+        }
+    }
+}
+
+impl Iterator for RaycastTraversal {
+    type Item = IVec3;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = to_ivec3(self.next);
+
+        if !is_on_chunk_bounds(current) {
+            None
+        } else {
+            let next_voxel_dir = IVec3::new(
+                self.dir.x.signum() as i32,
+                self.dir.y.signum() as i32,
+                self.dir.z.signum() as i32,
+            );
+            let next_voxel = current + next_voxel_dir;
+
+            let delta = (next_voxel.as_f32() - self.next) / self.dir;
+            let length = get_min_abs_axis(delta);
+
+            self.next += self.dir * length;
+
+            Some(current)
+        }
+    }
+}
+
+fn to_ivec3(vec: Vec3) -> IVec3 {
+    IVec3::new(
+        vec.x.trunc() as i32,
+        vec.y.trunc() as i32,
+        vec.z.trunc() as i32,
+    )
+}
+
+fn get_min_abs_axis(vec: Vec3) -> f32 {
+    let abs = vec.abs();
+    if abs.x < abs.y && abs.x < abs.z {
+        vec.x
+    } else if abs.y < abs.x && abs.y < abs.z {
+        vec.y
+    } else {
+        vec.z
+    }
+}
+
+fn to_unit_axis_ivec3(vec: Vec3) -> IVec3 {
+    let abs = vec.normalize().abs();
+    if abs.x > abs.y && abs.x > abs.z {
+        (vec.x.signum() as i32) * IVec3::X
+    } else if abs.y > abs.x && abs.y > abs.z {
+        (vec.y.signum() as i32) * IVec3::Y
+    } else {
+        (vec.z.signum() as i32) * IVec3::Z
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::world::{to_index, to_xyz, CHUNK_AXIS_SIZE};
+    use bevy::math::{IVec3, Vec3};
+
+    use crate::world::to_unit_axis_ivec3;
+
+    use super::{to_index, to_xyz, RaycastTraversal, CHUNK_AXIS_SIZE};
 
     #[test]
     fn index_to_xyz() {
@@ -377,5 +457,52 @@ mod tests {
             to_index(1, 2, 1),
             CHUNK_AXIS_SIZE * CHUNK_AXIS_SIZE + CHUNK_AXIS_SIZE + 2
         );
+    }
+
+    #[test]
+    fn test_to_unit_axis_ivec3() {
+        assert_eq!(IVec3::X, to_unit_axis_ivec3(Vec3::new(0.8, 0.3, 0.3)));
+        assert_eq!(IVec3::X, to_unit_axis_ivec3(Vec3::new(1.2, 1.1, 1.1999)));
+        assert_eq!(
+            IVec3::X,
+            to_unit_axis_ivec3(Vec3::new(0.001, 0.0001, 0.0001))
+        );
+
+        assert_eq!(-IVec3::X, to_unit_axis_ivec3(Vec3::new(-0.8, 0.3, 0.3)));
+        assert_eq!(-IVec3::X, to_unit_axis_ivec3(Vec3::new(-1.2, 1.1, 1.1999)));
+        assert_eq!(
+            -IVec3::X,
+            to_unit_axis_ivec3(Vec3::new(-0.001, 0.0001, 0.0001))
+        );
+
+        assert_eq!(
+            IVec3::Y,
+            to_unit_axis_ivec3(Vec3::new(0.0001, 0.001, 0.0001))
+        );
+        assert_eq!(IVec3::Y, to_unit_axis_ivec3(Vec3::new(-3.0, 3.001, -3.0)));
+
+        assert_eq!(
+            -IVec3::Y,
+            to_unit_axis_ivec3(Vec3::new(0.0001, -0.001, 0.0001))
+        );
+        assert_eq!(-IVec3::Y, to_unit_axis_ivec3(Vec3::new(-3.0, -3.001, -3.0)));
+
+        assert_eq!(IVec3::Z, to_unit_axis_ivec3(Vec3::new(0.0001, 0.1, 1.0)));
+        assert_eq!(IVec3::Z, to_unit_axis_ivec3(Vec3::new(0.0, 0.0, 1.0)));
+
+        assert_eq!(-IVec3::Z, to_unit_axis_ivec3(Vec3::new(0.0001, 0.1, -1.0)));
+        assert_eq!(-IVec3::Z, to_unit_axis_ivec3(Vec3::new(0.0, 0.0, -1.0)));
+
+        assert_eq!(IVec3::Z, to_unit_axis_ivec3(Vec3::new(0.0, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn test_raycast_traversal() {
+        let raycast = RaycastTraversal::new(Vec3::new(0.2, 0.2, 0.2), Vec3::new(0.2, 0.3, -0.4));
+        dbg!("asd");
+
+        for pos in raycast {
+            dbg!(pos);
+        }
     }
 }
