@@ -325,44 +325,41 @@ fn is_on_chunk_bounds(pos: IVec3) -> bool {
     is_within_cubic_bounds(pos, 0, CHUNK_AXIS_SIZE as i32 - 1)
 }
 
-struct RaycastTraversal {
-    dir: Vec3,
-    next: Vec3,
-}
+fn chunk_raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>) {
+    let mut visited_voxels = vec![];
+    let mut visited_pos = vec![];
 
-impl RaycastTraversal {
-    fn new(origin: Vec3, dir: Vec3) -> Self {
-        Self {
-            dir: dir.normalize(),
-            next: origin,
-        }
-    }
-}
+    let mut current_pos = origin;
+    let mut current_voxel = to_ivec3(origin);
 
-impl Iterator for RaycastTraversal {
-    type Item = IVec3;
+    let next_voxel_offset = IVec3::new(
+        if dir.x >= 0.0 { 1 } else { -1 },
+        if dir.y >= 0.0 { 1 } else { -1 },
+        if dir.z >= 0.0 { 1 } else { -1 },
+    );
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let current = to_ivec3(self.next);
+    while is_on_chunk_bounds(current_voxel) {
+        visited_voxels.push(current_voxel);
+        visited_pos.push(current_pos);
 
-        if !is_on_chunk_bounds(current) {
-            None
+        let next_voxel = current_voxel + next_voxel_offset;
+        let delta = (next_voxel.as_f32() - current_pos) / dir;
+
+        let distance = if delta.x < delta.y && delta.x < delta.z {
+            current_voxel.x += next_voxel_offset.x;
+            delta.x
+        } else if delta.y < delta.x && delta.y < delta.z {
+            current_voxel.y += next_voxel_offset.y;
+            delta.y
         } else {
-            let next_voxel_dir = IVec3::new(
-                self.dir.x.signum() as i32,
-                self.dir.y.signum() as i32,
-                self.dir.z.signum() as i32,
-            );
-            let next_voxel = current + next_voxel_dir;
+            current_voxel.z += next_voxel_offset.z;
+            delta.z
+        };
 
-            let delta = (next_voxel.as_f32() - self.next) / self.dir;
-            let length = get_min_abs_axis(delta);
-
-            self.next += self.dir * length;
-
-            Some(current)
-        }
+        current_pos += distance * dir;
     }
+
+    (visited_voxels, visited_pos)
 }
 
 fn to_ivec3(vec: Vec3) -> IVec3 {
@@ -399,9 +396,9 @@ fn to_unit_axis_ivec3(vec: Vec3) -> IVec3 {
 mod tests {
     use bevy::math::{IVec3, Vec3};
 
-    use crate::world::to_unit_axis_ivec3;
+    use crate::world::{chunk_raycast, to_ivec3, to_unit_axis_ivec3};
 
-    use super::{to_index, to_xyz, RaycastTraversal, CHUNK_AXIS_SIZE};
+    use super::{to_index, to_xyz, CHUNK_AXIS_SIZE};
 
     #[test]
     fn index_to_xyz() {
@@ -498,11 +495,12 @@ mod tests {
 
     #[test]
     fn test_raycast_traversal() {
-        let raycast = RaycastTraversal::new(Vec3::new(0.2, 0.2, 0.2), Vec3::new(0.2, 0.3, -0.4));
-        dbg!("asd");
+        let origin = Vec3::new(0.2, 0.2, 0.2);
+        let dir = Vec3::new(0.2, 0.0, 0.0);
+        let (voxels, points) = chunk_raycast(origin, dir);
 
-        for pos in raycast {
-            dbg!(pos);
-        }
+        assert_eq!(voxels.len(), points.len());
+        assert_eq!(voxels[0], to_ivec3(origin));
+        assert_eq!(points[0], origin)
     }
 }
