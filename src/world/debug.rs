@@ -57,8 +57,6 @@ fn toggle_mesh_wireframe(
         return;
     }
 
-    info!("Toggling wireframe!");
-
     for (e, mesh, pipelines, vertices, backup) in q.iter() {
         if let Some(mesh_n_pipeline_backup) = backup {
             meshes.remove(mesh);
@@ -68,34 +66,26 @@ fn toggle_mesh_wireframe(
                 .insert(mesh_n_pipeline_backup.0.clone())
                 .insert(mesh_n_pipeline_backup.1.clone())
                 .remove::<MeshNPipelineBackup>();
-
-            info!("Back to normal");
         } else {
             let mesh_n_pipeline_backup = MeshNPipelineBackup(mesh.clone(), pipelines.clone());
 
             let mut wireframe_mesh = Mesh::new(PrimitiveTopology::LineList);
 
-            // TODO: CALC WIREFRAME MESH
             let mut positions: Vec<[f32; 3]> = vec![];
-            //let mut normals: Vec<[f32; 3]> = vec![];
 
             for side in VOXEL_SIDES {
                 let side_idx = side as usize;
                 let side_vertices = &vertices.0[side_idx];
 
                 positions.extend(side_vertices);
-                //normals.extend(vec![get_side_normal(side); side_vertices.len()])
             }
 
             let vertex_count = positions.len();
 
             wireframe_mesh.set_indices(Some(Indices::U32(compute_wireframe_indices(vertex_count))));
             wireframe_mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-            //wireframe_mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
             let wireframe_mesh_handle = meshes.add(wireframe_mesh);
-
-            info!("Toggling wireframe!");
 
             commands
                 .entity(e)
