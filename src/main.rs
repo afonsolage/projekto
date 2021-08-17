@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, wgpu::{WgpuFeature, WgpuFeatures, WgpuOptions}};
 
 mod fly_by_camera;
 use fly_by_camera::FlyByCameraPlugin;
@@ -10,7 +10,16 @@ mod debug;
 use debug::DebugPlugin;
 
 fn main() {
+    env_logger::init();
+
     App::new()
+        .insert_resource(WgpuOptions {
+            features: WgpuFeatures {
+                // The Wireframe requires NonFillPolygonMode feature
+                features: vec![WgpuFeature::NonFillPolygonMode],
+            },
+            ..Default::default()
+        })
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_plugin(DebugPlugin)
@@ -37,5 +46,3 @@ fn setup(
         ..Default::default()
     });
 }
-
-
