@@ -14,13 +14,15 @@ use bevy::{
     },
 };
 
+use self::debug::WireframeDebugPlugin;
+
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(setup)
+        app.add_plugin(WireframeDebugPlugin)
+            .add_startup_system(setup)
             .add_startup_system(setup_render_pipeline)
-            .add_system(toggle_mesh_wireframe)
             .add_system(generate_chunk)
             .add_system(compute_voxel_occlusion)
             .add_system(compute_vertices)
@@ -28,7 +30,7 @@ impl Plugin for WorldPlugin {
     }
 }
 
-pub struct ChunkPipeline(Handle<PipelineDescriptor>);
+struct ChunkPipeline(Handle<PipelineDescriptor>);
 
 fn setup_render_pipeline(
     mut commands: Commands,
@@ -405,62 +407,6 @@ fn to_unit_axis_ivec3(vec: Vec3) -> IVec3 {
         (vec.y.signum() as i32) * IVec3::Y
     } else {
         (vec.z.signum() as i32) * IVec3::Z
-    }
-}
-
-// TODO: CALC WIREFRAME MESH
-
-struct OriginalMesh(Handle<Mesh>);
-
-fn toggle_mesh_wireframe(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    keyboard: Res<Input<KeyCode>>,
-    q: Query<(Entity, &Handle<Mesh>, &ChunkVertices, Option<&OriginalMesh>)>,
-) {
-    if !keyboard.just_pressed(KeyCode::F1) {
-        return;
-    }
-
-    info!("Toggling wireframe!");
-
-    for (e, mesh, vertices, original_mesh) in q.iter() {
-        if let Some(mesh_handle) = original_mesh {
-            meshes.remove(mesh);
-
-            commands
-                .entity(e)
-                .insert(mesh_handle.0.clone())
-                .remove::<OriginalMesh>();
-        } else {
-            let original_mesh = OriginalMesh(mesh.clone());
-
-            let mut wireframe_mesh = Mesh::new(PrimitiveTopology::LineList);
-
-            let mut positions: Vec<[f32; 3]> = vec![];
-            let mut normals: Vec<[f32; 3]> = vec![];
-
-            for side in VOXEL_SIDES {
-                let side_idx = side as usize;
-                let side_vertices = &vertices.0[side_idx];
-
-                positions.extend(side_vertices);
-                normals.extend(vec![get_side_normal(side); side_vertices.len()])
-            }
-
-            let vertex_count = positions.len();
-
-            wireframe_mesh.set_indices(Some(Indices::U32(compute_indices(vertex_count))));
-            wireframe_mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-            wireframe_mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-
-            let wireframe_handle = meshes.add(wireframe_mesh);
-
-            commands
-                .entity(e)
-                .insert(wireframe_handle)
-                .insert(original_mesh);
-        }
     }
 }
 
