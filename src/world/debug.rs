@@ -259,7 +259,7 @@ fn do_raycast(
         }
 
         let raycast = RaycastDebug {
-            origin: Vec3::ZERO, //transform.translation,
+            origin: transform.translation,
             dir: transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0,
             range: 100.0, //TODO: Change this later
         };
@@ -279,9 +279,9 @@ fn draw_raycast(
     for (e, raycast) in q.iter() {
         info!("Drawing raycast!");
 
-        let end = raycast.origin + raycast.dir * raycast.range;
+        let end = raycast.dir * raycast.range;
 
-        let vertices = vec![raycast.origin.to_array(), end.to_array()];
+        let vertices = vec![Vec3::ZERO.to_array(), end.to_array()];
         let indices = vec![0, 1];
 
         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
