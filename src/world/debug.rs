@@ -1,4 +1,12 @@
-use bevy::{prelude::*, render::pipeline::PrimitiveTopology};
+use bevy::{
+    prelude::*,
+    reflect::TypeUuid,
+    render::{
+        pipeline::PrimitiveTopology,
+        render_graph::{base::node::MAIN_PASS, AssetRenderResourcesNode, RenderGraph},
+        renderer::RenderResources,
+    },
+};
 
 use crate::fly_by_camera::FlyByCamera;
 
@@ -10,6 +18,7 @@ impl Plugin for WireframeDebugPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DebugWireframeState::default())
             .add_startup_system(setup_wireframe_shader)
+            .add_asset::<WireframeMaterial>()
             .add_system(toggle_mesh_wireframe)
             .add_system(draw_chunk_voxels)
             .add_system(delete_chunk_voxels)
@@ -50,9 +59,23 @@ fn toggle_voxel_wireframe(
 
 struct WireframePipeline(Handle<PipelineDescriptor>);
 
+#[derive(RenderResources, Default, TypeUuid)]
+#[uuid = "1e08866c-0b8a-437e-8bce-37733b25127e"]
+struct WireframeMaterial {
+    pub color: Color,
+}
+
+struct WireframeMaterials {
+    pink: Handle<WireframeMaterial>,
+    white: Handle<WireframeMaterial>,
+    gray: Handle<WireframeMaterial>,
+}
+
 fn setup_wireframe_shader(
     mut commands: Commands,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
+    mut render_graph: ResMut<RenderGraph>,
+    mut materials: ResMut<Assets<WireframeMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
     let pipeline_handle = pipelines.add(PipelineDescriptor {
@@ -72,7 +95,23 @@ fn setup_wireframe_shader(
         })
     });
 
+    render_graph.add_system_node(
+        "wireframe_material",
+        AssetRenderResourcesNode::<WireframeMaterial>::new(true),
+    );
+
+    if let Err(error) = render_graph.add_node_edge("wireframe_material", MAIN_PASS) {
+        error!("Failed to setup render graph: {}", error);
+    };
+
     commands.insert_resource(WireframePipeline(pipeline_handle));
+    commands.insert_resource(WireframeMaterials {
+        pink: materials.add(WireframeMaterial { color: Color::PINK }),
+        white: materials.add(WireframeMaterial {
+            color: Color::WHITE,
+        }),
+        gray: materials.add(WireframeMaterial { color: Color::GRAY }),
+    });
 }
 
 struct MeshNPipelineBackup(Handle<Mesh>, RenderPipelines);
@@ -80,7 +119,8 @@ struct MeshNPipelineBackup(Handle<Mesh>, RenderPipelines);
 fn toggle_mesh_wireframe(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    wireframe_pipeline_handle: Res<WireframePipeline>,
+    materials: Res<WireframeMaterials>,
+    pipeline_handle: Res<WireframePipeline>,
     keyboard: Res<Input<KeyCode>>,
     q: Query<(
         Entity,
@@ -102,7 +142,8 @@ fn toggle_mesh_wireframe(
                 .entity(e)
                 .insert(mesh_n_pipeline_backup.0.clone())
                 .insert(mesh_n_pipeline_backup.1.clone())
-                .remove::<MeshNPipelineBackup>();
+                .remove::<MeshNPipelineBackup>()
+                .remove::<Handle<WireframeMaterial>>();
         } else {
             let mesh_n_pipeline_backup = MeshNPipelineBackup(mesh.clone(), pipelines.clone());
 
@@ -128,10 +169,11 @@ fn toggle_mesh_wireframe(
                 .entity(e)
                 .insert(wireframe_mesh_handle) //The new wireframe mesh
                 .insert(RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-                    wireframe_pipeline_handle.0.clone(),
+                    pipeline_handle.0.clone(),
                 )])) //The new wireframe shader/pipeline
                 .insert(Visible::default()) //Why?
-                .insert(mesh_n_pipeline_backup); //The old mesh and pipeline, so I can switch back to it
+                .insert(mesh_n_pipeline_backup)
+                .insert(materials.white.clone()); //The old mesh and pipeline, so I can switch back to it
         }
     }
 }
@@ -167,6 +209,7 @@ struct DrawVoxelDone(Entity);
 fn draw_chunk_voxels(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    materials: Res<WireframeMaterials>,
     wireframe_pipeline_handle: Res<WireframePipeline>,
     q: Query<(Entity, &ChunkTypes), Added<DrawVoxels>>,
 ) {
@@ -187,6 +230,7 @@ fn draw_chunk_voxels(
                 )]),
                 ..Default::default()
             })
+            .insert(materials.gray.clone())
             .id();
 
         commands
@@ -273,6 +317,7 @@ fn do_raycast(
 fn draw_raycast(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    materials: Res<WireframeMaterials>,
     wireframe_pipeline_handle: Res<WireframePipeline>,
     q: Query<(Entity, &RaycastDebug), Without<Handle<Mesh>>>,
 ) {
@@ -290,13 +335,16 @@ fn draw_raycast(
 
         let mesh_handle = meshes.add(mesh);
 
-        commands.entity(e).insert_bundle(MeshBundle {
-            mesh: mesh_handle,
-            transform: Transform::from_translation(raycast.origin),
-            render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-                wireframe_pipeline_handle.0.clone(),
-            )]),
-            ..Default::default()
-        });
+        commands
+            .entity(e)
+            .insert_bundle(MeshBundle {
+                mesh: mesh_handle,
+                transform: Transform::from_translation(raycast.origin),
+                render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+                    wireframe_pipeline_handle.0.clone(),
+                )]),
+                ..Default::default()
+            })
+            .insert(materials.pink.clone());
     }
 }
