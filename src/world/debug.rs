@@ -1,7 +1,6 @@
-use bevy::{
-    prelude::*,
-    render::{pipeline::PrimitiveTopology, render_graph::base::MainPass},
-};
+use bevy::{prelude::*, render::pipeline::PrimitiveTopology};
+
+use crate::fly_by_camera::FlyByCamera;
 
 use super::*;
 
@@ -14,7 +13,9 @@ impl Plugin for WireframeDebugPlugin {
             .add_system(toggle_mesh_wireframe)
             .add_system(draw_chunk_voxels)
             .add_system(delete_chunk_voxels)
-            .add_system(toggle_voxel_wireframe);
+            .add_system(draw_raycast)
+            .add_system(toggle_voxel_wireframe)
+            .add_system(do_raycast);
     }
 }
 
@@ -233,5 +234,69 @@ fn delete_chunk_voxels(
     for (e, draw_voxel_done) in q.iter() {
         commands.entity(draw_voxel_done.0).despawn();
         commands.entity(e).remove::<DrawVoxelDone>();
+    }
+}
+
+#[derive(Debug)]
+struct RaycastDebug {
+    origin: Vec3,
+    dir: Vec3,
+    range: f32,
+}
+
+fn do_raycast(
+    mut commands: Commands,
+    keyboard: Res<Input<KeyCode>>,
+    q_cam: Query<(&Transform, &FlyByCamera)>,
+) {
+    if !keyboard.just_pressed(KeyCode::F3) {
+        return;
+    }
+
+    if let Ok((transform, camera)) = q_cam.single() {
+        if !camera.active {
+            return;
+        }
+
+        let raycast = RaycastDebug {
+            origin: Vec3::ZERO, //transform.translation,
+            dir: transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0,
+            range: 100.0, //TODO: Change this later
+        };
+
+        info!("Adding raycast {:?}", raycast);
+
+        commands.spawn().insert(raycast);
+    }
+}
+
+fn draw_raycast(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    wireframe_pipeline_handle: Res<WireframePipeline>,
+    q: Query<(Entity, &RaycastDebug), Without<Handle<Mesh>>>,
+) {
+    for (e, raycast) in q.iter() {
+        info!("Drawing raycast!");
+
+        let end = raycast.origin + raycast.dir * raycast.range;
+
+        let vertices = vec![raycast.origin.to_array(), end.to_array()];
+        let indices = vec![0, 1];
+
+        let mut mesh = Mesh::new(PrimitiveTopology::LineList);
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+        mesh.set_indices(Some(Indices::U32(indices)));
+
+        let mesh_handle = meshes.add(mesh);
+
+        commands.entity(e).insert_bundle(MeshBundle {
+            mesh: mesh_handle,
+            transform: Transform::from_translation(raycast.origin),
+            render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+                wireframe_pipeline_handle.0.clone(),
+            )]),
+            ..Default::default()
+        });
     }
 }

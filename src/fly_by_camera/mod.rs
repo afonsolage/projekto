@@ -22,12 +22,12 @@ impl Plugin for FlyByCameraPlugin {
     }
 }
 
-struct FlyByCamera {
-    move_speed: f32,
-    move_speed_boost: f32,
-    rotate_speed: f32,
+pub struct FlyByCamera {
+    pub move_speed: f32,
+    pub move_speed_boost: f32,
+    pub rotate_speed: f32,
+    pub active: bool,
     rotation: Vec2,
-    active: bool,
 }
 
 impl Default for FlyByCamera {
