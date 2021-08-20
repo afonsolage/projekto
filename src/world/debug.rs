@@ -24,7 +24,8 @@ impl Plugin for WireframeDebugPlugin {
             .add_system(delete_chunk_voxels)
             .add_system(draw_raycast)
             .add_system(toggle_voxel_wireframe)
-            .add_system(do_raycast);
+            .add_system(do_raycast)
+            .add_system(check_raycast_intersections);
     }
 }
 
@@ -308,10 +309,64 @@ fn do_raycast(
             range: 100.0, //TODO: Change this later
         };
 
-        info!("Adding raycast {:?}", raycast);
-
         commands.spawn().insert(raycast);
     }
+}
+
+fn check_raycast_intersections(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    q_raycast: Query<&RaycastDebug, Added<RaycastDebug>>,
+    q_chunks: Query<(&Chunk, &ChunkTypes)>,
+) {
+    for raycast in q_raycast.iter() {
+        for (chunk, types) in q_chunks.iter() {
+            let chunk_pos = chunk.0.as_f32() * CHUNK_AXIS_SIZE as f32;
+            let distance = (chunk_pos - raycast.origin) / raycast.dir;
+
+            // if distance > raycast.range {
+            //     continue;
+            // }
+
+            // PQP!
+            let a = distance.min_element();
+
+            let chunk_contact_point = raycast.origin + (raycast.dir * a);
+
+            let chunk_end = (chunk.0.as_f32() + Vec3::ONE) * CHUNK_AXIS_SIZE as f32;
+
+            dbg!(raycast.origin);
+            dbg!(chunk_pos);
+            dbg!(distance);
+            dbg!(chunk_contact_point);
+
+            add_debug_ball(&mut commands, &mut meshes, chunk_contact_point);
+
+            if chunk_contact_point.x < chunk_pos.x
+                || chunk_contact_point.x > chunk_end.x
+                || chunk_contact_point.y < chunk_pos.y
+                || chunk_contact_point.y > chunk_end.y
+                || chunk_contact_point.z < chunk_pos.z
+                || chunk_contact_point.z > chunk_end.z
+            {
+                continue;
+            }
+        }
+    }
+}
+
+fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, position: Vec3) {
+    let mesh = Mesh::from(shape::UVSphere {
+        radius: 0.1,
+        sectors: 10,
+        stacks: 10,
+    });
+
+    commands.spawn_bundle(PbrBundle {
+        mesh: meshes.add(mesh),
+        transform: Transform::from_translation(position),
+        ..Default::default()
+    });
 }
 
 fn draw_raycast(
@@ -322,8 +377,6 @@ fn draw_raycast(
     q: Query<(Entity, &RaycastDebug), Without<Handle<Mesh>>>,
 ) {
     for (e, raycast) in q.iter() {
-        info!("Drawing raycast!");
-
         let end = raycast.dir * raycast.range;
 
         let vertices = vec![Vec3::ZERO.to_array(), end.to_array()];

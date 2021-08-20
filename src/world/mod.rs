@@ -57,7 +57,7 @@ fn setup_render_pipeline(
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn().insert(Chunk);
+    commands.spawn().insert(Chunk(IVec3::ZERO));
 }
 
 const CHUNK_AXIS_SIZE: usize = 16;
@@ -72,7 +72,7 @@ const X_SHIFT: usize = 8;
 const Z_SHIFT: usize = 4;
 const Y_SHIFT: usize = 0;
 
-struct Chunk;
+struct Chunk(IVec3);
 
 struct ChunkTypes([u8; CHUNK_BUFFER_SIZE]);
 
@@ -176,14 +176,14 @@ Z
 */
 
 const VERTICES: [[f32; 3]; 8] = [
-    [-0.5, -0.5, -0.5], //v0
-    [0.5, -0.5, -0.5],  //v1
-    [0.5, 0.5, -0.5],   //v2
-    [-0.5, 0.5, -0.5],  //v3
-    [-0.5, -0.5, 0.5],  //v4
-    [0.5, -0.5, 0.5],   //v5
-    [0.5, 0.5, 0.5],    //v6
-    [-0.5, 0.5, 0.5],   //v7
+    [0.0, 0.0, 0.0], //v0
+    [1.0, 0.0, 0.0],  //v1
+    [1.0, 1.0, 0.0],   //v2
+    [0.0, 1.0, 0.0],  //v3
+    [0.0, 0.0, 1.0],  //v4
+    [1.0, 0.0, 1.0],   //v5
+    [1.0, 1.0, 1.0],    //v6
+    [0.0, 1.0, 1.0],   //v7
 ];
 
 const VERTICES_INDICES: [[usize; 4]; 6] = [
