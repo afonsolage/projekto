@@ -1,5 +1,3 @@
-use std::ops::Add;
-
 use bevy::{
     prelude::*,
     reflect::TypeUuid,
@@ -155,7 +153,7 @@ fn toggle_mesh_wireframe(
 
             let mut positions: Vec<[f32; 3]> = vec![];
 
-            for side in VOXEL_SIDES {
+            for side in voxel::SIDES {
                 let side_idx = side as usize;
                 let side_vertices = &vertices.0[side_idx];
 
@@ -247,7 +245,7 @@ fn draw_chunk_voxels(
 }
 
 fn generate_voxel_edges_mesh(
-    types: &[u8; CHUNK_BUFFER_SIZE],
+    types: &[u8; chunk::BUFFER_SIZE],
     filter: Option<&Vec<IVec3>>,
 ) -> (Vec<[f32; 3]>, Vec<u32>) {
     let mut vertices = vec![];
@@ -258,17 +256,17 @@ fn generate_voxel_edges_mesh(
             continue;
         }
 
-        let pos = to_xyz_ivec3(idx);
+        let pos = chunk::to_xyz_ivec3(idx);
 
         if filter.is_some() && !filter.unwrap().contains(&pos) {
             continue;
         }
 
-        for side in VOXEL_SIDES {
+        for side in voxel::SIDES {
             let side_idx = side as usize;
 
-            for idx in VERTICES_INDICES[side_idx] {
-                let v = &VERTICES[idx];
+            for idx in mesh::VERTICES_INDICES[side_idx] {
+                let v = &mesh::VERTICES[idx];
 
                 vertices.push([
                     v[0] + pos.x as f32,
@@ -334,15 +332,15 @@ fn check_raycast_intersections(
     q_chunks: Query<(Entity, &Chunk, &ChunkTypes)>,
 ) {
     for raycast in q_raycast.iter() {
-        let grid_dir = to_grid_dir(raycast.dir);
-        let current_chunk = to_ivec3(raycast.origin) / CHUNK_AXIS_SIZE as i32;
+        // let grid_dir = math::to_grid_dir(raycast.dir);
+        let current_chunk = math::to_ivec3(raycast.origin) / chunk::AXIS_SIZE as i32;
 
         for (e, c, _) in q_chunks.iter() {
             if c.0 != current_chunk {
                 continue;
             }
 
-            let (voxels, positions, normals) = chunk_raycast(raycast.origin, raycast.dir);
+            let (voxels, positions, normals) = chunk::raycast(raycast.origin, raycast.dir);
 
             for p in positions.iter() {
                 add_debug_ball(&mut commands, &mut meshes, *p);
@@ -361,35 +359,6 @@ fn check_raycast_intersections(
 
             commands.entity(e).insert(DrawVoxelsFilter(voxels));
         }
-
-        // for (chunk, types) in q_chunks.iter() {
-        //     let next_chunk = chunk.0 + grid_dir;
-        //     let next_chunk_pos = next_chunk.as_f32() * CHUNK_AXIS_SIZE as f32;
-
-        //     let current_chunk = chunk.0;
-        //     let current_chunk_pos = current_chunk.as_f32() * CHUNK_AXIS_SIZE as f32;
-
-        //     let delta = (current_chunk_pos - raycast.origin) / raycast.dir;
-
-        //     let distance = delta.min_element();
-
-        //     let chunk_contact_point = raycast.origin + (raycast.dir * distance);
-        //     let chunk_end = (chunk.0.as_f32() + Vec3::ONE) * CHUNK_AXIS_SIZE as f32;
-
-        //     dbg!(grid_dir);
-
-        //     add_debug_ball(&mut commands, &mut meshes, chunk_contact_point);
-
-        //     if chunk_contact_point.x < next_chunk_pos.x
-        //         || chunk_contact_point.x > chunk_end.x
-        //         || chunk_contact_point.y < next_chunk_pos.y
-        //         || chunk_contact_point.y > chunk_end.y
-        //         || chunk_contact_point.z < next_chunk_pos.z
-        //         || chunk_contact_point.z > chunk_end.z
-        //     {
-        //         continue;
-        //     }
-        // }
     }
 }
 

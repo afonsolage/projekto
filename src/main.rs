@@ -1,4 +1,4 @@
-use bevy::{prelude::*, wgpu::{WgpuFeature, WgpuFeatures, WgpuOptions}};
+use bevy::prelude::*;
 
 mod fly_by_camera;
 use fly_by_camera::FlyByCameraPlugin;
