@@ -378,7 +378,7 @@ fn check_raycast_intersections(
         // let grid_dir = math::to_grid_dir(raycast.dir);
         let current_chunk = chunk::to_local(raycast.origin);
         for (c, _) in q_chunks.iter() {
-            if c.0 != current_chunk {
+            if c.local_pos != current_chunk {
                 continue;
             }
 

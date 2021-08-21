@@ -6,6 +6,8 @@ mod math;
 mod mesh;
 mod voxel;
 
+use std::collections::HashMap;
+
 use bevy::{
     prelude::*,
     render::{
@@ -27,6 +29,7 @@ impl Plugin for WorldPlugin {
         app.add_plugin(WireframeDebugPlugin)
             .add_startup_system(setup)
             .add_startup_system(setup_render_pipeline)
+            .add_system(chunk_entities_sync)
             .add_system(generate_chunk)
             .add_system(compute_voxel_occlusion)
             .add_system(compute_vertices)
@@ -58,14 +61,45 @@ fn setup_render_pipeline(
     });
 
     commands.insert_resource(ChunkPipeline(pipeline_handle));
+    commands.insert_resource(ChunkEntities::default());
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn().insert(Chunk(IVec3::ZERO));
+    commands.spawn().insert(Chunk {
+        local_pos: IVec3::ZERO,
+    });
 }
 
-struct Chunk(IVec3);
+#[derive(Debug, Default, Clone, Copy)]
+struct Chunk {
+    local_pos: IVec3,
+}
 
+#[derive(Debug, Default, Clone)]
+struct ChunkEntities(HashMap<IVec3, Entity>);
+
+fn chunk_entities_sync(
+    mut chunk_map: ResMut<ChunkEntities>,
+    q_added: Query<(Entity, &Chunk), Added<Chunk>>,
+    q_existing_entities: Query<Entity, With<Chunk>>,
+) {
+    for (e, c) in q_added.iter() {
+        debug!("Adding {:?}", &c);
+        chunk_map.0.insert(c.local_pos, e);
+    }
+
+    let before = chunk_map.0.len();
+
+    chunk_map.0.retain(|_, e| {
+        q_existing_entities
+            .iter()
+            .any(|existing_e| existing_e == *e)
+    });
+
+    if before != chunk_map.0.len() {
+        debug!("Removed {} chunk(s)", before - chunk_map.0.len());
+    }
+}
 struct ChunkTypes([u8; chunk::BUFFER_SIZE]);
 
 fn generate_chunk(mut commands: Commands, q: Query<Entity, (With<Chunk>, Without<ChunkTypes>)>) {
@@ -180,7 +214,7 @@ fn generate_mesh(
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
-        let world_position = chunk::to_world(c.0);
+        let world_position = chunk::to_world(c.local_pos);
 
         commands
             .entity(e)
@@ -194,6 +228,48 @@ fn generate_mesh(
             })
             .insert(ChunkMesh);
     }
+}
+
+pub fn raycast(origin: Vec3, dir: Vec3, length: f32) -> (Vec<IVec3>, Vec<Vec3>, Vec<IVec3>) {
+    let mut visited_chunks = vec![];
+    let mut visited_positions = vec![];
+    let mut visited_normals = vec![];
+
+    let mut current_pos = origin;
+    let mut current_chunk = chunk::to_local(origin);
+    let mut last_chunk = current_chunk;
+
+    let grid_dir = math::to_grid_dir(dir);
+    let tile_offset = IVec3::new(
+        if dir.x >= 0.0 { 1 } else { 0 },
+        if dir.y >= 0.0 { 1 } else { 0 },
+        if dir.z >= 0.0 { 1 } else { 0 },
+    );
+
+    while current_pos.distance(origin) < length {
+        visited_chunks.push(current_chunk);
+        visited_positions.push(current_pos);
+        visited_normals.push(last_chunk - current_chunk);
+
+        last_chunk = current_chunk;
+
+        let next_chunk = current_chunk + tile_offset;
+        let delta = (chunk::to_world(next_chunk) - current_pos) / dir;
+        let distance = if delta.x < delta.y && delta.x < delta.z {
+            current_chunk.x += grid_dir.x;
+            delta.x
+        } else if delta.y < delta.x && delta.y < delta.z {
+            current_chunk.y += grid_dir.y;
+            delta.y
+        } else {
+            current_chunk.z += grid_dir.z;
+            delta.z
+        };
+
+        current_pos += distance * dir * 1.01;
+    }
+
+    (visited_chunks, visited_positions, visited_normals)
 }
 
 #[cfg(test)]

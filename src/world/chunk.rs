@@ -43,9 +43,9 @@ pub fn to_local(world: Vec3) -> IVec3 {
     math::trunc(world) / AXIS_SIZE as i32
 }
 
-pub fn to_world_local(world: Vec3) -> Vec3 {
-    to_world(to_local(world))
-}
+// pub fn to_world_local(world: Vec3) -> Vec3 {
+//     to_world(to_local(world))
+// }
 
 pub fn raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>, Vec<IVec3>) {
     let mut visited_voxels = vec![];
@@ -56,7 +56,6 @@ pub fn raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>, Vec<IVec3>) {
     let mut current_voxel = math::trunc(origin);
     let mut last_voxel = current_voxel;
 
-    // Compute
     let grid_dir = math::to_grid_dir(dir);
     let tile_offset = IVec3::new(
         if dir.x >= 0.0 { 1 } else { 0 },
