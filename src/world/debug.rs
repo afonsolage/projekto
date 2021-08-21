@@ -69,7 +69,7 @@ struct WireframeMaterial {
 struct WireframeMaterials {
     pink: Handle<WireframeMaterial>,
     white: Handle<WireframeMaterial>,
-    gray: Handle<WireframeMaterial>,
+    red: Handle<WireframeMaterial>,
 }
 
 fn setup_wireframe_shader(
@@ -111,7 +111,7 @@ fn setup_wireframe_shader(
         white: materials.add(WireframeMaterial {
             color: Color::WHITE,
         }),
-        gray: materials.add(WireframeMaterial { color: Color::GRAY }),
+        red: materials.add(WireframeMaterial { color: Color::RED }),
     });
 }
 
@@ -205,6 +205,8 @@ fn compute_wireframe_indices(vertex_count: usize) -> Vec<u32> {
 }
 
 pub struct DrawVoxels;
+struct DrawVoxelsFilter(Vec<IVec3>);
+
 struct DrawVoxelDone(Entity);
 
 fn draw_chunk_voxels(
@@ -212,10 +214,10 @@ fn draw_chunk_voxels(
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Res<WireframeMaterials>,
     wireframe_pipeline_handle: Res<WireframePipeline>,
-    q: Query<(Entity, &ChunkTypes), Added<DrawVoxels>>,
+    q: Query<(Entity, &ChunkTypes, Option<&DrawVoxelsFilter>), Added<DrawVoxels>>,
 ) {
-    for (e, types) in q.iter() {
-        let (vertices, indices) = generate_voxel_edges_mesh(&types.0);
+    for (e, types, filter) in q.iter() {
+        let (vertices, indices) = generate_voxel_edges_mesh(&types.0, filter.map(|f| &f.0));
 
         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
@@ -231,7 +233,7 @@ fn draw_chunk_voxels(
                 )]),
                 ..Default::default()
             })
-            .insert(materials.gray.clone())
+            .insert(materials.red.clone())
             .id();
 
         commands
@@ -241,7 +243,10 @@ fn draw_chunk_voxels(
     }
 }
 
-fn generate_voxel_edges_mesh(types: &[u8; CHUNK_BUFFER_SIZE]) -> (Vec<[f32; 3]>, Vec<u32>) {
+fn generate_voxel_edges_mesh(
+    types: &[u8; CHUNK_BUFFER_SIZE],
+    filter: Option<&Vec<IVec3>>,
+) -> (Vec<[f32; 3]>, Vec<u32>) {
     let mut vertices = vec![];
 
     for (idx, type_idx) in types.iter().enumerate() {
@@ -251,6 +256,10 @@ fn generate_voxel_edges_mesh(types: &[u8; CHUNK_BUFFER_SIZE]) -> (Vec<[f32; 3]>,
         }
 
         let pos = to_xyz_ivec3(idx);
+
+        if filter.is_some() && !filter.unwrap().contains(&pos) {
+            continue;
+        }
 
         for side in VOXEL_SIDES {
             let side_idx = side as usize;
@@ -317,50 +326,73 @@ fn check_raycast_intersections(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     q_raycast: Query<&RaycastDebug, Added<RaycastDebug>>,
-    q_chunks: Query<(&Chunk, &ChunkTypes)>,
+    q_chunks: Query<(Entity, &Chunk, &ChunkTypes)>,
 ) {
     for raycast in q_raycast.iter() {
-        for (chunk, types) in q_chunks.iter() {
-            let chunk_pos = chunk.0.as_f32() * CHUNK_AXIS_SIZE as f32;
-            let distance = (chunk_pos - raycast.origin) / raycast.dir;
+        let grid_dir = to_grid_dir(raycast.dir);
+        let current_chunk = to_ivec3(raycast.origin) / CHUNK_AXIS_SIZE as i32;
 
-            // if distance > raycast.range {
-            //     continue;
-            // }
-
-            // PQP!
-            let a = distance.min_element();
-
-            let chunk_contact_point = raycast.origin + (raycast.dir * a);
-
-            let chunk_end = (chunk.0.as_f32() + Vec3::ONE) * CHUNK_AXIS_SIZE as f32;
-
-            dbg!(raycast.origin);
-            dbg!(chunk_pos);
-            dbg!(distance);
-            dbg!(chunk_contact_point);
-
-            add_debug_ball(&mut commands, &mut meshes, chunk_contact_point);
-
-            if chunk_contact_point.x < chunk_pos.x
-                || chunk_contact_point.x > chunk_end.x
-                || chunk_contact_point.y < chunk_pos.y
-                || chunk_contact_point.y > chunk_end.y
-                || chunk_contact_point.z < chunk_pos.z
-                || chunk_contact_point.z > chunk_end.z
-            {
+        for (e, c, _) in q_chunks.iter() {
+            if c.0 != current_chunk {
                 continue;
             }
+
+            let (voxels, pos) = chunk_raycast(raycast.origin, raycast.dir);
+
+            for p in pos.iter() {
+                add_debug_ball(&mut commands, &mut meshes, *p);
+            }
+
+            commands.entity(e).insert(DrawVoxelsFilter(voxels));
         }
+
+        // for (chunk, types) in q_chunks.iter() {
+        //     let next_chunk = chunk.0 + grid_dir;
+        //     let next_chunk_pos = next_chunk.as_f32() * CHUNK_AXIS_SIZE as f32;
+
+        //     let current_chunk = chunk.0;
+        //     let current_chunk_pos = current_chunk.as_f32() * CHUNK_AXIS_SIZE as f32;
+
+        //     let delta = (current_chunk_pos - raycast.origin) / raycast.dir;
+
+        //     let distance = delta.min_element();
+
+        //     let chunk_contact_point = raycast.origin + (raycast.dir * distance);
+        //     let chunk_end = (chunk.0.as_f32() + Vec3::ONE) * CHUNK_AXIS_SIZE as f32;
+
+        //     dbg!(grid_dir);
+
+        //     add_debug_ball(&mut commands, &mut meshes, chunk_contact_point);
+
+        //     if chunk_contact_point.x < next_chunk_pos.x
+        //         || chunk_contact_point.x > chunk_end.x
+        //         || chunk_contact_point.y < next_chunk_pos.y
+        //         || chunk_contact_point.y > chunk_end.y
+        //         || chunk_contact_point.z < next_chunk_pos.z
+        //         || chunk_contact_point.z > chunk_end.z
+        //     {
+        //         continue;
+        //     }
+        // }
     }
 }
 
 fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, position: Vec3) {
     let mesh = Mesh::from(shape::UVSphere {
-        radius: 0.1,
+        radius: 0.01,
         sectors: 10,
         stacks: 10,
     });
+
+    commands.spawn_bundle(PbrBundle {
+        mesh: meshes.add(mesh),
+        transform: Transform::from_translation(position),
+        ..Default::default()
+    });
+}
+
+fn add_debug_cube(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, position: Vec3) {
+    let mesh = Mesh::from(shape::Cube { size: 1.0 });
 
     commands.spawn_bundle(PbrBundle {
         mesh: meshes.add(mesh),

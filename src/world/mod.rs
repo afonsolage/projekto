@@ -177,13 +177,13 @@ Z
 
 const VERTICES: [[f32; 3]; 8] = [
     [0.0, 0.0, 0.0], //v0
-    [1.0, 0.0, 0.0],  //v1
-    [1.0, 1.0, 0.0],   //v2
-    [0.0, 1.0, 0.0],  //v3
-    [0.0, 0.0, 1.0],  //v4
-    [1.0, 0.0, 1.0],   //v5
-    [1.0, 1.0, 1.0],    //v6
-    [0.0, 1.0, 1.0],   //v7
+    [1.0, 0.0, 0.0], //v1
+    [1.0, 1.0, 0.0], //v2
+    [0.0, 1.0, 0.0], //v3
+    [0.0, 0.0, 1.0], //v4
+    [1.0, 0.0, 1.0], //v5
+    [1.0, 1.0, 1.0], //v6
+    [0.0, 1.0, 1.0], //v7
 ];
 
 const VERTICES_INDICES: [[usize; 4]; 6] = [
@@ -349,35 +349,47 @@ fn chunk_raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>) {
 
     let mut current_pos = origin;
     let mut current_voxel = to_ivec3(origin);
+    dbg!(current_pos);
+    dbg!(current_voxel);
 
-    let next_voxel_offset = IVec3::new(
-        if dir.x >= 0.0 { 1 } else { -1 },
-        if dir.y >= 0.0 { 1 } else { -1 },
-        if dir.z >= 0.0 { 1 } else { -1 },
+    // Compute
+    let grid_dir = to_grid_dir(dir);
+    let tile_offset = IVec3::new(
+        if dir.x >= 0.0 { 1 } else { 0 },
+        if dir.y >= 0.0 { 1 } else { 0 },
+        if dir.z >= 0.0 { 1 } else { 0 },
     );
 
     while is_on_chunk_bounds(current_voxel) {
         visited_voxels.push(current_voxel);
         visited_pos.push(current_pos);
 
-        let next_voxel = current_voxel + next_voxel_offset;
+        let next_voxel = current_voxel + tile_offset;
         let delta = (next_voxel.as_f32() - current_pos) / dir;
-
+        dbg!(delta);
         let distance = if delta.x < delta.y && delta.x < delta.z {
-            current_voxel.x += next_voxel_offset.x;
+            current_voxel.x += grid_dir.x;
             delta.x
         } else if delta.y < delta.x && delta.y < delta.z {
-            current_voxel.y += next_voxel_offset.y;
+            current_voxel.y += grid_dir.y;
             delta.y
-        } else {
-            current_voxel.z += next_voxel_offset.z;
+        } else {a
+            current_voxel.z += grid_dir.z;
             delta.z
         };
 
-        current_pos += distance * dir;
+        current_pos += distance * dir * 1.01;
     }
 
     (visited_voxels, visited_pos)
+}
+
+fn to_grid_dir(dir: Vec3) -> IVec3 {
+    IVec3::new(
+        if dir.x >= 0.0 { 1 } else { -1 },
+        if dir.y >= 0.0 { 1 } else { -1 },
+        if dir.z >= 0.0 { 1 } else { -1 },
+    )
 }
 
 fn to_ivec3(vec: Vec3) -> IVec3 {
