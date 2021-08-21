@@ -343,14 +343,14 @@ fn is_on_chunk_bounds(pos: IVec3) -> bool {
     is_within_cubic_bounds(pos, 0, CHUNK_AXIS_SIZE as i32 - 1)
 }
 
-fn chunk_raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>) {
+fn chunk_raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>, Vec<IVec3>) {
     let mut visited_voxels = vec![];
-    let mut visited_pos = vec![];
+    let mut visited_positions = vec![];
+    let mut visited_normals = vec![];
 
     let mut current_pos = origin;
     let mut current_voxel = to_ivec3(origin);
-    dbg!(current_pos);
-    dbg!(current_voxel);
+    let mut last_voxel = current_voxel;
 
     // Compute
     let grid_dir = to_grid_dir(dir);
@@ -362,7 +362,10 @@ fn chunk_raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>) {
 
     while is_on_chunk_bounds(current_voxel) {
         visited_voxels.push(current_voxel);
-        visited_pos.push(current_pos);
+        visited_positions.push(current_pos);
+        visited_normals.push(last_voxel - current_voxel);
+
+        last_voxel = current_voxel;
 
         let next_voxel = current_voxel + tile_offset;
         let delta = (next_voxel.as_f32() - current_pos) / dir;
@@ -373,7 +376,7 @@ fn chunk_raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>) {
         } else if delta.y < delta.x && delta.y < delta.z {
             current_voxel.y += grid_dir.y;
             delta.y
-        } else {a
+        } else {
             current_voxel.z += grid_dir.z;
             delta.z
         };
@@ -381,7 +384,9 @@ fn chunk_raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>) {
         current_pos += distance * dir * 1.01;
     }
 
-    (visited_voxels, visited_pos)
+    dbg!(&visited_normals);
+
+    (visited_voxels, visited_positions, visited_normals)
 }
 
 fn to_grid_dir(dir: Vec3) -> IVec3 {

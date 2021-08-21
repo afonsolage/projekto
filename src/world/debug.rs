@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 use bevy::{
     prelude::*,
     reflect::TypeUuid,
@@ -19,6 +21,7 @@ impl Plugin for WireframeDebugPlugin {
         app.insert_resource(DebugWireframeState::default())
             .add_startup_system(setup_wireframe_shader)
             .add_asset::<WireframeMaterial>()
+            // .add_system(draw_debug_line)
             .add_system(toggle_mesh_wireframe)
             .add_system(draw_chunk_voxels)
             .add_system(delete_chunk_voxels)
@@ -298,6 +301,8 @@ struct RaycastDebug {
     range: f32,
 }
 
+struct RaycastDebugNoPoint;
+
 fn do_raycast(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
@@ -325,7 +330,7 @@ fn do_raycast(
 fn check_raycast_intersections(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    q_raycast: Query<&RaycastDebug, Added<RaycastDebug>>,
+    q_raycast: Query<&RaycastDebug, (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
     q_chunks: Query<(Entity, &Chunk, &ChunkTypes)>,
 ) {
     for raycast in q_raycast.iter() {
@@ -337,10 +342,21 @@ fn check_raycast_intersections(
                 continue;
             }
 
-            let (voxels, pos) = chunk_raycast(raycast.origin, raycast.dir);
+            let (voxels, positions, normals) = chunk_raycast(raycast.origin, raycast.dir);
 
-            for p in pos.iter() {
+            for p in positions.iter() {
                 add_debug_ball(&mut commands, &mut meshes, *p);
+            }
+
+            for (i, n) in normals.iter().enumerate() {
+                commands
+                    .spawn()
+                    .insert(RaycastDebug {
+                        origin: positions[i],
+                        dir: n.as_f32(),
+                        range: 0.08,
+                    })
+                    .insert(RaycastDebugNoPoint);
             }
 
             commands.entity(e).insert(DrawVoxelsFilter(voxels));
@@ -391,15 +407,38 @@ fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, po
     });
 }
 
-fn add_debug_cube(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, position: Vec3) {
-    let mesh = Mesh::from(shape::Cube { size: 1.0 });
+// #[derive(Debug)]
+// struct DebugLine(Vec3, Vec3);
+// fn draw_debug_line(
+//     mut commands: Commands,
+//     mut meshes: ResMut<Assets<Mesh>>,
+//     materials: Res<WireframeMaterials>,
+//     wireframe_pipeline_handle: Res<WireframePipeline>,
+//     q: Query<(Entity, &DebugLine), Added<DebugLine>>,
+// ) {
+//     for (e, debug_line) in q.iter() {
+//         dbg!(debug_line);
 
-    commands.spawn_bundle(PbrBundle {
-        mesh: meshes.add(mesh),
-        transform: Transform::from_translation(position),
-        ..Default::default()
-    });
-}
+//         let vertices = vec![Vec3::ZERO.to_array(), debug_line.1.to_array()];
+//         let indices = vec![0, 1];
+
+//         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
+//         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+//         mesh.set_indices(Some(Indices::U32(indices)));
+
+//         commands
+//             .entity(e)
+//             .insert_bundle(MeshBundle {
+//                 mesh: meshes.add(mesh),
+//                 transform: Transform::from_translation(debug_line.0),
+//                 render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+//                     wireframe_pipeline_handle.0.clone(),
+//                 )]),
+//                 ..Default::default()
+//             })
+//             .insert(materials.pink.clone());
+//     }
+// }
 
 fn draw_raycast(
     mut commands: Commands,
