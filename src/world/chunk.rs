@@ -35,13 +35,25 @@ pub fn is_whitin_bounds(pos: IVec3) -> bool {
     math::is_within_cubic_bounds(pos, 0, AXIS_SIZE as i32 - 1)
 }
 
+pub fn to_world(local: IVec3) -> Vec3 {
+    local.as_f32() * AXIS_SIZE as f32
+}
+
+pub fn to_local(world: Vec3) -> IVec3 {
+    math::trunc(world) / AXIS_SIZE as i32
+}
+
+pub fn to_world_local(world: Vec3) -> Vec3 {
+    to_world(to_local(world))
+}
+
 pub fn raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>, Vec<IVec3>) {
     let mut visited_voxels = vec![];
     let mut visited_positions = vec![];
     let mut visited_normals = vec![];
 
     let mut current_pos = origin;
-    let mut current_voxel = math::to_ivec3(origin);
+    let mut current_voxel = math::trunc(origin);
     let mut last_voxel = current_voxel;
 
     // Compute

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use bevy::{
     prelude::*,
     reflect::TypeUuid,
@@ -21,10 +23,9 @@ impl Plugin for WireframeDebugPlugin {
             .add_asset::<WireframeMaterial>()
             // .add_system(draw_debug_line)
             .add_system(toggle_mesh_wireframe)
-            .add_system(draw_chunk_voxels)
-            .add_system(delete_chunk_voxels)
+            .add_system(draw_voxels)
             .add_system(draw_raycast)
-            .add_system(toggle_voxel_wireframe)
+            .add_system(toggle_chunk_voxels_wireframe)
             .add_system(do_raycast)
             .add_system(check_raycast_intersections);
     }
@@ -32,31 +33,54 @@ impl Plugin for WireframeDebugPlugin {
 
 #[derive(Default)]
 struct DebugWireframeState {
-    voxel_wireframe: bool,
+    show_voxel: bool,
 }
 
-fn toggle_voxel_wireframe(
+fn toggle_chunk_voxels_wireframe(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
     mut wireframe_state: ResMut<DebugWireframeState>,
-    q_add: Query<Entity, (With<ChunkTypes>, Without<DrawVoxels>)>,
-    q_remove: Query<Entity, With<DrawVoxels>>,
+    q_chunks: Query<(Entity, &ChunkTypes)>,
+    q_draws: Query<(Entity, &Parent), With<DrawVoxels>>,
 ) {
     if !keyboard.just_pressed(KeyCode::F2) {
         return;
     }
 
-    if wireframe_state.voxel_wireframe {
-        for e in q_remove.iter() {
-            commands.entity(e).remove::<DrawVoxels>();
+    if wireframe_state.show_voxel {
+        for (e, parent) in q_draws.iter() {
+            // Remove only entities with DrawVoxels and with a Chunk as a parent
+            if q_chunks.iter().any(|(c_e, _)| c_e.eq(&parent.0)) {
+                commands.entity(e).despawn();
+            }
         }
     } else {
-        for e in q_add.iter() {
-            commands.entity(e).insert(DrawVoxels);
+        for (e, types) in q_chunks.iter() {
+            let voxels = types
+                .0
+                .iter()
+                .enumerate()
+                .filter_map(|(i, v)| {
+                    //TODO: Use enum or consts later on
+                    if *v == 0u8 {
+                        None
+                    } else {
+                        Some(chunk::to_xyz_ivec3(i))
+                    }
+                })
+                .collect();
+
+            commands.entity(e).with_children(|c| {
+                c.spawn().insert(DrawVoxels {
+                    color: "gray".into(),
+                    voxels,
+                    ..Default::default()
+                });
+            });
         }
     }
 
-    wireframe_state.voxel_wireframe = !wireframe_state.voxel_wireframe;
+    wireframe_state.show_voxel = !wireframe_state.show_voxel;
 }
 
 struct WireframePipeline(Handle<PipelineDescriptor>);
@@ -67,10 +91,17 @@ struct WireframeMaterial {
     pub color: Color,
 }
 
-struct WireframeMaterials {
-    pink: Handle<WireframeMaterial>,
-    white: Handle<WireframeMaterial>,
-    red: Handle<WireframeMaterial>,
+#[derive(Default)]
+struct WireframeMaterials(HashMap<String, Handle<WireframeMaterial>>);
+
+impl WireframeMaterials {
+    fn get(&self, color: &str) -> Handle<WireframeMaterial> {
+        self.0.get(color).unwrap().clone()
+    }
+
+    fn add(&mut self, color: &str, handle: Handle<WireframeMaterial>) {
+        self.0.insert(color.into(), handle);
+    }
 }
 
 fn setup_wireframe_shader(
@@ -107,13 +138,38 @@ fn setup_wireframe_shader(
     };
 
     commands.insert_resource(WireframePipeline(pipeline_handle));
-    commands.insert_resource(WireframeMaterials {
-        pink: materials.add(WireframeMaterial { color: Color::PINK }),
-        white: materials.add(WireframeMaterial {
+
+    let mut wireframe_materials = WireframeMaterials::default();
+    wireframe_materials.add(
+        "red",
+        materials.add(WireframeMaterial { color: Color::RED }),
+    );
+    wireframe_materials.add(
+        "white",
+        materials.add(WireframeMaterial {
             color: Color::WHITE,
         }),
-        red: materials.add(WireframeMaterial { color: Color::RED }),
-    });
+    );
+    wireframe_materials.add(
+        "green",
+        materials.add(WireframeMaterial {
+            color: Color::GREEN,
+        }),
+    );
+    wireframe_materials.add(
+        "pink",
+        materials.add(WireframeMaterial { color: Color::PINK }),
+    );
+    wireframe_materials.add(
+        "blue",
+        materials.add(WireframeMaterial { color: Color::BLUE }),
+    );
+    wireframe_materials.add(
+        "gray",
+        materials.add(WireframeMaterial { color: Color::GRAY }),
+    );
+
+    commands.insert_resource(wireframe_materials);
 }
 
 struct MeshNPipelineBackup(Handle<Mesh>, RenderPipelines);
@@ -175,7 +231,7 @@ fn toggle_mesh_wireframe(
                 )])) //The new wireframe shader/pipeline
                 .insert(Visible::default()) //Why?
                 .insert(mesh_n_pipeline_backup)
-                .insert(materials.white.clone()); //The old mesh and pipeline, so I can switch back to it
+                .insert(materials.get("white")); //The old mesh and pipeline, so I can switch back to it
         }
     }
 }
@@ -205,20 +261,23 @@ fn compute_wireframe_indices(vertex_count: usize) -> Vec<u32> {
     res
 }
 
-pub struct DrawVoxels;
-struct DrawVoxelsFilter(Vec<IVec3>);
+#[derive(Default)]
+pub struct DrawVoxels {
+    color: String,
+    voxels: Vec<IVec3>,
+    offset: Vec3,
+}
 
-struct DrawVoxelDone(Entity);
-
-fn draw_chunk_voxels(
+fn draw_voxels(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Res<WireframeMaterials>,
     wireframe_pipeline_handle: Res<WireframePipeline>,
-    q: Query<(Entity, &ChunkTypes, Option<&DrawVoxelsFilter>), Added<DrawVoxels>>,
+    q: Query<(Entity, &Parent, &DrawVoxels), Added<DrawVoxels>>,
 ) {
-    for (e, types, filter) in q.iter() {
-        let (vertices, indices) = generate_voxel_edges_mesh(&types.0, filter.map(|f| &f.0));
+    for (e, p, draw_voxels) in q.iter() {
+        let (vertices, indices) = generate_voxel_edges_mesh(&draw_voxels.voxels);
+        let first_voxel = draw_voxels.voxels[0];
 
         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
@@ -226,42 +285,26 @@ fn draw_chunk_voxels(
 
         let mesh_handle = meshes.add(mesh);
 
-        let child = commands
-            .spawn_bundle(MeshBundle {
+        commands
+            .entity(e)
+            .insert_bundle(MeshBundle {
                 mesh: mesh_handle,
                 render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
                     wireframe_pipeline_handle.0.clone(),
                 )]),
+                transform: Transform::from_translation(
+                    first_voxel.as_f32() * -1.0 + draw_voxels.offset,
+                ),
                 ..Default::default()
             })
-            .insert(materials.red.clone())
-            .id();
-
-        commands
-            .entity(e)
-            .insert(DrawVoxelDone(child))
-            .push_children(&[child]);
+            .insert(materials.get(&draw_voxels.color));
     }
 }
 
-fn generate_voxel_edges_mesh(
-    types: &[u8; chunk::BUFFER_SIZE],
-    filter: Option<&Vec<IVec3>>,
-) -> (Vec<[f32; 3]>, Vec<u32>) {
+fn generate_voxel_edges_mesh(voxels: &[IVec3]) -> (Vec<[f32; 3]>, Vec<u32>) {
     let mut vertices = vec![];
 
-    for (idx, type_idx) in types.iter().enumerate() {
-        // TODO: Change this to Enum or better type representation
-        if *type_idx == 0u8 {
-            continue;
-        }
-
-        let pos = chunk::to_xyz_ivec3(idx);
-
-        if filter.is_some() && !filter.unwrap().contains(&pos) {
-            continue;
-        }
-
+    for voxel in voxels.iter() {
         for side in voxel::SIDES {
             let side_idx = side as usize;
 
@@ -269,9 +312,9 @@ fn generate_voxel_edges_mesh(
                 let v = &mesh::VERTICES[idx];
 
                 vertices.push([
-                    v[0] + pos.x as f32,
-                    v[1] + pos.y as f32,
-                    v[2] + pos.z as f32,
+                    v[0] + voxel.x as f32,
+                    v[1] + voxel.y as f32,
+                    v[2] + voxel.z as f32,
                 ]);
             }
         }
@@ -282,15 +325,15 @@ fn generate_voxel_edges_mesh(
     (vertices, indices)
 }
 
-fn delete_chunk_voxels(
-    mut commands: Commands,
-    q: Query<(Entity, &DrawVoxelDone), Without<DrawVoxels>>,
-) {
-    for (e, draw_voxel_done) in q.iter() {
-        commands.entity(draw_voxel_done.0).despawn();
-        commands.entity(e).remove::<DrawVoxelDone>();
-    }
-}
+// fn delete_chunk_voxels(
+//     mut commands: Commands,
+//     q: Query<(Entity, &DrawVoxelDone), Without<DrawVoxels>>,
+// ) {
+//     for (e, draw_voxel_done) in q.iter() {
+//         commands.entity(draw_voxel_done.0).despawn();
+//         commands.entity(e).remove::<DrawVoxelDone>();
+//     }
+// }
 
 #[derive(Debug)]
 struct RaycastDebug {
@@ -328,36 +371,43 @@ fn do_raycast(
 fn check_raycast_intersections(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    q_raycast: Query<&RaycastDebug, (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
-    q_chunks: Query<(Entity, &Chunk, &ChunkTypes)>,
+    q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
+    q_chunks: Query<(&Chunk, &ChunkTypes)>,
 ) {
-    for raycast in q_raycast.iter() {
+    for (e, raycast) in q_raycast.iter() {
         // let grid_dir = math::to_grid_dir(raycast.dir);
-        let current_chunk = math::to_ivec3(raycast.origin) / chunk::AXIS_SIZE as i32;
-
-        for (e, c, _) in q_chunks.iter() {
+        let current_chunk = chunk::to_local(raycast.origin);
+        for (c, _) in q_chunks.iter() {
             if c.0 != current_chunk {
                 continue;
             }
 
-            let (voxels, positions, normals) = chunk::raycast(raycast.origin, raycast.dir);
+            let (voxels, hit_points, hit_normals) = chunk::raycast(raycast.origin, raycast.dir);
 
-            for p in positions.iter() {
+            for p in hit_points.iter() {
                 add_debug_ball(&mut commands, &mut meshes, *p);
             }
 
-            for (i, n) in normals.iter().enumerate() {
+            for (i, n) in hit_normals.iter().enumerate() {
                 commands
                     .spawn()
                     .insert(RaycastDebug {
-                        origin: positions[i],
+                        origin: hit_points[i],
                         dir: n.as_f32(),
                         range: 0.08,
                     })
                     .insert(RaycastDebugNoPoint);
             }
 
-            commands.entity(e).insert(DrawVoxelsFilter(voxels));
+            let offset = (raycast.origin - (chunk::to_world(current_chunk) + voxels[0].as_f32())) * -1.0;
+
+            commands.entity(e).with_children(|c| {
+                c.spawn().insert(DrawVoxels {
+                    color: "pink".into(),
+                    offset,
+                    voxels,
+                });
+            });
         }
     }
 }
@@ -375,39 +425,6 @@ fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, po
         ..Default::default()
     });
 }
-
-// #[derive(Debug)]
-// struct DebugLine(Vec3, Vec3);
-// fn draw_debug_line(
-//     mut commands: Commands,
-//     mut meshes: ResMut<Assets<Mesh>>,
-//     materials: Res<WireframeMaterials>,
-//     wireframe_pipeline_handle: Res<WireframePipeline>,
-//     q: Query<(Entity, &DebugLine), Added<DebugLine>>,
-// ) {
-//     for (e, debug_line) in q.iter() {
-//         dbg!(debug_line);
-
-//         let vertices = vec![Vec3::ZERO.to_array(), debug_line.1.to_array()];
-//         let indices = vec![0, 1];
-
-//         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
-//         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-//         mesh.set_indices(Some(Indices::U32(indices)));
-
-//         commands
-//             .entity(e)
-//             .insert_bundle(MeshBundle {
-//                 mesh: meshes.add(mesh),
-//                 transform: Transform::from_translation(debug_line.0),
-//                 render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-//                     wireframe_pipeline_handle.0.clone(),
-//                 )]),
-//                 ..Default::default()
-//             })
-//             .insert(materials.pink.clone());
-//     }
-// }
 
 fn draw_raycast(
     mut commands: Commands,
@@ -438,6 +455,6 @@ fn draw_raycast(
                 )]),
                 ..Default::default()
             })
-            .insert(materials.pink.clone());
+            .insert(materials.get("pink"));
     }
 }

@@ -1,10 +1,10 @@
 #![allow(clippy::type_complexity)]
 
+mod chunk;
 mod debug;
 mod math;
-mod chunk;
-mod voxel;
 mod mesh;
+mod voxel;
 
 use bevy::{
     prelude::*,
@@ -63,7 +63,6 @@ fn setup_render_pipeline(
 fn setup(mut commands: Commands) {
     commands.spawn().insert(Chunk(IVec3::ZERO));
 }
-
 
 struct Chunk(IVec3);
 
@@ -155,14 +154,13 @@ fn compute_vertices(
 }
 
 struct ChunkMesh;
-
 fn generate_mesh(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     chunk_pipeline: Res<ChunkPipeline>,
-    q: Query<(Entity, &ChunkVertices), (Added<ChunkVertices>, Without<ChunkMesh>)>,
+    q: Query<(Entity, &Chunk, &ChunkVertices), (Added<ChunkVertices>, Without<ChunkMesh>)>,
 ) {
-    for (e, vertices) in q.iter() {
+    for (e, c, vertices) in q.iter() {
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
         let mut positions: Vec<[f32; 3]> = vec![];
@@ -182,6 +180,8 @@ fn generate_mesh(
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
+        let world_position = chunk::to_world(c.0);
+
         commands
             .entity(e)
             .insert_bundle(MeshBundle {
@@ -189,14 +189,12 @@ fn generate_mesh(
                 render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
                     chunk_pipeline.0.clone(),
                 )]),
-                transform: Transform::from_xyz(0.0, 0.0, 0.0),
+                transform: Transform::from_translation(world_position),
                 ..Default::default()
             })
             .insert(ChunkMesh);
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -214,9 +212,18 @@ mod tests {
         assert_eq!((0, 1, 1), chunk::to_xyz(chunk::AXIS_SIZE + 1));
         assert_eq!((0, 2, 1), chunk::to_xyz(chunk::AXIS_SIZE + 2));
 
-        assert_eq!((1, 0, 0), chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE));
-        assert_eq!((1, 1, 0), chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE + 1));
-        assert_eq!((1, 2, 0), chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE + 2));
+        assert_eq!(
+            (1, 0, 0),
+            chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE)
+        );
+        assert_eq!(
+            (1, 1, 0),
+            chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE + 1)
+        );
+        assert_eq!(
+            (1, 2, 0),
+            chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE + 2)
+        );
 
         assert_eq!(
             (1, 0, 1),
@@ -244,9 +251,18 @@ mod tests {
         assert_eq!(chunk::to_index(0, 1, 1), chunk::AXIS_SIZE + 1);
         assert_eq!(chunk::to_index(0, 2, 1), chunk::AXIS_SIZE + 2);
 
-        assert_eq!(chunk::to_index(1, 0, 0), chunk::AXIS_SIZE * chunk::AXIS_SIZE);
-        assert_eq!(chunk::to_index(1, 1, 0), chunk::AXIS_SIZE * chunk::AXIS_SIZE + 1);
-        assert_eq!(chunk::to_index(1, 2, 0), chunk::AXIS_SIZE * chunk::AXIS_SIZE + 2);
+        assert_eq!(
+            chunk::to_index(1, 0, 0),
+            chunk::AXIS_SIZE * chunk::AXIS_SIZE
+        );
+        assert_eq!(
+            chunk::to_index(1, 1, 0),
+            chunk::AXIS_SIZE * chunk::AXIS_SIZE + 1
+        );
+        assert_eq!(
+            chunk::to_index(1, 2, 0),
+            chunk::AXIS_SIZE * chunk::AXIS_SIZE + 2
+        );
 
         assert_eq!(
             chunk::to_index(1, 0, 1),

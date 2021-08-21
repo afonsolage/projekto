@@ -13,7 +13,7 @@ pub fn to_grid_dir(dir: Vec3) -> IVec3 {
     )
 }
 
-pub fn to_ivec3(vec: Vec3) -> IVec3 {
+pub fn trunc(vec: Vec3) -> IVec3 {
     IVec3::new(
         vec.x.trunc() as i32,
         vec.y.trunc() as i32,
