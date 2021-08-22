@@ -66,8 +66,11 @@ fn setup_render_pipeline(
 }
 
 fn setup(mut commands: Commands) {
+    // commands.spawn().insert(Chunk {
+    //     local_pos: IVec3::ZERO,
+    // });
     commands.spawn().insert(Chunk {
-        local_pos: IVec3::ZERO,
+        local_pos: IVec3::new(1, 0, 0),
     });
 }
 

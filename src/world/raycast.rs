@@ -111,10 +111,5 @@ fn raycast(
         current_pos += distance * dir * 1.01;
     }
 
-    
-    if tp == RaycastType::Voxel && visited_locals.is_empty() {
-        dbg!(current_local);
-    }
-
     (visited_locals, visited_positions, visited_normals)
 }

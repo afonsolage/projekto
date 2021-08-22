@@ -63,3 +63,8 @@ pub fn to_local(world: Vec3) -> IVec3 {
 pub fn to_world(local: IVec3) -> Vec3 {
     local.as_f32()
 }
+
+#[cfg(test)]
+mod tests {
+    
+}
