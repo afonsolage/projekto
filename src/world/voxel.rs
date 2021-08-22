@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use super::math;
+
 #[derive(Clone, Copy, Debug)]
 pub enum Side {
     Right = 0,
@@ -52,4 +54,12 @@ pub fn get_side_dir(side: &Side) -> IVec3 {
         Side::Front => IVec3::Z,
         Side::Back => -IVec3::Z,
     }
+}
+
+pub fn to_local(world: &Vec3) -> IVec3 {
+    math::trunc(world)
+}
+
+pub fn to_world(local: &IVec3) -> Vec3 {
+    local.as_f32()
 }

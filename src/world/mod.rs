@@ -5,6 +5,7 @@ mod debug;
 mod math;
 mod mesh;
 mod voxel;
+mod raycast;
 
 use std::collections::HashMap;
 
@@ -230,47 +231,6 @@ fn generate_mesh(
     }
 }
 
-pub fn raycast(origin: Vec3, dir: Vec3, length: f32) -> (Vec<IVec3>, Vec<Vec3>, Vec<IVec3>) {
-    let mut visited_chunks = vec![];
-    let mut visited_positions = vec![];
-    let mut visited_normals = vec![];
-
-    let mut current_pos = origin;
-    let mut current_chunk = chunk::to_local(&origin);
-    let mut last_chunk = current_chunk;
-
-    let grid_dir = math::to_grid_dir(&dir);
-    let tile_offset = IVec3::new(
-        if dir.x >= 0.0 { 1 } else { 0 },
-        if dir.y >= 0.0 { 1 } else { 0 },
-        if dir.z >= 0.0 { 1 } else { 0 },
-    );
-
-    while current_pos.distance(origin) < length {
-        visited_chunks.push(current_chunk);
-        visited_positions.push(current_pos);
-        visited_normals.push(last_chunk - current_chunk);
-
-        last_chunk = current_chunk;
-
-        let next_chunk = current_chunk + tile_offset;
-        let delta = (chunk::to_world(&next_chunk) - current_pos) / dir;
-        let distance = if delta.x < delta.y && delta.x < delta.z {
-            current_chunk.x += grid_dir.x;
-            delta.x
-        } else if delta.y < delta.x && delta.y < delta.z {
-            current_chunk.y += grid_dir.y;
-            delta.y
-        } else {
-            current_chunk.z += grid_dir.z;
-            delta.z
-        };
-
-        current_pos += distance * dir * 1.01;
-    }
-
-    (visited_chunks, visited_positions, visited_normals)
-}
 
 #[cfg(test)]
 mod tests {
