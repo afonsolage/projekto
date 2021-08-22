@@ -26,8 +26,10 @@ pub fn intersect(origin: Vec3, dir: Vec3, range: f32) -> Vec<(RaycastHit, Vec<Ra
             normal: hit_normals[idx],
         };
 
+        let remaining_range = range - hit_position.distance(origin);
+
         let (voxel_hit_locals, voxel_hit_positions, voxel_hit_normals) =
-            voxel_raycast(hit_position, dir, *local);
+            voxel_raycast(hit_position, dir, remaining_range, *local);
 
         debug_assert_eq!(voxel_hit_locals.len(), voxel_hit_positions.len());
         debug_assert_eq!(voxel_hit_locals.len(), voxel_hit_normals.len());
@@ -93,6 +95,7 @@ fn chunk_raycast(origin: Vec3, dir: Vec3, range: f32) -> (Vec<IVec3>, Vec<Vec3>,
 fn voxel_raycast(
     origin: Vec3,
     dir: Vec3,
+    range: f32,
     chunk_local: IVec3,
 ) -> (Vec<IVec3>, Vec<Vec3>, Vec<IVec3>) {
     let mut visited_locals = vec![];
@@ -110,7 +113,7 @@ fn voxel_raycast(
         if dir.z >= 0.0 { 1 } else { 0 },
     );
 
-    while chunk::is_whitin_bounds(current_local) {
+    while chunk::is_whitin_bounds(current_local) && current_pos.distance(origin) < range {
         visited_locals.push(current_local);
         visited_positions.push(current_pos);
         visited_normals.push(last_local - current_local);

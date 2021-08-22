@@ -361,7 +361,7 @@ fn do_raycast(
         let raycast = RaycastDebug {
             origin: transform.translation,
             dir: transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0,
-            range: 100.0, //TODO: Change this later
+            range: 20.0, //TODO: Change this later
         };
 
         commands.spawn().insert(raycast);
