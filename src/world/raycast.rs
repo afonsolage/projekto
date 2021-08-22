@@ -48,6 +48,7 @@ pub fn intersect(origin: Vec3, dir: Vec3, range: f32) -> Vec<(RaycastHit, Vec<Ra
     result
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum RaycastType {
     Chunk,
     Voxel,
@@ -69,15 +70,15 @@ fn raycast(
         RaycastType::Voxel => voxel::to_world,
     };
 
-    let mut visited_chunks = vec![];
+    let mut visited_locals = vec![];
     let mut visited_positions = vec![];
     let mut visited_normals = vec![];
 
     let mut current_pos = origin;
-    let mut current_chunk = to_local(&origin);
-    let mut last_chunk = current_chunk;
+    let mut current_local = to_local(origin);
+    let mut last_local = current_local;
 
-    let grid_dir = math::to_grid_dir(&dir);
+    let grid_dir = math::to_grid_dir(dir);
     let tile_offset = IVec3::new(
         if dir.x >= 0.0 { 1 } else { 0 },
         if dir.y >= 0.0 { 1 } else { 0 },
@@ -86,29 +87,34 @@ fn raycast(
 
     while match tp {
         RaycastType::Chunk => current_pos.distance(origin) < range,
-        RaycastType::Voxel => chunk::is_whitin_bounds(&current_chunk),
+        RaycastType::Voxel => chunk::is_whitin_bounds(current_local),
     } {
-        visited_chunks.push(current_chunk);
+        visited_locals.push(current_local);
         visited_positions.push(current_pos);
-        visited_normals.push(last_chunk - current_chunk);
+        visited_normals.push(last_local - current_local);
 
-        last_chunk = current_chunk;
+        last_local = current_local;
 
-        let next_chunk = current_chunk + tile_offset;
-        let delta = (to_world(&next_chunk) - current_pos) / dir;
+        let next_local = current_local + tile_offset;
+        let delta = (to_world(next_local) - current_pos) / dir;
         let distance = if delta.x < delta.y && delta.x < delta.z {
-            current_chunk.x += grid_dir.x;
+            current_local.x += grid_dir.x;
             delta.x
         } else if delta.y < delta.x && delta.y < delta.z {
-            current_chunk.y += grid_dir.y;
+            current_local.y += grid_dir.y;
             delta.y
         } else {
-            current_chunk.z += grid_dir.z;
+            current_local.z += grid_dir.z;
             delta.z
         };
 
         current_pos += distance * dir * 1.01;
     }
 
-    (visited_chunks, visited_positions, visited_normals)
+    
+    if tp == RaycastType::Voxel && visited_locals.is_empty() {
+        dbg!(current_local);
+    }
+
+    (visited_locals, visited_positions, visited_normals)
 }

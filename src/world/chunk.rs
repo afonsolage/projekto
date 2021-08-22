@@ -31,15 +31,15 @@ pub fn to_index(x: usize, y: usize, z: usize) -> usize {
     x << X_SHIFT | y << Y_SHIFT | z << Z_SHIFT
 }
 
-pub fn is_whitin_bounds(pos: &IVec3) -> bool {
+pub fn is_whitin_bounds(pos: IVec3) -> bool {
     math::is_within_cubic_bounds(pos, 0, AXIS_SIZE as i32 - 1)
 }
 
-pub fn to_world(local: &IVec3) -> Vec3 {
+pub fn to_world(local: IVec3) -> Vec3 {
     local.as_f32() * AXIS_SIZE as f32
 }
 
-pub fn to_local(world: &Vec3) -> IVec3 {
+pub fn to_local(world: Vec3) -> IVec3 {
     math::trunc(world) / AXIS_SIZE as i32
 }
 

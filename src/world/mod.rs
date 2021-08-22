@@ -125,10 +125,10 @@ fn compute_voxel_occlusion(
             let pos = chunk::to_xyz_ivec3(index);
 
             for side in voxel::SIDES {
-                let dir = voxel::get_side_dir(&side);
+                let dir = voxel::get_side_dir(side);
                 let neighbor_pos = pos + dir;
 
-                if !chunk::is_whitin_bounds(&neighbor_pos) {
+                if !chunk::is_whitin_bounds(neighbor_pos) {
                     continue;
                 }
 
@@ -206,7 +206,7 @@ fn generate_mesh(
             let side_vertices = &vertices.0[side_idx];
 
             positions.extend(side_vertices);
-            normals.extend(vec![voxel::get_side_normal(&side); side_vertices.len()])
+            normals.extend(vec![voxel::get_side_normal(side); side_vertices.len()])
         }
 
         let vertex_count = positions.len();
@@ -215,7 +215,7 @@ fn generate_mesh(
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
-        let world_position = chunk::to_world(&c.local_pos);
+        let world_position = chunk::to_world(c.local_pos);
 
         commands
             .entity(e)
@@ -228,140 +228,5 @@ fn generate_mesh(
                 ..Default::default()
             })
             .insert(ChunkMesh);
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    // use bevy::math::{IVec3, Vec3};
-
-    #[test]
-    fn to_xyz() {
-        use super::chunk;
-
-        assert_eq!((0, 0, 0), chunk::to_xyz(0));
-        assert_eq!((0, 1, 0), chunk::to_xyz(1));
-        assert_eq!((0, 2, 0), chunk::to_xyz(2));
-
-        assert_eq!((0, 0, 1), chunk::to_xyz(chunk::AXIS_SIZE));
-        assert_eq!((0, 1, 1), chunk::to_xyz(chunk::AXIS_SIZE + 1));
-        assert_eq!((0, 2, 1), chunk::to_xyz(chunk::AXIS_SIZE + 2));
-
-        assert_eq!(
-            (1, 0, 0),
-            chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE)
-        );
-        assert_eq!(
-            (1, 1, 0),
-            chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE + 1)
-        );
-        assert_eq!(
-            (1, 2, 0),
-            chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE + 2)
-        );
-
-        assert_eq!(
-            (1, 0, 1),
-            chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE + chunk::AXIS_SIZE)
-        );
-        assert_eq!(
-            (1, 1, 1),
-            chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE + chunk::AXIS_SIZE + 1)
-        );
-        assert_eq!(
-            (1, 2, 1),
-            chunk::to_xyz(chunk::AXIS_SIZE * chunk::AXIS_SIZE + chunk::AXIS_SIZE + 2)
-        );
-    }
-
-    #[test]
-    fn to_index() {
-        use super::chunk;
-
-        assert_eq!(chunk::to_index(0, 0, 0), 0);
-        assert_eq!(chunk::to_index(0, 1, 0), 1);
-        assert_eq!(chunk::to_index(0, 2, 0), 2);
-
-        assert_eq!(chunk::to_index(0, 0, 1), chunk::AXIS_SIZE);
-        assert_eq!(chunk::to_index(0, 1, 1), chunk::AXIS_SIZE + 1);
-        assert_eq!(chunk::to_index(0, 2, 1), chunk::AXIS_SIZE + 2);
-
-        assert_eq!(
-            chunk::to_index(1, 0, 0),
-            chunk::AXIS_SIZE * chunk::AXIS_SIZE
-        );
-        assert_eq!(
-            chunk::to_index(1, 1, 0),
-            chunk::AXIS_SIZE * chunk::AXIS_SIZE + 1
-        );
-        assert_eq!(
-            chunk::to_index(1, 2, 0),
-            chunk::AXIS_SIZE * chunk::AXIS_SIZE + 2
-        );
-
-        assert_eq!(
-            chunk::to_index(1, 0, 1),
-            chunk::AXIS_SIZE * chunk::AXIS_SIZE + chunk::AXIS_SIZE
-        );
-        assert_eq!(
-            chunk::to_index(1, 1, 1),
-            chunk::AXIS_SIZE * chunk::AXIS_SIZE + chunk::AXIS_SIZE + 1
-        );
-        assert_eq!(
-            chunk::to_index(1, 2, 1),
-            chunk::AXIS_SIZE * chunk::AXIS_SIZE + chunk::AXIS_SIZE + 2
-        );
-    }
-
-    // #[test]
-    // fn to_unit_axis_ivec3() {
-    //     use super::math;
-
-    //     assert_eq!(IVec3::X, math::to_unit_axis_ivec3(Vec3::new(0.8, 0.3, 0.3)));
-    //     assert_eq!(IVec3::X, math::to_unit_axis_ivec3(Vec3::new(1.2, 1.1, 1.1999)));
-    //     assert_eq!(
-    //         IVec3::X,
-    //         math::to_unit_axis_ivec3(Vec3::new(0.001, 0.0001, 0.0001))
-    //     );
-
-    //     assert_eq!(-IVec3::X, math::to_unit_axis_ivec3(Vec3::new(-0.8, 0.3, 0.3)));
-    //     assert_eq!(-IVec3::X, math::to_unit_axis_ivec3(Vec3::new(-1.2, 1.1, 1.1999)));
-    //     assert_eq!(
-    //         -IVec3::X,
-    //         math::to_unit_axis_ivec3(Vec3::new(-0.001, 0.0001, 0.0001))
-    //     );
-
-    //     assert_eq!(
-    //         IVec3::Y,
-    //         math::to_unit_axis_ivec3(Vec3::new(0.0001, 0.001, 0.0001))
-    //     );
-    //     assert_eq!(IVec3::Y, math::to_unit_axis_ivec3(Vec3::new(-3.0, 3.001, -3.0)));
-
-    //     assert_eq!(
-    //         -IVec3::Y,
-    //         math::to_unit_axis_ivec3(Vec3::new(0.0001, -0.001, 0.0001))
-    //     );
-    //     assert_eq!(-IVec3::Y, math::to_unit_axis_ivec3(Vec3::new(-3.0, -3.001, -3.0)));
-
-    //     assert_eq!(IVec3::Z, math::to_unit_axis_ivec3(Vec3::new(0.0001, 0.1, 1.0)));
-    //     assert_eq!(IVec3::Z, math::to_unit_axis_ivec3(Vec3::new(0.0, 0.0, 1.0)));
-
-    //     assert_eq!(-IVec3::Z, math::to_unit_axis_ivec3(Vec3::new(0.0001, 0.1, -1.0)));
-    //     assert_eq!(-IVec3::Z, math::to_unit_axis_ivec3(Vec3::new(0.0, 0.0, -1.0)));
-
-    //     assert_eq!(IVec3::Z, math::to_unit_axis_ivec3(Vec3::new(0.0, 0.0, 0.0)));
-    // }
-
-    #[test]
-    fn test_raycast_traversal() {
-        // dbg!("asd");
-        // let origin = Vec3::new(0.2, 0.2, 0.2);
-        // let dir = Vec3::new(0.2, 0.0, 0.0);
-        // let (voxels, points) = chunk_raycast(origin, dir);
-
-        // assert_eq!(voxels.len(), points.len());
-        // assert_eq!(voxels[0], to_ivec3(origin));
-        // assert_eq!(points[0], origin)
     }
 }

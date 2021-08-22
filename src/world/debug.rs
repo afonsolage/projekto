@@ -414,7 +414,7 @@ fn check_raycast_intersections(
             }
 
             let offset = (raycast.origin
-                - (chunk::to_world(&chunk_hit.local) + voxels_hit[0].local.as_f32()))
+                - (chunk::to_world(chunk_hit.local) + voxels_hit[0].local.as_f32()))
                 * -1.0;
 
             commands.entity(e).with_children(|c| {

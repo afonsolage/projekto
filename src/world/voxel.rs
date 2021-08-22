@@ -34,7 +34,7 @@ pub const SIDES: [Side; 6] = [
     Side::Back,
 ];
 
-pub fn get_side_normal(side: &Side) -> [f32; 3] {
+pub fn get_side_normal(side: Side) -> [f32; 3] {
     match side {
         Side::Right => [1.0, 0.0, 0.0],
         Side::Left => [-1.0, 0.0, 0.0],
@@ -45,7 +45,7 @@ pub fn get_side_normal(side: &Side) -> [f32; 3] {
     }
 }
 
-pub fn get_side_dir(side: &Side) -> IVec3 {
+pub fn get_side_dir(side: Side) -> IVec3 {
     match side {
         Side::Right => IVec3::X,
         Side::Left => -IVec3::X,
@@ -56,10 +56,10 @@ pub fn get_side_dir(side: &Side) -> IVec3 {
     }
 }
 
-pub fn to_local(world: &Vec3) -> IVec3 {
+pub fn to_local(world: Vec3) -> IVec3 {
     math::trunc(world)
 }
 
-pub fn to_world(local: &IVec3) -> Vec3 {
+pub fn to_world(local: IVec3) -> Vec3 {
     local.as_f32()
 }
