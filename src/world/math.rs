@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{math, prelude::*};
 
 pub fn is_within_cubic_bounds(pos: IVec3, min: i32, max: i32) -> bool {
     pos.min_element() >= min && pos.max_element() <= max
