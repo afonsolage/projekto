@@ -124,10 +124,10 @@ fn compute_voxel_occlusion(
             let pos = chunk::to_xyz_ivec3(index);
 
             for side in voxel::SIDES {
-                let dir = voxel::get_side_dir(side);
+                let dir = voxel::get_side_dir(&side);
                 let neighbor_pos = pos + dir;
 
-                if !chunk::is_whitin_bounds(neighbor_pos) {
+                if !chunk::is_whitin_bounds(&neighbor_pos) {
                     continue;
                 }
 
@@ -205,7 +205,7 @@ fn generate_mesh(
             let side_vertices = &vertices.0[side_idx];
 
             positions.extend(side_vertices);
-            normals.extend(vec![voxel::get_side_normal(side); side_vertices.len()])
+            normals.extend(vec![voxel::get_side_normal(&side); side_vertices.len()])
         }
 
         let vertex_count = positions.len();
@@ -214,7 +214,7 @@ fn generate_mesh(
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
-        let world_position = chunk::to_world(c.local_pos);
+        let world_position = chunk::to_world(&c.local_pos);
 
         commands
             .entity(e)
@@ -236,10 +236,10 @@ pub fn raycast(origin: Vec3, dir: Vec3, length: f32) -> (Vec<IVec3>, Vec<Vec3>, 
     let mut visited_normals = vec![];
 
     let mut current_pos = origin;
-    let mut current_chunk = chunk::to_local(origin);
+    let mut current_chunk = chunk::to_local(&origin);
     let mut last_chunk = current_chunk;
 
-    let grid_dir = math::to_grid_dir(dir);
+    let grid_dir = math::to_grid_dir(&dir);
     let tile_offset = IVec3::new(
         if dir.x >= 0.0 { 1 } else { 0 },
         if dir.y >= 0.0 { 1 } else { 0 },
@@ -254,7 +254,7 @@ pub fn raycast(origin: Vec3, dir: Vec3, length: f32) -> (Vec<IVec3>, Vec<Vec3>, 
         last_chunk = current_chunk;
 
         let next_chunk = current_chunk + tile_offset;
-        let delta = (chunk::to_world(next_chunk) - current_pos) / dir;
+        let delta = (chunk::to_world(&next_chunk) - current_pos) / dir;
         let distance = if delta.x < delta.y && delta.x < delta.z {
             current_chunk.x += grid_dir.x;
             delta.x

@@ -31,15 +31,15 @@ pub fn to_index(x: usize, y: usize, z: usize) -> usize {
     x << X_SHIFT | y << Y_SHIFT | z << Z_SHIFT
 }
 
-pub fn is_whitin_bounds(pos: IVec3) -> bool {
+pub fn is_whitin_bounds(pos: &IVec3) -> bool {
     math::is_within_cubic_bounds(pos, 0, AXIS_SIZE as i32 - 1)
 }
 
-pub fn to_world(local: IVec3) -> Vec3 {
+pub fn to_world(local: &IVec3) -> Vec3 {
     local.as_f32() * AXIS_SIZE as f32
 }
 
-pub fn to_local(world: Vec3) -> IVec3 {
+pub fn to_local(world: &Vec3) -> IVec3 {
     math::trunc(world) / AXIS_SIZE as i32
 }
 
@@ -53,17 +53,17 @@ pub fn raycast(origin: Vec3, dir: Vec3) -> (Vec<IVec3>, Vec<Vec3>, Vec<IVec3>) {
     let mut visited_normals = vec![];
 
     let mut current_pos = origin;
-    let mut current_voxel = math::trunc(origin);
+    let mut current_voxel = math::trunc(&origin);
     let mut last_voxel = current_voxel;
 
-    let grid_dir = math::to_grid_dir(dir);
+    let grid_dir = math::to_grid_dir(&dir);
     let tile_offset = IVec3::new(
         if dir.x >= 0.0 { 1 } else { 0 },
         if dir.y >= 0.0 { 1 } else { 0 },
         if dir.z >= 0.0 { 1 } else { 0 },
     );
 
-    while is_whitin_bounds(current_voxel) {
+    while is_whitin_bounds(&current_voxel) {
         visited_voxels.push(current_voxel);
         visited_positions.push(current_pos);
         visited_normals.push(last_voxel - current_voxel);

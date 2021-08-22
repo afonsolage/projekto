@@ -273,9 +273,9 @@ fn draw_voxels(
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Res<WireframeMaterials>,
     wireframe_pipeline_handle: Res<WireframePipeline>,
-    q: Query<(Entity, &Parent, &DrawVoxels), Added<DrawVoxels>>,
+    q: Query<(Entity, &DrawVoxels), Added<DrawVoxels>>,
 ) {
-    for (e, p, draw_voxels) in q.iter() {
+    for (e, draw_voxels) in q.iter() {
         let (vertices, indices) = generate_voxel_edges_mesh(&draw_voxels.voxels);
         let first_voxel = draw_voxels.voxels[0];
 
@@ -371,43 +371,56 @@ fn do_raycast(
 fn check_raycast_intersections(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    chunk_entities: Res<ChunkEntities>,
     q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
     q_chunks: Query<(&Chunk, &ChunkTypes)>,
 ) {
     for (e, raycast) in q_raycast.iter() {
-        // let grid_dir = math::to_grid_dir(raycast.dir);
-        let current_chunk = chunk::to_local(raycast.origin);
-        for (c, _) in q_chunks.iter() {
-            if c.local_pos != current_chunk {
-                continue;
-            }
+        let (hit_chunks, hit_pos, _) = super::raycast(raycast.origin, raycast.dir, raycast.range);
 
-            let (voxels, hit_points, hit_normals) = chunk::raycast(raycast.origin, raycast.dir);
+        for (idx, chunk_pos) in hit_chunks.iter().enumerate() {
+            if let Some(chunk_entity) = chunk_entities.0.get(chunk_pos) {
+                if q_chunks.get(*chunk_entity).is_err() {
+                    warn!("Chunk {:?} wasn't found on query.", chunk_pos);
+                    continue;
+                }
 
-            for p in hit_points.iter() {
-                add_debug_ball(&mut commands, &mut meshes, *p);
-            }
+                let (voxels, hit_points, hit_normals) = chunk::raycast(hit_pos[idx], raycast.dir);
 
-            for (i, n) in hit_normals.iter().enumerate() {
-                commands
-                    .spawn()
-                    .insert(RaycastDebug {
-                        origin: hit_points[i],
-                        dir: n.as_f32(),
-                        range: 0.08,
-                    })
-                    .insert(RaycastDebugNoPoint);
-            }
+                if voxels.is_empty() {
+                    warn!(
+                        "Raycast returned empty voxels list at {:?} ({:?})",
+                        raycast, chunk_pos
+                    );
+                    continue;
+                }
 
-            let offset = (raycast.origin - (chunk::to_world(current_chunk) + voxels[0].as_f32())) * -1.0;
+                for p in hit_points.iter() {
+                    add_debug_ball(&mut commands, &mut meshes, *p);
+                }
 
-            commands.entity(e).with_children(|c| {
-                c.spawn().insert(DrawVoxels {
-                    color: "pink".into(),
-                    offset,
-                    voxels,
+                for (i, n) in hit_normals.iter().enumerate() {
+                    commands
+                        .spawn()
+                        .insert(RaycastDebug {
+                            origin: hit_points[i],
+                            dir: n.as_f32(),
+                            range: 0.08,
+                        })
+                        .insert(RaycastDebugNoPoint);
+                }
+
+                let offset =
+                    (raycast.origin - (chunk::to_world(chunk_pos) + voxels[0].as_f32())) * -1.0;
+
+                commands.entity(e).with_children(|c| {
+                    c.spawn().insert(DrawVoxels {
+                        color: "pink".into(),
+                        offset,
+                        voxels,
+                    });
                 });
-            });
+            }
         }
     }
 }
