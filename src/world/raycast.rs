@@ -59,12 +59,8 @@ fn chunk_raycast(origin: Vec3, dir: Vec3, range: f32) -> (Vec<IVec3>, Vec<Vec3>,
     let mut current_local = chunk::to_local(origin);
     let mut last_local = current_local;
 
-    let grid_dir = math::to_grid_dir(dir);
-    let tile_offset = IVec3::new(
-        if dir.x >= 0.0 { 1 } else { 0 },
-        if dir.y >= 0.0 { 1 } else { 0 },
-        if dir.z >= 0.0 { 1 } else { 0 },
-    );
+    let grid_dir = dir.signum().as_i32();
+    let step_dir = grid_dir.max(IVec3::ZERO);
 
     while current_pos.distance(origin) < range {
         visited_locals.push(current_local);
@@ -73,7 +69,7 @@ fn chunk_raycast(origin: Vec3, dir: Vec3, range: f32) -> (Vec<IVec3>, Vec<Vec3>,
 
         last_local = current_local;
 
-        let next_local = current_local + tile_offset;
+        let next_local = current_local + step_dir;
         let delta = (chunk::to_world(next_local) - current_pos) / dir;
         let distance = if delta.x < delta.y && delta.x < delta.z {
             current_local.x += grid_dir.x;
@@ -106,12 +102,8 @@ fn voxel_raycast(
     let mut current_local = voxel::to_local(origin);
     let mut last_local = current_local;
 
-    let grid_dir = math::to_grid_dir(dir);
-    let tile_offset = IVec3::new(
-        if dir.x >= 0.0 { 1 } else { 0 },
-        if dir.y >= 0.0 { 1 } else { 0 },
-        if dir.z >= 0.0 { 1 } else { 0 },
-    );
+    let grid_dir = dir.signum().as_i32();
+    let step_dir = grid_dir.max(IVec3::ZERO);
 
     while chunk::is_whitin_bounds(current_local) && current_pos.distance(origin) < range {
         visited_locals.push(current_local);
@@ -120,17 +112,22 @@ fn voxel_raycast(
 
         last_local = current_local;
 
-        let next_local = current_local + tile_offset;
+        let next_local = current_local + step_dir;
         let delta = (voxel::to_world(next_local, chunk_local) - current_pos) / dir;
-        let distance = if delta.x < delta.y && delta.x < delta.z {
-            current_local.x += grid_dir.x;
-            delta.x
-        } else if delta.y < delta.x && delta.y < delta.z {
-            current_local.y += grid_dir.y;
-            delta.y
-        } else {
-            current_local.z += grid_dir.z;
-            delta.z
+
+        let distance = match math::min_element(delta) {
+            math::Vec3Element::X => {
+                current_local.x += grid_dir.x;
+                delta.x
+            }
+            math::Vec3Element::Y => {
+                current_local.y += grid_dir.y;
+                delta.y
+            }
+            math::Vec3Element::Z => {
+                current_local.z += grid_dir.z;
+                delta.z
+            }
         };
 
         current_pos += distance * dir * 1.01;
