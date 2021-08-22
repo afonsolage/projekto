@@ -132,11 +132,11 @@ fn fly_by_camera_grab_mouse(
         if let Ok(mut fly_by_cam) = q.single_mut() {
             if window.cursor_visible() && mouse_btn.just_pressed(MouseButton::Left) {
                 window.set_cursor_visibility(false);
-                window.set_cursor_lock_mode(true);
+                //window.set_cursor_lock_mode(true);
                 fly_by_cam.active = true;
             } else if !window.cursor_visible() && key_btn.just_pressed(KeyCode::Escape) {
                 window.set_cursor_visibility(true);
-                window.set_cursor_lock_mode(false);
+                //window.set_cursor_lock_mode(false);
                 fly_by_cam.active = false;
             }
         }

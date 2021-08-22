@@ -149,9 +149,6 @@ mod tests {
     fn to_local() {
         use super::*;
 
-        const TEST_COUNT: usize = 1000;
-        const MAG: f32 = 100.0;
-
         assert_eq!(
             IVec3::new(0, -1, -2),
             super::to_local(Vec3::new(3.0, -0.8, -17.0))
@@ -165,6 +162,9 @@ mod tests {
             super::to_local(Vec3::new(-32.1, 20.0, 88.1))
         );
 
+        const TEST_COUNT: usize = 1000;
+        const MAG: f32 = 100.0;
+        
         for _ in 0..TEST_COUNT {
             let base = IVec3::new(
                 (random::<f32>() * MAG) as i32 * if random::<bool>() { -1 } else { 1 },

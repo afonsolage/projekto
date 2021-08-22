@@ -12,11 +12,19 @@ pub fn to_grid_dir(dir: Vec3) -> IVec3 {
     )
 }
 
-pub fn trunc(vec: Vec3) -> IVec3 {
+pub fn floor(vec: Vec3) -> IVec3 {
     IVec3::new(
-        vec.x.trunc() as i32,
-        vec.y.trunc() as i32,
-        vec.z.trunc() as i32,
+        vec.x.floor() as i32,
+        vec.y.floor() as i32,
+        vec.z.floor() as i32,
+    )
+}
+
+pub fn euclid_rem(vec: IVec3, div: i32) -> IVec3 {
+    IVec3::new(
+        vec.x.rem_euclid(div),
+        vec.y.rem_euclid(div),
+        vec.z.rem_euclid(div),
     )
 }
 
