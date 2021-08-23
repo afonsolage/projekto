@@ -376,9 +376,9 @@ fn check_raycast_intersections(
     q_chunks: Query<(&Chunk, &ChunkTypes)>,
 ) {
     for (e, raycast) in q_raycast.iter() {
-        for (chunk_hit, voxels_hit) in
-            raycast::intersect(raycast.origin, raycast.dir, raycast.range).iter()
-        {
+        let res = raycast::intersect(raycast.origin, raycast.dir, raycast.range);
+
+        for (chunk_hit, voxels_hit) in res.iter() {
             let chunk_entity = match chunk_entities.0.get(&chunk_hit.local) {
                 Some(e) => e,
                 None => continue,
