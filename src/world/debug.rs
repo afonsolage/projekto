@@ -1,18 +1,11 @@
 use std::collections::HashMap;
 
-use bevy::{
-    prelude::*,
-    reflect::TypeUuid,
-    render::{
-        pipeline::PrimitiveTopology,
-        render_graph::{base::node::MAIN_PASS, AssetRenderResourcesNode, RenderGraph},
-        renderer::RenderResources,
-    },
-};
+use bevy::{prelude::*, reflect::TypeUuid, render::{mesh::Indices, pipeline::{FrontFace, PipelineDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipeline}, render_graph::{base::node::MAIN_PASS, AssetRenderResourcesNode, RenderGraph}, renderer::RenderResources, shader::ShaderStages}};
 
 use crate::fly_by_camera::FlyByCamera;
 
 use super::*;
+use super::ecs::*;
 
 pub struct WireframeDebugPlugin;
 
