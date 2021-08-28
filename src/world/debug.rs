@@ -27,6 +27,7 @@ impl Plugin for WireframeDebugPlugin {
             .add_system(draw_raycast)
             .add_system(toggle_chunk_voxels_wireframe)
             .add_system(do_raycast)
+            .add_system(world_raycast)
             .add_system(check_raycast_intersections);
     }
 }
@@ -40,7 +41,7 @@ fn toggle_chunk_voxels_wireframe(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
     mut wireframe_state: ResMut<DebugWireframeState>,
-    q_chunks: Query<(Entity, &ChunkTypes)>,
+    q_chunks: Query<(Entity, &ChunkVoxels)>,
     q_draws: Query<(Entity, &Parent), With<DrawVoxels>>,
 ) {
     if !keyboard.just_pressed(KeyCode::F2) {
@@ -325,16 +326,6 @@ fn generate_voxel_edges_mesh(voxels: &[IVec3]) -> (Vec<[f32; 3]>, Vec<u32>) {
     (vertices, indices)
 }
 
-// fn delete_chunk_voxels(
-//     mut commands: Commands,
-//     q: Query<(Entity, &DrawVoxelDone), Without<DrawVoxels>>,
-// ) {
-//     for (e, draw_voxel_done) in q.iter() {
-//         commands.entity(draw_voxel_done.0).despawn();
-//         commands.entity(e).remove::<DrawVoxelDone>();
-//     }
-// }
-
 #[derive(Debug)]
 struct RaycastDebug {
     origin: Vec3,
@@ -373,7 +364,7 @@ fn check_raycast_intersections(
     mut meshes: ResMut<Assets<Mesh>>,
     chunk_entities: Res<ChunkEntities>,
     q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
-    q_chunks: Query<(&Chunk, &ChunkTypes)>,
+    q_chunks: Query<(&Chunk, &ChunkVoxels)>,
 ) {
     for (e, raycast) in q_raycast.iter() {
         let res = raycast::intersect(raycast.origin, raycast.dir, raycast.range);
@@ -472,5 +463,62 @@ fn draw_raycast(
                 ..Default::default()
             })
             .insert(materials.get("pink"));
+    }
+}
+
+fn world_raycast(
+    mut commands: Commands,
+    chunks: Res<ChunkEntities>,
+    mut q_chunks: Query<&mut ChunkVoxels>,
+    q_cam: Query<(&Transform, &FlyByCamera)>,
+    mouse_input: Res<Input<MouseButton>>,
+) {
+    if !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    if let Ok((transform, camera)) = q_cam.single() {
+        if !camera.active {
+            return;
+        }
+
+        let origin = transform.translation;
+        let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
+        let range = 100.0;
+
+        let hit_results = raycast::intersect(origin, dir, range);
+
+        for (chunk_hit, voxels_hit) in hit_results {
+            let local = chunk_hit.local;
+
+            let entity = match chunks.0.get(&local) {
+                Some(e) => *e,
+                None => continue,
+            };
+
+            let mut types = match q_chunks.get_mut(entity) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+
+            for voxel_hit in voxels_hit {
+                let index = chunk::to_index_ivec3(voxel_hit.local);
+
+                if types.0[index] == 0 {
+                    continue;
+                }
+
+                debug!("Hit voxel at {:?} {:?}", local, voxel_hit.local);
+                types.0[index] = 0;
+
+                commands
+                    .entity(entity)
+                    .remove::<ChunkVoxelOcclusion>()
+                    .remove::<ChunkVertices>()
+                    .remove::<ChunkMesh>();
+
+                return;
+            }
+        }
     }
 }

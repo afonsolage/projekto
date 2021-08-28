@@ -4,8 +4,8 @@ mod chunk;
 mod debug;
 mod math;
 mod mesh;
-mod voxel;
 mod raycast;
+mod voxel;
 
 use std::collections::HashMap;
 
@@ -69,9 +69,9 @@ fn setup(mut commands: Commands) {
     commands.spawn().insert(Chunk {
         local_pos: IVec3::ZERO,
     });
-    commands.spawn().insert(Chunk {
-        local_pos: IVec3::new(1, 0, 0),
-    });
+    // commands.spawn().insert(Chunk {
+    //     local_pos: IVec3::new(1, 0, 0),
+    // });
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -104,14 +104,13 @@ fn chunk_entities_sync(
         debug!("Removed {} chunk(s)", before - chunk_map.0.len());
     }
 }
-struct ChunkTypes([u8; chunk::BUFFER_SIZE]);
-
-fn generate_chunk(mut commands: Commands, q: Query<Entity, (With<Chunk>, Without<ChunkTypes>)>) {
+struct ChunkVoxels([u8; chunk::BUFFER_SIZE]);
+fn generate_chunk(mut commands: Commands, q: Query<Entity, (With<Chunk>, Without<ChunkVoxels>)>) {
     for e in q.iter() {
         //TODO: Generate the chunk based on noise. For now, just fill it all with 1
         commands
             .entity(e)
-            .insert(ChunkTypes([1; chunk::BUFFER_SIZE]));
+            .insert(ChunkVoxels([1; chunk::BUFFER_SIZE]));
     }
 }
 
@@ -119,13 +118,21 @@ struct ChunkVoxelOcclusion([[bool; 6]; chunk::BUFFER_SIZE]);
 
 fn compute_voxel_occlusion(
     mut commands: Commands,
-    q: Query<(Entity, &ChunkTypes), (With<Chunk>, Without<ChunkVoxelOcclusion>)>,
+    q: Query<(Entity, &ChunkVoxels), (With<Chunk>, Without<ChunkVoxelOcclusion>)>,
 ) {
-    for (e, types) in q.iter() {
+    for (e, voxels) in q.iter() {
+        trace!("compute_voxel_occlusion {:?}", e);
         let mut voxel_occlusions = [[false; 6]; chunk::BUFFER_SIZE];
 
         for (index, occlusion) in voxel_occlusions.iter_mut().enumerate() {
             let pos = chunk::to_xyz_ivec3(index);
+
+            if voxels.0[index] == 0 {
+                for s in occlusion {
+                    *s = true;
+                }
+                continue;
+            }
 
             for side in voxel::SIDES {
                 let dir = voxel::get_side_dir(side);
@@ -143,7 +150,7 @@ fn compute_voxel_occlusion(
 
                 assert!(neighbor_idx < chunk::BUFFER_SIZE);
 
-                if types.0[neighbor_idx] == 1 {
+                if voxels.0[neighbor_idx] == 1 {
                     occlusion[side as usize] = true;
                 }
             }
@@ -159,9 +166,10 @@ struct ChunkVertices([Vec<[f32; 3]>; 6]);
 
 fn compute_vertices(
     mut commands: Commands,
-    query: Query<(Entity, &ChunkVoxelOcclusion), (With<ChunkTypes>, Without<ChunkVertices>)>,
+    query: Query<(Entity, &ChunkVoxelOcclusion), (With<ChunkVoxels>, Without<ChunkVertices>)>,
 ) {
     for (e, occlusions) in query.iter() {
+        trace!("compute_vertices {:?}", e);
         let mut computed_vertices: [Vec<[f32; 3]>; 6] =
             [vec![], vec![], vec![], vec![], vec![], vec![]];
 
@@ -199,6 +207,7 @@ fn generate_mesh(
     q: Query<(Entity, &Chunk, &ChunkVertices), (Added<ChunkVertices>, Without<ChunkMesh>)>,
 ) {
     for (e, c, vertices) in q.iter() {
+        trace!("generate_mesh {:?}", e);
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
         let mut positions: Vec<[f32; 3]> = vec![];
