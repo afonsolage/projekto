@@ -33,7 +33,7 @@ impl Plugin for WireframeDebugPlugin {
             .add_system(draw_raycast_system)
             .add_system(toggle_chunk_voxels_wireframe_system)
             .add_system(do_raycast_system)
-            .add_system(world_raycast_system)
+            .add_system(remove_voxel_system)
             .add_system(check_raycast_intersections_system);
     }
 }
@@ -474,7 +474,7 @@ fn draw_raycast_system(
     }
 }
 
-fn world_raycast_system(
+fn remove_voxel_system(
     chunks: Res<ChunkEntitiesRes>,
     q_chunks: Query<&ChunkVoxels>,
     q_cam: Query<(&Transform, &FlyByCamera)>,
