@@ -1,4 +1,7 @@
-use bevy::prelude::*;
+use bevy::{
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    prelude::*,
+};
 
 mod fly_by_camera;
 use fly_by_camera::FlyByCameraPlugin;
@@ -13,8 +16,14 @@ fn main() {
     env_logger::init();
 
     App::new()
+        .insert_resource(WindowDescriptor {
+            vsync: false,
+            ..Default::default()
+        })
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
+        .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugin(LogDiagnosticsPlugin::default())
         .add_plugin(DebugPlugin)
         .add_plugin(FlyByCameraPlugin)
         .add_plugin(WorldPlugin)
