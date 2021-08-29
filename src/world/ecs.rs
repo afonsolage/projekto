@@ -22,6 +22,10 @@ impl Plugin for WorldPlugin {
             .add_event::<ChunkSpawnCmd>()
             .add_event::<ChunkDespawnCmd>()
             .add_event::<ChunkSetVoxelCmd>()
+            .add_event::<Generated>()
+            .add_event::<OcclusionDone>()
+            .add_event::<VerticesDone>()
+            .add_event::<Meshed>()
             .add_startup_system(setup_spawn_chunks)
             .add_startup_system(setup_render_pipeline)
             .add_system(spawn_chunk_system)
@@ -45,6 +49,11 @@ pub struct ChunkSetVoxelCmd {
     pub new_value: u8,
 }
 
+struct Generated(Entity);
+struct OcclusionDone(Entity);
+struct VerticesDone(Entity);
+struct Meshed(Entity);
+
 // Resources
 pub struct ChunkPipelineRes(Handle<PipelineDescriptor>);
 
@@ -52,7 +61,7 @@ pub struct ChunkPipelineRes(Handle<PipelineDescriptor>);
 pub struct ChunkEntitiesRes(pub HashMap<IVec3, Entity>);
 
 // Components
-struct ChunkBuilding;
+struct ChunkBuildingTag;
 
 pub struct ChunkDone;
 
@@ -65,10 +74,22 @@ struct ChunkVoxelOcclusion([[bool; 6]; chunk::BUFFER_SIZE]);
 pub(super) struct ChunkVertices(pub [Vec<[f32; 3]>; 6]);
 
 #[derive(Bundle)]
-struct ChunkBuildPipelineBundle {
+struct BuildingBundle {
+    building: ChunkBuildingTag,
+    voxels: ChunkVoxels,
     occlusion: ChunkVoxelOcclusion,
     vertices: ChunkVertices,
-    done: ChunkDone,
+}
+
+impl Default for BuildingBundle {
+    fn default() -> Self {
+        Self {
+            building: ChunkBuildingTag,
+            voxels: ChunkVoxels([0; chunk::BUFFER_SIZE]),
+            occlusion: ChunkVoxelOcclusion([[false; 6]; chunk::BUFFER_SIZE]),
+            vertices: ChunkVertices([vec![], vec![], vec![], vec![], vec![], vec![]]),
+        }
+    }
 }
 
 // Systems
@@ -117,10 +138,10 @@ fn spawn_chunk_system(
     }
 
     if let Some(cmd) = event_queue.pop_front() {
-        debug!("Spawning chunk at {}", cmd.0);
+        debug!("[spawn_chunk_system] Spawning chunk at {}", cmd.0);
         let entity = commands
             .spawn()
-            .insert(ChunkBuilding)
+            .insert_bundle(BuildingBundle::default())
             .insert(ChunkLocal(cmd.0))
             .id();
 
@@ -137,11 +158,14 @@ fn despawn_chunk_system(
     mut chunk_entities: ResMut<ChunkEntitiesRes>,
 ) {
     for cmd in despawn_reader.iter() {
-        debug!("Despawning chunk at {}", cmd.0);
+        debug!("[despawn_chunk_system] Despawning chunk at {}", cmd.0);
 
         match chunk_entities.0.remove(&cmd.0) {
             None => {
-                warn!("Trying to despawn a non-existing chunk {}", cmd.0);
+                warn!(
+                    "[despawn_chunk_system] Trying to despawn a non-existing chunk {}",
+                    cmd.0
+                );
                 return;
             }
             Some(e) => {
@@ -163,7 +187,7 @@ fn set_voxel_system(
         let entity = match chunk_entities.0.get(&chunk_local) {
             None => {
                 warn!(
-                    "Trying to set voxel in a non-existing chunk {}",
+                    "[set_voxel_system] Trying to set voxel in a non-existing chunk {}",
                     chunk_local
                 );
                 return;
@@ -173,7 +197,10 @@ fn set_voxel_system(
 
         let mut voxels = match chunk_voxels.get_mut(entity) {
             Err(e) => {
-                warn!("Failed to set voxel on chunk {}. Error: {}", chunk_local, e);
+                warn!(
+                    "[set_voxel_system] Failed to set voxel on chunk {}. Error: {}",
+                    chunk_local, e
+                );
                 return;
             }
             Ok(v) => v,
@@ -184,24 +211,26 @@ fn set_voxel_system(
 
         voxels.0[index] = cmd.new_value;
 
-        debug!("Updating voxel at {} to {}", cmd.world_pos, cmd.new_value);
+        debug!(
+            "[set_voxel_system] Updating voxel at {} to {}",
+            cmd.world_pos, cmd.new_value
+        );
 
         commands
             .entity(entity)
-            .insert(ChunkBuilding)
-            .remove_bundle::<ChunkBuildPipelineBundle>();
+            .insert(ChunkBuildingTag)
+            .remove::<ChunkDone>()
+            .remove_bundle::<BuildingBundle>();
     }
 }
 
 fn generate_chunk_system(
-    mut commands: Commands,
-    q: Query<(Entity, &ChunkLocal), (With<ChunkBuilding>, Without<ChunkVoxels>)>,
+    mut q: Query<(Entity, &ChunkLocal, &mut ChunkVoxels), Added<ChunkLocal>>,
+    mut event_writer: EventWriter<Generated>,
 ) {
-    for (e, c) in q.iter() {
+    for (e, c, mut voxels) in q.iter_mut() {
         let world = chunk::to_world(c.0);
-        debug!("Generating chunk at {}", world);
-
-        let mut voxels = [0; chunk::BUFFER_SIZE];
+        debug!("[generate_chunk_system] Generating chunk at {}", world);
 
         let mut noise = FastNoise::seeded(15);
         noise.set_noise_type(NoiseType::SimplexFractal);
@@ -214,28 +243,44 @@ fn generate_chunk_system(
         for x in 0..chunk::AXIS_SIZE {
             for z in 0..chunk::AXIS_SIZE {
                 let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
-                let h = ((h + 1.0) / 2.0) * chunk::AXIS_SIZE as f32;    
+                let h = ((h + 1.0) / 2.0) * chunk::AXIS_SIZE as f32;
                 for y in 0..h as usize {
                     let index = chunk::to_index(x, y, z);
 
-                    voxels[index] = 1;
+                    voxels.0[index] = 1;
                 }
             }
         }
 
-        commands.entity(e).insert(ChunkVoxels(voxels));
+        event_writer.send(Generated(e));
     }
 }
 
 fn compute_voxel_occlusion_system(
-    mut commands: Commands,
-    q: Query<(Entity, &ChunkVoxels), (With<ChunkBuilding>, Without<ChunkVoxelOcclusion>)>,
+    mut event_reader: EventReader<Generated>,
+    mut event_writer: EventWriter<OcclusionDone>,
+    mut q: Query<(&ChunkLocal, &ChunkVoxels, &mut ChunkVoxelOcclusion), With<ChunkBuildingTag>>,
 ) {
-    for (e, voxels) in q.iter() {
-        trace!("compute_voxel_occlusion {:?}", e);
-        let mut voxel_occlusions = [[false; 6]; chunk::BUFFER_SIZE];
+    for evt in event_reader.iter() {
+        let e = evt.0;
 
-        for (index, occlusion) in voxel_occlusions.iter_mut().enumerate() {
+        let (local, voxels, mut voxel_occlusions) = match q.get_mut(e) {
+            Err(err) => {
+                warn!(
+                    "[compute_voxel_occlusion_system] Failed to get entity {:?} ({})",
+                    e, err
+                );
+                continue;
+            }
+            Ok(t) => t,
+        };
+
+        trace!(
+            "[compute_voxel_occlusion_system] compute_voxel_occlusion {}",
+            local.0
+        );
+
+        for (index, occlusion) in voxel_occlusions.0.iter_mut().enumerate() {
             let pos = chunk::to_xyz_ivec3(index);
 
             if voxels.0[index] == 0 {
@@ -250,6 +295,7 @@ fn compute_voxel_occlusion_system(
                 let neighbor_pos = pos + dir;
 
                 if !chunk::is_within_bounds(neighbor_pos) {
+                    // TODO: Check neighborhood
                     continue;
                 }
 
@@ -267,20 +313,33 @@ fn compute_voxel_occlusion_system(
             }
         }
 
-        commands
-            .entity(e)
-            .insert(ChunkVoxelOcclusion(voxel_occlusions));
+        event_writer.send(OcclusionDone(e));
     }
 }
 
 fn compute_vertices_system(
-    mut commands: Commands,
-    query: Query<(Entity, &ChunkVoxelOcclusion), (With<ChunkBuilding>, Without<ChunkVertices>)>,
+    mut evt_reader: EventReader<OcclusionDone>,
+    mut evt_writer: EventWriter<VerticesDone>,
+    mut q: Query<(&ChunkLocal, &ChunkVoxelOcclusion, &mut ChunkVertices), With<ChunkBuildingTag>>,
 ) {
-    for (e, occlusions) in query.iter() {
-        trace!("compute_vertices {:?}", e);
-        let mut computed_vertices: [Vec<[f32; 3]>; 6] =
-            [vec![], vec![], vec![], vec![], vec![], vec![]];
+    for evt in evt_reader.iter() {
+        let e = evt.0;
+
+        let (local, occlusions, mut computed_vertices) = match q.get_mut(e) {
+            Err(err) => {
+                warn!(
+                    "[compute_vertices_system] Failed to get entity {:?} ({})",
+                    e, err
+                );
+                continue;
+            }
+            Ok(t) => t,
+        };
+
+        trace!(
+            "[compute_vertices_system] compute_vertices_system {}",
+            local.0
+        );
 
         for (index, occlusion) in occlusions.0.iter().enumerate() {
             let pos = chunk::to_xyz_ivec3(index);
@@ -295,7 +354,7 @@ fn compute_vertices_system(
                 for idx in mesh::VERTICES_INDICES[side_idx] {
                     let vertices = &mesh::VERTICES[idx];
 
-                    computed_vertices[side_idx].push([
+                    computed_vertices.0[side_idx].push([
                         vertices[0] + pos.x as f32,
                         vertices[1] + pos.y as f32,
                         vertices[2] + pos.z as f32,
@@ -304,7 +363,7 @@ fn compute_vertices_system(
             }
         }
 
-        commands.entity(e).insert(ChunkVertices(computed_vertices));
+        evt_writer.send(VerticesDone(e));
     }
 }
 
@@ -312,10 +371,25 @@ fn generate_mesh_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     chunk_pipeline: Res<ChunkPipelineRes>,
-    q: Query<(Entity, &ChunkLocal, &ChunkVertices), With<ChunkBuilding>>,
+    q: Query<(&ChunkLocal, &ChunkVertices), With<ChunkBuildingTag>>,
+    mut evt_reader: EventReader<VerticesDone>,
 ) {
-    for (e, local, vertices) in q.iter() {
-        trace!("generate_mesh {:?}", e);
+    for evt in evt_reader.iter() {
+        let e = evt.0;
+
+        let (local, vertices) = match q.get(e) {
+            Err(err) => {
+                warn!(
+                    "[generate_mesh_system] Failed to get entity {:?} ({})",
+                    e, err
+                );
+                continue;
+            }
+            Ok(t) => t,
+        };
+
+        trace!("[generate_mesh_system] generate_mesh_system {}", local.0);
+
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
         let mut positions: Vec<[f32; 3]> = vec![];
@@ -347,7 +421,7 @@ fn generate_mesh_system(
                 transform: Transform::from_translation(world_position),
                 ..Default::default()
             })
-            .remove::<ChunkBuilding>()
+            .remove::<ChunkBuildingTag>()
             .insert(ChunkDone);
     }
 }
