@@ -61,7 +61,7 @@ pub fn to_local(world: Vec3) -> IVec3 {
     // This transform (1.1, -0.3, 17.5) into (1, -1, 17)
     let vec = math::floor(world);
 
-    // Get the euclidian remainder
+    // Get the euclidean remainder
     // This transform (1, -1, 17) into (1, 15, 1)
     math::euclid_rem(vec, chunk::AXIS_SIZE as i32)
 }
@@ -163,7 +163,7 @@ mod tests {
             assert_eq!(
                 base,
                 super::to_local(world + frag),
-                "Failed to convet {:?} ({:?}) to local",
+                "Failed to convert {:?} ({:?}) to local",
                 world,
                 frag
             );

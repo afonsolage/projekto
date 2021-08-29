@@ -227,7 +227,7 @@ fn compute_voxel_occlusion_system(
                 let dir = voxel::get_side_dir(side);
                 let neighbor_pos = pos + dir;
 
-                if !chunk::is_whitin_bounds(neighbor_pos) {
+                if !chunk::is_within_bounds(neighbor_pos) {
                     continue;
                 }
 

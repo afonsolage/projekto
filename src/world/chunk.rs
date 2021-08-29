@@ -35,7 +35,7 @@ pub fn to_index_ivec3(pos: IVec3) -> usize {
     to_index(pos.x as usize, pos.y as usize, pos.z as usize)
 }
 
-pub fn is_whitin_bounds(pos: IVec3) -> bool {
+pub fn is_within_bounds(pos: IVec3) -> bool {
     math::is_within_cubic_bounds(pos, 0, AXIS_SIZE as i32 - 1)
 }
 

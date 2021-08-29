@@ -105,7 +105,7 @@ fn voxel_raycast(
     let grid_dir = dir.signum().as_i32();
     let step_dir = grid_dir.max(IVec3::ZERO);
 
-    while chunk::is_whitin_bounds(current_local) && current_pos.distance(origin) < range {
+    while chunk::is_within_bounds(current_local) && current_pos.distance(origin) < range {
         visited_locals.push(current_local);
         visited_positions.push(current_pos);
         visited_normals.push(last_local - current_local);
@@ -171,7 +171,7 @@ mod test {
 
     #[test]
     fn raycast_simple() {
-        // Those parameters where extracted from gameplay.
+        // Those parameters where extracted from game play.
         let origin = Vec3::new(1.5953689, 17.004368, 16.355797);
         let dir = Vec3::new(-0.32828045, -0.6908023, -0.6442237);
         let range = 20.0;
@@ -387,7 +387,7 @@ mod test {
 
     #[test]
     fn raycast_aligned_axis() {
-        // Those parameters where extracted from gameplay.
+        // Those parameters where extracted from game play.
         let origin = Vec3::new(0.58614147, 19.302107, 15.599731);
         let dir = Vec3::new(-0.0, -1.0, 0.000000012667444);
         let range = 20.0;
