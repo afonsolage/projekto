@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use bevy::{
     prelude::*,
@@ -34,6 +34,7 @@ impl Plugin for WorldPlugin {
 }
 
 // Events
+#[derive(Clone, Copy)]
 pub struct ChunkSpawnCmd(IVec3);
 
 pub struct ChunkDespawnCmd(IVec3);
@@ -96,28 +97,37 @@ fn setup_render_pipeline(
 }
 
 fn setup_spawn_chunks(mut command_writer: EventWriter<ChunkSpawnCmd>) {
-    command_writer.send(ChunkSpawnCmd(IVec3::new(0, 0, 0)));
-    command_writer.send(ChunkSpawnCmd(IVec3::new(1, 0, 0)));
-    command_writer.send(ChunkSpawnCmd(IVec3::new(0, 0, 1)));
-    command_writer.send(ChunkSpawnCmd(IVec3::new(-1, 0, 0)));
-    command_writer.send(ChunkSpawnCmd(IVec3::new(0, 0, -1)));
+    for x in -5..5 {
+        for z in -5..5 {
+            command_writer.send(ChunkSpawnCmd(IVec3::new(x, 0, z)));
+        }
+    }
 }
 
 fn spawn_chunk_system(
     mut commands: Commands,
     mut spawn_reader: EventReader<ChunkSpawnCmd>,
     mut chunk_entities: ResMut<ChunkEntitiesRes>,
+    mut event_queue: Local<VecDeque<ChunkSpawnCmd>>,
 ) {
+    // Copy all incoming events to local queue, so we don't miss any events
     for cmd in spawn_reader.iter() {
-        debug!("Spawning chunk at {}", cmd.0);
+        event_queue.push_back(*cmd)
+    }
 
+    if let Some(cmd) = event_queue.pop_front() {
+        debug!("Spawning chunk at {}", cmd.0);
         let entity = commands
             .spawn()
             .insert(ChunkBuilding)
             .insert(ChunkLocal(cmd.0))
             .id();
 
+
         chunk_entities.0.insert(cmd.0, entity);
+
+        // TODO: Check this later, this is to limit to 1 chunk spawn per frame
+        return;
     }
 }
 
