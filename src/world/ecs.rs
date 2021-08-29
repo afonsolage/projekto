@@ -8,6 +8,7 @@ use bevy::{
         shader::ShaderStages,
     },
 };
+use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 
 use crate::world::{mesh, voxel};
 
@@ -97,8 +98,8 @@ fn setup_render_pipeline(
 }
 
 fn setup_spawn_chunks(mut command_writer: EventWriter<ChunkSpawnCmd>) {
-    for x in -5..5 {
-        for z in -5..5 {
+    for x in -10..10 {
+        for z in -10..10 {
             command_writer.send(ChunkSpawnCmd(IVec3::new(x, 0, z)));
         }
     }
@@ -122,7 +123,6 @@ fn spawn_chunk_system(
             .insert(ChunkBuilding)
             .insert(ChunkLocal(cmd.0))
             .id();
-
 
         chunk_entities.0.insert(cmd.0, entity);
 
@@ -195,13 +195,35 @@ fn set_voxel_system(
 
 fn generate_chunk_system(
     mut commands: Commands,
-    q: Query<Entity, (With<ChunkBuilding>, Without<ChunkVoxels>)>,
+    q: Query<(Entity, &ChunkLocal), (With<ChunkBuilding>, Without<ChunkVoxels>)>,
 ) {
-    for e in q.iter() {
-        //TODO: Generate the chunk based on noise. For now, just fill it all with 1
-        commands
-            .entity(e)
-            .insert(ChunkVoxels([1; chunk::BUFFER_SIZE]));
+    for (e, c) in q.iter() {
+        let world = chunk::to_world(c.0);
+        debug!("Generating chunk at {}", world);
+
+        let mut voxels = [0; chunk::BUFFER_SIZE];
+
+        let mut noise = FastNoise::seeded(15);
+        noise.set_noise_type(NoiseType::SimplexFractal);
+        noise.set_frequency(0.03);
+        noise.set_fractal_type(FractalType::FBM);
+        noise.set_fractal_octaves(3);
+        noise.set_fractal_gain(0.9);
+        noise.set_fractal_lacunarity(0.5);
+
+        for x in 0..chunk::AXIS_SIZE {
+            for z in 0..chunk::AXIS_SIZE {
+                let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
+                let h = ((h + 1.0) / 2.0) * chunk::AXIS_SIZE as f32;    
+                for y in 0..h as usize {
+                    let index = chunk::to_index(x, y, z);
+
+                    voxels[index] = 1;
+                }
+            }
+        }
+
+        commands.entity(e).insert(ChunkVoxels(voxels));
     }
 }
 
