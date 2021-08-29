@@ -372,7 +372,7 @@ fn check_raycast_intersections_system(
     mut meshes: ResMut<Assets<Mesh>>,
     chunk_entities: Res<ChunkEntitiesRes>,
     q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
-    q_chunks: Query<(&Chunk, &ChunkVoxels)>,
+    q_chunks: Query<(&ChunkDone, &ChunkVoxels)>,
 ) {
     for (e, raycast) in q_raycast.iter() {
         let res = raycast::intersect(raycast.origin, raycast.dir, raycast.range);
@@ -475,11 +475,11 @@ fn draw_raycast_system(
 }
 
 fn world_raycast_system(
-    mut commands: Commands,
     chunks: Res<ChunkEntitiesRes>,
-    mut q_chunks: Query<&mut ChunkVoxels>,
+    q_chunks: Query<&ChunkVoxels>,
     q_cam: Query<(&Transform, &FlyByCamera)>,
     mouse_input: Res<Input<MouseButton>>,
+    mut set_voxel_writer: EventWriter<ChunkSetVoxelCmd>,
 ) {
     if !mouse_input.just_pressed(MouseButton::Left) {
         return;
@@ -504,7 +504,7 @@ fn world_raycast_system(
                 None => continue,
             };
 
-            let mut types = match q_chunks.get_mut(entity) {
+            let types = match q_chunks.get(entity) {
                 Ok(t) => t,
                 Err(_) => continue,
             };
@@ -517,13 +517,10 @@ fn world_raycast_system(
                 }
 
                 debug!("Hit voxel at {:?} {:?}", local, voxel_hit.local);
-                types.0[index] = 0;
-
-                commands
-                    .entity(entity)
-                    .remove::<ChunkVoxelOcclusion>()
-                    .remove::<ChunkVertices>()
-                    .remove::<ChunkMesh>();
+                set_voxel_writer.send(ChunkSetVoxelCmd {
+                    world_pos: voxel_hit.position,
+                    new_value: 0,
+                });
 
                 return;
             }

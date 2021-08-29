@@ -18,9 +18,14 @@ pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(WireframeDebugPlugin)
+            .add_event::<ChunkSpawnCmd>()
+            .add_event::<ChunkDespawnCmd>()
+            .add_event::<ChunkSetVoxelCmd>()
             .add_startup_system(setup_spawn_chunks)
             .add_startup_system(setup_render_pipeline)
-            .add_system(chunk_entities_sync_system)
+            .add_system(spawn_chunk_system)
+            .add_system(despawn_chunk_system)
+            .add_system(set_voxel_system)
             .add_system(generate_chunk_system)
             .add_system(compute_voxel_occlusion_system)
             .add_system(compute_vertices_system)
@@ -29,11 +34,13 @@ impl Plugin for WorldPlugin {
 }
 
 // Events
-pub enum ChunkCommand {
-    Spawn(IVec3),
-    ComputeOcclusion(IVec3),
-    GenerateVertices(IVec3),
-    GenerateMesh(IVec3),
+pub struct ChunkSpawnCmd(IVec3);
+
+pub struct ChunkDespawnCmd(IVec3);
+
+pub struct ChunkSetVoxelCmd {
+    pub world_pos: Vec3,
+    pub new_value: u8,
 }
 
 // Resources
@@ -43,21 +50,26 @@ pub struct ChunkPipelineRes(Handle<PipelineDescriptor>);
 pub struct ChunkEntitiesRes(pub HashMap<IVec3, Entity>);
 
 // Components
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Chunk {
-    local_pos: IVec3,
-}
+struct ChunkBuilding;
 
-pub struct ChunkMesh;
+pub struct ChunkDone;
+
+pub struct ChunkLocal(IVec3);
 
 pub struct ChunkVoxels(pub [u8; chunk::BUFFER_SIZE]);
 
-pub struct ChunkVoxelOcclusion([[bool; 6]; chunk::BUFFER_SIZE]);
+struct ChunkVoxelOcclusion([[bool; 6]; chunk::BUFFER_SIZE]);
 
-pub struct ChunkVertices(pub [Vec<[f32; 3]>; 6]);
+pub(super) struct ChunkVertices(pub [Vec<[f32; 3]>; 6]);
+
+#[derive(Bundle)]
+struct ChunkBuildPipelineBundle {
+    occlusion: ChunkVoxelOcclusion,
+    vertices: ChunkVertices,
+    done: ChunkDone,
+}
 
 // Systems
-
 fn setup_render_pipeline(
     mut commands: Commands,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
@@ -83,39 +95,98 @@ fn setup_render_pipeline(
     commands.insert_resource(ChunkEntitiesRes::default());
 }
 
-fn setup_spawn_chunks(mut commands: Commands) {
-    commands.spawn().insert(Chunk {
-        local_pos: IVec3::ZERO,
-    });
-    // commands.spawn().insert(Chunk {
-    //     local_pos: IVec3::new(1, 0, 0),
-    // });
+fn setup_spawn_chunks(mut command_writer: EventWriter<ChunkSpawnCmd>) {
+    command_writer.send(ChunkSpawnCmd(IVec3::new(0, 0, 0)));
+    command_writer.send(ChunkSpawnCmd(IVec3::new(1, 0, 0)));
+    command_writer.send(ChunkSpawnCmd(IVec3::new(0, 0, 1)));
+    command_writer.send(ChunkSpawnCmd(IVec3::new(-1, 0, 0)));
+    command_writer.send(ChunkSpawnCmd(IVec3::new(0, 0, -1)));
 }
 
-fn chunk_entities_sync_system(
-    mut chunk_map: ResMut<ChunkEntitiesRes>,
-    q_added: Query<(Entity, &Chunk), Added<Chunk>>,
-    q_existing_entities: Query<Entity, With<Chunk>>,
+fn spawn_chunk_system(
+    mut commands: Commands,
+    mut spawn_reader: EventReader<ChunkSpawnCmd>,
+    mut chunk_entities: ResMut<ChunkEntitiesRes>,
 ) {
-    for (e, c) in q_added.iter() {
-        debug!("Adding {:?}", &c);
-        chunk_map.0.insert(c.local_pos, e);
-    }
+    for cmd in spawn_reader.iter() {
+        debug!("Spawning chunk at {}", cmd.0);
 
-    let before = chunk_map.0.len();
+        let entity = commands
+            .spawn()
+            .insert(ChunkBuilding)
+            .insert(ChunkLocal(cmd.0))
+            .id();
 
-    chunk_map.0.retain(|_, e| {
-        q_existing_entities
-            .iter()
-            .any(|existing_e| existing_e == *e)
-    });
-
-    if before != chunk_map.0.len() {
-        debug!("Removed {} chunk(s)", before - chunk_map.0.len());
+        chunk_entities.0.insert(cmd.0, entity);
     }
 }
 
-fn generate_chunk_system(mut commands: Commands, q: Query<Entity, (With<Chunk>, Without<ChunkVoxels>)>) {
+fn despawn_chunk_system(
+    mut commands: Commands,
+    mut despawn_reader: EventReader<ChunkDespawnCmd>,
+    mut chunk_entities: ResMut<ChunkEntitiesRes>,
+) {
+    for cmd in despawn_reader.iter() {
+        debug!("Despawning chunk at {}", cmd.0);
+
+        match chunk_entities.0.remove(&cmd.0) {
+            None => {
+                warn!("Trying to despawn a non-existing chunk {}", cmd.0);
+                return;
+            }
+            Some(e) => {
+                commands.entity(e).despawn();
+            }
+        }
+    }
+}
+
+fn set_voxel_system(
+    mut commands: Commands,
+    mut set_voxel_reader: EventReader<ChunkSetVoxelCmd>,
+    chunk_entities: Res<ChunkEntitiesRes>,
+    mut chunk_voxels: Query<&mut ChunkVoxels>,
+) {
+    for cmd in set_voxel_reader.iter() {
+        let chunk_local = chunk::to_local(cmd.world_pos);
+
+        let entity = match chunk_entities.0.get(&chunk_local) {
+            None => {
+                warn!(
+                    "Trying to set voxel in a non-existing chunk {}",
+                    chunk_local
+                );
+                return;
+            }
+            Some(e) => *e,
+        };
+
+        let mut voxels = match chunk_voxels.get_mut(entity) {
+            Err(e) => {
+                warn!("Failed to set voxel on chunk {}. Error: {}", chunk_local, e);
+                return;
+            }
+            Ok(v) => v,
+        };
+
+        let voxel_local = voxel::to_local(cmd.world_pos);
+        let index = chunk::to_index_ivec3(voxel_local);
+
+        voxels.0[index] = cmd.new_value;
+
+        debug!("Updating voxel at {} to {}", cmd.world_pos, cmd.new_value);
+
+        commands
+            .entity(entity)
+            .insert(ChunkBuilding)
+            .remove_bundle::<ChunkBuildPipelineBundle>();
+    }
+}
+
+fn generate_chunk_system(
+    mut commands: Commands,
+    q: Query<Entity, (With<ChunkBuilding>, Without<ChunkVoxels>)>,
+) {
     for e in q.iter() {
         //TODO: Generate the chunk based on noise. For now, just fill it all with 1
         commands
@@ -126,7 +197,7 @@ fn generate_chunk_system(mut commands: Commands, q: Query<Entity, (With<Chunk>, 
 
 fn compute_voxel_occlusion_system(
     mut commands: Commands,
-    q: Query<(Entity, &ChunkVoxels), (With<Chunk>, Without<ChunkVoxelOcclusion>)>,
+    q: Query<(Entity, &ChunkVoxels), (With<ChunkBuilding>, Without<ChunkVoxelOcclusion>)>,
 ) {
     for (e, voxels) in q.iter() {
         trace!("compute_voxel_occlusion {:?}", e);
@@ -172,7 +243,7 @@ fn compute_voxel_occlusion_system(
 
 fn compute_vertices_system(
     mut commands: Commands,
-    query: Query<(Entity, &ChunkVoxelOcclusion), (With<ChunkVoxels>, Without<ChunkVertices>)>,
+    query: Query<(Entity, &ChunkVoxelOcclusion), (With<ChunkBuilding>, Without<ChunkVertices>)>,
 ) {
     for (e, occlusions) in query.iter() {
         trace!("compute_vertices {:?}", e);
@@ -209,9 +280,9 @@ fn generate_mesh_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     chunk_pipeline: Res<ChunkPipelineRes>,
-    q: Query<(Entity, &Chunk, &ChunkVertices), (Added<ChunkVertices>, Without<ChunkMesh>)>,
+    q: Query<(Entity, &ChunkLocal, &ChunkVertices), With<ChunkBuilding>>,
 ) {
-    for (e, c, vertices) in q.iter() {
+    for (e, local, vertices) in q.iter() {
         trace!("generate_mesh {:?}", e);
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
@@ -232,7 +303,7 @@ fn generate_mesh_system(
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
-        let world_position = chunk::to_world(c.local_pos);
+        let world_position = chunk::to_world(local.0);
 
         commands
             .entity(e)
@@ -244,6 +315,7 @@ fn generate_mesh_system(
                 transform: Transform::from_translation(world_position),
                 ..Default::default()
             })
-            .insert(ChunkMesh);
+            .remove::<ChunkBuilding>()
+            .insert(ChunkDone);
     }
 }
