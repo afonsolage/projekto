@@ -3,6 +3,7 @@
 mod debug;
 mod math;
 mod mesh;
+mod landscape;
 
 pub mod chunk;
 pub mod raycast;

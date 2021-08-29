@@ -12,7 +12,7 @@ use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 
 use crate::world::{mesh, voxel};
 
-use super::{chunk, debug::WireframeDebugPlugin};
+use super::{chunk, debug::WireframeDebugPlugin, landscape};
 
 pub struct WorldPlugin;
 
@@ -26,7 +26,7 @@ impl Plugin for WorldPlugin {
             .add_event::<OcclusionDone>()
             .add_event::<VerticesDone>()
             .add_event::<Meshed>()
-            .add_startup_system(setup_spawn_chunks)
+            .add_startup_system(setup_landscape)
             .add_startup_system(setup_render_pipeline)
             .add_system(spawn_chunk_system)
             .add_system(despawn_chunk_system)
@@ -118,9 +118,9 @@ fn setup_render_pipeline(
     commands.insert_resource(ChunkEntitiesRes::default());
 }
 
-fn setup_spawn_chunks(mut command_writer: EventWriter<ChunkSpawnCmd>) {
-    for x in -10..10 {
-        for z in -10..10 {
+fn setup_landscape(mut command_writer: EventWriter<ChunkSpawnCmd>) {
+    for x in landscape::BEGIN..landscape::END {
+        for z in landscape::BEGIN..landscape::END {
             command_writer.send(ChunkSpawnCmd(IVec3::new(x, 0, z)));
         }
     }
