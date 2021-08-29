@@ -11,17 +11,18 @@ pub struct FlyByCameraPlugin;
 
 impl Plugin for FlyByCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(fly_by_camera_setup)
-            .add_system(fly_by_camera_grab_mouse)
+        app.add_startup_system(setup_fly_by_camera)
+            .add_system(fly_by_camera_grab_mouse_system)
             .add_system_set(
                 SystemSet::new()
                     .with_run_criteria(is_fly_by_camera_active)
-                    .with_system(fly_by_camera_move)
-                    .with_system(fly_by_camera_rotate),
+                    .with_system(fly_by_camera_move_system)
+                    .with_system(fly_by_camera_rotate_system),
             );
     }
 }
 
+// Component s
 pub struct FlyByCamera {
     pub move_speed: f32,
     pub move_speed_boost: f32,
@@ -42,7 +43,9 @@ impl Default for FlyByCamera {
     }
 }
 
-fn fly_by_camera_setup(mut commands: Commands, q: Query<Entity, With<Camera>>) {
+// Systems
+
+fn setup_fly_by_camera(mut commands: Commands, q: Query<Entity, With<Camera>>) {
     match q.single() {
         Ok(e) => {
             warn!("Camera already exists, adding FlyByCamera to it");
@@ -69,7 +72,7 @@ fn is_fly_by_camera_active(q: Query<&FlyByCamera>) -> ShouldRun {
     }
 }
 
-fn fly_by_camera_move(
+fn fly_by_camera_move_system(
     time: Res<Time>,
     input: Res<Input<KeyCode>>,
     mut q: Query<(&mut Transform, &FlyByCamera)>,
@@ -95,7 +98,7 @@ fn fly_by_camera_move(
     }
 }
 
-fn fly_by_camera_rotate(
+fn fly_by_camera_rotate_system(
     time: Res<Time>,
     mut motion_evt: EventReader<MouseMotion>,
     mut q: Query<(&mut Transform, &mut FlyByCamera)>,
@@ -122,7 +125,7 @@ fn fly_by_camera_rotate(
     }
 }
 
-fn fly_by_camera_grab_mouse(
+fn fly_by_camera_grab_mouse_system(
     mut windows: ResMut<Windows>,
     mouse_btn: Res<Input<MouseButton>>,
     key_btn: Res<Input<KeyCode>>,

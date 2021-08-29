@@ -20,11 +20,11 @@ impl Plugin for WorldPlugin {
         app.add_plugin(WireframeDebugPlugin)
             .add_startup_system(setup_spawn_chunks)
             .add_startup_system(setup_render_pipeline)
-            .add_system(chunk_entities_sync)
-            .add_system(generate_chunk)
-            .add_system(compute_voxel_occlusion)
-            .add_system(compute_vertices)
-            .add_system(generate_mesh);
+            .add_system(chunk_entities_sync_system)
+            .add_system(generate_chunk_system)
+            .add_system(compute_voxel_occlusion_system)
+            .add_system(compute_vertices_system)
+            .add_system(generate_mesh_system);
     }
 }
 
@@ -37,10 +37,10 @@ pub enum ChunkCommand {
 }
 
 // Resources
-pub struct ChunkPipeline(Handle<PipelineDescriptor>);
+pub struct ChunkPipelineRes(Handle<PipelineDescriptor>);
 
 #[derive(Debug, Default, Clone)]
-pub struct ChunkEntities(pub HashMap<IVec3, Entity>);
+pub struct ChunkEntitiesRes(pub HashMap<IVec3, Entity>);
 
 // Components
 #[derive(Debug, Default, Clone, Copy)]
@@ -79,8 +79,8 @@ fn setup_render_pipeline(
         })
     });
 
-    commands.insert_resource(ChunkPipeline(pipeline_handle));
-    commands.insert_resource(ChunkEntities::default());
+    commands.insert_resource(ChunkPipelineRes(pipeline_handle));
+    commands.insert_resource(ChunkEntitiesRes::default());
 }
 
 fn setup_spawn_chunks(mut commands: Commands) {
@@ -92,8 +92,8 @@ fn setup_spawn_chunks(mut commands: Commands) {
     // });
 }
 
-fn chunk_entities_sync(
-    mut chunk_map: ResMut<ChunkEntities>,
+fn chunk_entities_sync_system(
+    mut chunk_map: ResMut<ChunkEntitiesRes>,
     q_added: Query<(Entity, &Chunk), Added<Chunk>>,
     q_existing_entities: Query<Entity, With<Chunk>>,
 ) {
@@ -115,7 +115,7 @@ fn chunk_entities_sync(
     }
 }
 
-fn generate_chunk(mut commands: Commands, q: Query<Entity, (With<Chunk>, Without<ChunkVoxels>)>) {
+fn generate_chunk_system(mut commands: Commands, q: Query<Entity, (With<Chunk>, Without<ChunkVoxels>)>) {
     for e in q.iter() {
         //TODO: Generate the chunk based on noise. For now, just fill it all with 1
         commands
@@ -124,7 +124,7 @@ fn generate_chunk(mut commands: Commands, q: Query<Entity, (With<Chunk>, Without
     }
 }
 
-fn compute_voxel_occlusion(
+fn compute_voxel_occlusion_system(
     mut commands: Commands,
     q: Query<(Entity, &ChunkVoxels), (With<Chunk>, Without<ChunkVoxelOcclusion>)>,
 ) {
@@ -170,7 +170,7 @@ fn compute_voxel_occlusion(
     }
 }
 
-fn compute_vertices(
+fn compute_vertices_system(
     mut commands: Commands,
     query: Query<(Entity, &ChunkVoxelOcclusion), (With<ChunkVoxels>, Without<ChunkVertices>)>,
 ) {
@@ -205,10 +205,10 @@ fn compute_vertices(
     }
 }
 
-fn generate_mesh(
+fn generate_mesh_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    chunk_pipeline: Res<ChunkPipeline>,
+    chunk_pipeline: Res<ChunkPipelineRes>,
     q: Query<(Entity, &Chunk, &ChunkVertices), (Added<ChunkVertices>, Without<ChunkMesh>)>,
 ) {
     for (e, c, vertices) in q.iter() {

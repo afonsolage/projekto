@@ -1,39 +1,84 @@
 use std::collections::HashMap;
 
-use bevy::{prelude::*, reflect::TypeUuid, render::{mesh::Indices, pipeline::{FrontFace, PipelineDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipeline}, render_graph::{base::node::MAIN_PASS, AssetRenderResourcesNode, RenderGraph}, renderer::RenderResources, shader::ShaderStages}};
+use bevy::{
+    prelude::*,
+    reflect::TypeUuid,
+    render::{
+        mesh::Indices,
+        pipeline::{
+            FrontFace, PipelineDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology,
+            RenderPipeline,
+        },
+        render_graph::{base::node::MAIN_PASS, AssetRenderResourcesNode, RenderGraph},
+        renderer::RenderResources,
+        shader::ShaderStages,
+    },
+};
 
 use crate::fly_by_camera::FlyByCamera;
 
-use super::*;
 use super::ecs::*;
+use super::*;
 
 pub struct WireframeDebugPlugin;
 
 impl Plugin for WireframeDebugPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(DebugWireframeState::default())
-            .add_startup_system(setup_wireframe_shader)
+        app.insert_resource(DebugWireframeStateRes::default())
+            .add_startup_system(setup_wireframe_shader_system)
             .add_asset::<WireframeMaterial>()
             // .add_system(draw_debug_line)
-            .add_system(toggle_mesh_wireframe)
-            .add_system(draw_voxels)
-            .add_system(draw_raycast)
-            .add_system(toggle_chunk_voxels_wireframe)
-            .add_system(do_raycast)
-            .add_system(world_raycast)
-            .add_system(check_raycast_intersections);
+            .add_system(toggle_mesh_wireframe_system)
+            .add_system(draw_voxels_system)
+            .add_system(draw_raycast_system)
+            .add_system(toggle_chunk_voxels_wireframe_system)
+            .add_system(do_raycast_system)
+            .add_system(world_raycast_system)
+            .add_system(check_raycast_intersections_system);
     }
 }
 
+// Resources
 #[derive(Default)]
-struct DebugWireframeState {
+struct DebugWireframeStateRes {
     show_voxel: bool,
 }
+struct WireframePipelineRes(Handle<PipelineDescriptor>);
 
-fn toggle_chunk_voxels_wireframe(
+#[derive(RenderResources, Default, TypeUuid)]
+#[uuid = "1e08866c-0b8a-437e-8bce-37733b25127e"]
+struct WireframeMaterial {
+    pub color: Color,
+}
+
+#[derive(Default)]
+struct WireframeMaterialsRes(HashMap<String, Handle<WireframeMaterial>>);
+
+// Components
+struct MeshNPipelineBackup(Handle<Mesh>, RenderPipelines);
+
+#[derive(Debug)]
+struct RaycastDebug {
+    origin: Vec3,
+    dir: Vec3,
+    range: f32,
+}
+
+struct RaycastDebugNoPoint;
+
+#[derive(Default)]
+pub struct DrawVoxels {
+    color: String,
+    voxels: Vec<IVec3>,
+    offset: Vec3,
+}
+
+// Systems
+
+fn toggle_chunk_voxels_wireframe_system(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
-    mut wireframe_state: ResMut<DebugWireframeState>,
+    mut wireframe_state: ResMut<DebugWireframeStateRes>,
     q_chunks: Query<(Entity, &ChunkVoxels)>,
     q_draws: Query<(Entity, &Parent), With<DrawVoxels>>,
 ) {
@@ -77,18 +122,7 @@ fn toggle_chunk_voxels_wireframe(
     wireframe_state.show_voxel = !wireframe_state.show_voxel;
 }
 
-struct WireframePipeline(Handle<PipelineDescriptor>);
-
-#[derive(RenderResources, Default, TypeUuid)]
-#[uuid = "1e08866c-0b8a-437e-8bce-37733b25127e"]
-struct WireframeMaterial {
-    pub color: Color,
-}
-
-#[derive(Default)]
-struct WireframeMaterials(HashMap<String, Handle<WireframeMaterial>>);
-
-impl WireframeMaterials {
+impl WireframeMaterialsRes {
     fn get(&self, color: &str) -> Handle<WireframeMaterial> {
         self.0.get(color).unwrap().clone()
     }
@@ -98,7 +132,7 @@ impl WireframeMaterials {
     }
 }
 
-fn setup_wireframe_shader(
+fn setup_wireframe_shader_system(
     mut commands: Commands,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
     mut render_graph: ResMut<RenderGraph>,
@@ -131,9 +165,9 @@ fn setup_wireframe_shader(
         error!("Failed to setup render graph: {}", error);
     };
 
-    commands.insert_resource(WireframePipeline(pipeline_handle));
+    commands.insert_resource(WireframePipelineRes(pipeline_handle));
 
-    let mut wireframe_materials = WireframeMaterials::default();
+    let mut wireframe_materials = WireframeMaterialsRes::default();
     wireframe_materials.add(
         "red",
         materials.add(WireframeMaterial { color: Color::RED }),
@@ -166,13 +200,11 @@ fn setup_wireframe_shader(
     commands.insert_resource(wireframe_materials);
 }
 
-struct MeshNPipelineBackup(Handle<Mesh>, RenderPipelines);
-
-fn toggle_mesh_wireframe(
+fn toggle_mesh_wireframe_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    materials: Res<WireframeMaterials>,
-    pipeline_handle: Res<WireframePipeline>,
+    materials: Res<WireframeMaterialsRes>,
+    pipeline_handle: Res<WireframePipelineRes>,
     keyboard: Res<Input<KeyCode>>,
     q: Query<(
         Entity,
@@ -255,18 +287,11 @@ fn compute_wireframe_indices(vertex_count: usize) -> Vec<u32> {
     res
 }
 
-#[derive(Default)]
-pub struct DrawVoxels {
-    color: String,
-    voxels: Vec<IVec3>,
-    offset: Vec3,
-}
-
-fn draw_voxels(
+fn draw_voxels_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    materials: Res<WireframeMaterials>,
-    wireframe_pipeline_handle: Res<WireframePipeline>,
+    materials: Res<WireframeMaterialsRes>,
+    wireframe_pipeline_handle: Res<WireframePipelineRes>,
     q: Query<(Entity, &DrawVoxels), Added<DrawVoxels>>,
 ) {
     for (e, draw_voxels) in q.iter() {
@@ -318,17 +343,7 @@ fn generate_voxel_edges_mesh(voxels: &[IVec3]) -> (Vec<[f32; 3]>, Vec<u32>) {
 
     (vertices, indices)
 }
-
-#[derive(Debug)]
-struct RaycastDebug {
-    origin: Vec3,
-    dir: Vec3,
-    range: f32,
-}
-
-struct RaycastDebugNoPoint;
-
-fn do_raycast(
+fn do_raycast_system(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
     q_cam: Query<(&Transform, &FlyByCamera)>,
@@ -352,10 +367,10 @@ fn do_raycast(
     }
 }
 
-fn check_raycast_intersections(
+fn check_raycast_intersections_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    chunk_entities: Res<ChunkEntities>,
+    chunk_entities: Res<ChunkEntitiesRes>,
     q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
     q_chunks: Query<(&Chunk, &ChunkVoxels)>,
 ) {
@@ -426,11 +441,11 @@ fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, po
     });
 }
 
-fn draw_raycast(
+fn draw_raycast_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    materials: Res<WireframeMaterials>,
-    wireframe_pipeline_handle: Res<WireframePipeline>,
+    materials: Res<WireframeMaterialsRes>,
+    wireframe_pipeline_handle: Res<WireframePipelineRes>,
     q: Query<(Entity, &RaycastDebug), Without<Handle<Mesh>>>,
 ) {
     for (e, raycast) in q.iter() {
@@ -459,9 +474,9 @@ fn draw_raycast(
     }
 }
 
-fn world_raycast(
+fn world_raycast_system(
     mut commands: Commands,
-    chunks: Res<ChunkEntities>,
+    chunks: Res<ChunkEntitiesRes>,
     mut q_chunks: Query<&mut ChunkVoxels>,
     q_cam: Query<(&Transform, &FlyByCamera)>,
     mouse_input: Res<Input<MouseButton>>,
