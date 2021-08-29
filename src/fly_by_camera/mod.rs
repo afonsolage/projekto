@@ -34,8 +34,8 @@ pub struct FlyByCamera {
 impl Default for FlyByCamera {
     fn default() -> Self {
         Self {
-            move_speed: 2.0,
-            move_speed_boost: 3.0,
+            move_speed: 10.0,
+            move_speed_boost: 10.0,
             rotate_speed: PI / 25.0,
             rotation: Vec2::ZERO,
             active: false,
