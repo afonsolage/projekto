@@ -120,7 +120,9 @@ fn setup_render_pipeline(
 fn setup_landscape(mut command_writer: EventWriter<ChunkSpawnCmd>) {
     for x in landscape::BEGIN..landscape::END {
         for z in landscape::BEGIN..landscape::END {
-            command_writer.send(ChunkSpawnCmd(IVec3::new(x, 0, z)));
+            for y in landscape::BEGIN..landscape::END {
+                command_writer.send(ChunkSpawnCmd(IVec3::new(x, y, z)));
+            }
         }
     }
 }
@@ -235,7 +237,12 @@ fn generate_chunk_system(
 ) {
     for (e, c, mut voxels) in q.iter_mut() {
         let world = chunk::to_world(c.0);
-        debug!("[generate_chunk_system] Generating chunk at {}", world);
+        trace!("[generate_chunk_system] Generating chunk at {}", world);
+
+        // TODO: How to generate for negative height chunks?
+        if world.y < 0.0 {
+            continue;
+        }
 
         let mut noise = FastNoise::seeded(15);
         noise.set_noise_type(NoiseType::SimplexFractal);
@@ -248,8 +255,17 @@ fn generate_chunk_system(
         for x in 0..chunk::AXIS_SIZE {
             for z in 0..chunk::AXIS_SIZE {
                 let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
-                let h = ((h + 1.0) / 2.0) * chunk::AXIS_SIZE as f32;
-                for y in 0..h as usize {
+                let world_height = ((h + 1.0) / 2.0) * (2 * chunk::AXIS_SIZE) as f32;
+
+                let height_local = world_height - world.y;
+
+                if height_local < f32::EPSILON {
+                    continue;
+                }
+
+                let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
+
+                for y in 0..end {
                     let index = chunk::to_index(x, y, z);
 
                     voxels.0[index] = 1;
