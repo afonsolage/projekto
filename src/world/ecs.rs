@@ -22,7 +22,7 @@ impl Plugin for WorldPlugin {
             .add_event::<ChunkSpawnCmd>()
             .add_event::<ChunkDespawnCmd>()
             .add_event::<ChunkSetVoxelCmd>()
-            .add_event::<Generated>()
+            .add_event::<VoxelUpdated>()
             .add_event::<OcclusionDone>()
             .add_event::<VerticesDone>()
             .add_event::<Meshed>()
@@ -49,7 +49,7 @@ pub struct ChunkSetVoxelCmd {
     pub new_value: u8,
 }
 
-struct Generated(Entity);
+struct VoxelUpdated(Entity);
 struct OcclusionDone(Entity);
 struct VerticesDone(Entity);
 struct Meshed(Entity);
@@ -61,10 +61,6 @@ pub struct ChunkPipelineRes(Handle<PipelineDescriptor>);
 pub struct ChunkEntitiesRes(pub HashMap<IVec3, Entity>);
 
 // Components
-struct ChunkBuildingTag;
-
-pub struct ChunkDone;
-
 pub struct ChunkLocal(IVec3);
 
 pub struct ChunkVoxels(pub [u8; chunk::BUFFER_SIZE]);
@@ -74,20 +70,23 @@ struct ChunkVoxelOcclusion([[bool; 6]; chunk::BUFFER_SIZE]);
 pub(super) struct ChunkVertices(pub [Vec<[f32; 3]>; 6]);
 
 #[derive(Bundle)]
-struct BuildingBundle {
-    building: ChunkBuildingTag,
+struct ChunkBundle {
     voxels: ChunkVoxels,
     occlusion: ChunkVoxelOcclusion,
     vertices: ChunkVertices,
+    #[bundle]
+    mesh_bundle: MeshBundle,
+    local: ChunkLocal,
 }
 
-impl Default for BuildingBundle {
+impl Default for ChunkBundle {
     fn default() -> Self {
         Self {
-            building: ChunkBuildingTag,
             voxels: ChunkVoxels([0; chunk::BUFFER_SIZE]),
             occlusion: ChunkVoxelOcclusion([[false; 6]; chunk::BUFFER_SIZE]),
             vertices: ChunkVertices([vec![], vec![], vec![], vec![], vec![], vec![]]),
+            local: ChunkLocal(IVec3::ZERO),
+            mesh_bundle: MeshBundle::default(),
         }
     }
 }
@@ -131,6 +130,7 @@ fn spawn_chunk_system(
     mut spawn_reader: EventReader<ChunkSpawnCmd>,
     mut chunk_entities: ResMut<ChunkEntitiesRes>,
     mut event_queue: Local<VecDeque<ChunkSpawnCmd>>,
+    chunk_pipeline: Res<ChunkPipelineRes>,
 ) {
     // Copy all incoming events to local queue, so we don't miss any events
     for cmd in spawn_reader.iter() {
@@ -141,8 +141,17 @@ fn spawn_chunk_system(
         debug!("[spawn_chunk_system] Spawning chunk at {}", cmd.0);
         let entity = commands
             .spawn()
-            .insert_bundle(BuildingBundle::default())
-            .insert(ChunkLocal(cmd.0))
+            .insert_bundle(ChunkBundle {
+                local: ChunkLocal(cmd.0),
+                mesh_bundle: MeshBundle {
+                    render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+                        chunk_pipeline.0.clone(),
+                    )]),
+                    transform: Transform::from_translation(chunk::to_world(cmd.0)),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
             .id();
 
         chunk_entities.0.insert(cmd.0, entity);
@@ -176,12 +185,12 @@ fn despawn_chunk_system(
 }
 
 fn set_voxel_system(
-    mut commands: Commands,
-    mut set_voxel_reader: EventReader<ChunkSetVoxelCmd>,
+    mut event_reader: EventReader<ChunkSetVoxelCmd>,
+    mut event_writer: EventWriter<VoxelUpdated>,
     chunk_entities: Res<ChunkEntitiesRes>,
     mut chunk_voxels: Query<&mut ChunkVoxels>,
 ) {
-    for cmd in set_voxel_reader.iter() {
+    for cmd in event_reader.iter() {
         let chunk_local = chunk::to_local(cmd.world_pos);
 
         let entity = match chunk_entities.0.get(&chunk_local) {
@@ -216,17 +225,13 @@ fn set_voxel_system(
             cmd.world_pos, cmd.new_value
         );
 
-        commands
-            .entity(entity)
-            .insert(ChunkBuildingTag)
-            .remove::<ChunkDone>()
-            .remove_bundle::<BuildingBundle>();
+        event_writer.send(VoxelUpdated(entity));
     }
 }
 
 fn generate_chunk_system(
     mut q: Query<(Entity, &ChunkLocal, &mut ChunkVoxels), Added<ChunkLocal>>,
-    mut event_writer: EventWriter<Generated>,
+    mut event_writer: EventWriter<VoxelUpdated>,
 ) {
     for (e, c, mut voxels) in q.iter_mut() {
         let world = chunk::to_world(c.0);
@@ -252,14 +257,14 @@ fn generate_chunk_system(
             }
         }
 
-        event_writer.send(Generated(e));
+        event_writer.send(VoxelUpdated(e));
     }
 }
 
 fn compute_voxel_occlusion_system(
-    mut event_reader: EventReader<Generated>,
+    mut event_reader: EventReader<VoxelUpdated>,
     mut event_writer: EventWriter<OcclusionDone>,
-    mut q: Query<(&ChunkLocal, &ChunkVoxels, &mut ChunkVoxelOcclusion), With<ChunkBuildingTag>>,
+    mut q: Query<(&ChunkLocal, &ChunkVoxels, &mut ChunkVoxelOcclusion)>,
 ) {
     for evt in event_reader.iter() {
         let e = evt.0;
@@ -279,6 +284,8 @@ fn compute_voxel_occlusion_system(
             "[compute_voxel_occlusion_system] compute_voxel_occlusion {}",
             local.0
         );
+
+        voxel_occlusions.0.fill([false; 6]);
 
         for (index, occlusion) in voxel_occlusions.0.iter_mut().enumerate() {
             let pos = chunk::to_xyz_ivec3(index);
@@ -320,7 +327,7 @@ fn compute_voxel_occlusion_system(
 fn compute_vertices_system(
     mut evt_reader: EventReader<OcclusionDone>,
     mut evt_writer: EventWriter<VerticesDone>,
-    mut q: Query<(&ChunkLocal, &ChunkVoxelOcclusion, &mut ChunkVertices), With<ChunkBuildingTag>>,
+    mut q: Query<(&ChunkLocal, &ChunkVoxelOcclusion, &mut ChunkVertices)>,
 ) {
     for evt in evt_reader.iter() {
         let e = evt.0;
@@ -340,6 +347,10 @@ fn compute_vertices_system(
             "[compute_vertices_system] compute_vertices_system {}",
             local.0
         );
+
+        for side in voxel::SIDES {
+            computed_vertices.0[side as usize].clear();
+        }
 
         for (index, occlusion) in occlusions.0.iter().enumerate() {
             let pos = chunk::to_xyz_ivec3(index);
@@ -370,8 +381,7 @@ fn compute_vertices_system(
 fn generate_mesh_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    chunk_pipeline: Res<ChunkPipelineRes>,
-    q: Query<(&ChunkLocal, &ChunkVertices), With<ChunkBuildingTag>>,
+    q: Query<(&ChunkLocal, &ChunkVertices)>,
     mut evt_reader: EventReader<VerticesDone>,
 ) {
     for evt in evt_reader.iter() {
@@ -409,19 +419,9 @@ fn generate_mesh_system(
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
-        let world_position = chunk::to_world(local.0);
-
         commands
             .entity(e)
-            .insert_bundle(MeshBundle {
-                mesh: meshes.add(mesh),
-                render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-                    chunk_pipeline.0.clone(),
-                )]),
-                transform: Transform::from_translation(world_position),
-                ..Default::default()
-            })
-            .remove::<ChunkBuildingTag>()
-            .insert(ChunkDone);
+            .insert(meshes.add(mesh))
+            .insert(Visible::default());
     }
 }

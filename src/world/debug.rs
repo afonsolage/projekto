@@ -372,7 +372,7 @@ fn check_raycast_intersections_system(
     mut meshes: ResMut<Assets<Mesh>>,
     chunk_entities: Res<ChunkEntitiesRes>,
     q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
-    q_chunks: Query<(&ChunkDone, &ChunkVoxels)>,
+    q_chunks: Query<&ChunkVoxels>,
 ) {
     for (e, raycast) in q_raycast.iter() {
         let res = raycast::intersect(raycast.origin, raycast.dir, raycast.range);
