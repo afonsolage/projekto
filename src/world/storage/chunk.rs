@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use super::math;
+use crate::world::math;
 
 pub const AXIS_SIZE: usize = 16;
 // const CHUNK_AXIS_OFFSET: usize = CHUNK_AXIS_SIZE / 2;

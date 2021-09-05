@@ -1,6 +1,10 @@
 use bevy::prelude::*;
 
-use super::{chunk, math};
+use crate::world::math;
+
+use super::chunk;
+
+pub type DataType = u16;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Side {
@@ -75,7 +79,7 @@ mod tests {
     use bevy::math::{IVec3, Vec3};
     use rand::random;
 
-    use crate::world::chunk;
+    use super::chunk;
 
     #[test]
     fn to_world() {

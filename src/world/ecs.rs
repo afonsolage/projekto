@@ -10,9 +10,12 @@ use bevy::{
 };
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 
-use crate::world::{mesh, voxel};
+use crate::world::mesh;
 
-use super::{chunk, debug::WireframeDebugPlugin, landscape};
+use super::{
+    debug::WireframeDebugPlugin,
+    storage::{self, chunk, landscape, voxel},
+};
 
 pub struct WorldPlugin;
 
@@ -26,7 +29,7 @@ impl Plugin for WorldPlugin {
             .add_event::<OcclusionDone>()
             .add_event::<VerticesDone>()
             .add_event::<Meshed>()
-            .add_startup_system(setup_landscape)
+            .add_startup_system(setup_world)
             .add_startup_system(setup_render_pipeline)
             .add_system(spawn_chunk_system)
             .add_system(despawn_chunk_system)
@@ -117,14 +120,19 @@ fn setup_render_pipeline(
     commands.insert_resource(ChunkEntitiesRes::default());
 }
 
-fn setup_landscape(mut command_writer: EventWriter<ChunkSpawnCmd>) {
+fn setup_world(mut commands: Commands, mut command_writer: EventWriter<ChunkSpawnCmd>) {
+    let mut world = storage::World::default();
+
     for x in landscape::BEGIN..landscape::END {
         for z in landscape::BEGIN..landscape::END {
             for y in landscape::BEGIN..landscape::END {
+                world.add((x, y, z).into());
                 command_writer.send(ChunkSpawnCmd(IVec3::new(x, y, z)));
             }
         }
     }
+
+    commands.insert_resource(world);
 }
 
 fn spawn_chunk_system(
