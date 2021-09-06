@@ -2,9 +2,7 @@ use std::ops::{Index, IndexMut};
 
 use bevy::{prelude::*, utils::HashMap};
 
-use super::{chunk, voxel};
-
-pub type Chunk = [voxel::DataType; chunk::BUFFER_SIZE];
+use super::chunk::Chunk;
 
 #[derive(Default)]
 pub struct World {
@@ -17,11 +15,7 @@ impl World {
     }
 
     pub fn add(&mut self, pos: IVec3) {
-        if self
-            .chunks
-            .insert(pos.clone(), [0; chunk::BUFFER_SIZE])
-            .is_some()
-        {
+        if self.chunks.insert(pos.clone(), Chunk::default()).is_some() {
             panic!("Created a duplicated chunk at {:?}", &pos);
         }
     }
@@ -97,7 +91,7 @@ mod test {
         let mut world = World::default();
         world.add(IVec3::ONE);
 
-        assert_eq!(world[(1, 1, 1).into()].len(), super::chunk::BUFFER_SIZE);
+        assert!(world.exists((1, 1, 1).into()));
     }
 
     #[test]
@@ -105,8 +99,8 @@ mod test {
         let mut world = World::default();
         world.add(IVec3::ONE);
 
-        world[(1, 1, 1).into()][0] = 1;
-        assert_eq!(world[IVec3::ONE][0], 1);
+        world[(1, 1, 1).into()].set_voxel_kind(IVec3::ZERO, 1);
+        assert_eq!(world[IVec3::ONE].get_voxel_kind(IVec3::ZERO), 1);
     }
 
     #[test]
@@ -115,7 +109,7 @@ mod test {
         let mut world = World::default();
         world.add((0, 1, 2).into());
 
-        world[IVec3::ONE].len();
+        world[IVec3::ONE].get_voxel_kind(IVec3::ZERO);
     }
 
     #[test]
@@ -124,7 +118,6 @@ mod test {
         let mut world = World::default();
         world.add((0, 1, 2).into());
 
-        world[IVec3::ONE][0] = 1;
-        assert_eq!(world[IVec3::ONE][0], 1);
+        world[IVec3::ONE].set_voxel_kind(IVec3::ZERO, 1);
     }
 }

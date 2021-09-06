@@ -107,7 +107,7 @@ fn toggle_chunk_voxels_wireframe_system(
                     if *v == 0u8 {
                         None
                     } else {
-                        Some(chunk::to_xyz_ivec3(i))
+                        Some(chunk::to_xyz(i))
                     }
                 })
                 .collect();
@@ -513,7 +513,7 @@ fn remove_voxel_system(
             };
 
             for voxel_hit in voxels_hit {
-                let index = chunk::to_index_ivec3(voxel_hit.local);
+                let index = chunk::to_index(voxel_hit.local);
 
                 if types.0[index] == 0 {
                     continue;

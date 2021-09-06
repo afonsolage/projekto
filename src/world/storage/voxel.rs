@@ -4,7 +4,7 @@ use crate::world::math;
 
 use super::chunk;
 
-pub type DataType = u16;
+pub type Kind = u16;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Side {

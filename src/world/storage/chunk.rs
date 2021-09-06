@@ -2,6 +2,8 @@ use bevy::prelude::*;
 
 use crate::world::math;
 
+use super::voxel;
+
 pub const AXIS_SIZE: usize = 16;
 // const CHUNK_AXIS_OFFSET: usize = CHUNK_AXIS_SIZE / 2;
 pub const BUFFER_SIZE: usize = AXIS_SIZE * AXIS_SIZE * AXIS_SIZE;
@@ -14,25 +16,39 @@ pub const X_SHIFT: usize = 8;
 pub const Z_SHIFT: usize = 4;
 pub const Y_SHIFT: usize = 0;
 
-pub fn to_xyz(index: usize) -> (usize, usize, usize) {
-    (
-        (index & X_MASK) >> X_SHIFT,
-        (index & Y_MASK) >> Y_SHIFT,
-        (index & Z_MASK) >> Z_SHIFT,
+pub struct Chunk {
+    voxel_kind: [voxel::Kind; BUFFER_SIZE],
+}
+
+impl Default for Chunk {
+    fn default() -> Self {
+        Self {
+            voxel_kind: [0; BUFFER_SIZE],
+        }
+    }
+}
+
+impl Chunk {
+    pub fn set_voxel_kind(&mut self, local: IVec3, kind: voxel::Kind) {
+        self.voxel_kind[to_index(local)] = kind;
+    }
+
+    pub fn get_voxel_kind(&self, local: IVec3) -> voxel::Kind {
+        self.voxel_kind[to_index(local)]
+    }
+}
+
+pub fn to_xyz(index: usize) -> IVec3 {
+    IVec3::new(
+        ((index & X_MASK) >> X_SHIFT) as i32,
+        ((index & Y_MASK) >> Y_SHIFT) as i32,
+        ((index & Z_MASK) >> Z_SHIFT) as i32,
     )
 }
 
-pub fn to_xyz_ivec3(index: usize) -> IVec3 {
-    let (x, y, z) = to_xyz(index);
-    IVec3::new(x as i32, y as i32, z as i32)
-}
-
-pub fn to_index(x: usize, y: usize, z: usize) -> usize {
-    x << X_SHIFT | y << Y_SHIFT | z << Z_SHIFT
-}
-
-pub fn to_index_ivec3(pos: IVec3) -> usize {
-    to_index(pos.x as usize, pos.y as usize, pos.z as usize)
+pub fn to_index(local: IVec3) -> usize {
+    let (x, y, z) = local.into();
+    (x << X_SHIFT | y << Y_SHIFT | z << Z_SHIFT) as usize
 }
 
 pub fn is_within_bounds(pos: IVec3) -> bool {
@@ -53,78 +69,79 @@ pub fn to_local(world: Vec3) -> IVec3 {
 
 #[cfg(test)]
 mod tests {
+    use bevy::math::IVec3;
     use rand::random;
 
     #[test]
     fn to_xyz() {
-        assert_eq!((0, 0, 0), super::to_xyz(0));
-        assert_eq!((0, 1, 0), super::to_xyz(1));
-        assert_eq!((0, 2, 0), super::to_xyz(2));
+        assert_eq!(IVec3::new(0, 0, 0), super::to_xyz(0));
+        assert_eq!(IVec3::new(0, 1, 0), super::to_xyz(1));
+        assert_eq!(IVec3::new(0, 2, 0), super::to_xyz(2));
 
-        assert_eq!((0, 0, 1), super::to_xyz(super::AXIS_SIZE));
-        assert_eq!((0, 1, 1), super::to_xyz(super::AXIS_SIZE + 1));
-        assert_eq!((0, 2, 1), super::to_xyz(super::AXIS_SIZE + 2));
+        assert_eq!(IVec3::new(0, 0, 1), super::to_xyz(super::AXIS_SIZE));
+        assert_eq!(IVec3::new(0, 1, 1), super::to_xyz(super::AXIS_SIZE + 1));
+        assert_eq!(IVec3::new(0, 2, 1), super::to_xyz(super::AXIS_SIZE + 2));
 
         assert_eq!(
-            (1, 0, 0),
+            IVec3::new(1, 0, 0),
             super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE)
         );
         assert_eq!(
-            (1, 1, 0),
+            IVec3::new(1, 1, 0),
             super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + 1)
         );
         assert_eq!(
-            (1, 2, 0),
+            IVec3::new(1, 2, 0),
             super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + 2)
         );
 
         assert_eq!(
-            (1, 0, 1),
+            IVec3::new(1, 0, 1),
             super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE)
         );
         assert_eq!(
-            (1, 1, 1),
+            IVec3::new(1, 1, 1),
             super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 1)
         );
         assert_eq!(
-            (1, 2, 1),
+            IVec3::new(1, 2, 1),
             super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 2)
         );
     }
 
     #[test]
     fn to_index() {
-        assert_eq!(super::to_index(0, 0, 0), 0);
-        assert_eq!(super::to_index(0, 1, 0), 1);
-        assert_eq!(super::to_index(0, 2, 0), 2);
+        assert_eq!(super::to_index((0, 0, 0).into()), 0);
+        assert_eq!(super::to_index((0, 1, 0).into()), 1);
+        assert_eq!(super::to_index((0, 2, 0).into()), 2);
 
-        assert_eq!(super::to_index(0, 0, 1), super::AXIS_SIZE);
-        assert_eq!(super::to_index(0, 1, 1), super::AXIS_SIZE + 1);
-        assert_eq!(super::to_index(0, 2, 1), super::AXIS_SIZE + 2);
+        assert_eq!(super::to_index((0, 0, 1).into()), super::AXIS_SIZE);
+        assert_eq!(super::to_index((0, 1, 1).into()), super::AXIS_SIZE + 1);
+        assert_eq!(super::to_index((0, 2, 1).into()), super::AXIS_SIZE + 2);
 
         assert_eq!(
-            super::to_index(1, 0, 0),
+            super::to_index((1, 0, 0).into()),
             super::AXIS_SIZE * super::AXIS_SIZE
         );
         assert_eq!(
-            super::to_index(1, 1, 0),
+            super::to_index((1, 1, 0).into()),
             super::AXIS_SIZE * super::AXIS_SIZE + 1
         );
         assert_eq!(
-            super::to_index(1, 2, 0),
+            super::to_index((1, 2, 0).into()),
             super::AXIS_SIZE * super::AXIS_SIZE + 2
         );
 
         assert_eq!(
-            super::to_index(1, 0, 1),
+            super::to_index((1, 0, 1).into()),
             super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE
         );
         assert_eq!(
-            super::to_index(1, 1, 1),
+            super::to_index((1, 1, 1).into()),
             super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 1
         );
         assert_eq!(
-            super::to_index(1, 2, 1),
+            super::to_index((1, 2, 1).into()),
             super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 2
         );
     }
@@ -168,7 +185,7 @@ mod tests {
 
         const TEST_COUNT: usize = 1000;
         const MAG: f32 = 100.0;
-        
+
         for _ in 0..TEST_COUNT {
             let base = IVec3::new(
                 (random::<f32>() * MAG) as i32 * if random::<bool>() { -1 } else { 1 },

@@ -3,6 +3,7 @@
 mod debug;
 mod math;
 mod mesh;
+mod pipeline;
 
 pub mod storage;
 pub mod raycast;

@@ -21,7 +21,8 @@ pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(WireframeDebugPlugin)
+        app.add_plugin(super::pipeline::PipelinePlugin)
+            .add_plugin(WireframeDebugPlugin)
             .add_event::<ChunkSpawnCmd>()
             .add_event::<ChunkDespawnCmd>()
             .add_event::<ChunkSetVoxelCmd>()
@@ -64,7 +65,7 @@ pub struct ChunkPipelineRes(Handle<PipelineDescriptor>);
 pub struct ChunkEntitiesRes(pub HashMap<IVec3, Entity>);
 
 // Components
-pub struct ChunkLocal(IVec3);
+pub struct ChunkLocal(pub IVec3);
 
 pub struct ChunkVoxels(pub [u8; chunk::BUFFER_SIZE]);
 
@@ -120,14 +121,14 @@ fn setup_render_pipeline(
     commands.insert_resource(ChunkEntitiesRes::default());
 }
 
-fn setup_world(mut commands: Commands, mut command_writer: EventWriter<ChunkSpawnCmd>) {
+fn setup_world(mut commands: Commands) {
     let mut world = storage::World::default();
 
+    // TODO: Move this to other place, which will either load or generate chunk data.
     for x in landscape::BEGIN..landscape::END {
         for z in landscape::BEGIN..landscape::END {
             for y in landscape::BEGIN..landscape::END {
                 world.add((x, y, z).into());
-                command_writer.send(ChunkSpawnCmd(IVec3::new(x, y, z)));
             }
         }
     }
@@ -226,7 +227,7 @@ fn set_voxel_system(
         };
 
         let voxel_local = voxel::to_local(cmd.world_pos);
-        let index = chunk::to_index_ivec3(voxel_local);
+        let index = chunk::to_index(voxel_local);
 
         voxels.0[index] = cmd.new_value;
 
@@ -274,7 +275,7 @@ fn generate_chunk_system(
                 let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
 
                 for y in 0..end {
-                    let index = chunk::to_index(x, y, z);
+                    let index = chunk::to_index((x as i32, y as i32, z as i32).into());
 
                     voxels.0[index] = 1;
                 }
@@ -312,7 +313,7 @@ fn compute_voxel_occlusion_system(
         voxel_occlusions.0.fill([false; 6]);
 
         for (index, occlusion) in voxel_occlusions.0.iter_mut().enumerate() {
-            let pos = chunk::to_xyz_ivec3(index);
+            let pos = chunk::to_xyz(index);
 
             if voxels.0[index] == 0 {
                 for s in occlusion {
@@ -330,11 +331,7 @@ fn compute_voxel_occlusion_system(
                     continue;
                 }
 
-                let neighbor_idx = chunk::to_index(
-                    neighbor_pos.x as usize,
-                    neighbor_pos.y as usize,
-                    neighbor_pos.z as usize,
-                );
+                let neighbor_idx = chunk::to_index(neighbor_pos);
 
                 assert!(neighbor_idx < chunk::BUFFER_SIZE);
 
@@ -377,7 +374,7 @@ fn compute_vertices_system(
         }
 
         for (index, occlusion) in occlusions.0.iter().enumerate() {
-            let pos = chunk::to_xyz_ivec3(index);
+            let pos = chunk::to_xyz(index);
 
             for side in voxel::SIDES {
                 if occlusion[side as usize] {
