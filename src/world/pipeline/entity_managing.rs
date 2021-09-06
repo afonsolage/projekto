@@ -1,6 +1,8 @@
 use bevy::{prelude::*, utils::HashMap};
 
-use super::{ChunkLocal, EvtChunkAdded, EvtChunkRemoved, EvtChunkUpdated};
+use super::{
+    ChunkBundle, ChunkLocal, EvtChunkAdded, EvtChunkDirty, EvtChunkRemoved, EvtChunkUpdated,
+};
 
 pub(super) struct EntityManagingPlugin;
 
@@ -18,21 +20,6 @@ impl Plugin for EntityManagingPlugin {
                     .with_system(spawn_chunks_system.label("spawn").after("despawn"))
                     .with_system(update_chunks_system.after("spawn")),
             );
-    }
-}
-
-pub struct EvtChunkDirty(pub IVec3);
-
-#[derive(Bundle)]
-pub struct ChunkBundle {
-    local: ChunkLocal,
-}
-
-impl Default for ChunkBundle {
-    fn default() -> Self {
-        Self {
-            local: ChunkLocal(IVec3::ZERO),
-        }
     }
 }
 
@@ -84,9 +71,9 @@ fn update_chunks_system(
 mod test {
     use bevy::{app::Events, prelude::*, utils::HashMap};
 
-    use crate::world::pipeline::{entity_managing::ChunkBundle, ChunkLocal, EvtChunkRemoved};
+    use crate::world::pipeline::{ChunkBundle, ChunkLocal, EvtChunkDirty, EvtChunkRemoved};
 
-    use super::{ChunkEntityMap, EvtChunkAdded, EvtChunkDirty, EvtChunkUpdated};
+    use super::{ChunkEntityMap, EvtChunkAdded, EvtChunkUpdated};
 
     #[test]
     fn spawn_chunks_system() {
@@ -97,7 +84,7 @@ mod test {
         let mut world = World::default();
         world.insert_resource(ChunkEntityMap(HashMap::default()));
         world.insert_resource(added_events);
-        world.insert_resource(Events::<super::EvtChunkDirty>::default());
+        world.insert_resource(Events::<EvtChunkDirty>::default());
 
         let mut stage = SystemStage::parallel();
         stage.add_system(super::spawn_chunks_system);

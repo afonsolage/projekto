@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use self::{entity_managing::EntityManagingPlugin, world_manipulation::WorldManipulationPlugin};
 
 mod entity_managing;
+mod rendering;
 mod world_manipulation;
 
 pub use world_manipulation::{
@@ -47,12 +48,30 @@ impl Plugin for PipelinePlugin {
             )
             .add_startup_stage_after(
                 PipelineStartup::WorldManipulation,
+                PipelineStartup::EntityManaging,
+                SystemStage::parallel(),
+            )
+            .add_startup_stage_after(
+                PipelineStartup::EntityManaging,
                 PipelineStartup::Rendering,
                 SystemStage::parallel(),
             );
     }
 }
 
-
 pub struct ChunkLocal(pub IVec3);
 
+pub struct EvtChunkDirty(pub IVec3);
+
+#[derive(Bundle)]
+pub struct ChunkBundle {
+    local: ChunkLocal,
+}
+
+impl Default for ChunkBundle {
+    fn default() -> Self {
+        Self {
+            local: ChunkLocal(IVec3::ZERO),
+        }
+    }
+}
