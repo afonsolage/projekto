@@ -12,9 +12,9 @@ pub struct World {
 }
 
 impl World {
-    // pub fn exists(&self, pos: IVec3) -> bool {
-    //     self.chunks.contains_key(&pos)
-    // }
+    pub fn exists(&self, pos: IVec3) -> bool {
+        self.chunks.contains_key(&pos)
+    }
 
     pub fn add(&mut self, pos: IVec3) {
         if self
@@ -56,7 +56,9 @@ mod test {
     #[test]
     fn add() {
         let mut world = World::default();
+        assert!(!world.exists(IVec3::ONE));
         world.add(IVec3::ONE);
+        assert!(world.exists(IVec3::ONE));
     }
 
     #[test]
@@ -72,12 +74,22 @@ mod test {
         let mut world = World::default();
         world.add(IVec3::ONE);
         assert!(world.remove(IVec3::ONE).is_some());
+        assert!(!world.exists(IVec3::ONE));
     }
 
     #[test]
     fn remove_none() {
         let mut world = World::default();
         assert!(world.remove(IVec3::ONE).is_none());
+        assert!(!world.exists(IVec3::ONE));
+    }
+
+    #[test]
+    fn exists() {
+        let mut world = World::default();
+        assert!(!world.exists(IVec3::ONE));
+        world.add(IVec3::ONE);
+        assert!(world.exists(IVec3::ONE));
     }
 
     #[test]
