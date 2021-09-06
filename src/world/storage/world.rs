@@ -26,9 +26,9 @@ impl World {
         }
     }
 
-    // pub fn remove(&mut self, pos: IVec3) -> Option<Chunk> {
-    //     self.chunks.remove(&pos)
-    // }
+    pub fn remove(&mut self, pos: IVec3) -> Option<Chunk> {
+        self.chunks.remove(&pos)
+    }
 }
 
 impl Index<IVec3> for World {
@@ -65,6 +65,19 @@ mod test {
         let mut world = World::default();
         world.add(IVec3::ONE);
         world.add(IVec3::ONE);
+    }
+
+    #[test]
+    fn remove() {
+        let mut world = World::default();
+        world.add(IVec3::ONE);
+        assert!(world.remove(IVec3::ONE).is_some());
+    }
+
+    #[test]
+    fn remove_none() {
+        let mut world = World::default();
+        assert!(world.remove(IVec3::ONE).is_none());
     }
 
     #[test]
