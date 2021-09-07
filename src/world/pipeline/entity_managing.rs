@@ -39,6 +39,7 @@ fn spawn_chunks_system(
         let entity = commands
             .spawn_bundle(ChunkBundle {
                 local: ChunkLocal(*local),
+                ..Default::default()
             })
             .id();
         entity_map.0.insert(*local, entity);

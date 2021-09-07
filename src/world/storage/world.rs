@@ -1,5 +1,3 @@
-use std::ops::{Index, IndexMut};
-
 use bevy::{prelude::*, utils::HashMap};
 
 use super::chunk::Chunk;
@@ -23,21 +21,13 @@ impl World {
     pub fn remove(&mut self, pos: IVec3) -> Option<Chunk> {
         self.chunks.remove(&pos)
     }
-}
 
-impl Index<IVec3> for World {
-    type Output = Chunk;
-
-    fn index(&self, index: IVec3) -> &Self::Output {
-        &self.chunks[&index]
+    pub fn get(&self, pos: IVec3) -> Option<&Chunk> {
+        self.chunks.get(&pos)
     }
-}
 
-impl IndexMut<IVec3> for World {
-    fn index_mut(&mut self, index: IVec3) -> &mut Self::Output {
-        self.chunks
-            .get_mut(&index)
-            .expect(format!("No entry {} found on HashMap", &index).as_str())
+    pub fn get_mut(&mut self, pos: IVec3) -> Option<&mut Chunk> {
+        self.chunks.get_mut(&pos)
     }
 }
 
@@ -99,8 +89,12 @@ mod test {
         let mut world = World::default();
         world.add(IVec3::ONE);
 
-        world[(1, 1, 1).into()].set_voxel_kind(IVec3::ZERO, 1);
-        assert_eq!(world[IVec3::ONE].get_voxel_kind(IVec3::ZERO), 1);
+        world
+            .get_mut((1, 1, 1).into())
+            .unwrap()
+            .set_kind(IVec3::ZERO, 1);
+
+        assert_eq!(world.get(IVec3::ONE).unwrap().get_kind(IVec3::ZERO), 1);
     }
 
     #[test]
@@ -109,7 +103,7 @@ mod test {
         let mut world = World::default();
         world.add((0, 1, 2).into());
 
-        world[IVec3::ONE].get_voxel_kind(IVec3::ZERO);
+        world.get(IVec3::ONE).unwrap().get_kind(IVec3::ZERO);
     }
 
     #[test]
@@ -118,6 +112,6 @@ mod test {
         let mut world = World::default();
         world.add((0, 1, 2).into());
 
-        world[IVec3::ONE].set_voxel_kind(IVec3::ZERO, 1);
+        world.get_mut(IVec3::ONE).unwrap().set_kind(IVec3::ZERO, 1);
     }
 }

@@ -4,7 +4,11 @@ use crate::world::math;
 
 use super::chunk;
 
+pub const SIDE_COUNT: usize = 6;
+
 pub type Kind = u16;
+pub type FacesOcclusion = [bool; SIDE_COUNT];
+
 
 #[derive(Clone, Copy, Debug)]
 pub enum Side {
@@ -29,7 +33,7 @@ pub enum Side {
 // }
 // }
 
-pub const SIDES: [Side; 6] = [
+pub const SIDES: [Side; SIDE_COUNT] = [
     Side::Right,
     Side::Left,
     Side::Up,

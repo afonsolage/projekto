@@ -16,6 +16,25 @@ pub const X_SHIFT: usize = 8;
 pub const Z_SHIFT: usize = 4;
 pub const Y_SHIFT: usize = 0;
 
+#[derive(Default)]
+pub struct ChunkIter {
+    iter_index: usize,
+}
+
+impl Iterator for ChunkIter {
+    type Item = IVec3;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.iter_index >= BUFFER_SIZE {
+            None
+        } else {
+            let xyz = to_xyz(self.iter_index);
+            self.iter_index += 1;
+            Some(xyz)
+        }
+    }
+}
+
 pub struct Chunk {
     voxel_kind: [voxel::Kind; BUFFER_SIZE],
 }
@@ -23,18 +42,22 @@ pub struct Chunk {
 impl Default for Chunk {
     fn default() -> Self {
         Self {
-            voxel_kind: [0; BUFFER_SIZE],
+            voxel_kind: [voxel::Kind::default(); BUFFER_SIZE],
         }
     }
 }
 
 impl Chunk {
-    pub fn set_voxel_kind(&mut self, local: IVec3, kind: voxel::Kind) {
+    pub fn get_kind(&self, local: IVec3) -> voxel::Kind {
+        self.voxel_kind[to_index(local)]
+    }
+
+    pub fn set_kind(&mut self, local: IVec3, kind: voxel::Kind) {
         self.voxel_kind[to_index(local)] = kind;
     }
 
-    pub fn get_voxel_kind(&self, local: IVec3) -> voxel::Kind {
-        self.voxel_kind[to_index(local)]
+    pub fn voxels(&self) -> impl Iterator<Item = IVec3> {
+        ChunkIter::default()
     }
 }
 
@@ -71,6 +94,8 @@ pub fn to_local(world: Vec3) -> IVec3 {
 mod tests {
     use bevy::math::IVec3;
     use rand::random;
+
+    use crate::world::storage::chunk::AXIS_SIZE;
 
     #[test]
     fn to_xyz() {
@@ -211,5 +236,35 @@ mod tests {
             // assuming AXIS_SIZE = 16
             assert_eq!(base, super::to_local(world));
         }
+    }
+
+    #[test]
+    fn into_iter() {
+        let chunk = super::Chunk::default();
+
+        let mut first = None;
+        let mut last = IVec3::ZERO;
+
+        for pos in chunk.voxels() {
+            assert!(pos.x >= 0 && pos.x < super::AXIS_SIZE as i32);
+            assert!(pos.y >= 0 && pos.y < super::AXIS_SIZE as i32);
+            assert!(pos.z >= 0 && pos.z < super::AXIS_SIZE as i32);
+
+            if first == None {
+                first = Some(pos);
+            }
+            last = pos;
+        }
+
+        assert_eq!(first, Some(IVec3::ZERO));
+        assert_eq!(
+            last,
+            (
+                AXIS_SIZE as i32 - 1,
+                AXIS_SIZE as i32 - 1,
+                AXIS_SIZE as i32 - 1
+            )
+                .into()
+        );
     }
 }
