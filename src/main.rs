@@ -4,7 +4,7 @@ mod fly_by_camera;
 use fly_by_camera::FlyByCameraPlugin;
 
 mod world;
-use world::ecs::WorldPlugin;
+use world::WorldPlugin;
 
 mod debug;
 use debug::DebugPlugin;

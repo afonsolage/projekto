@@ -35,16 +35,19 @@ This is a general overview of the aspects of the game. Some of these aspects may
 
 ## Current Pipeline Stages
 
-1. **Begin**
-    1. **Despawn chunks** - Watches for *ChunkRemoved* event and completely despawn a chunk entity
-    2. **Spawn chunks** - Watches for *ChunkAdded* event and spawn new chunk entities and raises a *ChunkDirty* to the pipeline
-    3. **Update chunks** - Watches for *ChunkUpdated* event and raises a *ChunkDirty* event to the pipeline
-2. **Rendering**
-    1. **Faces Occlusion** - Process *ChunkDirty* events and updates the `FacesOcclusion` component
-    2. **Vertex Computation** - Process *ChunkDirty* events and updates the `Vertices`component
-    3. **Mesh Generation** - Process *ChunkDirty* events and generates updates the `Handle<Mesh>` component
-    4. **Cleanup** - Process *ChunkDirty* events and remove all temporary components
-3. **End**
+1. **World Manipulation**
+    1. **Add Chunks** - Process *CmdChunkAdd*, add new chunk to world and raises an *EvtChunkAdded*
+    2. **Remove Chunks** - Process *CmdChunkRemove*, remove chunk from world and raises an *EvtChunkRemoved*
+    3. **Update Chunks** - Process *CmdChunkUpdate*, update chunk and raises and *EvtChunkUpdated*
+2. **Entity Managing**
+    1. **Despawn chunks** - Watches for *EvtChunkRemoved* event and completely despawn a chunk entity
+    2. **Spawn chunks** - Watches for *EvtChunkAdded* event and spawn new chunk entities and raises a *ChunkDirty* to the pipeline
+    3. **Update chunks** - Watches for *EvtChunkUpdated* event and raises a *ChunkDirty* event to the pipeline
+3. **Rendering**
+    1. **Faces Occlusion** - Process *EvtChunkDirty* events and updates the `ChunkFacesOcclusion` component
+    2. **Vertex Computation** - Process *EvtChunkDirty* events and updates the `ChunkVertices`component
+    3. **Mesh Generation** - Process *EvtChunkDirty* events and generates updates the `Handle<Mesh>` component
+    4. **Clean up** - Process *EvtChunkDirty* events and remove `ChunkBuildingBundle` components
 
 
 # License
