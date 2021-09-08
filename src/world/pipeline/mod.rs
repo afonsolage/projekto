@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, render::pipeline::PipelineDescriptor, utils::HashMap};
 
 use self::{
     entity_managing::EntityManagingPlugin, rendering::RenderingPlugin,
@@ -33,10 +33,7 @@ pub struct PipelinePlugin;
 
 impl Plugin for PipelinePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(WorldManipulationPlugin)
-            .add_plugin(EntityManagingPlugin)
-            .add_plugin(RenderingPlugin)
-            .add_stage(Pipeline::WorldManipulation, SystemStage::parallel())
+        app.add_stage(Pipeline::WorldManipulation, SystemStage::parallel())
             .add_stage_after(
                 Pipeline::WorldManipulation,
                 Pipeline::EntityManaging,
@@ -62,6 +59,9 @@ impl Plugin for PipelinePlugin {
                 PipelineStartup::Rendering,
                 SystemStage::parallel(),
             );
+        app.add_plugin(WorldManipulationPlugin)
+            .add_plugin(EntityManagingPlugin)
+            .add_plugin(RenderingPlugin);
     }
 }
 
@@ -69,11 +69,18 @@ pub struct EvtChunkDirty(pub IVec3);
 
 pub struct ChunkLocal(pub IVec3);
 
+pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
+
+pub struct ChunkPipeline(Handle<PipelineDescriptor>);
+
 struct ChunkFacesOcclusion([voxel::FacesOcclusion; chunk::BUFFER_SIZE]);
+struct ChunkVertices([Vec<[f32; 3]>; voxel::SIDE_COUNT]);
 
 #[derive(Bundle)]
 pub struct ChunkBundle {
     local: ChunkLocal,
+    #[bundle]
+    mesh_bundle: MeshBundle,
     #[bundle]
     building: ChunkBuildingBundle,
 }
@@ -82,6 +89,7 @@ impl Default for ChunkBundle {
     fn default() -> Self {
         Self {
             local: ChunkLocal(IVec3::ZERO),
+            mesh_bundle: MeshBundle::default(),
             building: ChunkBuildingBundle::default(),
         }
     }
@@ -90,6 +98,7 @@ impl Default for ChunkBundle {
 #[derive(Bundle)]
 pub struct ChunkBuildingBundle {
     faces_occlusion: ChunkFacesOcclusion,
+    vertices: ChunkVertices,
 }
 
 impl Default for ChunkBuildingBundle {
@@ -98,6 +107,7 @@ impl Default for ChunkBuildingBundle {
             faces_occlusion: ChunkFacesOcclusion(
                 [voxel::FacesOcclusion::default(); chunk::BUFFER_SIZE],
             ),
+            vertices: ChunkVertices([vec![], vec![], vec![], vec![], vec![], vec![]]),
         }
     }
 }

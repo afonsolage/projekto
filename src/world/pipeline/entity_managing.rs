@@ -1,7 +1,17 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{
+    prelude::*,
+    render::{
+        pipeline::{PipelineDescriptor, RenderPipeline},
+        shader::ShaderStages,
+    },
+    utils::HashMap,
+};
+
+use crate::world::storage::chunk;
 
 use super::{
-    ChunkBundle, ChunkLocal, EvtChunkAdded, EvtChunkDirty, EvtChunkRemoved, EvtChunkUpdated,
+    ChunkBuildingBundle, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline, EvtChunkAdded,
+    EvtChunkDirty, EvtChunkRemoved, EvtChunkUpdated,
 };
 
 pub(super) struct EntityManagingPlugin;
@@ -9,10 +19,7 @@ pub(super) struct EntityManagingPlugin;
 impl Plugin for EntityManagingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkDirty>()
-            .add_startup_system_to_stage(
-                super::PipelineStartup::EntityManaging,
-                setup_chunk_entity_map,
-            )
+            .add_startup_system_to_stage(super::PipelineStartup::EntityManaging, setup_resources)
             .add_system_set_to_stage(
                 super::Pipeline::EntityManaging,
                 SystemSet::new()
@@ -23,22 +30,51 @@ impl Plugin for EntityManagingPlugin {
     }
 }
 
-pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
+fn setup_resources(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut pipelines: ResMut<Assets<PipelineDescriptor>>,
+) {
+    let pipeline_handle = pipelines.add(PipelineDescriptor {
+        // primitive: PrimitiveState {
+        //     topology: PrimitiveTopology::TriangleList,
+        //     strip_index_format: None,
+        //     front_face: FrontFace::Ccw,
+        //     cull_mode: Some(Face::Back),
+        //     polygon_mode: PolygonMode::Fill,
+        //     clamp_depth: false,
+        //     conservative: false,
+        // },
+        ..PipelineDescriptor::default_config(ShaderStages {
+            vertex: asset_server.load("shaders/voxel.vert"),
+            fragment: Some(asset_server.load("shaders/voxel.frag")),
+        })
+    });
 
-fn setup_chunk_entity_map(mut commands: Commands) {
+    commands.insert_resource(ChunkPipeline(pipeline_handle));
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
 }
 
 fn spawn_chunks_system(
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
+    chunk_pipeline: Res<ChunkPipeline>,
     mut reader: EventReader<EvtChunkAdded>,
     mut writer: EventWriter<EvtChunkDirty>,
 ) {
     for EvtChunkAdded(local) in reader.iter() {
+        trace!("Spawning chunk entity {}", *local);
+
         let entity = commands
             .spawn_bundle(ChunkBundle {
                 local: ChunkLocal(*local),
+                mesh_bundle: MeshBundle {
+                    render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+                        chunk_pipeline.0.clone(),
+                    )]),
+                    transform: Transform::from_translation(chunk::to_world(*local)),
+                    ..Default::default()
+                },
                 ..Default::default()
             })
             .id();
@@ -54,17 +90,26 @@ fn despawn_chunks_system(
 ) {
     for EvtChunkRemoved(local) in reader.iter() {
         if let Some(entity) = entity_map.0.remove(local) {
+            trace!("Despawning chunk entity {}", *local);
             commands.entity(entity).despawn_recursive();
         }
     }
 }
 
 fn update_chunks_system(
-    mut writer: EventWriter<EvtChunkDirty>,
+    mut commands: Commands,
     mut reader: EventReader<EvtChunkUpdated>,
+    mut writer: EventWriter<EvtChunkDirty>,
+    entity_map: ResMut<ChunkEntityMap>,
 ) {
-    for EvtChunkUpdated(chunk_local, _) in reader.iter() {
-        writer.send(EvtChunkDirty(*chunk_local));
+    for EvtChunkUpdated(chunk_local) in reader.iter() {
+        if let Some(&entity) = entity_map.0.get(chunk_local) {
+            trace!("Updating chunk entity {}", *chunk_local);
+            commands
+                .entity(entity)
+                .insert_bundle(ChunkBuildingBundle::default());
+            writer.send(EvtChunkDirty(*chunk_local));
+        }
     }
 }
 
@@ -72,7 +117,9 @@ fn update_chunks_system(
 mod test {
     use bevy::{app::Events, prelude::*, utils::HashMap};
 
-    use crate::world::pipeline::{ChunkBundle, ChunkLocal, EvtChunkDirty, EvtChunkRemoved};
+    use crate::world::pipeline::{
+        ChunkBundle, ChunkLocal, ChunkPipeline, EvtChunkDirty, EvtChunkRemoved,
+    };
 
     use super::{ChunkEntityMap, EvtChunkAdded, EvtChunkUpdated};
 
@@ -86,6 +133,7 @@ mod test {
         world.insert_resource(ChunkEntityMap(HashMap::default()));
         world.insert_resource(added_events);
         world.insert_resource(Events::<EvtChunkDirty>::default());
+        world.insert_resource(ChunkPipeline(Handle::default()));
 
         let mut stage = SystemStage::parallel();
         stage.add_system(super::spawn_chunks_system);
@@ -145,11 +193,18 @@ mod test {
     fn update_chunks_system() {
         // Arrange
         let mut added_events = Events::<EvtChunkUpdated>::default();
-        added_events.send(EvtChunkUpdated((1, 2, 3).into(), IVec3::ONE));
+        added_events.send(EvtChunkUpdated((1, 2, 3).into()));
 
         let mut world = World::default();
         world.insert_resource(added_events);
         world.insert_resource(Events::<super::EvtChunkDirty>::default());
+
+        let mut entity_map = ChunkEntityMap(HashMap::default());
+        entity_map.0.insert(
+            (1, 2, 3).into(),
+            world.spawn().insert_bundle(ChunkBundle::default()).id(),
+        );
+        world.insert_resource(entity_map);
 
         let mut stage = SystemStage::parallel();
         stage.add_system(super::update_chunks_system);

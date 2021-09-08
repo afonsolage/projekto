@@ -9,8 +9,7 @@ pub const SIDE_COUNT: usize = 6;
 pub type Kind = u16;
 pub type FacesOcclusion = [bool; SIDE_COUNT];
 
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Side {
     Right = 0,
     Left = 1,

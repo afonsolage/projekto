@@ -57,8 +57,12 @@ impl Chunk {
     }
 
     pub fn voxels(&self) -> impl Iterator<Item = IVec3> {
-        ChunkIter::default()
+        voxels()
     }
+}
+
+pub fn voxels() -> impl Iterator<Item = IVec3> {
+    ChunkIter::default()
 }
 
 pub fn to_xyz(index: usize) -> IVec3 {

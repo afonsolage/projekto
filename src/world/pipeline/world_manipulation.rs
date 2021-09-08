@@ -1,6 +1,7 @@
 use bevy::prelude::*;
+use bracket_noise::prelude::*;
 
-use crate::world::storage::{voxel, World};
+use crate::world::storage::{chunk, landscape, voxel, World};
 
 pub(super) struct WorldManipulationPlugin;
 
@@ -23,14 +24,14 @@ impl Plugin for WorldManipulationPlugin {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct CmdChunkAdd(pub IVec3);
+#[derive(Clone)]
+pub struct CmdChunkAdd(pub IVec3, pub Vec<(IVec3, voxel::Kind)>);
 
 #[derive(Clone, Copy)]
 pub struct CmdChunkRemove(pub IVec3);
 
-#[derive(Clone, Copy)]
-pub struct CmdChunkUpdate(pub IVec3, pub IVec3, pub voxel::Kind);
+#[derive(Clone)]
+pub struct CmdChunkUpdate(pub IVec3, pub Vec<(IVec3, voxel::Kind)>);
 
 #[derive(Clone, Copy)]
 pub struct EvtChunkAdded(pub IVec3);
@@ -39,10 +40,58 @@ pub struct EvtChunkAdded(pub IVec3);
 pub struct EvtChunkRemoved(pub IVec3);
 
 #[derive(Clone, Copy)]
-pub struct EvtChunkUpdated(pub IVec3, pub IVec3);
+pub struct EvtChunkUpdated(pub IVec3);
 
-fn setup_world(mut commands: Commands) {
+fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
     commands.insert_resource(World::default());
+
+    // TODO: Find a better place for this initialization
+    for x in landscape::BEGIN..landscape::END {
+        for y in landscape::BEGIN..landscape::END {
+            for z in landscape::BEGIN..landscape::END {
+                let local = (x, y, z).into();
+                let world = chunk::to_world(local);
+
+                // TODO: How to generate for negative height chunks?
+                if world.y < 0.0 {
+                    continue;
+                }
+
+                let mut noise = FastNoise::seeded(15);
+                noise.set_noise_type(NoiseType::SimplexFractal);
+                noise.set_frequency(0.03);
+                noise.set_fractal_type(FractalType::FBM);
+                noise.set_fractal_octaves(3);
+                noise.set_fractal_gain(0.9);
+                noise.set_fractal_lacunarity(0.5);
+
+                let mut voxels = vec![];
+
+                for x in 0..chunk::AXIS_SIZE {
+                    for z in 0..chunk::AXIS_SIZE {
+                        let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
+                        let world_height = ((h + 1.0) / 2.0) * (2 * chunk::AXIS_SIZE) as f32;
+
+                        let height_local = world_height - world.y;
+
+                        if height_local < f32::EPSILON {
+                            continue;
+                        }
+
+                        let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
+
+                        for y in 0..end {
+                            voxels.push(((x as i32, y as i32, z as i32).into(), 1));
+                        }
+                    }
+                }
+
+                if !voxels.is_empty() {
+                    writer.send(CmdChunkAdd(local, voxels));
+                }
+            }
+        }
+    }
 }
 
 fn process_add_chunks_system(
@@ -50,8 +99,15 @@ fn process_add_chunks_system(
     mut reader: EventReader<CmdChunkAdd>,
     mut writer: EventWriter<EvtChunkAdded>,
 ) {
-    for CmdChunkAdd(local) in reader.iter() {
+    for CmdChunkAdd(local, voxels) in reader.iter() {
+        trace!("Adding chunk {} to world", *local);
         world.add(*local);
+        let chunk = world.get_mut(*local).unwrap();
+
+        for &(voxel, kind) in voxels {
+            chunk.set_kind(voxel, kind);
+        }
+
         writer.send(EvtChunkAdded(*local));
     }
 }
@@ -62,6 +118,7 @@ fn process_remove_chunks_system(
     mut writer: EventWriter<EvtChunkRemoved>,
 ) {
     for CmdChunkRemove(local) in reader.iter() {
+        trace!("Removing chunk {} from world", *local);
         world.remove(*local);
         writer.send(EvtChunkRemoved(*local));
     }
@@ -72,21 +129,24 @@ fn process_update_chunks_system(
     mut reader: EventReader<CmdChunkUpdate>,
     mut writer: EventWriter<EvtChunkUpdated>,
 ) {
-    for CmdChunkUpdate(chunk_local, voxel_local, voxel_value) in reader.iter() {
+    for CmdChunkUpdate(chunk_local, voxels) in reader.iter() {
         let chunk = match world.get_mut(*chunk_local) {
             None => {
                 warn!(
-                    "Skipping update on {} {} since the chunk doesn't exists",
-                    *chunk_local, voxel_local
+                    "Skipping update on {} since the chunk doesn't exists",
+                    *chunk_local
                 );
                 continue;
             }
             Some(c) => c,
         };
 
-        chunk.set_kind(*voxel_local, *voxel_value);
+        trace!("Update chunk {} in world", *chunk_local);
+        for (voxel, kind) in voxels {
+            chunk.set_kind(*voxel, *kind);
+        }
 
-        writer.send(EvtChunkUpdated(*chunk_local, *voxel_local));
+        writer.send(EvtChunkUpdated(*chunk_local));
     }
 }
 
@@ -108,7 +168,7 @@ mod test {
     fn process_add_chunks_system() {
         // Arrange
         let mut events = Events::<CmdChunkAdd>::default();
-        events.send(CmdChunkAdd((1, 2, 3).into()));
+        events.send(CmdChunkAdd((1, 2, 3).into(), vec![]));
 
         let mut world = prelude::World::default();
         world.insert_resource(storage::World::default());
@@ -125,7 +185,8 @@ mod test {
         assert!(world
             .get_resource::<storage::World>()
             .unwrap()
-            .exists((1, 2, 3).into()));
+            .get((1, 2, 3).into())
+            .is_some());
 
         assert_eq!(
             world
@@ -163,7 +224,8 @@ mod test {
         assert!(!world
             .get_resource::<storage::World>()
             .unwrap()
-            .exists((1, 2, 3).into()));
+            .get((1, 2, 3).into())
+            .is_some());
 
         assert_eq!(
             world
@@ -181,7 +243,7 @@ mod test {
     fn process_update_chunks_system() {
         // Arrange
         let mut events = Events::<CmdChunkUpdate>::default();
-        events.send(CmdChunkUpdate((1, 2, 3).into(), IVec3::ONE, 2));
+        events.send(CmdChunkUpdate((1, 2, 3).into(), vec![(IVec3::ONE, 2)]));
 
         let mut voxel_world = storage::World::default();
         voxel_world.add((1, 2, 3).into());
@@ -217,6 +279,5 @@ mod test {
             .clone();
 
         assert_eq!(evt.0, (1, 2, 3).into());
-        assert_eq!(evt.1, IVec3::ONE);
     }
 }

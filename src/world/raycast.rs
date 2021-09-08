@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 
-use crate::world::{math, storage::{chunk, voxel}};
+use crate::world::{
+    math,
+    storage::{chunk, voxel},
+};
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct RaycastHit {
