@@ -31,7 +31,7 @@ impl Plugin for RenderingPlugin {
             Pipeline::Rendering,
             mesh_generation_system
                 .label("mesh_generation")
-                .after("faces_occlusion"),
+                .after("vertices"),
         )
         .add_system_to_stage(
             Pipeline::Rendering,
