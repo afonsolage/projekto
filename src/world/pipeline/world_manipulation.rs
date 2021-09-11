@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bracket_noise::prelude::*;
 
-use crate::world::storage::{chunk, landscape, voxel, World};
+use crate::world::storage::{chunk, landscape, voxel, VoxWorld};
 
 pub(super) struct WorldManipulationPlugin;
 
@@ -43,7 +43,7 @@ pub struct EvtChunkRemoved(pub IVec3);
 pub struct EvtChunkUpdated(pub IVec3);
 
 fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
-    commands.insert_resource(World::default());
+    commands.insert_resource(VoxWorld::default());
 
     // TODO: Find a better place for this initialization
     for x in landscape::BEGIN..landscape::END {
@@ -95,7 +95,7 @@ fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
 }
 
 fn process_add_chunks_system(
-    mut world: ResMut<World>,
+    mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkAdd>,
     mut writer: EventWriter<EvtChunkAdded>,
 ) {
@@ -113,7 +113,7 @@ fn process_add_chunks_system(
 }
 
 fn process_remove_chunks_system(
-    mut world: ResMut<World>,
+    mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkRemove>,
     mut writer: EventWriter<EvtChunkRemoved>,
 ) {
@@ -125,7 +125,7 @@ fn process_remove_chunks_system(
 }
 
 fn process_update_chunks_system(
-    mut world: ResMut<World>,
+    mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkUpdate>,
     mut writer: EventWriter<EvtChunkUpdated>,
 ) {
@@ -171,7 +171,7 @@ mod test {
         events.send(CmdChunkAdd((1, 2, 3).into(), vec![]));
 
         let mut world = prelude::World::default();
-        world.insert_resource(storage::World::default());
+        world.insert_resource(storage::VoxWorld::default());
         world.insert_resource(events);
         world.insert_resource(Events::<EvtChunkAdded>::default());
 
@@ -183,7 +183,7 @@ mod test {
 
         // Assert
         assert!(world
-            .get_resource::<storage::World>()
+            .get_resource::<storage::VoxWorld>()
             .unwrap()
             .get((1, 2, 3).into())
             .is_some());
@@ -206,7 +206,7 @@ mod test {
         let mut events = Events::<CmdChunkRemove>::default();
         events.send(CmdChunkRemove((1, 2, 3).into()));
 
-        let mut voxel_world = storage::World::default();
+        let mut voxel_world = storage::VoxWorld::default();
         voxel_world.add((1, 2, 3).into());
 
         let mut world = prelude::World::default();
@@ -222,7 +222,7 @@ mod test {
 
         // Assert
         assert!(!world
-            .get_resource::<storage::World>()
+            .get_resource::<storage::VoxWorld>()
             .unwrap()
             .get((1, 2, 3).into())
             .is_some());
@@ -245,7 +245,7 @@ mod test {
         let mut events = Events::<CmdChunkUpdate>::default();
         events.send(CmdChunkUpdate((1, 2, 3).into(), vec![(IVec3::ONE, 2)]));
 
-        let mut voxel_world = storage::World::default();
+        let mut voxel_world = storage::VoxWorld::default();
         voxel_world.add((1, 2, 3).into());
 
         let mut world = prelude::World::default();
@@ -262,7 +262,7 @@ mod test {
         // Assert
         assert_eq!(
             world
-                .get_resource::<storage::World>()
+                .get_resource::<storage::VoxWorld>()
                 .unwrap()
                 .get((1, 2, 3).into())
                 .unwrap()

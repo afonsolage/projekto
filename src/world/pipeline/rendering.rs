@@ -41,7 +41,7 @@ impl Plugin for RenderingPlugin {
 }
 
 fn faces_occlusion_system(
-    world: Res<storage::World>,
+    world: Res<storage::VoxWorld>,
     entity_map: Res<ChunkEntityMap>,
     mut reader: EventReader<EvtChunkDirty>,
     mut q: Query<&mut ChunkFacesOcclusion>,
@@ -262,7 +262,7 @@ mod test {
         let mut events = Events::<EvtChunkDirty>::default();
         events.send(EvtChunkDirty(local));
 
-        let mut voxel_world = storage::World::default();
+        let mut voxel_world = storage::VoxWorld::default();
         voxel_world.add(local);
 
         let mut world = World::default();
@@ -311,7 +311,7 @@ mod test {
         let mut events = Events::<EvtChunkDirty>::default();
         events.send(EvtChunkDirty(local));
 
-        let mut voxel_world = storage::World::default();
+        let mut voxel_world = storage::VoxWorld::default();
         voxel_world.add(local);
 
         let chunk = voxel_world.get_mut(local).unwrap();

@@ -17,10 +17,10 @@ use bevy::{
 
 use crate::{
     fly_by_camera::FlyByCamera,
-    world::storage::{chunk, voxel},
+    world::{mesh, pipeline::*, storage::*},
 };
 
-use super::*;
+use super::raycast;
 
 pub struct WireframeDebugPlugin;
 
@@ -29,15 +29,13 @@ impl Plugin for WireframeDebugPlugin {
         app.insert_resource(DebugWireframeStateRes::default())
             .add_startup_system(setup_wireframe_shader_system)
             .add_asset::<WireframeMaterial>()
-            // .add_system(draw_debug_line)
             .add_system(toggle_mesh_wireframe_system)
-            // .add_system(draw_voxels_system)
-            // .add_system(draw_raycast_system)
-            // .add_system(toggle_chunk_voxels_wireframe_system)
-            // .add_system(do_raycast_system)
-            // .add_system(remove_voxel_system)
-            // .add_system(check_raycast_intersections_system)
-            ;
+            .add_system(toggle_chunk_voxels_wireframe_system)
+            .add_system(draw_voxels_system)
+            .add_system(do_raycast_system)
+            .add_system(draw_raycast_system)
+            .add_system(check_raycast_intersections_system)
+            .add_system(remove_voxel_system);
     }
 }
 
@@ -82,52 +80,48 @@ pub struct DrawVoxels {
 
 // Systems
 
-// fn toggle_chunk_voxels_wireframe_system(
-//     mut commands: Commands,
-//     keyboard: Res<Input<KeyCode>>,
-//     mut wireframe_state: ResMut<DebugWireframeStateRes>,
-//     q_chunks: Query<(Entity, &ChunkVoxels)>,
-//     q_draws: Query<(Entity, &Parent), With<DrawVoxels>>,
-// ) {
-//     if !keyboard.just_pressed(KeyCode::F2) {
-//         return;
-//     }
+fn toggle_chunk_voxels_wireframe_system(
+    mut commands: Commands,
+    voxel_world: Res<VoxWorld>,
+    keyboard: Res<Input<KeyCode>>,
+    mut wireframe_state: ResMut<DebugWireframeStateRes>,
+    q_chunks: Query<(Entity, &ChunkLocal)>,
+    q_draws: Query<(Entity, &Parent), With<DrawVoxels>>,
+) {
+    if !keyboard.just_pressed(KeyCode::F2) {
+        return;
+    }
 
-//     if wireframe_state.show_voxel {
-//         for (e, parent) in q_draws.iter() {
-//             // Remove only entities with DrawVoxels and with a Chunk as a parent
-//             if q_chunks.iter().any(|(c_e, _)| c_e.eq(&parent.0)) {
-//                 commands.entity(e).despawn();
-//             }
-//         }
-//     } else {
-//         for (e, types) in q_chunks.iter() {
-//             let voxels = types
-//                 .0
-//                 .iter()
-//                 .enumerate()
-//                 .filter_map(|(i, v)| {
-//                     //TODO: Use enum or consts later on
-//                     if *v == 0u8 {
-//                         None
-//                     } else {
-//                         Some(chunk::to_xyz(i))
-//                     }
-//                 })
-//                 .collect();
+    wireframe_state.show_voxel = !wireframe_state.show_voxel;
 
-//             commands.entity(e).with_children(|c| {
-//                 c.spawn().insert(DrawVoxels {
-//                     color: "gray".into(),
-//                     voxels,
-//                     ..Default::default()
-//                 });
-//             });
-//         }
-//     }
+    if !wireframe_state.show_voxel {
+        for (e, parent) in q_draws.iter() {
+            // Remove only entities with DrawVoxels and with a Chunk as a parent
+            if q_chunks.iter().any(|(c_e, _)| c_e.eq(&parent.0)) {
+                commands.entity(e).despawn();
+            }
+        }
+    } else {
+        for (e, local) in q_chunks.iter() {
+            let chunk = match voxel_world.get(local.0) {
+                Some(c) => c,
+                None => continue,
+            };
 
-//     wireframe_state.show_voxel = !wireframe_state.show_voxel;
-// }
+            let voxels = chunk::voxels()
+                .filter(|&v| chunk.get_kind(v) != 0)
+                .collect();
+
+            commands.entity(e).with_children(|c| {
+                c.spawn().insert(DrawVoxels {
+                    color: "gray".into(),
+                    voxels,
+                    ..Default::default()
+                });
+            });
+        }
+    }
+}
 
 impl WireframeMaterialsRes {
     fn get(&self, color: &str) -> Handle<WireframeMaterial> {
@@ -301,243 +295,236 @@ fn compute_wireframe_indices(vertex_count: usize) -> Vec<u32> {
     res
 }
 
-// fn draw_voxels_system(
-//     mut commands: Commands,
-//     mut meshes: ResMut<Assets<Mesh>>,
-//     materials: Res<WireframeMaterialsRes>,
-//     wireframe_pipeline_handle: Res<WireframePipelineRes>,
-//     q: Query<(Entity, &DrawVoxels), Added<DrawVoxels>>,
-// ) {
-//     for (e, draw_voxels) in q.iter() {
-//         let (vertices, indices) = generate_voxel_edges_mesh(&draw_voxels.voxels);
-//         let first_voxel = draw_voxels.voxels[0];
+fn draw_voxels_system(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    materials: Res<WireframeMaterialsRes>,
+    wireframe_pipeline_handle: Res<WireframePipelineRes>,
+    q: Query<(Entity, &DrawVoxels), Added<DrawVoxels>>,
+) {
+    for (e, draw_voxels) in q.iter() {
+        if draw_voxels.voxels.is_empty() {
+            debug!("Skipping draw voxels due to empty voxel list");
+            continue;
+        }
 
-//         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
-//         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-//         mesh.set_indices(Some(Indices::U32(indices)));
+        let (vertices, indices) = generate_voxel_edges_mesh(&draw_voxels.voxels);
+        let first_voxel = draw_voxels.voxels[0];
 
-//         let mesh_handle = meshes.add(mesh);
+        let mut mesh = Mesh::new(PrimitiveTopology::LineList);
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+        mesh.set_indices(Some(Indices::U32(indices)));
 
-//         commands
-//             .entity(e)
-//             .insert_bundle(MeshBundle {
-//                 mesh: mesh_handle,
-//                 render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-//                     wireframe_pipeline_handle.0.clone(),
-//                 )]),
-//                 transform: Transform::from_translation(
-//                     first_voxel.as_f32() * -1.0 + draw_voxels.offset,
-//                 ),
-//                 ..Default::default()
-//             })
-//             .insert(materials.get(&draw_voxels.color));
-//     }
-// }
+        let mesh_handle = meshes.add(mesh);
 
-// fn generate_voxel_edges_mesh(voxels: &[IVec3]) -> (Vec<[f32; 3]>, Vec<u32>) {
-//     let mut vertices = vec![];
+        commands
+            .entity(e)
+            .insert_bundle(MeshBundle {
+                mesh: mesh_handle,
+                render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+                    wireframe_pipeline_handle.0.clone(),
+                )]),
+                transform: Transform::from_translation(
+                    first_voxel.as_f32() * -1.0 + draw_voxels.offset,
+                ),
+                ..Default::default()
+            })
+            .insert(materials.get(&draw_voxels.color));
+    }
+}
 
-//     for voxel in voxels.iter() {
-//         for side in voxel::SIDES {
-//             let side_idx = side as usize;
+fn generate_voxel_edges_mesh(voxels: &[IVec3]) -> (Vec<[f32; 3]>, Vec<u32>) {
+    let mut vertices = vec![];
 
-//             for idx in mesh::VERTICES_INDICES[side_idx] {
-//                 let v = &mesh::VERTICES[idx];
+    for voxel in voxels.iter() {
+        for side in voxel::SIDES {
+            let side_idx = side as usize;
 
-//                 vertices.push([
-//                     v[0] + voxel.x as f32,
-//                     v[1] + voxel.y as f32,
-//                     v[2] + voxel.z as f32,
-//                 ]);
-//             }
-//         }
-//     }
+            for idx in mesh::VERTICES_INDICES[side_idx] {
+                let v = &mesh::VERTICES[idx];
 
-//     let indices = compute_wireframe_indices(vertices.len());
+                vertices.push([
+                    v[0] + voxel.x as f32,
+                    v[1] + voxel.y as f32,
+                    v[2] + voxel.z as f32,
+                ]);
+            }
+        }
+    }
 
-//     (vertices, indices)
-// }
-// fn do_raycast_system(
-//     mut commands: Commands,
-//     keyboard: Res<Input<KeyCode>>,
-//     q_cam: Query<(&Transform, &FlyByCamera)>,
-// ) {
-//     if !keyboard.just_pressed(KeyCode::F3) {
-//         return;
-//     }
+    let indices = compute_wireframe_indices(vertices.len());
 
-//     if let Ok((transform, camera)) = q_cam.single() {
-//         if !camera.active {
-//             return;
-//         }
+    (vertices, indices)
+}
 
-//         let raycast = RaycastDebug {
-//             origin: transform.translation,
-//             dir: transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0,
-//             range: 20.0, //TODO: Change this later
-//         };
+fn do_raycast_system(
+    mut commands: Commands,
+    keyboard: Res<Input<KeyCode>>,
+    q_cam: Query<(&Transform, &FlyByCamera)>,
+) {
+    if !keyboard.just_pressed(KeyCode::F3) {
+        return;
+    }
 
-//         commands.spawn().insert(raycast);
-//     }
-// }
+    if let Ok((transform, camera)) = q_cam.single() {
+        if !camera.active {
+            return;
+        }
 
-// fn check_raycast_intersections_system(
-//     mut commands: Commands,
-//     mut meshes: ResMut<Assets<Mesh>>,
-//     chunk_entities: Res<ChunkEntitiesRes>,
-//     q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
-//     q_chunks: Query<&ChunkVoxels>,
-// ) {
-//     for (e, raycast) in q_raycast.iter() {
-//         let res = raycast::intersect(raycast.origin, raycast.dir, raycast.range);
+        let raycast = RaycastDebug {
+            origin: transform.translation,
+            dir: transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0,
+            range: 100.0, //TODO: Change this later
+        };
 
-//         for (chunk_hit, voxels_hit) in res.iter() {
-//             let chunk_entity = match chunk_entities.0.get(&chunk_hit.local) {
-//                 Some(e) => e,
-//                 None => continue,
-//             };
+        commands.spawn().insert(raycast);
+    }
+}
 
-//             if q_chunks.get(*chunk_entity).is_err() {
-//                 warn!("Chunk {:?} wasn't found on query.", &chunk_hit.local);
-//                 continue;
-//             }
+fn check_raycast_intersections_system(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    world: Res<VoxWorld>,
+    q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
+) {
+    for (e, raycast) in q_raycast.iter() {
+        let res = raycast::intersect(raycast.origin, raycast.dir, raycast.range);
 
-//             if voxels_hit.is_empty() {
-//                 warn!(
-//                     "Raycast returned empty voxels list at {:?} ({:?})",
-//                     raycast, &chunk_hit.local
-//                 );
-//                 continue;
-//             }
+        for (chunk_hit, voxels_hit) in res.iter() {
+            let chunk = match world.get(chunk_hit.local) {
+                Some(c) => c,
+                None => continue,
+            };
 
-//             let mut voxels = vec![];
-//             for voxel_hit in voxels_hit.iter() {
-//                 add_debug_ball(&mut commands, &mut meshes, voxel_hit.position);
+            if voxels_hit.is_empty() {
+                warn!(
+                    "Raycast returned empty voxels list at {:?} ({:?})",
+                    raycast, &chunk_hit.local
+                );
+                continue;
+            }
 
-//                 commands
-//                     .spawn()
-//                     .insert(RaycastDebug {
-//                         origin: voxel_hit.position,
-//                         dir: voxel_hit.normal.as_f32(),
-//                         range: 0.08,
-//                     })
-//                     .insert(RaycastDebugNoPoint);
+            let mut voxels = vec![];
+            for voxel_hit in voxels_hit.iter() {
+                if chunk.get_kind(voxel_hit.local) == 0 {
+                    continue;
+                }
 
-//                 voxels.push(voxel_hit.local);
-//             }
+                add_debug_ball(&mut commands, &mut meshes, voxel_hit.position);
 
-//             let offset = (raycast.origin
-//                 - (chunk::to_world(chunk_hit.local) + voxels_hit[0].local.as_f32()))
-//                 * -1.0;
+                commands
+                    .spawn()
+                    .insert(RaycastDebug {
+                        origin: voxel_hit.position,
+                        dir: voxel_hit.normal.as_f32(),
+                        range: 0.08,
+                    })
+                    .insert(RaycastDebugNoPoint);
 
-//             commands.entity(e).with_children(|c| {
-//                 c.spawn().insert(DrawVoxels {
-//                     color: "pink".into(),
-//                     offset,
-//                     voxels,
-//                 });
-//             });
-//         }
-//     }
-// }
+                voxels.push(voxel_hit.local);
+            }
 
-// fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, position: Vec3) {
-//     let mesh = Mesh::from(shape::UVSphere {
-//         radius: 0.01,
-//         sectors: 10,
-//         stacks: 10,
-//     });
+            let offset = (raycast.origin
+                - (chunk::to_world(chunk_hit.local) + voxels_hit[0].local.as_f32()))
+                * -1.0;
 
-//     commands.spawn_bundle(PbrBundle {
-//         mesh: meshes.add(mesh),
-//         transform: Transform::from_translation(position),
-//         ..Default::default()
-//     });
-// }
+            commands.entity(e).with_children(|c| {
+                c.spawn().insert(DrawVoxels {
+                    color: "pink".into(),
+                    offset,
+                    voxels,
+                });
+            });
+        }
+    }
+}
 
-// fn draw_raycast_system(
-//     mut commands: Commands,
-//     mut meshes: ResMut<Assets<Mesh>>,
-//     materials: Res<WireframeMaterialsRes>,
-//     wireframe_pipeline_handle: Res<WireframePipelineRes>,
-//     q: Query<(Entity, &RaycastDebug), Without<Handle<Mesh>>>,
-// ) {
-//     for (e, raycast) in q.iter() {
-//         let end = raycast.dir * raycast.range;
+fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, position: Vec3) {
+    let mesh = Mesh::from(shape::UVSphere {
+        radius: 0.01,
+        sectors: 10,
+        stacks: 10,
+    });
 
-//         let vertices = vec![Vec3::ZERO.to_array(), end.to_array()];
-//         let indices = vec![0, 1];
+    commands.spawn_bundle(PbrBundle {
+        mesh: meshes.add(mesh),
+        transform: Transform::from_translation(position),
+        ..Default::default()
+    });
+}
 
-//         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
-//         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-//         mesh.set_indices(Some(Indices::U32(indices)));
+fn draw_raycast_system(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    materials: Res<WireframeMaterialsRes>,
+    wireframe_pipeline_handle: Res<WireframePipelineRes>,
+    q: Query<(Entity, &RaycastDebug), Without<Handle<Mesh>>>,
+) {
+    for (e, raycast) in q.iter() {
+        let end = raycast.dir * raycast.range;
 
-//         let mesh_handle = meshes.add(mesh);
+        let vertices = vec![Vec3::ZERO.to_array(), end.to_array()];
+        let indices = vec![0, 1];
 
-//         commands
-//             .entity(e)
-//             .insert_bundle(MeshBundle {
-//                 mesh: mesh_handle,
-//                 transform: Transform::from_translation(raycast.origin),
-//                 render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-//                     wireframe_pipeline_handle.0.clone(),
-//                 )]),
-//                 ..Default::default()
-//             })
-//             .insert(materials.get("pink"));
-//     }
-// }
+        let mut mesh = Mesh::new(PrimitiveTopology::LineList);
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+        mesh.set_indices(Some(Indices::U32(indices)));
 
-// fn remove_voxel_system(
-//     chunks: Res<ChunkEntitiesRes>,
-//     q_chunks: Query<&ChunkVoxels>,
-//     q_cam: Query<(&Transform, &FlyByCamera)>,
-//     mouse_input: Res<Input<MouseButton>>,
-//     mut set_voxel_writer: EventWriter<ChunkSetVoxelCmd>,
-// ) {
-//     if !mouse_input.just_pressed(MouseButton::Left) {
-//         return;
-//     }
+        let mesh_handle = meshes.add(mesh);
 
-//     if let Ok((transform, camera)) = q_cam.single() {
-//         if !camera.active {
-//             return;
-//         }
+        commands
+            .entity(e)
+            .insert_bundle(MeshBundle {
+                mesh: mesh_handle,
+                transform: Transform::from_translation(raycast.origin),
+                render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+                    wireframe_pipeline_handle.0.clone(),
+                )]),
+                ..Default::default()
+            })
+            .insert(materials.get("pink"));
+    }
+}
 
-//         let origin = transform.translation;
-//         let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
-//         let range = 100.0;
+fn remove_voxel_system(
+    world: Res<VoxWorld>,
+    q_cam: Query<(&Transform, &FlyByCamera)>,
+    mouse_input: Res<Input<MouseButton>>,
+    mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
+) {
+    if !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
 
-//         let hit_results = raycast::intersect(origin, dir, range);
+    if let Ok((transform, camera)) = q_cam.single() {
+        if !camera.active {
+            return;
+        }
 
-//         for (chunk_hit, voxels_hit) in hit_results {
-//             let local = chunk_hit.local;
+        let origin = transform.translation;
+        let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
+        let range = 100.0;
 
-//             let entity = match chunks.0.get(&local) {
-//                 Some(e) => *e,
-//                 None => continue,
-//             };
+        let hit_results = raycast::intersect(origin, dir, range);
 
-//             let types = match q_chunks.get(entity) {
-//                 Ok(t) => t,
-//                 Err(_) => continue,
-//             };
+        for (chunk_hit, voxels_hit) in hit_results {
+            let local = chunk_hit.local;
 
-//             for voxel_hit in voxels_hit {
-//                 let index = chunk::to_index(voxel_hit.local);
+            let chunk = match world.get(local) {
+                Some(c) => c,
+                None => continue,
+            };
 
-//                 if types.0[index] == 0 {
-//                     continue;
-//                 }
+            for voxel_hit in voxels_hit {
+                if chunk.get_kind(voxel_hit.local) == 0 {
+                    continue;
+                }
 
-//                 debug!("Hit voxel at {:?} {:?}", local, voxel_hit.local);
-//                 set_voxel_writer.send(ChunkSetVoxelCmd {
-//                     world_pos: voxel_hit.position,
-//                     new_value: 0,
-//                 });
+                debug!("Hit voxel at {:?} {:?}", local, voxel_hit.local);
+                set_voxel_writer.send(CmdChunkUpdate(chunk_hit.local, vec![(voxel_hit.local, 1)]));
 
-//                 return;
-//             }
-//         }
-//     }
-// }
+                return;
+            }
+        }
+    }
+}

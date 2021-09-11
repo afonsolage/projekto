@@ -3,4 +3,4 @@ pub mod landscape;
 pub mod voxel;
 mod world;
 
-pub use world::World;
+pub use world::VoxWorld;
