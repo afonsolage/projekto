@@ -141,7 +141,8 @@ fn process_update_chunks_system(
             Some(c) => c,
         };
 
-        trace!("Update chunk {} in world", *chunk_local);
+        trace!("Update chunk {} in world ({:?})", *chunk_local, &voxels);
+
         for (voxel, kind) in voxels {
             chunk.set_kind(*voxel, *kind);
         }

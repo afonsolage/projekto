@@ -84,7 +84,7 @@ fn faces_occlusion_system(
 
         faces_occlusion.0.fill(voxel::FacesOcclusion::default());
 
-        for voxel in chunk.voxels() {
+        for voxel in chunk::voxels() {
             let voxel_faces = &mut faces_occlusion.0[chunk::to_index(voxel)];
 
             if chunk.get_kind(voxel) == 0 {
@@ -209,15 +209,13 @@ fn mesh_generation_system(
         }
 
         let vertex_count = positions.len();
+        debug!("Chunk {} vertex count: {}", *local, vertex_count);
 
         mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
-        commands
-            .entity(entity)
-            .insert(meshes.add(mesh))
-            .insert(Visible::default());
+        commands.entity(entity).insert(meshes.add(mesh));
     }
 }
 

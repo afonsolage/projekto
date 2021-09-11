@@ -508,9 +508,7 @@ fn remove_voxel_system(
         let hit_results = raycast::intersect(origin, dir, range);
 
         for (chunk_hit, voxels_hit) in hit_results {
-            let local = chunk_hit.local;
-
-            let chunk = match world.get(local) {
+            let chunk = match world.get(chunk_hit.local) {
                 Some(c) => c,
                 None => continue,
             };
@@ -520,8 +518,8 @@ fn remove_voxel_system(
                     continue;
                 }
 
-                debug!("Hit voxel at {:?} {:?}", local, voxel_hit.local);
-                set_voxel_writer.send(CmdChunkUpdate(chunk_hit.local, vec![(voxel_hit.local, 1)]));
+                debug!("Hit voxel at {:?} {:?}", chunk_hit.local, voxel_hit.local);
+                set_voxel_writer.send(CmdChunkUpdate(chunk_hit.local, vec![(voxel_hit.local, 0)]));
 
                 return;
             }

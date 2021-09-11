@@ -55,10 +55,6 @@ impl Chunk {
     pub fn set_kind(&mut self, local: IVec3, kind: voxel::Kind) {
         self.voxel_kind[to_index(local)] = kind;
     }
-
-    pub fn voxels(&self) -> impl Iterator<Item = IVec3> {
-        voxels()
-    }
 }
 
 pub fn voxels() -> impl Iterator<Item = IVec3> {
@@ -97,9 +93,11 @@ pub fn to_local(world: Vec3) -> IVec3 {
 #[cfg(test)]
 mod tests {
     use bevy::math::IVec3;
-    use rand::random;
+    use rand::{random, Rng};
 
     use crate::world::storage::chunk::AXIS_SIZE;
+
+    use super::Chunk;
 
     #[test]
     fn to_xyz() {
@@ -244,12 +242,10 @@ mod tests {
 
     #[test]
     fn into_iter() {
-        let chunk = super::Chunk::default();
-
         let mut first = None;
         let mut last = IVec3::ZERO;
 
-        for pos in chunk.voxels() {
+        for pos in super::voxels() {
             assert!(pos.x >= 0 && pos.x < super::AXIS_SIZE as i32);
             assert!(pos.y >= 0 && pos.y < super::AXIS_SIZE as i32);
             assert!(pos.z >= 0 && pos.z < super::AXIS_SIZE as i32);
@@ -270,5 +266,17 @@ mod tests {
             )
                 .into()
         );
+    }
+
+    #[test]
+    fn set_get_kind() {
+        let mut chunk = Chunk::default();
+
+        let mut rnd = rand::thread_rng();
+        for v in super::voxels() {
+            let k = rnd.gen::<u16>();
+            chunk.set_kind(v, k);
+            assert_eq!(k, chunk.get_kind(v));
+        }
     }
 }
