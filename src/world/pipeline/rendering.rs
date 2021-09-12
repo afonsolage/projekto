@@ -5,12 +5,16 @@ use bevy::{
 
 use crate::world::{
     mesh,
-    storage::{self, chunk, voxel},
+    storage::{
+        self, chunk,
+        voxel::{self, VoxelVertex},
+        VoxWorld,
+    },
 };
 
 use super::{
-    ChunkBuildingBundle, ChunkEntityMap, ChunkFacesOcclusion, ChunkVertices, EvtChunkDirty,
-    Pipeline,
+    ChunkBuildingBundle, ChunkEntityMap, ChunkFaces, ChunkFacesOcclusion, ChunkVertices,
+    EvtChunkDirty, Pipeline,
 };
 
 pub struct RenderingPlugin;
@@ -23,9 +27,15 @@ impl Plugin for RenderingPlugin {
         )
         .add_system_to_stage(
             Pipeline::Rendering,
+            faces_merging_system
+                .label("faces_merging")
+                .after("faces_occlusion"),
+        )
+        .add_system_to_stage(
+            Pipeline::Rendering,
             vertices_computation_system
                 .label("vertices")
-                .after("faces_occlusion"),
+                .after("faces_merging"),
         )
         .add_system_to_stage(
             Pipeline::Rendering,
@@ -112,7 +122,7 @@ fn faces_occlusion_system(
 fn vertices_computation_system(
     entity_map: Res<ChunkEntityMap>,
     mut reader: EventReader<EvtChunkDirty>,
-    mut q: Query<(&ChunkFacesOcclusion, &mut ChunkVertices)>,
+    mut q: Query<(&ChunkFaces, &mut ChunkVertices)>,
 ) {
     for EvtChunkDirty(local) in reader.iter() {
         let entity = match entity_map.0.get(local) {
@@ -126,7 +136,7 @@ fn vertices_computation_system(
             Some(&e) => e,
         };
 
-        let (faces_occlusion, mut vertices) = match q.get_mut(entity) {
+        let (faces, mut vertices) = match q.get_mut(entity) {
             Err(e) => {
                 warn!(
                     "Skipping vertices computation for chunk {}. Error: {}",
@@ -139,25 +149,18 @@ fn vertices_computation_system(
 
         trace!("Processing vertices computation of chunk entity {}", *local);
 
-        vertices.0.iter_mut().for_each(|v| v.clear());
+        vertices.0.clear();
 
-        for voxel in chunk::voxels() {
-            let occlusion = &faces_occlusion.0[chunk::to_index(voxel)];
+        for face in faces.0.iter() {
+            let normal = voxel::get_side_normal(face.side);
 
-            for side in voxel::SIDES {
-                if occlusion[side as usize] {
-                    continue;
-                }
-
-                for idx in mesh::VERTICES_INDICES[side as usize] {
-                    let base_vertices = &mesh::VERTICES[idx];
-
-                    vertices.0[side as usize].push([
-                        base_vertices[0] + voxel.x as f32,
-                        base_vertices[1] + voxel.y as f32,
-                        base_vertices[2] + voxel.z as f32,
-                    ]);
-                }
+            for (i, v) in face.vertices.iter().enumerate() {
+                let base_vertex_idx = mesh::VERTICES_INDICES[face.side as usize][i];
+                let base_vertex: Vec3 = mesh::VERTICES[base_vertex_idx].into();
+                vertices.0.push(VoxelVertex {
+                    position: base_vertex + v.as_f32(),
+                    normal,
+                })
             }
         }
     }
@@ -190,7 +193,7 @@ fn mesh_generation_system(
                 );
                 continue;
             }
-            Ok(v) => v,
+            Ok(v) => &v.0,
         };
 
         trace!("Processing mesh generation of chunk entity {}", *local);
@@ -200,16 +203,12 @@ fn mesh_generation_system(
         let mut positions: Vec<[f32; 3]> = vec![];
         let mut normals: Vec<[f32; 3]> = vec![];
 
-        for side in voxel::SIDES {
-            let side_idx = side as usize;
-            let side_vertices = &vertices.0[side_idx];
+        let vertex_count = vertices.len();
 
-            positions.extend(side_vertices);
-            normals.extend(vec![voxel::get_side_normal(side); side_vertices.len()])
+        for vertex in vertices {
+            positions.push([vertex.position.x, vertex.position.y, vertex.position.z]);
+            normals.push([vertex.normal.x, vertex.normal.y, vertex.normal.z]);
         }
-
-        let vertex_count = positions.len();
-        debug!("Chunk {} vertex count: {}", *local, vertex_count);
 
         mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
@@ -241,6 +240,48 @@ fn clean_up_system(
         commands
             .entity(entity)
             .remove_bundle::<ChunkBuildingBundle>();
+    }
+}
+
+fn faces_merging_system(
+    mut reader: EventReader<EvtChunkDirty>,
+    vox_world: Res<VoxWorld>,
+    entity_map: Res<ChunkEntityMap>,
+    mut query: Query<(&mut ChunkFaces, &ChunkFacesOcclusion)>,
+) {
+    for EvtChunkDirty(local) in reader.iter() {
+        let entity = match entity_map.0.get(local) {
+            Some(&e) => e,
+            None => {
+                warn!(
+                    "Skipping faces merging since chunk {} wasn't found on entity map",
+                    *local
+                );
+                continue;
+            }
+        };
+
+        let (mut faces, occlusion) = match query.get_mut(entity) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("Skipping faces merging for chunk {}. Error: {}", *local, e);
+                continue;
+            }
+        };
+
+        let chunk = match vox_world.get(*local) {
+            None => {
+                warn!(
+                    "Skipping faces occlusion since chunk {} wasn't found on world",
+                    *local
+                );
+                continue;
+            }
+            Some(c) => c,
+        };
+
+        let merged_faces = mesh::merge_faces(&occlusion.0, chunk);
+        faces.0 = merged_faces;
     }
 }
 
@@ -380,67 +421,67 @@ mod test {
         );
     }
 
-    #[test]
-    fn vertices_computation_system() {
-        // Arrange
-        let local = (1, 2, 3).into();
+    // #[test]
+    // fn vertices_computation_system() {
+    //     // Arrange
+    //     let local = (1, 2, 3).into();
 
-        let mut events = Events::<EvtChunkDirty>::default();
-        events.send(EvtChunkDirty(local));
+    //     let mut events = Events::<EvtChunkDirty>::default();
+    //     events.send(EvtChunkDirty(local));
 
-        let mut world = World::default();
-        world.insert_resource(events);
+    //     let mut world = World::default();
+    //     world.insert_resource(events);
 
-        let mut entity_map = ChunkEntityMap(HashMap::default());
+    //     let mut entity_map = ChunkEntityMap(HashMap::default());
 
-        let mut faces_occlusion =
-            ChunkFacesOcclusion([voxel::FacesOcclusion::default(); chunk::BUFFER_SIZE]);
+    //     let mut faces_occlusion =
+    //         ChunkFacesOcclusion([voxel::FacesOcclusion::default(); chunk::BUFFER_SIZE]);
 
-        faces_occlusion.0.fill([true; voxel::SIDE_COUNT]);
+    //     faces_occlusion.0.fill([true; voxel::SIDE_COUNT]);
 
-        let full_visible = (1, 1, 1).into();
-        faces_occlusion.0[chunk::to_index(full_visible)] = [false; voxel::SIDE_COUNT];
+    //     let full_visible = (1, 1, 1).into();
+    //     faces_occlusion.0[chunk::to_index(full_visible)] = [false; voxel::SIDE_COUNT];
 
-        let right_visible = (2, 1, 1).into();
-        faces_occlusion.0[chunk::to_index(right_visible)] = [false, true, true, true, true, true];
+    //     let right_visible = (2, 1, 1).into();
+    //     faces_occlusion.0[chunk::to_index(right_visible)] = [false, true, true, true, true, true];
 
-        let entity = world
-            .spawn()
-            .insert_bundle(ChunkBuildingBundle {
-                faces_occlusion,
-                ..Default::default()
-            })
-            .id();
+    //     let entity = world
+    //         .spawn()
+    //         .insert_bundle(ChunkBuildingBundle {
+    //             faces_occlusion,
+    //             ..Default::default()
+    //         })
+    //         .id();
 
-        entity_map.0.insert(local, entity);
+    //     entity_map.0.insert(local, entity);
 
-        world.insert_resource(entity_map);
+    //     world.insert_resource(entity_map);
 
-        let mut stage = SystemStage::parallel();
-        stage.add_system(super::vertices_computation_system);
+    //     let mut stage = SystemStage::parallel();
+    //     stage.add_system(super::vertices_computation_system);
 
-        // Act
-        stage.run(&mut world);
+    //     // Act
+    //     stage.run(&mut world);
 
-        // Assert
-        let vertices = world.query::<&ChunkVertices>().iter(&world).next().unwrap();
+    //     // Assert
+    //     let vertices = world.query::<&ChunkVertices>().iter(&world).next().unwrap();
 
-        for side in voxel::SIDES {
-            if side == voxel::Side::Right {
-                assert_eq!(
-                    vertices.0[side as usize].len(),
-                    8,
-                    "There should 8 right-sided faces vertices"
-                );
-            } else {
-                assert_eq!(
-                    vertices.0[side as usize].len(),
-                    4,
-                    "There should 4 face vertices except for right-side"
-                );
-            }
-        }
-    }
+    //     for side in voxel::SIDES {
+    //         if side == voxel::Side::Right {
+    //             assert_eq!(
+    //                 vertices.0[side as usize].len(),
+    //                 8,
+    //                 "There should 8 right-sided faces vertices"
+    //             );
+    //         } else {
+    //             assert_eq!(
+    //                 vertices.0[side as usize].len(),
+    //                 4,
+    //                 "There should 4 face vertices except for right-side"
+    //             );
+    //         }
+    //     }
+    // }
 
     // #[test]
     // fn mesh_generation_system() {

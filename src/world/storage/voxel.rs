@@ -41,14 +41,14 @@ pub const SIDES: [Side; SIDE_COUNT] = [
     Side::Back,
 ];
 
-pub fn get_side_normal(side: Side) -> [f32; 3] {
+pub fn get_side_normal(side: Side) -> Vec3 {
     match side {
-        Side::Right => [1.0, 0.0, 0.0],
-        Side::Left => [-1.0, 0.0, 0.0],
-        Side::Up => [0.0, 1.0, 0.0],
-        Side::Down => [0.0, -1.0, 0.0],
-        Side::Front => [0.0, 0.0, 1.0],
-        Side::Back => [0.0, 0.0, -1.0],
+        Side::Right => Vec3::new(1.0, 0.0, 0.0),
+        Side::Left => Vec3::new(-1.0, 0.0, 0.0),
+        Side::Up => Vec3::new(0.0, 1.0, 0.0),
+        Side::Down => Vec3::new(0.0, -1.0, 0.0),
+        Side::Front => Vec3::new(0.0, 0.0, 1.0),
+        Side::Back => Vec3::new(0.0, 0.0, -1.0),
     }
 }
 
@@ -61,6 +61,20 @@ pub fn get_side_dir(side: Side) -> IVec3 {
         Side::Front => IVec3::Z,
         Side::Back => -IVec3::Z,
     }
+}
+
+#[derive(Debug)]
+pub struct VoxelFace {
+    pub vertices: [IVec3; 4],
+    pub side: Side,
+    //TODO: light and color
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct VoxelVertex {
+    pub position: Vec3,
+    pub normal: Vec3,
+    //TODO: light and color
 }
 
 pub fn to_local(world: Vec3) -> IVec3 {

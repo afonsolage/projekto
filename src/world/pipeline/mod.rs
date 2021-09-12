@@ -13,7 +13,10 @@ pub use world_manipulation::{
     CmdChunkAdd, CmdChunkRemove, CmdChunkUpdate, EvtChunkAdded, EvtChunkRemoved, EvtChunkUpdated,
 };
 
-use super::storage::{chunk, voxel};
+use super::storage::{
+    chunk,
+    voxel::{self, VoxelFace, VoxelVertex},
+};
 
 #[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]
 enum Pipeline {
@@ -74,7 +77,9 @@ pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
 pub struct ChunkPipeline(Handle<PipelineDescriptor>);
 
 struct ChunkFacesOcclusion([voxel::FacesOcclusion; chunk::BUFFER_SIZE]);
-struct ChunkVertices([Vec<[f32; 3]>; voxel::SIDE_COUNT]);
+
+struct ChunkVertices(Vec<VoxelVertex>);
+struct ChunkFaces(Vec<VoxelFace>);
 
 #[derive(Bundle)]
 pub struct ChunkBundle {
@@ -98,6 +103,7 @@ impl Default for ChunkBundle {
 #[derive(Bundle)]
 pub struct ChunkBuildingBundle {
     faces_occlusion: ChunkFacesOcclusion,
+    faces: ChunkFaces,
     vertices: ChunkVertices,
 }
 
@@ -107,7 +113,8 @@ impl Default for ChunkBuildingBundle {
             faces_occlusion: ChunkFacesOcclusion(
                 [voxel::FacesOcclusion::default(); chunk::BUFFER_SIZE],
             ),
-            vertices: ChunkVertices([vec![], vec![], vec![], vec![], vec![], vec![]]),
+            faces: ChunkFaces(vec![]),
+            vertices: ChunkVertices(vec![]),
         }
     }
 }
