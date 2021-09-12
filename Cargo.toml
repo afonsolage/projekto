@@ -14,5 +14,5 @@ bracket-noise = "0.8.2"
 [features]
 dev = ["bevy/dynamic"]
 
-[profile.test]
-opt-level = 3
+#[profile.test]
+#opt-level = 3

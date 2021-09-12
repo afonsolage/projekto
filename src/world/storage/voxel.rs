@@ -63,7 +63,7 @@ pub fn get_side_dir(side: Side) -> IVec3 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct VoxelFace {
     pub vertices: [IVec3; 4],
     pub side: Side,

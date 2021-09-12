@@ -9,7 +9,7 @@ impl Plugin for DebugPlugin {
     }
 }
 
-const ESC_HOLD_TIMEOUT: f32 = 0.4;
+const ESC_HOLD_TIMEOUT: f32 = 0.2;
 struct EscHolding(f32);
 
 fn setup_hold_est_to_exit(mut commands: Commands) {

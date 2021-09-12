@@ -90,8 +90,6 @@ fn faces_occlusion_system(
             Ok(f) => f,
         };
 
-        trace!("Processing faces occlusion of chunk entity {}", *local);
-
         faces_occlusion.0.fill(voxel::FacesOcclusion::default());
 
         for voxel in chunk::voxels() {
@@ -280,6 +278,8 @@ fn faces_merging_system(
             Some(c) => c,
         };
 
+        dbg!(chunk.get_kind((1, 15, 15).into()));
+
         let merged_faces = mesh::merge_faces(&occlusion.0, chunk);
         faces.0 = merged_faces;
     }
@@ -289,7 +289,7 @@ fn faces_merging_system(
 mod test {
     use bevy::{app::Events, utils::HashMap};
 
-    use crate::world::pipeline::ChunkBuildingBundle;
+    use crate::world::{pipeline::ChunkBuildingBundle, storage::voxel::VoxelFace};
 
     use super::*;
 
@@ -421,67 +421,74 @@ mod test {
         );
     }
 
-    // #[test]
-    // fn vertices_computation_system() {
-    //     // Arrange
-    //     let local = (1, 2, 3).into();
+    #[test]
+    fn vertices_computation_system() {
+        // Arrange
+        let local = (1, 2, 3).into();
 
-    //     let mut events = Events::<EvtChunkDirty>::default();
-    //     events.send(EvtChunkDirty(local));
+        let mut events = Events::<EvtChunkDirty>::default();
+        events.send(EvtChunkDirty(local));
 
-    //     let mut world = World::default();
-    //     world.insert_resource(events);
+        let mut world = World::default();
+        world.insert_resource(events);
 
-    //     let mut entity_map = ChunkEntityMap(HashMap::default());
+        let mut entity_map = ChunkEntityMap(HashMap::default());
 
-    //     let mut faces_occlusion =
-    //         ChunkFacesOcclusion([voxel::FacesOcclusion::default(); chunk::BUFFER_SIZE]);
+        let side = voxel::Side::Up;
+        let faces = ChunkFaces(vec![VoxelFace {
+            side,
+            vertices: [
+                (0, 0, 0).into(),
+                (0, 0, 1).into(),
+                (1, 0, 1).into(),
+                (1, 0, 0).into(),
+            ],
+        }]);
 
-    //     faces_occlusion.0.fill([true; voxel::SIDE_COUNT]);
+        let entity = world
+            .spawn()
+            .insert_bundle(ChunkBuildingBundle {
+                faces,
+                ..Default::default()
+            })
+            .id();
 
-    //     let full_visible = (1, 1, 1).into();
-    //     faces_occlusion.0[chunk::to_index(full_visible)] = [false; voxel::SIDE_COUNT];
+        entity_map.0.insert(local, entity);
 
-    //     let right_visible = (2, 1, 1).into();
-    //     faces_occlusion.0[chunk::to_index(right_visible)] = [false, true, true, true, true, true];
+        world.insert_resource(entity_map);
 
-    //     let entity = world
-    //         .spawn()
-    //         .insert_bundle(ChunkBuildingBundle {
-    //             faces_occlusion,
-    //             ..Default::default()
-    //         })
-    //         .id();
+        let mut stage = SystemStage::parallel();
+        stage.add_system(super::vertices_computation_system);
 
-    //     entity_map.0.insert(local, entity);
+        // Act
+        stage.run(&mut world);
 
-    //     world.insert_resource(entity_map);
+        // Assert
+        let vertices = world.query::<&ChunkVertices>().iter(&world).next().unwrap();
 
-    //     let mut stage = SystemStage::parallel();
-    //     stage.add_system(super::vertices_computation_system);
-
-    //     // Act
-    //     stage.run(&mut world);
-
-    //     // Assert
-    //     let vertices = world.query::<&ChunkVertices>().iter(&world).next().unwrap();
-
-    //     for side in voxel::SIDES {
-    //         if side == voxel::Side::Right {
-    //             assert_eq!(
-    //                 vertices.0[side as usize].len(),
-    //                 8,
-    //                 "There should 8 right-sided faces vertices"
-    //             );
-    //         } else {
-    //             assert_eq!(
-    //                 vertices.0[side as usize].len(),
-    //                 4,
-    //                 "There should 4 face vertices except for right-side"
-    //             );
-    //         }
-    //     }
-    // }
+        let normal = voxel::get_side_normal(side);
+        assert_eq!(
+            vertices.0,
+            vec![
+                VoxelVertex {
+                    normal: normal,
+                    position: (0.0, 1.0, 0.0).into(),
+                },
+                VoxelVertex {
+                    normal: normal,
+                    position: (0.0, 1.0, 2.0).into(),
+                },
+                VoxelVertex {
+                    normal: normal,
+                    position: (2.0, 1.0, 2.0).into(),
+                },
+                VoxelVertex {
+                    normal: normal,
+                    position: (2.0, 1.0, 0.0).into(),
+                },
+            ]
+        );
+    }
 
     // #[test]
     // fn mesh_generation_system() {
