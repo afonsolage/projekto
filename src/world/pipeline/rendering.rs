@@ -278,8 +278,6 @@ fn faces_merging_system(
             Some(c) => c,
         };
 
-        dbg!(chunk.get_kind((1, 15, 15).into()));
-
         let merged_faces = mesh::merge_faces(&occlusion.0, chunk);
         faces.0 = merged_faces;
     }
