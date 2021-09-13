@@ -304,7 +304,7 @@ mod tests {
 
         let mut rnd = rand::thread_rng();
         for v in super::voxels() {
-            let k = rnd.gen::<u16>();
+            let k = rnd.gen::<u16>().into();
             chunk.set_kind(v, k);
             assert_eq!(k, chunk.get_kind(v));
         }

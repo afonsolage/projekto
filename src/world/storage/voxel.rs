@@ -6,8 +6,22 @@ use super::chunk;
 
 pub const SIDE_COUNT: usize = 6;
 
-pub type Kind = u16;
 pub type FacesOcclusion = [bool; SIDE_COUNT];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Kind(u16);
+
+impl From<u16> for Kind {
+    fn from(v: u16) -> Self {
+        Self(v)
+    }
+}
+
+impl Kind {
+    pub fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Side {

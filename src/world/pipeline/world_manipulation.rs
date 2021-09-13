@@ -81,7 +81,7 @@ fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
                         let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
 
                         for y in 0..end {
-                            voxels.push(((x as i32, y as i32, z as i32).into(), 1));
+                            voxels.push(((x as i32, y as i32, z as i32).into(), 1.into()));
                         }
                     }
                 }
@@ -244,7 +244,10 @@ mod test {
     fn process_update_chunks_system() {
         // Arrange
         let mut events = Events::<CmdChunkUpdate>::default();
-        events.send(CmdChunkUpdate((1, 2, 3).into(), vec![(IVec3::ONE, 2)]));
+        events.send(CmdChunkUpdate(
+            (1, 2, 3).into(),
+            vec![(IVec3::ONE, 2.into())],
+        ));
 
         let mut voxel_world = storage::VoxWorld::default();
         voxel_world.add((1, 2, 3).into());
@@ -268,7 +271,7 @@ mod test {
                 .get((1, 2, 3).into())
                 .unwrap()
                 .get_kind(IVec3::ONE),
-            2
+            2.into()
         );
 
         let evt = world

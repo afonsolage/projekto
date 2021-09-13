@@ -83,7 +83,7 @@ pub fn merge_faces(
         !chunk::is_within_bounds(voxel)
             || merged[side as usize].contains(&voxel)
             || occlusion[chunk::to_index(voxel)][side as usize]
-            || chunk.get_kind(voxel) == 0
+            || chunk.get_kind(voxel).is_empty()
     }
 
     fn find_furthest_eq_voxel(

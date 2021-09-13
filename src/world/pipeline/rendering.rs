@@ -95,7 +95,7 @@ fn faces_occlusion_system(
         for voxel in chunk::voxels() {
             let voxel_faces = &mut faces_occlusion.0[chunk::to_index(voxel)];
 
-            if chunk.get_kind(voxel) == 0 {
+            if chunk.get_kind(voxel).is_empty() {
                 voxel_faces.fill(true);
                 continue;
             }
@@ -116,7 +116,7 @@ fn faces_occlusion_system(
                     chunk.get_kind(neighbor_pos)
                 };
 
-                if neighbor_kind == 1 {
+                if !neighbor_kind.is_empty() {
                     voxel_faces[side as usize] = true;
                 }
             }
@@ -360,17 +360,17 @@ mod test {
 
         let chunk = voxel_world.get_mut(local).unwrap();
         // Top-Bottom occlusion
-        chunk.set_kind((1, 1, 1).into(), 1);
-        chunk.set_kind((1, 2, 1).into(), 1);
+        chunk.set_kind((1, 1, 1).into(), 1.into());
+        chunk.set_kind((1, 2, 1).into(), 1.into());
 
         // Full occluded voxel at (10, 10, 10)
-        chunk.set_kind((10, 10, 10).into(), 1);
-        chunk.set_kind((9, 10, 10).into(), 1);
-        chunk.set_kind((11, 10, 10).into(), 1);
-        chunk.set_kind((10, 9, 10).into(), 1);
-        chunk.set_kind((10, 11, 10).into(), 1);
-        chunk.set_kind((10, 10, 9).into(), 1);
-        chunk.set_kind((10, 10, 11).into(), 1);
+        chunk.set_kind((10, 10, 10).into(), 1.into());
+        chunk.set_kind((9, 10, 10).into(), 1.into());
+        chunk.set_kind((11, 10, 10).into(), 1.into());
+        chunk.set_kind((10, 9, 10).into(), 1.into());
+        chunk.set_kind((10, 11, 10).into(), 1.into());
+        chunk.set_kind((10, 10, 9).into(), 1.into());
+        chunk.set_kind((10, 10, 11).into(), 1.into());
 
         let mut world = World::default();
         world.insert_resource(voxel_world);
