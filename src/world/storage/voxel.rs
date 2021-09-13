@@ -33,19 +33,6 @@ pub enum Side {
     Back = 5,
 }
 
-// impl Side {
-// fn opposite(&self) -> VoxelSides {
-//     match self {
-//         VoxelSides::Right => VoxelSides::Left,
-//         VoxelSides::Left => VoxelSides::Right,
-//         VoxelSides::Up => VoxelSides::Down,
-//         VoxelSides::Down => VoxelSides::Up,
-//         VoxelSides::Front => VoxelSides::Back,
-//         VoxelSides::Back => VoxelSides::Front,
-//     }
-// }
-// }
-
 pub const SIDES: [Side; SIDE_COUNT] = [
     Side::Right,
     Side::Left,
@@ -55,25 +42,27 @@ pub const SIDES: [Side; SIDE_COUNT] = [
     Side::Back,
 ];
 
-pub fn get_side_normal(side: Side) -> Vec3 {
-    match side {
-        Side::Right => Vec3::new(1.0, 0.0, 0.0),
-        Side::Left => Vec3::new(-1.0, 0.0, 0.0),
-        Side::Up => Vec3::new(0.0, 1.0, 0.0),
-        Side::Down => Vec3::new(0.0, -1.0, 0.0),
-        Side::Front => Vec3::new(0.0, 0.0, 1.0),
-        Side::Back => Vec3::new(0.0, 0.0, -1.0),
+impl Side {
+    pub fn get_side_normal(&self) -> Vec3 {
+        match self {
+            Side::Right => Vec3::new(1.0, 0.0, 0.0),
+            Side::Left => Vec3::new(-1.0, 0.0, 0.0),
+            Side::Up => Vec3::new(0.0, 1.0, 0.0),
+            Side::Down => Vec3::new(0.0, -1.0, 0.0),
+            Side::Front => Vec3::new(0.0, 0.0, 1.0),
+            Side::Back => Vec3::new(0.0, 0.0, -1.0),
+        }
     }
-}
 
-pub fn get_side_dir(side: Side) -> IVec3 {
-    match side {
-        Side::Right => IVec3::X,
-        Side::Left => -IVec3::X,
-        Side::Up => IVec3::Y,
-        Side::Down => -IVec3::Y,
-        Side::Front => IVec3::Z,
-        Side::Back => -IVec3::Z,
+    pub fn get_side_dir(&self) -> IVec3 {
+        match self {
+            Side::Right => IVec3::X,
+            Side::Left => -IVec3::X,
+            Side::Up => IVec3::Y,
+            Side::Down => -IVec3::Y,
+            Side::Front => IVec3::Z,
+            Side::Back => -IVec3::Z,
+        }
     }
 }
 

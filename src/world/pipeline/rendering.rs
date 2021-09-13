@@ -101,7 +101,7 @@ fn faces_occlusion_system(
             }
 
             for side in voxel::SIDES {
-                let dir = voxel::get_side_dir(side);
+                let dir = side.get_side_dir();
                 let neighbor_pos = voxel + dir;
 
                 let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
@@ -157,7 +157,7 @@ fn vertices_computation_system(
         vertices.0.clear();
 
         for face in faces.0.iter() {
-            let normal = voxel::get_side_normal(face.side);
+            let normal = face.side.get_side_normal();
 
             for (i, v) in face.vertices.iter().enumerate() {
                 let base_vertex_idx = mesh::VERTICES_INDICES[face.side as usize][i];
@@ -471,7 +471,7 @@ mod test {
         // Assert
         let vertices = world.query::<&ChunkVertices>().iter(&world).next().unwrap();
 
-        let normal = voxel::get_side_normal(side);
+        let normal = side.get_side_normal();
         assert_eq!(
             vertices.0,
             vec![
