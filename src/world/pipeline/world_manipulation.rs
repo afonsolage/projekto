@@ -143,11 +143,32 @@ fn process_update_chunks_system(
 
         trace!("Update chunk {} in world ({:?})", *chunk_local, &voxels);
 
+        let mut neighbor_chunks = vec![];
+
         for (voxel, kind) in voxels {
             chunk.set(*voxel, *kind);
         }
 
+        drop(chunk);
+
+        for (voxel, _) in voxels {
+            if chunk::is_at_bounds(*voxel) {
+                let dir = chunk::get_boundary_dir(*voxel);
+                let neighbor_chunk = *chunk_local + dir;
+
+                if world.get(neighbor_chunk).is_some() {
+                    neighbor_chunks.push(neighbor_chunk);
+                }
+            }
+        }
+
+        debug!("Updating chunk {}", *chunk_local);
         writer.send(EvtChunkUpdated(*chunk_local));
+
+        for neighbor in neighbor_chunks {
+            debug!("Notifying neighbor chunk {}", neighbor);
+            writer.send(EvtChunkUpdated(neighbor));
+        }
     }
 }
 
