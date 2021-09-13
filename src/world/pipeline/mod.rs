@@ -14,7 +14,7 @@ pub use world_manipulation::{
 };
 
 use super::storage::{
-    chunk,
+    chunk::ChunkStorage,
     voxel::{self, VoxelFace, VoxelVertex},
 };
 
@@ -76,7 +76,7 @@ pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
 
 pub struct ChunkPipeline(Handle<PipelineDescriptor>);
 
-struct ChunkFacesOcclusion([voxel::FacesOcclusion; chunk::BUFFER_SIZE]);
+pub type ChunkFacesOcclusion = ChunkStorage<voxel::FacesOcclusion>;
 
 struct ChunkVertices(Vec<VoxelVertex>);
 struct ChunkFaces(Vec<VoxelFace>);
@@ -110,9 +110,7 @@ pub struct ChunkBuildingBundle {
 impl Default for ChunkBuildingBundle {
     fn default() -> Self {
         Self {
-            faces_occlusion: ChunkFacesOcclusion(
-                [voxel::FacesOcclusion::default(); chunk::BUFFER_SIZE],
-            ),
+            faces_occlusion: ChunkFacesOcclusion::default(),
             faces: ChunkFaces(vec![]),
             vertices: ChunkVertices(vec![]),
         }

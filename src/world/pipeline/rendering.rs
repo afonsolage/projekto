@@ -90,36 +90,37 @@ fn faces_occlusion_system(
             Ok(f) => f,
         };
 
-        faces_occlusion.0.fill(voxel::FacesOcclusion::default());
+        faces_occlusion.set_all(voxel::FacesOcclusion::default());
 
         for voxel in chunk::voxels() {
-            let voxel_faces = &mut faces_occlusion.0[chunk::to_index(voxel)];
+            let mut voxel_faces = faces_occlusion.get(voxel);
 
-            if chunk.get_kind(voxel).is_empty() {
-                voxel_faces.fill(true);
-                continue;
-            }
+            if chunk.get(voxel).is_empty() {
+                voxel_faces.set_all(true);
+            } else {
+                for side in voxel::SIDES {
+                    let dir = side.get_side_dir();
+                    let neighbor_pos = voxel + dir;
 
-            for side in voxel::SIDES {
-                let dir = side.get_side_dir();
-                let neighbor_pos = voxel + dir;
+                    let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
+                        let (next_chunk_dir, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
 
-                let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
-                    let (next_chunk_dir, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
-
-                    if let Some(neighbor_chunk) = world.get(*local + next_chunk_dir) {
-                        neighbor_chunk.get_kind(next_chunk_voxel)
+                        if let Some(neighbor_chunk) = world.get(*local + next_chunk_dir) {
+                            neighbor_chunk.get(next_chunk_voxel)
+                        } else {
+                            continue;
+                        }
                     } else {
-                        continue;
-                    }
-                } else {
-                    chunk.get_kind(neighbor_pos)
-                };
+                        chunk.get(neighbor_pos)
+                    };
 
-                if !neighbor_kind.is_empty() {
-                    voxel_faces[side as usize] = true;
+                    if !neighbor_kind.is_empty() {
+                        voxel_faces[side as usize] = true;
+                    }
                 }
             }
+
+            faces_occlusion.set(voxel, voxel_faces);
         }
     }
 }
@@ -285,7 +286,7 @@ fn faces_merging_system(
             Some(c) => c,
         };
 
-        let merged_faces = mesh::merge_faces(&occlusion.0, chunk);
+        let merged_faces = mesh::merge_faces(&occlusion, chunk);
         faces.0 = merged_faces;
     }
 }
@@ -339,10 +340,7 @@ mod test {
             .unwrap();
 
         assert!(
-            faces_occlusion
-                .0
-                .iter()
-                .all(|a| a.iter().all(|b| *b == true)),
+            faces_occlusion.iter().all(|a| a.is_fully_occluded()),
             "A chunk full of empty-kind voxels should be fully occluded"
         );
     }
@@ -360,17 +358,17 @@ mod test {
 
         let chunk = voxel_world.get_mut(local).unwrap();
         // Top-Bottom occlusion
-        chunk.set_kind((1, 1, 1).into(), 1.into());
-        chunk.set_kind((1, 2, 1).into(), 1.into());
+        chunk.set((1, 1, 1).into(), 1.into());
+        chunk.set((1, 2, 1).into(), 1.into());
 
         // Full occluded voxel at (10, 10, 10)
-        chunk.set_kind((10, 10, 10).into(), 1.into());
-        chunk.set_kind((9, 10, 10).into(), 1.into());
-        chunk.set_kind((11, 10, 10).into(), 1.into());
-        chunk.set_kind((10, 9, 10).into(), 1.into());
-        chunk.set_kind((10, 11, 10).into(), 1.into());
-        chunk.set_kind((10, 10, 9).into(), 1.into());
-        chunk.set_kind((10, 10, 11).into(), 1.into());
+        chunk.set((10, 10, 10).into(), 1.into());
+        chunk.set((9, 10, 10).into(), 1.into());
+        chunk.set((11, 10, 10).into(), 1.into());
+        chunk.set((10, 9, 10).into(), 1.into());
+        chunk.set((10, 11, 10).into(), 1.into());
+        chunk.set((10, 10, 9).into(), 1.into());
+        chunk.set((10, 10, 11).into(), 1.into());
 
         let mut world = World::default();
         world.insert_resource(voxel_world);
@@ -401,27 +399,27 @@ mod test {
             .next()
             .unwrap();
 
-        let faces = faces_occlusion.0[chunk::to_index((1, 2, 1).into())];
+        let faces = faces_occlusion.get((1, 2, 1).into());
 
         assert_eq!(
             faces,
-            [false, false, false, true, false, false],
+            [false, false, false, true, false, false].into(),
             "Only down face should be occluded by the bottom voxel"
         );
 
-        let faces = faces_occlusion.0[chunk::to_index((1, 1, 1).into())];
+        let faces = faces_occlusion.get((1, 1, 1).into());
 
         assert_eq!(
             faces,
-            [false, false, true, false, false, false],
+            [false, false, true, false, false, false].into(),
             "Only down face should be occluded by the bottom voxel"
         );
 
-        let faces = faces_occlusion.0[chunk::to_index((10, 10, 10).into())];
+        let faces = faces_occlusion.get((10, 10, 10).into());
 
         assert_eq!(
             faces,
-            [true; voxel::SIDE_COUNT],
+            [true; voxel::SIDE_COUNT].into(),
             "Voxel fully surrounded by another non-empty voxels should be fully occluded"
         );
     }

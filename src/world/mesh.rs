@@ -4,9 +4,12 @@ use bevy::math::IVec3;
 
 use crate::world::storage::voxel;
 
-use super::storage::{
-    chunk::{self, Chunk},
-    voxel::VoxelFace,
+use super::{
+    pipeline::ChunkFacesOcclusion,
+    storage::{
+        chunk::{self, ChunkKind},
+        voxel::VoxelFace,
+    },
 };
 
 /*
@@ -69,21 +72,18 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
     res
 }
 
-pub fn merge_faces(
-    occlusion: &[voxel::FacesOcclusion; chunk::BUFFER_SIZE],
-    chunk: &Chunk,
-) -> Vec<VoxelFace> {
+pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<VoxelFace> {
     fn should_skip_voxel(
         merged: &[HashSet<IVec3>; voxel::SIDE_COUNT],
         voxel: IVec3,
         side: voxel::Side,
-        chunk: &Chunk,
-        occlusion: &[voxel::FacesOcclusion; chunk::BUFFER_SIZE],
+        chunk: &ChunkKind,
+        occlusion: &ChunkFacesOcclusion,
     ) -> bool {
         !chunk::is_within_bounds(voxel)
             || merged[side as usize].contains(&voxel)
-            || occlusion[chunk::to_index(voxel)][side as usize]
-            || chunk.get_kind(voxel).is_empty()
+            || occlusion.get(voxel)[side as usize]
+            || chunk.get(voxel).is_empty()
     }
 
     fn find_furthest_eq_voxel(
@@ -91,8 +91,8 @@ pub fn merge_faces(
         step: IVec3,
         merged: &[HashSet<IVec3>; voxel::SIDE_COUNT],
         side: voxel::Side,
-        chunk: &Chunk,
-        occlusion: &[voxel::FacesOcclusion; chunk::BUFFER_SIZE],
+        chunk: &ChunkKind,
+        occlusion: &ChunkFacesOcclusion,
     ) -> IVec3 {
         let mut next_voxel = begin + step;
 
@@ -123,53 +123,47 @@ pub fn merge_faces(
         (IVec3::Y, IVec3::X),
     ];
 
-    for y in 0..chunk::AXIS_SIZE as i32 {
-        for x in 0..chunk::AXIS_SIZE as i32 {
-            for z in 0..chunk::AXIS_SIZE as i32 {
-                let voxel = (x, y, z).into();
-                for side in voxel::SIDES {
-                    let axis = side_axis[side as usize];
+    for voxel in chunk::voxels() {
+        for side in voxel::SIDES {
+            let axis = side_axis[side as usize];
 
-                    if should_skip_voxel(&merged, voxel, side, chunk, occlusion) {
-                        continue;
-                    }
+            if should_skip_voxel(&merged, voxel, side, chunk, occlusion) {
+                continue;
+            }
 
-                    // Finds the furthest equal voxel on current axis
-                    let v1 = voxel;
-                    let v2 = find_furthest_eq_voxel(voxel, axis.0, &merged, side, chunk, occlusion);
+            // Finds the furthest equal voxel on current axis
+            let v1 = voxel;
+            let v2 = find_furthest_eq_voxel(voxel, axis.0, &merged, side, chunk, occlusion);
 
-                    let step = axis.1;
-                    let mut v3 = v2 + step;
-                    let mut tmp = v1 + step;
-                    while !should_skip_voxel(&merged, tmp, side, chunk, occlusion) {
-                        let furthest =
-                            find_furthest_eq_voxel(tmp, axis.0, &merged, side, chunk, occlusion);
+            let step = axis.1;
+            let mut v3 = v2 + step;
+            let mut tmp = v1 + step;
+            while !should_skip_voxel(&merged, tmp, side, chunk, occlusion) {
+                let furthest = find_furthest_eq_voxel(tmp, axis.0, &merged, side, chunk, occlusion);
 
-                        if furthest == v3 {
-                            v3 += step;
-                            tmp += step;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    v3 -= step;
-                    let v4 = v1 + (v3 - v2);
-
-                    for mx in v1.x..=v3.x {
-                        for my in v1.y..=v3.y {
-                            for mz in v1.z..=v3.z {
-                                merged[side as usize].insert((mx, my, mz).into());
-                            }
-                        }
-                    }
-
-                    faces_vertices.push(VoxelFace {
-                        vertices: [v1, v2, v3, v4],
-                        side,
-                    })
+                if furthest == v3 {
+                    v3 += step;
+                    tmp += step;
+                } else {
+                    break;
                 }
             }
+
+            v3 -= step;
+            let v4 = v1 + (v3 - v2);
+
+            for mx in v1.x..=v3.x {
+                for my in v1.y..=v3.y {
+                    for mz in v1.z..=v3.z {
+                        merged[side as usize].insert((mx, my, mz).into());
+                    }
+                }
+            }
+
+            faces_vertices.push(VoxelFace {
+                vertices: [v1, v2, v3, v4],
+                side,
+            })
         }
     }
 

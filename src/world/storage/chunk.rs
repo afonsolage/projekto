@@ -6,15 +6,15 @@ use super::voxel;
 
 pub const AXIS_SIZE: usize = 16;
 // const CHUNK_AXIS_OFFSET: usize = CHUNK_AXIS_SIZE / 2;
-pub const BUFFER_SIZE: usize = AXIS_SIZE * AXIS_SIZE * AXIS_SIZE;
+const BUFFER_SIZE: usize = AXIS_SIZE * AXIS_SIZE * AXIS_SIZE;
 
-pub const X_MASK: usize = 0b_1111_0000_0000;
-pub const Z_MASK: usize = 0b_0000_1111_0000;
-pub const Y_MASK: usize = 0b_0000_0000_1111;
+const X_MASK: usize = 0b_1111_0000_0000;
+const Z_MASK: usize = 0b_0000_1111_0000;
+const Y_MASK: usize = 0b_0000_0000_1111;
 
-pub const X_SHIFT: usize = 8;
-pub const Z_SHIFT: usize = 4;
-pub const Y_SHIFT: usize = 0;
+const X_SHIFT: usize = 8;
+const Z_SHIFT: usize = 4;
+const Y_SHIFT: usize = 0;
 
 #[derive(Default)]
 pub struct ChunkIter {
@@ -28,40 +28,47 @@ impl Iterator for ChunkIter {
         if self.iter_index >= BUFFER_SIZE {
             None
         } else {
-            let xyz = to_xyz(self.iter_index);
+            let xyz = from_index(self.iter_index);
             self.iter_index += 1;
             Some(xyz)
         }
     }
 }
 
-pub struct Chunk {
-    voxel_kind: [voxel::Kind; BUFFER_SIZE],
-}
+pub struct ChunkStorage<T: Sized + Copy + Default>([T; BUFFER_SIZE]);
 
-impl Default for Chunk {
+impl<T: Sized + Copy + Default> Default for ChunkStorage<T> {
     fn default() -> Self {
-        Self {
-            voxel_kind: [voxel::Kind::default(); BUFFER_SIZE],
-        }
+        Self([T::default(); BUFFER_SIZE])
     }
 }
 
-impl Chunk {
-    pub fn get_kind(&self, local: IVec3) -> voxel::Kind {
-        self.voxel_kind[to_index(local)]
+impl<T: Sized + Copy + Default> ChunkStorage<T> {
+    pub fn get(&self, local: IVec3) -> T {
+        self.0[to_index(local)]
     }
 
-    pub fn set_kind(&mut self, local: IVec3, kind: voxel::Kind) {
-        self.voxel_kind[to_index(local)] = kind;
+    pub fn set(&mut self, local: IVec3, value: T) {
+        self.0[to_index(local)] = value;
+    }
+
+    pub fn set_all(&mut self, value: T) {
+        self.0.fill(value);
+    }
+
+    #[cfg(test)]
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.0.iter()
     }
 }
 
-pub fn voxels() -> impl Iterator<Item = IVec3> {
-    ChunkIter::default()
+pub type ChunkKind = ChunkStorage<voxel::Kind>;
+
+fn to_index(local: IVec3) -> usize {
+    (local.x << X_SHIFT | local.y << Y_SHIFT | local.z << Z_SHIFT) as usize
 }
 
-pub fn to_xyz(index: usize) -> IVec3 {
+fn from_index(index: usize) -> IVec3 {
     IVec3::new(
         ((index & X_MASK) >> X_SHIFT) as i32,
         ((index & Y_MASK) >> Y_SHIFT) as i32,
@@ -69,13 +76,12 @@ pub fn to_xyz(index: usize) -> IVec3 {
     )
 }
 
-pub fn to_index(local: IVec3) -> usize {
-    let (x, y, z) = local.into();
-    (x << X_SHIFT | y << Y_SHIFT | z << Z_SHIFT) as usize
+pub fn voxels() -> impl Iterator<Item = IVec3> {
+    ChunkIter::default()
 }
 
-pub fn is_within_bounds(pos: IVec3) -> bool {
-    math::is_within_cubic_bounds(pos, 0, AXIS_SIZE as i32 - 1)
+pub fn is_within_bounds(local: IVec3) -> bool {
+    math::is_within_cubic_bounds(local, 0, AXIS_SIZE as i32 - 1)
 }
 
 pub fn to_world(local: IVec3) -> Vec3 {
@@ -127,42 +133,42 @@ mod tests {
 
     use crate::world::storage::chunk::AXIS_SIZE;
 
-    use super::Chunk;
+    use super::ChunkStorage;
 
     #[test]
     fn to_xyz() {
-        assert_eq!(IVec3::new(0, 0, 0), super::to_xyz(0));
-        assert_eq!(IVec3::new(0, 1, 0), super::to_xyz(1));
-        assert_eq!(IVec3::new(0, 2, 0), super::to_xyz(2));
+        assert_eq!(IVec3::new(0, 0, 0), super::from_index(0));
+        assert_eq!(IVec3::new(0, 1, 0), super::from_index(1));
+        assert_eq!(IVec3::new(0, 2, 0), super::from_index(2));
 
-        assert_eq!(IVec3::new(0, 0, 1), super::to_xyz(super::AXIS_SIZE));
-        assert_eq!(IVec3::new(0, 1, 1), super::to_xyz(super::AXIS_SIZE + 1));
-        assert_eq!(IVec3::new(0, 2, 1), super::to_xyz(super::AXIS_SIZE + 2));
+        assert_eq!(IVec3::new(0, 0, 1), super::from_index(super::AXIS_SIZE));
+        assert_eq!(IVec3::new(0, 1, 1), super::from_index(super::AXIS_SIZE + 1));
+        assert_eq!(IVec3::new(0, 2, 1), super::from_index(super::AXIS_SIZE + 2));
 
         assert_eq!(
             IVec3::new(1, 0, 0),
-            super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE)
+            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE)
         );
         assert_eq!(
             IVec3::new(1, 1, 0),
-            super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + 1)
+            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + 1)
         );
         assert_eq!(
             IVec3::new(1, 2, 0),
-            super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + 2)
+            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + 2)
         );
 
         assert_eq!(
             IVec3::new(1, 0, 1),
-            super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE)
+            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE)
         );
         assert_eq!(
             IVec3::new(1, 1, 1),
-            super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 1)
+            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 1)
         );
         assert_eq!(
             IVec3::new(1, 2, 1),
-            super::to_xyz(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 2)
+            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 2)
         );
     }
 
@@ -299,14 +305,14 @@ mod tests {
     }
 
     #[test]
-    fn set_get_kind() {
-        let mut chunk = Chunk::default();
+    fn set_get() {
+        let mut chunk = ChunkStorage::<u8>::default();
 
         let mut rnd = rand::thread_rng();
         for v in super::voxels() {
-            let k = rnd.gen::<u16>().into();
-            chunk.set_kind(v, k);
-            assert_eq!(k, chunk.get_kind(v));
+            let k = rnd.gen::<u8>();
+            chunk.set(v, k);
+            assert_eq!(k, chunk.get(v));
         }
     }
 

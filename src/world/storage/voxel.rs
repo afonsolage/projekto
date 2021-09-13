@@ -1,3 +1,5 @@
+use std::ops::{Index, IndexMut};
+
 use bevy::prelude::*;
 
 use crate::world::math;
@@ -5,8 +7,6 @@ use crate::world::math;
 use super::chunk;
 
 pub const SIDE_COUNT: usize = 6;
-
-pub type FacesOcclusion = [bool; SIDE_COUNT];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Kind(u16);
@@ -63,6 +63,40 @@ impl Side {
             Side::Front => IVec3::Z,
             Side::Back => -IVec3::Z,
         }
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FacesOcclusion([bool; SIDE_COUNT]);
+
+impl FacesOcclusion {
+    pub fn set_all(&mut self, occluded: bool) {
+        self.0.fill(occluded)
+    }
+
+    #[cfg(test)]
+    pub fn is_fully_occluded(&self) -> bool {
+        return self.0.iter().all(|&b| b);
+    }
+}
+
+impl Index<usize> for FacesOcclusion {
+    type Output = bool;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for FacesOcclusion {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
+impl From<[bool; 6]> for FacesOcclusion {
+    fn from(v: [bool; 6]) -> Self {
+        Self(v)
     }
 }
 

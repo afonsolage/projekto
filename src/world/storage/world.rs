@@ -1,28 +1,32 @@
 use bevy::{prelude::*, utils::HashMap};
 
-use super::chunk::Chunk;
+use super::chunk::ChunkKind;
 
 #[derive(Default)]
 pub struct VoxWorld {
-    chunks: HashMap<IVec3, Chunk>,
+    chunks: HashMap<IVec3, ChunkKind>,
 }
 
 impl VoxWorld {
     pub fn add(&mut self, pos: IVec3) {
-        if self.chunks.insert(pos.clone(), Chunk::default()).is_some() {
+        if self
+            .chunks
+            .insert(pos.clone(), ChunkKind::default())
+            .is_some()
+        {
             panic!("Created a duplicated chunk at {:?}", &pos);
         }
     }
 
-    pub fn remove(&mut self, pos: IVec3) -> Option<Chunk> {
+    pub fn remove(&mut self, pos: IVec3) -> Option<ChunkKind> {
         self.chunks.remove(&pos)
     }
 
-    pub fn get(&self, pos: IVec3) -> Option<&Chunk> {
+    pub fn get(&self, pos: IVec3) -> Option<&ChunkKind> {
         self.chunks.get(&pos)
     }
 
-    pub fn get_mut(&mut self, pos: IVec3) -> Option<&mut Chunk> {
+    pub fn get_mut(&mut self, pos: IVec3) -> Option<&mut ChunkKind> {
         self.chunks.get_mut(&pos)
     }
 }

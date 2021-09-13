@@ -105,7 +105,7 @@ fn process_add_chunks_system(
         let chunk = world.get_mut(*local).unwrap();
 
         for &(voxel, kind) in voxels {
-            chunk.set_kind(voxel, kind);
+            chunk.set(voxel, kind);
         }
 
         writer.send(EvtChunkAdded(*local));
@@ -144,7 +144,7 @@ fn process_update_chunks_system(
         trace!("Update chunk {} in world ({:?})", *chunk_local, &voxels);
 
         for (voxel, kind) in voxels {
-            chunk.set_kind(*voxel, *kind);
+            chunk.set(*voxel, *kind);
         }
 
         writer.send(EvtChunkUpdated(*chunk_local));
@@ -270,7 +270,7 @@ mod test {
                 .unwrap()
                 .get((1, 2, 3).into())
                 .unwrap()
-                .get_kind(IVec3::ONE),
+                .get(IVec3::ONE),
             2.into()
         );
 
