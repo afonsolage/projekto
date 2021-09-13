@@ -4,7 +4,7 @@ use bevy::{
 };
 
 use crate::world::{
-    math, mesh,
+    mesh,
     storage::{
         self, chunk,
         voxel::{self, VoxelVertex},
