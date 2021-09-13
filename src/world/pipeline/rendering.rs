@@ -4,7 +4,7 @@ use bevy::{
 };
 
 use crate::world::{
-    mesh,
+    math, mesh,
     storage::{
         self, chunk,
         voxel::{self, VoxelVertex},
@@ -104,12 +104,19 @@ fn faces_occlusion_system(
                 let dir = voxel::get_side_dir(side);
                 let neighbor_pos = voxel + dir;
 
-                if !chunk::is_within_bounds(neighbor_pos) {
-                    // TODO: Check neighborhood
-                    continue;
-                }
+                let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
+                    let (next_chunk_dir, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
 
-                if chunk.get_kind(neighbor_pos) == 1 {
+                    if let Some(neighbor_chunk) = world.get(*local + next_chunk_dir) {
+                        neighbor_chunk.get_kind(next_chunk_voxel)
+                    } else {
+                        continue;
+                    }
+                } else {
+                    chunk.get_kind(neighbor_pos)
+                };
+
+                if neighbor_kind == 1 {
                     voxel_faces[side as usize] = true;
                 }
             }

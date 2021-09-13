@@ -90,6 +90,36 @@ pub fn to_local(world: Vec3) -> IVec3 {
     )
 }
 
+pub fn overlap_voxel(pos: IVec3) -> (IVec3, IVec3) {
+    let overlapping_voxel = math::euclid_rem(pos, AXIS_SIZE as i32);
+    let overlapping_dir = (
+        if pos.x < 0 {
+            -1
+        } else if pos.x >= AXIS_SIZE as i32 {
+            1
+        } else {
+            0
+        },
+        if pos.y < 0 {
+            -1
+        } else if pos.y >= AXIS_SIZE as i32 {
+            1
+        } else {
+            0
+        },
+        if pos.z < 0 {
+            -1
+        } else if pos.z >= AXIS_SIZE as i32 {
+            1
+        } else {
+            0
+        },
+    )
+        .into();
+
+    (overlapping_dir, overlapping_voxel)
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::math::IVec3;
@@ -278,5 +308,25 @@ mod tests {
             chunk.set_kind(v, k);
             assert_eq!(k, chunk.get_kind(v));
         }
+    }
+
+    #[test]
+    fn overlap_voxel() {
+        assert_eq!(
+            super::overlap_voxel((-1, 10, 5).into()),
+            ((-1, 0, 0).into(), (15, 10, 5).into())
+        );
+        assert_eq!(
+            super::overlap_voxel((-1, 10, 16).into()),
+            ((-1, 0, 1).into(), (15, 10, 0).into())
+        );
+        assert_eq!(
+            super::overlap_voxel((0, 0, 0).into()),
+            ((0, 0, 0).into(), (0, 0, 0).into())
+        );
+        assert_eq!(
+            super::overlap_voxel((17, 10, 5).into()),
+            ((1, 0, 0).into(), (1, 10, 5).into())
+        );
     }
 }
