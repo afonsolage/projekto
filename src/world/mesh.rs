@@ -95,12 +95,9 @@ pub fn merge_faces(
         occlusion: &[voxel::FacesOcclusion; chunk::BUFFER_SIZE],
     ) -> IVec3 {
         let mut next_voxel = begin + step;
-        while chunk::is_within_bounds(next_voxel) {
-            if should_skip_voxel(&merged, next_voxel, side, chunk, occlusion) {
-                break;
-            } else {
-                next_voxel += step;
-            }
+
+        while !should_skip_voxel(&merged, next_voxel, side, chunk, occlusion) {
+            next_voxel += step;
         }
         next_voxel -= step;
 
