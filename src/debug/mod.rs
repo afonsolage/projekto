@@ -33,3 +33,135 @@ fn hold_esc_to_exit(
         esc_holding.0 = 0.0;
     }
 }
+
+use std::collections::HashMap;
+
+#[derive(Default)]
+pub struct PerfCounterMap(pub HashMap<String, PerfCounter>);
+
+impl PerfCounterMap {
+    pub fn add(&mut self, counter: PerfCounter) {
+        if counter.is_empty() {
+            return;
+        }
+
+        let entry = self.0.entry(counter.name.clone()).or_default();
+        entry.add(counter);
+    }
+}
+
+pub struct PerfCounterGuard<'a>(&'a mut PerfCounter, std::time::Instant);
+
+impl<'a> PerfCounterGuard<'a> {
+    pub fn new(perf_counter: &'a mut PerfCounter) -> Self {
+        Self(perf_counter, std::time::Instant::now())
+    }
+}
+
+impl<'a> Drop for PerfCounterGuard<'a> {
+    fn drop(&mut self) {
+        let end = self.1.elapsed();
+        let duration = end.as_micros() as u64;
+
+        debug_assert!(duration > 0);
+
+        self.0.counter += 1u64;
+        self.0.elapsed += duration;
+
+        if duration < self.0.min {
+            self.0.min = duration;
+        }
+        if duration > self.0.max {
+            self.0.max = duration;
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PerfCounter {
+    start: std::time::Instant,
+    pub name: String,
+    pub elapsed: u64,
+    pub counter: u64,
+    pub min: u64,
+    pub max: u64,
+    pub meta: u64,
+}
+
+impl PerfCounter {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            ..Default::default()
+        }
+    }
+
+    pub fn add(&mut self, other: PerfCounter) {
+        self.elapsed += other.elapsed;
+        self.counter += other.counter;
+        self.min += other.min;
+        self.max += other.max;
+        self.meta += other.meta;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.counter == 0
+    }
+
+    pub fn measure(&mut self) -> PerfCounterGuard {
+        PerfCounterGuard::new(self)
+    }
+
+    pub fn calc_meta(&mut self) {
+        let duration = self.start.elapsed().as_micros() as u64;
+
+        self.meta = duration - self.elapsed;
+    }
+}
+
+impl Default for PerfCounter {
+    fn default() -> Self {
+        Self {
+            start: std::time::Instant::now(),
+            name: Default::default(),
+            elapsed: Default::default(),
+            counter: Default::default(),
+            min: u64::MAX,
+            max: Default::default(),
+            meta: Default::default(),
+        }
+    }
+}
+
+impl std::ops::Add for PerfCounter {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        debug_assert_eq!(self.name, rhs.name);
+
+        Self {
+            name: self.name,
+            start: self.start,
+            elapsed: self.elapsed + rhs.elapsed,
+            counter: self.counter + rhs.counter,
+            min: self.min + rhs.min,
+            max: self.max + rhs.max,
+            meta: self.meta + rhs.meta,
+        }
+    }
+}
+
+impl std::fmt::Display for PerfCounter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{} - samples: {}, total: {:.2}ms, avg: {}μs, min: {}μs, max: {}μs, meta: {}μs",
+            self.name,
+            self.counter,
+            self.elapsed as f64 / 1_000.0,
+            (self.elapsed as f64 / self.counter as f64) as u64,
+            self.min,
+            self.max,
+            self.meta
+        ))
+    }
+}

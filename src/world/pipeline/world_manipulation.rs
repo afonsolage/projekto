@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 use bracket_noise::prelude::*;
 
-use crate::world::storage::{chunk, landscape, voxel, VoxWorld};
+use crate::{
+    debug::PerfCounter,
+    world::storage::{chunk, landscape, voxel, VoxWorld},
+};
 
 pub(super) struct WorldManipulationPlugin;
 
@@ -45,6 +48,8 @@ pub struct EvtChunkUpdated(pub IVec3);
 fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
     commands.insert_resource(VoxWorld::default());
 
+    let mut perf_counter = PerfCounter::new("Setup World");
+
     // TODO: Find a better place for this initialization
     for x in landscape::BEGIN..landscape::END {
         for y in landscape::BEGIN..landscape::END {
@@ -56,6 +61,8 @@ fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
                 if world.y < 0.0 {
                     continue;
                 }
+
+                let _perf = perf_counter.measure();
 
                 let mut noise = FastNoise::seeded(15);
                 noise.set_noise_type(NoiseType::SimplexFractal);
@@ -92,6 +99,9 @@ fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
             }
         }
     }
+
+    perf_counter.calc_meta();
+    info!("{}", perf_counter);
 }
 
 fn process_add_chunks_system(

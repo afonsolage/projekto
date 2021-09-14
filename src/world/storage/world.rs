@@ -1,10 +1,15 @@
+use std::sync::{Arc, Mutex};
+
 use bevy::{prelude::*, utils::HashMap};
+
+use crate::debug::PerfCounterMap;
 
 use super::chunk::ChunkKind;
 
 #[derive(Default)]
 pub struct VoxWorld {
     chunks: HashMap<IVec3, ChunkKind>,
+    pub perf: Arc<Mutex<PerfCounterMap>>,
 }
 
 impl VoxWorld {
