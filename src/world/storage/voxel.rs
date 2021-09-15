@@ -1,12 +1,18 @@
-use std::ops::{Index, IndexMut};
-
 use bevy::prelude::*;
+use serde::Deserialize;
+use std::ops::{Index, IndexMut};
 
 use crate::world::math;
 
 use super::chunk;
 
 pub const SIDE_COUNT: usize = 6;
+
+#[derive(Deserialize)]
+pub struct KindDescription {
+    pub id: u16,
+    pub color: (f32, f32, f32, f32),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Kind(u16);
@@ -130,8 +136,12 @@ pub fn to_world(local: IVec3, chunk_local: IVec3) -> Vec3 {
 
 #[cfg(test)]
 mod tests {
+
     use bevy::math::{IVec3, Vec3};
     use rand::random;
+    use ron::de::from_reader;
+
+    use crate::world::storage::voxel::KindDescription;
 
     use super::chunk;
 
@@ -226,5 +236,16 @@ mod tests {
                 frag
             );
         }
+    }
+
+    #[test]
+    fn load_kind_descriptions() {
+        let input_path = format!(
+            "{}/assets/voxels/kind_descriptions.ron",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
+
+        let _: Vec<KindDescription> = from_reader(f).unwrap();
     }
 }
