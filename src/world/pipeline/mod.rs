@@ -48,7 +48,7 @@ impl Plugin for PipelinePlugin {
                 SystemStage::parallel(),
             )
             .add_startup_stage_after(
-                StartupStage::PreStartup,
+                StartupStage::Startup,
                 PipelineStartup::WorldManipulation,
                 SystemStage::parallel(),
             )

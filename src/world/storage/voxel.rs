@@ -10,6 +10,7 @@ pub const SIDE_COUNT: usize = 6;
 
 #[derive(Deserialize)]
 pub struct KindDescription {
+    pub name: String,
     pub id: u16,
     pub color: (f32, f32, f32, f32),
 }
