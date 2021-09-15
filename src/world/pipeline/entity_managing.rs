@@ -7,7 +7,10 @@ use bevy::{
     utils::HashMap,
 };
 
-use crate::world::storage::chunk;
+use crate::{
+    debug::{PerfCounter, PerfCounterRes},
+    world::storage::chunk,
+};
 
 use super::{
     ChunkBuildingBundle, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline, EvtChunkAdded,
@@ -56,13 +59,18 @@ fn setup_resources(
 }
 
 fn spawn_chunks_system(
+    perf_res: Res<PerfCounterRes>,
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
     chunk_pipeline: Res<ChunkPipeline>,
     mut reader: EventReader<EvtChunkAdded>,
     mut writer: EventWriter<EvtChunkDirty>,
 ) {
+    let mut perf_counter = PerfCounter::new("Spawn Chunks");
+
     for EvtChunkAdded(local) in reader.iter() {
+        let _perf = perf_counter.measure();
+
         trace!("Spawning chunk entity {}", *local);
 
         let entity = commands
@@ -81,29 +89,45 @@ fn spawn_chunks_system(
         entity_map.0.insert(*local, entity);
         writer.send(EvtChunkDirty(*local));
     }
+
+    perf_counter.calc_meta();
+    perf_res.lock().unwrap().add(perf_counter);
 }
 
 fn despawn_chunks_system(
+    perf_res: Res<PerfCounterRes>,
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
     mut reader: EventReader<EvtChunkRemoved>,
 ) {
+    let mut perf_counter = PerfCounter::new("Despawn Chunks");
+
     for EvtChunkRemoved(local) in reader.iter() {
+        let _perf = perf_counter.measure();
+
         if let Some(entity) = entity_map.0.remove(local) {
             trace!("Despawning chunk entity {}", *local);
             commands.entity(entity).despawn_recursive();
         }
     }
+
+    perf_counter.calc_meta();
+    perf_res.lock().unwrap().add(perf_counter);
 }
 
 fn update_chunks_system(
+    perf_res: Res<PerfCounterRes>,
     mut commands: Commands,
     mut reader: EventReader<EvtChunkUpdated>,
     mut writer: EventWriter<EvtChunkDirty>,
     entity_map: ResMut<ChunkEntityMap>,
 ) {
+    let mut perf_counter = PerfCounter::new("Update Chunks");
+
     for EvtChunkUpdated(chunk_local) in reader.iter() {
         if let Some(&entity) = entity_map.0.get(chunk_local) {
+            let _perf = perf_counter.measure();
+
             trace!("Updating chunk entity {}", *chunk_local);
             commands
                 .entity(entity)
@@ -111,6 +135,8 @@ fn update_chunks_system(
             writer.send(EvtChunkDirty(*chunk_local));
         }
     }
+    perf_counter.calc_meta();
+    perf_res.lock().unwrap().add(perf_counter);
 }
 
 #[cfg(test)]

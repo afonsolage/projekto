@@ -1,11 +1,18 @@
 use bevy::{app::AppExit, prelude::*};
 
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(setup_hold_est_to_exit);
-        app.add_system(hold_esc_to_exit);
+        app.add_startup_system(setup_hold_est_to_exit)
+            .init_resource::<PerfCounterRes>()
+            .add_system(print_perf_counter)
+            .add_system(hold_esc_to_exit);
     }
 }
 
@@ -34,10 +41,25 @@ fn hold_esc_to_exit(
     }
 }
 
-use std::collections::HashMap;
+fn print_perf_counter(input_keys: Res<Input<KeyCode>>, perf_counter: Res<PerfCounterRes>) {
+    if input_keys.just_pressed(KeyCode::F12) {
+        let guard = perf_counter.lock().unwrap();
+
+        let mut output = String::default();
+        let mut counters = guard.0.values().collect::<Vec<_>>();
+        counters.sort_by(|a, b| (b.elapsed / b.counter).cmp(&(a.elapsed / a.counter)));
+        for p in counters {
+            output += format!("{}\n", p).as_str();
+        }
+
+        info!("Performance Counter: \n{}", output);
+    }
+}
+
+pub type PerfCounterRes = Arc<Mutex<PerfCounterMap>>;
 
 #[derive(Default)]
-pub struct PerfCounterMap(pub HashMap<String, PerfCounter>);
+pub struct PerfCounterMap(HashMap<String, PerfCounter>);
 
 impl PerfCounterMap {
     pub fn add(&mut self, counter: PerfCounter) {
@@ -63,7 +85,9 @@ impl<'a> Drop for PerfCounterGuard<'a> {
         let end = self.1.elapsed();
         let duration = end.as_micros() as u64;
 
-        debug_assert!(duration > 0);
+        if duration == 0 {
+            return;
+        }
 
         self.0.counter += 1u64;
         self.0.elapsed += duration;
@@ -97,10 +121,11 @@ impl PerfCounter {
     }
 
     pub fn add(&mut self, other: PerfCounter) {
+        self.name = other.name;
         self.elapsed += other.elapsed;
         self.counter += other.counter;
-        self.min += other.min;
-        self.max += other.max;
+        self.min = self.min.min(other.min);
+        self.max = self.max.max(other.max);
         self.meta += other.meta;
     }
 
@@ -154,14 +179,13 @@ impl std::ops::Add for PerfCounter {
 impl std::fmt::Display for PerfCounter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
-            "{} - samples: {}, total: {:.2}ms, avg: {}μs, min: {}μs, max: {}μs, meta: {}μs",
+            "{: <30} avg: {: >5}μs, samples: {: >5}, min: {: >5}μs, max: {: >5}μs, meta: {: >5}μs",
             self.name,
-            self.counter,
-            self.elapsed as f64 / 1_000.0,
             (self.elapsed as f64 / self.counter as f64) as u64,
+            self.counter,
             self.min,
             self.max,
-            self.meta
+            self.meta / self.counter
         ))
     }
 }

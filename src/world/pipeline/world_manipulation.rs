@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bracket_noise::prelude::*;
 
 use crate::{
-    debug::PerfCounter,
+    debug::{PerfCounter, PerfCounterRes},
     world::storage::{chunk, landscape, voxel, VoxWorld},
 };
 
@@ -45,7 +45,11 @@ pub struct EvtChunkRemoved(pub IVec3);
 #[derive(Clone, Copy)]
 pub struct EvtChunkUpdated(pub IVec3);
 
-fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
+fn setup_world(
+    mut commands: Commands,
+    mut writer: EventWriter<CmdChunkAdd>,
+    perf_res: Res<PerfCounterRes>,
+) {
     commands.insert_resource(VoxWorld::default());
 
     let mut perf_counter = PerfCounter::new("Setup World");
@@ -101,15 +105,20 @@ fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
     }
 
     perf_counter.calc_meta();
-    info!("{}", perf_counter);
+    perf_res.lock().unwrap().add(perf_counter);
 }
 
 fn process_add_chunks_system(
+    perf_res: Res<PerfCounterRes>,
     mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkAdd>,
     mut writer: EventWriter<EvtChunkAdded>,
 ) {
+    let mut perf_counter = PerfCounter::new("Process Add Chunks");
+
     for CmdChunkAdd(local, voxels) in reader.iter() {
+        let _perf = perf_counter.measure();
+
         trace!("Adding chunk {} to world", *local);
         world.add(*local);
         let chunk = world.get_mut(*local).unwrap();
@@ -120,26 +129,43 @@ fn process_add_chunks_system(
 
         writer.send(EvtChunkAdded(*local));
     }
+
+    perf_counter.calc_meta();
+    perf_res.lock().unwrap().add(perf_counter);
 }
 
 fn process_remove_chunks_system(
+    perf_res: Res<PerfCounterRes>,
     mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkRemove>,
     mut writer: EventWriter<EvtChunkRemoved>,
 ) {
+    let mut perf_counter = PerfCounter::new("Process Remove Chunks");
+
     for CmdChunkRemove(local) in reader.iter() {
+        let _perf = perf_counter.measure();
+
         trace!("Removing chunk {} from world", *local);
         world.remove(*local);
         writer.send(EvtChunkRemoved(*local));
     }
+
+    perf_counter.calc_meta();
+    perf_res.lock().unwrap().add(perf_counter);
 }
 
 fn process_update_chunks_system(
+    perf_res: Res<PerfCounterRes>,
+
     mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkUpdate>,
     mut writer: EventWriter<EvtChunkUpdated>,
 ) {
+    let mut perf_counter = PerfCounter::new("Process Update Chunks");
+
     for CmdChunkUpdate(chunk_local, voxels) in reader.iter() {
+        let _perf = perf_counter.measure();
+
         let chunk = match world.get_mut(*chunk_local) {
             None => {
                 warn!(
@@ -180,6 +206,9 @@ fn process_update_chunks_system(
             writer.send(EvtChunkUpdated(neighbor));
         }
     }
+
+    perf_counter.calc_meta();
+    perf_res.lock().unwrap().add(perf_counter);
 }
 
 #[cfg(test)]
