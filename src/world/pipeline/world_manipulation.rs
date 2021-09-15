@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bracket_noise::prelude::*;
 
 #[cfg(feature = "perf_counter")]
-use crate::debug::{PerfCounter, PerfCounterRes};
+use crate::debug::perf::PerfCounterGuard;
 
 use crate::world::storage::{chunk, landscape, voxel, VoxWorld};
 
@@ -45,15 +45,10 @@ pub struct EvtChunkRemoved(pub IVec3);
 #[derive(Clone, Copy)]
 pub struct EvtChunkUpdated(pub IVec3);
 
-fn setup_world(
-    mut commands: Commands,
-    mut writer: EventWriter<CmdChunkAdd>,
-    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
-) {
-    commands.insert_resource(VoxWorld::default());
+fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
+    let mut _perf = perf_fn!();
 
-    #[cfg(feature = "perf_counter")]
-    let mut perf_counter = PerfCounter::new("Setup World");
+    commands.insert_resource(VoxWorld::default());
 
     // TODO: Find a better place for this initialization
     for x in landscape::BEGIN..landscape::END {
@@ -67,8 +62,7 @@ fn setup_world(
                     continue;
                 }
 
-                #[cfg(feature = "perf_counter")]
-                let _perf = perf_counter.measure();
+                perf_scope!(_perf);
 
                 let mut noise = FastNoise::seeded(15);
                 noise.set_noise_type(NoiseType::SimplexFractal);
@@ -105,26 +99,17 @@ fn setup_world(
             }
         }
     }
-
-    #[cfg(feature = "perf_counter")]
-    {
-        perf_counter.calc_meta();
-        perf_res.lock().unwrap().add(perf_counter);
-    }
 }
 
 fn process_add_chunks_system(
-    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkAdd>,
     mut writer: EventWriter<EvtChunkAdded>,
 ) {
-    #[cfg(feature = "perf_counter")]
-    let mut perf_counter = PerfCounter::new("Process Add Chunks");
+    let mut _perf = perf_fn!();
 
     for CmdChunkAdd(local, voxels) in reader.iter() {
-        #[cfg(feature = "perf_counter")]
-        let _perf = perf_counter.measure();
+        perf_scope!(_perf);
 
         trace!("Adding chunk {} to world", *local);
         world.add(*local);
@@ -136,51 +121,32 @@ fn process_add_chunks_system(
 
         writer.send(EvtChunkAdded(*local));
     }
-
-    #[cfg(feature = "perf_counter")]
-    {
-        perf_counter.calc_meta();
-        perf_res.lock().unwrap().add(perf_counter);
-    }
 }
 
 fn process_remove_chunks_system(
-    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkRemove>,
     mut writer: EventWriter<EvtChunkRemoved>,
 ) {
-    #[cfg(feature = "perf_counter")]
-    let mut perf_counter = PerfCounter::new("Process Remove Chunks");
-
+    let mut _perf = perf_fn!();
     for CmdChunkRemove(local) in reader.iter() {
-        #[cfg(feature = "perf_counter")]
-        let _perf = perf_counter.measure();
+        perf_scope!(_perf);
 
         trace!("Removing chunk {} from world", *local);
         world.remove(*local);
         writer.send(EvtChunkRemoved(*local));
     }
-
-    #[cfg(feature = "perf_counter")]
-    {
-        perf_counter.calc_meta();
-        perf_res.lock().unwrap().add(perf_counter);
-    }
 }
 
 fn process_update_chunks_system(
-    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkUpdate>,
     mut writer: EventWriter<EvtChunkUpdated>,
 ) {
-    #[cfg(feature = "perf_counter")]
-    let mut perf_counter = PerfCounter::new("Process Update Chunks");
+    let mut _perf = perf_fn!();
 
     for CmdChunkUpdate(chunk_local, voxels) in reader.iter() {
-        #[cfg(feature = "perf_counter")]
-        let _perf = perf_counter.measure();
+        perf_scope!(_perf);
 
         let chunk = match world.get_mut(*chunk_local) {
             None => {
@@ -221,11 +187,6 @@ fn process_update_chunks_system(
             debug!("Notifying neighbor chunk {}", neighbor);
             writer.send(EvtChunkUpdated(neighbor));
         }
-    }
-    #[cfg(feature = "perf_counter")]
-    {
-        perf_counter.calc_meta();
-        perf_res.lock().unwrap().add(perf_counter);
     }
 }
 

@@ -3,11 +3,12 @@ use bevy::prelude::*;
 mod fly_by_camera;
 use fly_by_camera::FlyByCameraPlugin;
 
-mod world;
-use world::WorldPlugin;
-
+#[macro_use]
 mod debug;
 use debug::DebugPlugin;
+
+mod world;
+use world::WorldPlugin;
 
 mod ui;
 use ui::UiPlugin;

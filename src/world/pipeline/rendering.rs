@@ -4,7 +4,7 @@ use bevy::{
 };
 
 #[cfg(feature = "perf_counter")]
-use crate::debug::{PerfCounter, PerfCounterRes};
+use crate::debug::perf::PerfCounterGuard;
 
 use crate::world::{
     mesh,
@@ -54,14 +54,12 @@ impl Plugin for RenderingPlugin {
 }
 
 fn faces_occlusion_system(
-    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     world: Res<storage::VoxWorld>,
     entity_map: Res<ChunkEntityMap>,
     mut reader: EventReader<EvtChunkDirty>,
     mut q: Query<&mut ChunkFacesOcclusion>,
 ) {
-    #[cfg(feature = "perf_counter")]
-    let mut perf_counter = PerfCounter::new("Faces Occlusion");
+    let mut _perf = perf_fn!();
 
     for EvtChunkDirty(local) in reader.iter() {
         let chunk = match world.get(*local) {
@@ -96,8 +94,7 @@ fn faces_occlusion_system(
             }
             Ok(f) => f,
         };
-        #[cfg(feature = "perf_counter")]
-        let _perf = perf_counter.measure();
+        perf_scope!(_perf);
 
         faces_occlusion.set_all(voxel::FacesOcclusion::default());
 
@@ -132,21 +129,14 @@ fn faces_occlusion_system(
             faces_occlusion.set(voxel, voxel_faces);
         }
     }
-    #[cfg(feature = "perf_counter")]
-    {
-        perf_counter.calc_meta();
-        perf_res.lock().unwrap().add(perf_counter);
-    }
 }
 
 fn vertices_computation_system(
-    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     entity_map: Res<ChunkEntityMap>,
     mut reader: EventReader<EvtChunkDirty>,
     mut q: Query<(&ChunkFaces, &mut ChunkVertices)>,
 ) {
-    #[cfg(feature = "perf_counter")]
-    let mut perf_counter = PerfCounter::new("Vertices Computation");
+    let mut _perf = perf_fn!();
 
     for EvtChunkDirty(local) in reader.iter() {
         let entity = match entity_map.0.get(local) {
@@ -171,8 +161,8 @@ fn vertices_computation_system(
             Ok(f) => f,
         };
 
-        #[cfg(feature = "perf_counter")]
-        let _perf = perf_counter.measure();
+        perf_scope!(_perf);
+
         trace!("Processing vertices computation of chunk entity {}", *local);
 
         vertices.0.clear();
@@ -190,24 +180,16 @@ fn vertices_computation_system(
             }
         }
     }
-
-    #[cfg(feature = "perf_counter")]
-    {
-        perf_counter.calc_meta();
-        perf_res.lock().unwrap().add(perf_counter);
-    }
 }
 
 fn mesh_generation_system(
-    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     mut commands: Commands,
     entity_map: Res<ChunkEntityMap>,
     mut reader: EventReader<EvtChunkDirty>,
     mut meshes: ResMut<Assets<Mesh>>,
     query: Query<&ChunkVertices>,
 ) {
-    #[cfg(feature = "perf_counter")]
-    let mut perf_counter = PerfCounter::new("Mesh Generation");
+    let mut _perf = perf_fn!();
 
     for EvtChunkDirty(local) in reader.iter() {
         let entity = match entity_map.0.get(local) {
@@ -231,8 +213,7 @@ fn mesh_generation_system(
             }
             Ok(v) => &v.0,
         };
-        #[cfg(feature = "perf_counter")]
-        let _perf = perf_counter.measure();
+        perf_scope!(_perf);
 
         trace!("Processing mesh generation of chunk entity {}", *local);
 
@@ -254,21 +235,14 @@ fn mesh_generation_system(
 
         commands.entity(entity).insert(meshes.add(mesh));
     }
-    #[cfg(feature = "perf_counter")]
-    {
-        perf_counter.calc_meta();
-        perf_res.lock().unwrap().add(perf_counter);
-    }
 }
 
 fn clean_up_system(
-    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     mut commands: Commands,
     mut reader: EventReader<EvtChunkDirty>,
     entity_map: Res<ChunkEntityMap>,
 ) {
-    #[cfg(feature = "perf_counter")]
-    let mut perf_counter = PerfCounter::new("Clean Up");
+    let mut _perf = perf_fn!();
 
     for EvtChunkDirty(local) in reader.iter() {
         let entity = match entity_map.0.get(local) {
@@ -281,8 +255,7 @@ fn clean_up_system(
             }
             Some(&e) => e,
         };
-        #[cfg(feature = "perf_counter")]
-        let _perf = perf_counter.measure();
+        perf_scope!(_perf);
 
         trace!("Clearing up chunk entity {}", *local);
 
@@ -290,22 +263,15 @@ fn clean_up_system(
             .entity(entity)
             .remove_bundle::<ChunkBuildingBundle>();
     }
-    #[cfg(feature = "perf_counter")]
-    {
-        perf_counter.calc_meta();
-        perf_res.lock().unwrap().add(perf_counter);
-    }
 }
 
 fn faces_merging_system(
-    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     mut reader: EventReader<EvtChunkDirty>,
     vox_world: Res<VoxWorld>,
     entity_map: Res<ChunkEntityMap>,
     mut query: Query<(&mut ChunkFaces, &ChunkFacesOcclusion)>,
 ) {
-    #[cfg(feature = "perf_counter")]
-    let mut perf_counter = PerfCounter::new("Faces Merging");
+    let mut _perf = perf_fn!();
 
     for EvtChunkDirty(local) in reader.iter() {
         let entity = match entity_map.0.get(local) {
@@ -338,17 +304,10 @@ fn faces_merging_system(
             Some(c) => c,
         };
 
-        #[cfg(feature = "perf_counter")]
-        let _perf = perf_counter.measure();
+        perf_scope!(_perf);
 
         let merged_faces = mesh::merge_faces(&occlusion, chunk);
         faces.0 = merged_faces;
-    }
-
-    #[cfg(feature = "perf_counter")]
-    {
-        perf_counter.calc_meta();
-        perf_res.lock().unwrap().add(perf_counter);
     }
 }
 
