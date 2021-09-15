@@ -1,9 +1,11 @@
 use bevy::prelude::*;
 
+#[macro_use]
+mod macros;
+
 mod fly_by_camera;
 use fly_by_camera::FlyByCameraPlugin;
 
-#[macro_use]
 mod debug;
 use debug::DebugPlugin;
 
