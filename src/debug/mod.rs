@@ -1,19 +1,16 @@
 use bevy::{app::AppExit, prelude::*};
 
-#[cfg(perf_counter)]
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-
 pub struct DebugPlugin;
+
+#[cfg(feature = "perf_counter")]
+pub use perf::*;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup_hold_est_to_exit)
             .add_system(hold_esc_to_exit);
 
-        #[cfg(perf_counter)]
+        #[cfg(feature = "perf_counter")]
         app.add_system(print_perf_counter)
             .init_resource::<PerfCounterRes>();
     }
@@ -44,10 +41,18 @@ fn hold_esc_to_exit(
     }
 }
 
-#[cfg(perf_counter)]
-mod perf {
+#[cfg(feature = "perf_counter")]
+pub mod perf {
+    use super::*;
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
 
-    fn print_perf_counter(input_keys: Res<Input<KeyCode>>, perf_counter: Res<PerfCounterRes>) {
+    pub(super) fn print_perf_counter(
+        input_keys: Res<Input<KeyCode>>,
+        perf_counter: Res<PerfCounterRes>,
+    ) {
         if input_keys.just_pressed(KeyCode::F12) {
             let guard = perf_counter.lock().unwrap();
 

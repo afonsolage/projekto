@@ -14,7 +14,8 @@ ron = "0.6.5"
 serde = "1.0.130"
 
 [features]
-dev = ["bevy/dynamic"]
-
+default = ["dev", "perf_counter"]
+dev = ["bevy/dynamic", "perf_counter"]
+perf_counter = []
 #[profile.test]
 #opt-level = 3

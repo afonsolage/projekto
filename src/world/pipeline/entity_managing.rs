@@ -7,7 +7,7 @@ use bevy::{
     utils::HashMap,
 };
 
-#[cfg(perf_counter)]
+#[cfg(feature = "perf_counter")]
 use crate::debug::{PerfCounter, PerfCounterRes};
 
 use crate::world::storage::chunk;
@@ -59,18 +59,18 @@ fn setup_resources(
 }
 
 fn spawn_chunks_system(
-    #[cfg(perf_counter)] perf_res: Res<PerfCounterRes>,
+    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
     chunk_pipeline: Res<ChunkPipeline>,
     mut reader: EventReader<EvtChunkAdded>,
     mut writer: EventWriter<EvtChunkDirty>,
 ) {
-    #[cfg(perf_counter)]
+    #[cfg(feature = "perf_counter")]
     let mut perf_counter = PerfCounter::new("Spawn Chunks");
 
     for EvtChunkAdded(local) in reader.iter() {
-        #[cfg(perf_counter)]
+        #[cfg(feature = "perf_counter")]
         let _perf = perf_counter.measure();
 
         trace!("Spawning chunk entity {}", *local);
@@ -92,7 +92,7 @@ fn spawn_chunks_system(
         writer.send(EvtChunkDirty(*local));
     }
 
-    #[cfg(perf_counter)]
+    #[cfg(feature = "perf_counter")]
     {
         perf_counter.calc_meta();
         perf_res.lock().unwrap().add(perf_counter);
@@ -100,16 +100,16 @@ fn spawn_chunks_system(
 }
 
 fn despawn_chunks_system(
-    #[cfg(perf_counter)] perf_res: Res<PerfCounterRes>,
+    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
     mut reader: EventReader<EvtChunkRemoved>,
 ) {
-    #[cfg(perf_counter)]
+    #[cfg(feature = "perf_counter")]
     let mut perf_counter = PerfCounter::new("Despawn Chunks");
 
     for EvtChunkRemoved(local) in reader.iter() {
-        #[cfg(perf_counter)]
+        #[cfg(feature = "perf_counter")]
         let _perf = perf_counter.measure();
 
         if let Some(entity) = entity_map.0.remove(local) {
@@ -118,7 +118,7 @@ fn despawn_chunks_system(
         }
     }
 
-    #[cfg(perf_counter)]
+    #[cfg(feature = "perf_counter")]
     {
         perf_counter.calc_meta();
         perf_res.lock().unwrap().add(perf_counter);
@@ -126,18 +126,18 @@ fn despawn_chunks_system(
 }
 
 fn update_chunks_system(
-    #[cfg(perf_counter)] perf_res: Res<PerfCounterRes>,
+    #[cfg(feature = "perf_counter")] perf_res: Res<PerfCounterRes>,
     mut commands: Commands,
     mut reader: EventReader<EvtChunkUpdated>,
     mut writer: EventWriter<EvtChunkDirty>,
     entity_map: ResMut<ChunkEntityMap>,
 ) {
-    #[cfg(perf_counter)]
+    #[cfg(feature = "perf_counter")]
     let mut perf_counter = PerfCounter::new("Update Chunks");
 
     for EvtChunkUpdated(chunk_local) in reader.iter() {
         if let Some(&entity) = entity_map.0.get(chunk_local) {
-            #[cfg(perf_counter)]
+            #[cfg(feature = "perf_counter")]
             let _perf = perf_counter.measure();
 
             trace!("Updating chunk entity {}", *chunk_local);
@@ -147,7 +147,7 @@ fn update_chunks_system(
             writer.send(EvtChunkDirty(*chunk_local));
         }
     }
-    #[cfg(perf_counter)]
+    #[cfg(feature = "perf_counter")]
     {
         perf_counter.calc_meta();
         perf_res.lock().unwrap().add(perf_counter);
