@@ -43,8 +43,8 @@ This is a general overview of the aspects of the game. Some of these aspects may
 ## Current Pipeline Stages
 
 1. *Genesis*
-    1. *Load Chunks* - Process *CmdChunkLoad* and load chunk data from cached assets. If cache doesn't exists, fires an *CmdChunkGen* cmd.
-    2. *Generate Chunks* - Process *CmdChunkGen", generate a chunk, save it on cache and fires an *CmdChunkLoad*. Generates:
+    - *Load Chunks* - Process *CmdChunkLoad* and load chunk data from cached assets. If cache doesn't exists, fires an *CmdChunkGen* cmd.
+    - *Generate Chunks* - Process *CmdChunkGen", generate a chunk, save it on cache and fires an *CmdChunkLoad*. Generates:
         * [ ] Terrain - base terrain height and voxel kinds
         * [ ] Light - Light sources in general, like Sun, Moon or Magma
         * [ ] Water - Natural water sources like oceans and lakes
@@ -52,13 +52,13 @@ This is a general overview of the aspects of the game. Some of these aspects may
         * [ ] Fauna - Animals, monsters and NPCs
         * [ ] Biomes - Forest, Mountain, Deserts, etc
 2. **Terraform**
-    1. **Add Chunks** - Process *CmdChunkAdd*, add new chunk to world and raises an *EvtChunkAdded*
-    2. **Remove Chunks** - Process *CmdChunkRemove*, remove chunk from world and raises an *EvtChunkRemoved*
-    3. **Update Chunks** - Process *CmdChunkUpdate*, update chunk and raises and *EvtChunkUpdated*
+    - **Add Chunks** - Process *CmdChunkAdd*, add new chunk to world and raises an *EvtChunkAdded*
+    - **Remove Chunks** - Process *CmdChunkRemove*, remove chunk from world and raises an *EvtChunkRemoved*
+    - **Update Chunks** - Process *CmdChunkUpdate*, update chunk and raises and *EvtChunkUpdated*
 3. **Landscape**
-    1. **Despawn chunks** - Watches for *EvtChunkRemoved* event and completely despawn a chunk entity
-    2. **Spawn chunks** - Watches for *EvtChunkAdded* event and spawn new chunk entities and raises a *ChunkDirty* to the pipeline
-    3. **Update chunks** - Watches for *EvtChunkUpdated* event and raises a *ChunkDirty* event to the pipeline
+    - **Despawn chunks** - Watches for *EvtChunkRemoved* event and completely despawn a chunk entity
+    - **Spawn chunks** - Watches for *EvtChunkAdded* event and spawn new chunk entities and raises a *ChunkDirty* to the pipeline
+    - **Update chunks** - Watches for *EvtChunkUpdated* event and raises a *ChunkDirty* event to the pipeline
 4. **Render**
     1. **Faces Occlusion** - Process *EvtChunkDirty* and updates the `ChunkFacesOcclusion` component
     2. *Ambient Occlusion* - Process *EvtChunkDirty* and updates the `ChunkAmbientOcclusion` component
@@ -66,8 +66,8 @@ This is a general overview of the aspects of the game. Some of these aspects may
     4. **Vertex Computation** - Process *EvtChunkDirty* events and updates the `ChunkVertices`component
     5. **Mesh Generation** - Process *EvtChunkDirty* events and generates updates the `Handle<Mesh>` component
     6. **Clean up** - Process *EvtChunkDirty* events and remove `ChunkBuildingBundle` components
-5. **PosRender**
-    1. **Frustum Culling** - Updates the chunks visibility based on current facing direction
+5. *PosRender*
+    - *Frustum Culling* - Updates the chunks visibility based on current facing direction
 
 
 # License
