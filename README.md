@@ -44,13 +44,13 @@ This is a general overview of the aspects of the game. Some of these aspects may
 
 1. *Genesis*
     - *Load Chunks* - Process *CmdChunkLoad* and load chunk data from cached assets. If cache doesn't exists, fires an *CmdChunkGen* cmd.
-    - *Generate Chunks* - Process *CmdChunkGen", generate a chunk, save it on cache and fires an *CmdChunkLoad*. Generates:
+    - *Generate Chunks* - Process *CmdChunkGen*, generate a chunk data listed bellow, save it on cache and fires an *CmdChunkLoad*.
         * [ ] Terrain - base terrain height and voxel kinds
-        * [ ] Light - Light sources in general, like Sun, Moon or Magma
+        * [ ] Light - Light sources in general, like sun, moon or magma
         * [ ] Water - Natural water sources like oceans and lakes
         * [ ] Flora - Trees and plants
         * [ ] Fauna - Animals, monsters and NPCs
-        * [ ] Biomes - Forest, Mountain, Deserts, etc
+        * [ ] Biomes - Forest, mountain, deserts, etc
 2. **Terraform**
     - **Add Chunks** - Process *CmdChunkAdd*, add new chunk to world and raises an *EvtChunkAdded*
     - **Remove Chunks** - Process *CmdChunkRemove*, remove chunk from world and raises an *EvtChunkRemoved*
