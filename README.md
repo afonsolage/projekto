@@ -18,12 +18,12 @@ This is a general overview of the aspects of the game. Some of these aspects may
   - **Query** -- Methods and utilities to query world state
     - **Raycast** -- Projects a ray and check for intersection
   - **Pipeline** -- Systems and components that together composes a pipeline
-    - **World Generation** - Generate and load chunk data from some IO
-    - **World Manipulation** - Add, remove or update chunks
-    - **Entity Managing** - Manages the chunks and entities relations
+    - **Genesis** - Generate and load chunk data from some IO
+    - **Terraform** - Add, remove or update chunks. Also process propagation (light, water, fire, etc)
+    - **Landscape** - Manages the chunks and entities relations which are currently visible
     - **Rendering** - Runs systems that produces the final mesh to be rendered 
   - **Debug** - Contains functions which helps while developing
-  
+
   <!-- - **Manipulation** - Commands to manipulate the world 
     - **Set Voxel** - Set a voxel value in a given point on the world
     - **Spawn Chunk**  - Spawns a chunk in a given position
@@ -42,22 +42,32 @@ This is a general overview of the aspects of the game. Some of these aspects may
 
 ## Current Pipeline Stages
 
-1. **World Generation**
-    1. **Load Chunks** - Process *CmdChunkLoad* and load chunk data from cached assets. If cache doesn't exists, fires an *CmdChunkGen* cmd.
-    2. **Generate Chunks** - Process *CmdChunkGen", generate a chunk, save it on cache and fires an *CmdChunkLoad*
-2. **World Manipulation**
+1. *Genesis*
+    1. *Load Chunks* - Process *CmdChunkLoad* and load chunk data from cached assets. If cache doesn't exists, fires an *CmdChunkGen* cmd.
+    2. *Generate Chunks* - Process *CmdChunkGen", generate a chunk, save it on cache and fires an *CmdChunkLoad*. Generates:
+        * [ ] Terrain - base terrain height and voxel kinds
+        * [ ] Light - Light sources in general, like Sun, Moon or Magma
+        * [ ] Water - Natural water sources like oceans and lakes
+        * [ ] Flora - Trees and plants
+        * [ ] Fauna - Animals, monsters and NPCs
+        * [ ] Biomes - Forest, Mountain, Deserts, etc
+2. **Terraform**
     1. **Add Chunks** - Process *CmdChunkAdd*, add new chunk to world and raises an *EvtChunkAdded*
     2. **Remove Chunks** - Process *CmdChunkRemove*, remove chunk from world and raises an *EvtChunkRemoved*
     3. **Update Chunks** - Process *CmdChunkUpdate*, update chunk and raises and *EvtChunkUpdated*
-3. **Entity Managing**
+3. **Landscape**
     1. **Despawn chunks** - Watches for *EvtChunkRemoved* event and completely despawn a chunk entity
     2. **Spawn chunks** - Watches for *EvtChunkAdded* event and spawn new chunk entities and raises a *ChunkDirty* to the pipeline
     3. **Update chunks** - Watches for *EvtChunkUpdated* event and raises a *ChunkDirty* event to the pipeline
-4. **Rendering**
-    1. **Faces Occlusion** - Process *EvtChunkDirty* events and updates the `ChunkFacesOcclusion` component
-    2. **Vertex Computation** - Process *EvtChunkDirty* events and updates the `ChunkVertices`component
-    3. **Mesh Generation** - Process *EvtChunkDirty* events and generates updates the `Handle<Mesh>` component
-    4. **Clean up** - Process *EvtChunkDirty* events and remove `ChunkBuildingBundle` components
+4. **Render**
+    1. **Faces Occlusion** - Process *EvtChunkDirty* and updates the `ChunkFacesOcclusion` component
+    2. *Ambient Occlusion* - Process *EvtChunkDirty* and updates the `ChunkAmbientOcclusion` component
+    3. **Faces Merging** - Process *EvtChunkDirty* and updates the `ChunkFaces` component
+    4. **Vertex Computation** - Process *EvtChunkDirty* events and updates the `ChunkVertices`component
+    5. **Mesh Generation** - Process *EvtChunkDirty* events and generates updates the `Handle<Mesh>` component
+    6. **Clean up** - Process *EvtChunkDirty* events and remove `ChunkBuildingBundle` components
+5. **PosRender**
+    1. **Frustum Culling** - Updates the chunks visibility based on current facing direction
 
 
 # License
