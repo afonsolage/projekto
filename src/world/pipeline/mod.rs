@@ -1,15 +1,16 @@
 use bevy::{prelude::*, render::pipeline::PipelineDescriptor, utils::HashMap};
 
 use self::{
-    landscape::EntityManagingPlugin, render::RenderingPlugin, terraform::WorldManipulationPlugin,
+    landscaping::EntityManagingPlugin, rendering::RenderingPlugin,
+    terraforming::WorldManipulationPlugin,
 };
 
 mod genesis;
-mod landscape;
-mod render;
-mod terraform;
+mod landscaping;
+mod rendering;
+mod terraforming;
 
-pub use terraform::{
+pub use terraforming::{
     CmdChunkAdd, CmdChunkRemove, CmdChunkUpdate, EvtChunkAdded, EvtChunkRemoved, EvtChunkUpdated,
 };
 
