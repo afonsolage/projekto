@@ -1,15 +1,15 @@
 use bevy::{prelude::*, render::pipeline::PipelineDescriptor, utils::HashMap};
 
 use self::{
-    entity_managing::EntityManagingPlugin, rendering::RenderingPlugin,
-    world_manipulation::WorldManipulationPlugin,
+    landscape::EntityManagingPlugin, render::RenderingPlugin, terraform::WorldManipulationPlugin,
 };
 
-mod entity_managing;
-mod rendering;
-mod world_manipulation;
+mod genesis;
+mod landscape;
+mod render;
+mod terraform;
 
-pub use world_manipulation::{
+pub use terraform::{
     CmdChunkAdd, CmdChunkRemove, CmdChunkUpdate, EvtChunkAdded, EvtChunkRemoved, EvtChunkUpdated,
 };
 
