@@ -20,15 +20,17 @@ use super::storage::{
 
 #[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]
 enum Pipeline {
-    WorldManipulation,
-    EntityManaging,
+    Genesis,
+    Terraforming,
+    Landscaping,
     Rendering,
 }
 
 #[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]
 enum PipelineStartup {
-    WorldManipulation,
-    EntityManaging,
+    Genesis,
+    Terraforming,
+    Landscaping,
     Rendering,
 }
 
@@ -36,29 +38,39 @@ pub struct PipelinePlugin;
 
 impl Plugin for PipelinePlugin {
     fn build(&self, app: &mut App) {
-        app.add_stage(Pipeline::WorldManipulation, SystemStage::parallel())
+        app.add_stage(Pipeline::Genesis, SystemStage::parallel())
             .add_stage_after(
-                Pipeline::WorldManipulation,
-                Pipeline::EntityManaging,
+                Pipeline::Genesis,
+                Pipeline::Terraforming,
                 SystemStage::parallel(),
             )
             .add_stage_after(
-                Pipeline::EntityManaging,
+                Pipeline::Terraforming,
+                Pipeline::Landscaping,
+                SystemStage::parallel(),
+            )
+            .add_stage_after(
+                Pipeline::Landscaping,
                 Pipeline::Rendering,
                 SystemStage::parallel(),
             )
             .add_startup_stage_after(
                 StartupStage::Startup,
-                PipelineStartup::WorldManipulation,
+                PipelineStartup::Genesis,
                 SystemStage::parallel(),
             )
             .add_startup_stage_after(
-                PipelineStartup::WorldManipulation,
-                PipelineStartup::EntityManaging,
+                PipelineStartup::Genesis,
+                PipelineStartup::Terraforming,
                 SystemStage::parallel(),
             )
             .add_startup_stage_after(
-                PipelineStartup::EntityManaging,
+                PipelineStartup::Terraforming,
+                PipelineStartup::Landscaping,
+                SystemStage::parallel(),
+            )
+            .add_startup_stage_after(
+                PipelineStartup::Landscaping,
                 PipelineStartup::Rendering,
                 SystemStage::parallel(),
             );

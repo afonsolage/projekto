@@ -19,8 +19,8 @@ This is a general overview of the aspects of the game. Some of these aspects may
     - **Raycast** -- Projects a ray and check for intersection
   - **Pipeline** -- Systems and components that together composes a pipeline
     - **Genesis** - Generate and load chunk data from some IO
-    - **Terraform** - Add, remove or update chunks. Also process propagation (light, water, fire, etc)
-    - **Landscape** - Manages the chunks and entities relations which are currently visible
+    - **Terraforming** - Add, remove or update chunks. Also process propagation (light, water, fire, etc)
+    - **Landscaping** - Manages the chunks and entities relations which are currently visible
     - **Rendering** - Runs systems that produces the final mesh to be rendered 
   - **Debug** - Contains functions which helps while developing
 
@@ -51,15 +51,15 @@ This is a general overview of the aspects of the game. Some of these aspects may
         * [ ] Flora - Trees and plants
         * [ ] Fauna - Animals, monsters and NPCs
         * [ ] Biomes - Forest, mountain, deserts, etc
-2. **Terraform**
+2. **Terraforming**
     - **Add Chunks** - Process *CmdChunkAdd*, add new chunk to world and raises an *EvtChunkAdded*
     - **Remove Chunks** - Process *CmdChunkRemove*, remove chunk from world and raises an *EvtChunkRemoved*
     - **Update Chunks** - Process *CmdChunkUpdate*, update chunk and raises and *EvtChunkUpdated*
-3. **Landscape**
+3. **Landscaping**
     - **Despawn chunks** - Watches for *EvtChunkRemoved* event and completely despawn a chunk entity
     - **Spawn chunks** - Watches for *EvtChunkAdded* event and spawn new chunk entities and raises a *ChunkDirty* to the pipeline
     - **Update chunks** - Watches for *EvtChunkUpdated* event and raises a *ChunkDirty* event to the pipeline
-4. **Render**
+4. **Rendering**
     1. **Faces Occlusion** - Process *EvtChunkDirty* and updates the `ChunkFacesOcclusion` component
     2. *Ambient Occlusion* - Process *EvtChunkDirty* and updates the `ChunkAmbientOcclusion` component
     3. **Faces Merging** - Process *EvtChunkDirty* and updates the `ChunkFaces` component

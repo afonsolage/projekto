@@ -16,9 +16,9 @@ impl Plugin for WorldManipulationPlugin {
             .add_event::<EvtChunkAdded>()
             .add_event::<EvtChunkUpdated>()
             .add_event::<EvtChunkRemoved>()
-            .add_startup_system_to_stage(super::PipelineStartup::WorldManipulation, setup_world)
+            .add_startup_system_to_stage(super::PipelineStartup::Terraforming, setup_world)
             .add_system_set_to_stage(
-                super::Pipeline::WorldManipulation,
+                super::Pipeline::Terraforming,
                 SystemSet::new()
                     .with_system(process_add_chunks_system.label("add"))
                     .with_system(process_remove_chunks_system.label("remove").after("add"))

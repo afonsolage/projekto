@@ -22,9 +22,9 @@ pub(super) struct EntityManagingPlugin;
 impl Plugin for EntityManagingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkDirty>()
-            .add_startup_system_to_stage(super::PipelineStartup::EntityManaging, setup_resources)
+            .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_resources)
             .add_system_set_to_stage(
-                super::Pipeline::EntityManaging,
+                super::Pipeline::Landscaping,
                 SystemSet::new()
                     .with_system(despawn_chunks_system.label("despawn"))
                     .with_system(spawn_chunks_system.label("spawn").after("despawn"))
