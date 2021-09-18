@@ -1,8 +1,8 @@
 use bevy::{prelude::*, render::pipeline::PipelineDescriptor, utils::HashMap};
 
 use self::{
-    landscaping::EntityManagingPlugin, rendering::RenderingPlugin,
-    terraforming::WorldManipulationPlugin,
+    genesis::GenesisPlugin, landscaping::LandscapingPlugin, rendering::RenderingPlugin,
+    terraforming::TerraformingPlugin,
 };
 
 mod genesis;
@@ -75,8 +75,9 @@ impl Plugin for PipelinePlugin {
                 PipelineStartup::Rendering,
                 SystemStage::parallel(),
             );
-        app.add_plugin(WorldManipulationPlugin)
-            .add_plugin(EntityManagingPlugin)
+        app.add_plugin(GenesisPlugin)
+            .add_plugin(TerraformingPlugin)
+            .add_plugin(LandscapingPlugin)
             .add_plugin(RenderingPlugin);
     }
 }

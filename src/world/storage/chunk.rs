@@ -1,6 +1,10 @@
+use std::marker::PhantomData;
+
 use bevy::prelude::*;
 
-use crate::world::math;
+use serde::{de::DeserializeOwned, ser::SerializeSeq, Deserialize, Serialize};
+
+use crate::world::{math, storage::chunk};
 
 use super::voxel;
 
@@ -37,15 +41,23 @@ impl Iterator for ChunkIter {
     }
 }
 
-pub struct ChunkStorage<T: Sized + Copy + Default>([T; BUFFER_SIZE]);
+pub trait ChunkStorageType:
+    Sized + Copy + Default + DeserializeOwned + Serialize + PartialEq
+{
+}
 
-impl<T: Sized + Copy + Default> Default for ChunkStorage<T> {
+impl ChunkStorageType for u8 {}
+
+#[derive(Debug, PartialEq)]
+pub struct ChunkStorage<T: ChunkStorageType>([T; BUFFER_SIZE]);
+
+impl<T: ChunkStorageType> Default for ChunkStorage<T> {
     fn default() -> Self {
         Self([T::default(); BUFFER_SIZE])
     }
 }
 
-impl<T: Sized + Copy + Default> ChunkStorage<T> {
+impl<T: ChunkStorageType> ChunkStorage<T> {
     pub fn get(&self, local: IVec3) -> T {
         self.0[to_index(local)]
     }
@@ -58,9 +70,60 @@ impl<T: Sized + Copy + Default> ChunkStorage<T> {
         self.0.fill(value);
     }
 
-    #[cfg(test)]
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.0.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.iter().all(|k| *k == Default::default())
+    }
+}
+
+impl<'de, T: ChunkStorageType> Deserialize<'de> for ChunkStorage<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ArrayVisitor<T>(PhantomData<T>);
+        impl<'de, T: ChunkStorageType> serde::de::Visitor<'de> for ArrayVisitor<T> {
+            type Value = ChunkStorage<T>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_fmt(format_args!("an array of length {}", chunk::BUFFER_SIZE))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut arr = [T::default(); chunk::BUFFER_SIZE];
+
+                for index in 0..chunk::BUFFER_SIZE {
+                    arr[index] = seq
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(index, &self))?;
+                }
+
+                Ok(ChunkStorage(arr))
+            }
+        }
+
+        deserializer.deserialize_seq(ArrayVisitor(PhantomData))
+    }
+}
+
+impl<T: ChunkStorageType> Serialize for ChunkStorage<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(chunk::BUFFER_SIZE))?;
+
+        for elem in self.0.iter() {
+            seq.serialize_element(elem)?;
+        }
+
+        seq.end()
     }
 }
 
@@ -368,5 +431,16 @@ mod tests {
             super::overlap_voxel((17, 10, 5).into()),
             ((1, 0, 0).into(), (1, 10, 5).into())
         );
+    }
+
+    #[test]
+    fn is_empty() {
+        let mut chunk = ChunkStorage::<u8>::default();
+
+        assert!(chunk.is_empty());
+
+        chunk.set((1, 1, 1).into(), 1);
+
+        assert!(!chunk.is_empty());
     }
 }

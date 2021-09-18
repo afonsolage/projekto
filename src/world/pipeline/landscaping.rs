@@ -7,22 +7,20 @@ use bevy::{
     utils::HashMap,
 };
 
-#[cfg(feature = "perf_counter")]
-use crate::debug::perf::PerfCounterGuard;
-
-use crate::world::storage::chunk;
+use crate::world::storage::{chunk, landscape};
 
 use super::{
-    ChunkBuildingBundle, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline, EvtChunkAdded,
-    EvtChunkDirty, EvtChunkRemoved, EvtChunkUpdated,
+    genesis::CmdChunkLoad, ChunkBuildingBundle, ChunkBundle, ChunkEntityMap, ChunkLocal,
+    ChunkPipeline, EvtChunkAdded, EvtChunkDirty, EvtChunkRemoved, EvtChunkUpdated,
 };
 
-pub(super) struct EntityManagingPlugin;
+pub(super) struct LandscapingPlugin;
 
-impl Plugin for EntityManagingPlugin {
+impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkDirty>()
             .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_resources)
+            .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_landscape)
             .add_system_set_to_stage(
                 super::Pipeline::Landscaping,
                 SystemSet::new()
@@ -33,11 +31,33 @@ impl Plugin for EntityManagingPlugin {
     }
 }
 
+fn setup_landscape(mut writer: EventWriter<CmdChunkLoad>) {
+    trace_system_run!();
+
+    for x in landscape::BEGIN..landscape::END {
+        for y in landscape::BEGIN..landscape::END {
+            for z in landscape::BEGIN..landscape::END {
+                let local = (x, y, z).into();
+                let world = chunk::to_world(local);
+
+                // TODO: How to generate for negative height chunks?
+                if world.y < 0.0 {
+                    continue;
+                }
+
+                writer.send(CmdChunkLoad(local));
+            }
+        }
+    }
+}
+
 fn setup_resources(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
 ) {
+    trace_system_run!();
+
     let pipeline_handle = pipelines.add(PipelineDescriptor {
         // primitive: PrimitiveState {
         //     topology: PrimitiveTopology::TriangleList,
@@ -67,9 +87,8 @@ fn spawn_chunks_system(
 ) {
     let mut _perf = perf_fn!();
     for EvtChunkAdded(local) in reader.iter() {
+        trace_system_run!(local);
         perf_scope!(_perf);
-
-        trace!("Spawning chunk entity {}", *local);
 
         let entity = commands
             .spawn_bundle(ChunkBundle {
@@ -97,10 +116,10 @@ fn despawn_chunks_system(
     let mut _perf = perf_fn!();
 
     for EvtChunkRemoved(local) in reader.iter() {
+        trace_system_run!(local);
         perf_scope!(_perf);
 
         if let Some(entity) = entity_map.0.remove(local) {
-            trace!("Despawning chunk entity {}", *local);
             commands.entity(entity).despawn_recursive();
         }
     }
@@ -116,9 +135,9 @@ fn update_chunks_system(
 
     for EvtChunkUpdated(chunk_local) in reader.iter() {
         if let Some(&entity) = entity_map.0.get(chunk_local) {
+            trace_system_run!(chunk_local);
             perf_scope!(_perf);
 
-            trace!("Updating chunk entity {}", *chunk_local);
             commands
                 .entity(entity)
                 .insert_bundle(ChunkBuildingBundle::default());

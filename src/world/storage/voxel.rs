@@ -1,10 +1,12 @@
 use bevy::prelude::*;
 use serde::Deserialize;
+use serde::Serialize;
 use std::ops::{Index, IndexMut};
 
 use crate::world::math;
 
 use super::chunk;
+use super::chunk::ChunkStorageType;
 
 pub const SIDE_COUNT: usize = 6;
 
@@ -15,7 +17,7 @@ pub struct KindDescription {
     pub color: (f32, f32, f32, f32),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
 impl From<u16> for Kind {
@@ -29,6 +31,8 @@ impl Kind {
         self.0 == 0
     }
 }
+
+impl ChunkStorageType for Kind {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Side {
@@ -73,7 +77,7 @@ impl Side {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub struct FacesOcclusion([bool; SIDE_COUNT]);
 
 impl FacesOcclusion {
@@ -106,6 +110,8 @@ impl From<[bool; 6]> for FacesOcclusion {
         Self(v)
     }
 }
+
+impl ChunkStorageType for FacesOcclusion {}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct VoxelFace {

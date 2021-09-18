@@ -1,14 +1,10 @@
 use bevy::prelude::*;
-use bracket_noise::prelude::*;
 
-#[cfg(feature = "perf_counter")]
-use crate::debug::perf::PerfCounterGuard;
+use crate::world::storage::{chunk, voxel, VoxWorld};
 
-use crate::world::storage::{chunk, landscape, voxel, VoxWorld};
+pub(super) struct TerraformingPlugin;
 
-pub(super) struct WorldManipulationPlugin;
-
-impl Plugin for WorldManipulationPlugin {
+impl Plugin for TerraformingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<CmdChunkAdd>()
             .add_event::<CmdChunkRemove>()
@@ -16,13 +12,12 @@ impl Plugin for WorldManipulationPlugin {
             .add_event::<EvtChunkAdded>()
             .add_event::<EvtChunkUpdated>()
             .add_event::<EvtChunkRemoved>()
-            .add_startup_system_to_stage(super::PipelineStartup::Terraforming, setup_world)
             .add_system_set_to_stage(
                 super::Pipeline::Terraforming,
                 SystemSet::new()
-                    .with_system(process_add_chunks_system.label("add"))
-                    .with_system(process_remove_chunks_system.label("remove").after("add"))
-                    .with_system(process_update_chunks_system.after("remove")),
+                    // .with_system(process_add_chunks_system.label("add"))
+                    // .with_system(process_remove_chunks_system.label("remove").after("add"))
+                    .with_system(process_update_chunks_system),
             );
     }
 }
@@ -45,98 +40,42 @@ pub struct EvtChunkRemoved(pub IVec3);
 #[derive(Clone, Copy)]
 pub struct EvtChunkUpdated(pub IVec3);
 
-fn setup_world(mut commands: Commands, mut writer: EventWriter<CmdChunkAdd>) {
-    let mut _perf = perf_fn!();
+// fn process_add_chunks_system(
+//     mut world: ResMut<VoxWorld>,
+//     mut reader: EventReader<CmdChunkAdd>,
+//     mut writer: EventWriter<EvtChunkAdded>,
+// ) {
+//     let mut _perf = perf_fn!();
 
-    commands.insert_resource(VoxWorld::default());
+//     for CmdChunkAdd(local, voxels) in reader.iter() {
+//         perf_scope!(_perf);
 
-    // TODO: Find a better place for this initialization
-    for x in landscape::BEGIN..landscape::END {
-        for y in landscape::BEGIN..landscape::END {
-            for z in landscape::BEGIN..landscape::END {
-                let local = (x, y, z).into();
-                let world = chunk::to_world(local);
+//         trace!("Adding chunk {} to world", *local);
+//         world.add(*local, ChunkKind::default());
+//         let chunk = world.get_mut(*local).unwrap();
 
-                // TODO: How to generate for negative height chunks?
-                if world.y < 0.0 {
-                    continue;
-                }
+//         for &(voxel, kind) in voxels {
+//             chunk.set(voxel, kind);
+//         }
 
-                perf_scope!(_perf);
+//         writer.send(EvtChunkAdded(*local));
+//     }
+// }
 
-                let mut noise = FastNoise::seeded(15);
-                noise.set_noise_type(NoiseType::SimplexFractal);
-                noise.set_frequency(0.03);
-                noise.set_fractal_type(FractalType::FBM);
-                noise.set_fractal_octaves(3);
-                noise.set_fractal_gain(0.9);
-                noise.set_fractal_lacunarity(0.5);
+// fn process_remove_chunks_system(
+//     mut world: ResMut<VoxWorld>,
+//     mut reader: EventReader<CmdChunkRemove>,
+//     mut writer: EventWriter<EvtChunkRemoved>,
+// ) {
+//     let mut _perf = perf_fn!();
+//     for CmdChunkRemove(local) in reader.iter() {
+//         perf_scope!(_perf);
 
-                let mut voxels = vec![];
-
-                for x in 0..chunk::AXIS_SIZE {
-                    for z in 0..chunk::AXIS_SIZE {
-                        let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
-                        let world_height = ((h + 1.0) / 2.0) * (2 * chunk::AXIS_SIZE) as f32;
-
-                        let height_local = world_height - world.y;
-
-                        if height_local < f32::EPSILON {
-                            continue;
-                        }
-
-                        let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
-
-                        for y in 0..end {
-                            voxels.push(((x as i32, y as i32, z as i32).into(), 1.into()));
-                        }
-                    }
-                }
-
-                if !voxels.is_empty() {
-                    writer.send(CmdChunkAdd(local, voxels));
-                }
-            }
-        }
-    }
-}
-
-fn process_add_chunks_system(
-    mut world: ResMut<VoxWorld>,
-    mut reader: EventReader<CmdChunkAdd>,
-    mut writer: EventWriter<EvtChunkAdded>,
-) {
-    let mut _perf = perf_fn!();
-
-    for CmdChunkAdd(local, voxels) in reader.iter() {
-        perf_scope!(_perf);
-
-        trace!("Adding chunk {} to world", *local);
-        world.add(*local);
-        let chunk = world.get_mut(*local).unwrap();
-
-        for &(voxel, kind) in voxels {
-            chunk.set(voxel, kind);
-        }
-
-        writer.send(EvtChunkAdded(*local));
-    }
-}
-
-fn process_remove_chunks_system(
-    mut world: ResMut<VoxWorld>,
-    mut reader: EventReader<CmdChunkRemove>,
-    mut writer: EventWriter<EvtChunkRemoved>,
-) {
-    let mut _perf = perf_fn!();
-    for CmdChunkRemove(local) in reader.iter() {
-        perf_scope!(_perf);
-
-        trace!("Removing chunk {} from world", *local);
-        world.remove(*local);
-        writer.send(EvtChunkRemoved(*local));
-    }
-}
+//         trace!("Removing chunk {} from world", *local);
+//         world.remove(*local);
+//         writer.send(EvtChunkRemoved(*local));
+//     }
+// }
 
 fn process_update_chunks_system(
     mut world: ResMut<VoxWorld>,
@@ -146,8 +85,6 @@ fn process_update_chunks_system(
     let mut _perf = perf_fn!();
 
     for CmdChunkUpdate(chunk_local, voxels) in reader.iter() {
-        perf_scope!(_perf);
-
         let chunk = match world.get_mut(*chunk_local) {
             None => {
                 warn!(
@@ -159,7 +96,8 @@ fn process_update_chunks_system(
             Some(c) => c,
         };
 
-        trace!("Update chunk {} in world ({:?})", *chunk_local, &voxels);
+        trace_system_run!(chunk_local);
+        perf_scope!(_perf);
 
         let mut neighbor_chunks = vec![];
 
@@ -197,87 +135,84 @@ mod test {
         prelude::{self, *},
     };
 
-    use crate::world::{
-        pipeline::{CmdChunkRemove, EvtChunkRemoved},
-        storage,
-    };
+    use crate::world::storage::{self, chunk::ChunkKind};
 
     use super::*;
 
-    #[test]
-    fn process_add_chunks_system() {
-        // Arrange
-        let mut events = Events::<CmdChunkAdd>::default();
-        events.send(CmdChunkAdd((1, 2, 3).into(), vec![]));
+    // #[test]
+    // fn process_add_chunks_system() {
+    //     // Arrange
+    //     let mut events = Events::<CmdChunkAdd>::default();
+    //     events.send(CmdChunkAdd((1, 2, 3).into(), vec![]));
 
-        let mut world = prelude::World::default();
-        world.insert_resource(storage::VoxWorld::default());
-        world.insert_resource(events);
-        world.insert_resource(Events::<EvtChunkAdded>::default());
+    //     let mut world = prelude::World::default();
+    //     world.insert_resource(storage::VoxWorld::default());
+    //     world.insert_resource(events);
+    //     world.insert_resource(Events::<EvtChunkAdded>::default());
 
-        let mut stage = SystemStage::parallel();
-        stage.add_system(super::process_add_chunks_system);
+    //     let mut stage = SystemStage::parallel();
+    //     stage.add_system(super::process_add_chunks_system);
 
-        // Act
-        stage.run(&mut world);
+    //     // Act
+    //     stage.run(&mut world);
 
-        // Assert
-        assert!(world
-            .get_resource::<storage::VoxWorld>()
-            .unwrap()
-            .get((1, 2, 3).into())
-            .is_some());
+    //     // Assert
+    //     assert!(world
+    //         .get_resource::<storage::VoxWorld>()
+    //         .unwrap()
+    //         .get((1, 2, 3).into())
+    //         .is_some());
 
-        assert_eq!(
-            world
-                .get_resource_mut::<Events::<EvtChunkAdded>>()
-                .unwrap()
-                .iter_current_update_events()
-                .next()
-                .unwrap()
-                .0,
-            (1, 2, 3).into()
-        );
-    }
+    //     assert_eq!(
+    //         world
+    //             .get_resource_mut::<Events::<EvtChunkAdded>>()
+    //             .unwrap()
+    //             .iter_current_update_events()
+    //             .next()
+    //             .unwrap()
+    //             .0,
+    //         (1, 2, 3).into()
+    //     );
+    // }
 
-    #[test]
-    fn process_remove_chunks_system() {
-        // Arrange
-        let mut events = Events::<CmdChunkRemove>::default();
-        events.send(CmdChunkRemove((1, 2, 3).into()));
+    // #[test]
+    // fn process_remove_chunks_system() {
+    //     // Arrange
+    //     let mut events = Events::<CmdChunkRemove>::default();
+    //     events.send(CmdChunkRemove((1, 2, 3).into()));
 
-        let mut voxel_world = storage::VoxWorld::default();
-        voxel_world.add((1, 2, 3).into());
+    //     let mut voxel_world = storage::VoxWorld::default();
+    //     voxel_world.add((1, 2, 3).into(), ChunkKind::default());
 
-        let mut world = prelude::World::default();
-        world.insert_resource(voxel_world);
-        world.insert_resource(events);
-        world.insert_resource(Events::<EvtChunkRemoved>::default());
+    //     let mut world = prelude::World::default();
+    //     world.insert_resource(voxel_world);
+    //     world.insert_resource(events);
+    //     world.insert_resource(Events::<EvtChunkRemoved>::default());
 
-        let mut stage = SystemStage::parallel();
-        stage.add_system(super::process_remove_chunks_system);
+    //     let mut stage = SystemStage::parallel();
+    //     stage.add_system(super::process_remove_chunks_system);
 
-        // Act
-        stage.run(&mut world);
+    //     // Act
+    //     stage.run(&mut world);
 
-        // Assert
-        assert!(!world
-            .get_resource::<storage::VoxWorld>()
-            .unwrap()
-            .get((1, 2, 3).into())
-            .is_some());
+    //     // Assert
+    //     assert!(!world
+    //         .get_resource::<storage::VoxWorld>()
+    //         .unwrap()
+    //         .get((1, 2, 3).into())
+    //         .is_some());
 
-        assert_eq!(
-            world
-                .get_resource_mut::<Events::<EvtChunkRemoved>>()
-                .unwrap()
-                .iter_current_update_events()
-                .next()
-                .unwrap()
-                .0,
-            (1, 2, 3).into()
-        );
-    }
+    //     assert_eq!(
+    //         world
+    //             .get_resource_mut::<Events::<EvtChunkRemoved>>()
+    //             .unwrap()
+    //             .iter_current_update_events()
+    //             .next()
+    //             .unwrap()
+    //             .0,
+    //         (1, 2, 3).into()
+    //     );
+    // }
 
     #[test]
     fn process_update_chunks_system() {
@@ -289,7 +224,7 @@ mod test {
         ));
 
         let mut voxel_world = storage::VoxWorld::default();
-        voxel_world.add((1, 2, 3).into());
+        voxel_world.add((1, 2, 3).into(), ChunkKind::default());
 
         let mut world = prelude::World::default();
         world.insert_resource(voxel_world);

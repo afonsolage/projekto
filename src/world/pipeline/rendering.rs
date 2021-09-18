@@ -3,9 +3,6 @@ use bevy::{
     render::{mesh::Indices, pipeline::PrimitiveTopology},
 };
 
-#[cfg(feature = "perf_counter")]
-use crate::debug::perf::PerfCounterGuard;
-
 use crate::world::{
     mesh,
     storage::{
@@ -94,6 +91,7 @@ fn faces_occlusion_system(
             }
             Ok(f) => f,
         };
+        trace_system_run!(local);
         perf_scope!(_perf);
 
         faces_occlusion.set_all(voxel::FacesOcclusion::default());
@@ -161,9 +159,8 @@ fn vertices_computation_system(
             Ok(f) => f,
         };
 
+        trace_system_run!(local);
         perf_scope!(_perf);
-
-        trace!("Processing vertices computation of chunk entity {}", *local);
 
         vertices.0.clear();
 
@@ -213,9 +210,8 @@ fn mesh_generation_system(
             }
             Ok(v) => &v.0,
         };
+        trace_system_run!(local);
         perf_scope!(_perf);
-
-        trace!("Processing mesh generation of chunk entity {}", *local);
 
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
@@ -255,9 +251,8 @@ fn clean_up_system(
             }
             Some(&e) => e,
         };
+        trace_system_run!(local);
         perf_scope!(_perf);
-
-        trace!("Clearing up chunk entity {}", *local);
 
         commands
             .entity(entity)
@@ -304,6 +299,7 @@ fn faces_merging_system(
             Some(c) => c,
         };
 
+        trace_system_run!(local);
         perf_scope!(_perf);
 
         let merged_faces = mesh::merge_faces(&occlusion, chunk);
@@ -315,7 +311,10 @@ fn faces_merging_system(
 mod test {
     use bevy::{app::Events, utils::HashMap};
 
-    use crate::world::{pipeline::ChunkBuildingBundle, storage::voxel::VoxelFace};
+    use crate::world::{
+        pipeline::ChunkBuildingBundle,
+        storage::{chunk::ChunkKind, voxel::VoxelFace},
+    };
 
     use super::*;
 
@@ -328,7 +327,7 @@ mod test {
         events.send(EvtChunkDirty(local));
 
         let mut voxel_world = storage::VoxWorld::default();
-        voxel_world.add(local);
+        voxel_world.add(local, ChunkKind::default());
 
         let mut world = World::default();
         world.insert_resource(voxel_world);
@@ -374,7 +373,7 @@ mod test {
         events.send(EvtChunkDirty(local));
 
         let mut voxel_world = storage::VoxWorld::default();
-        voxel_world.add(local);
+        voxel_world.add(local, ChunkKind::default());
 
         let chunk = voxel_world.get_mut(local).unwrap();
         // Top-Bottom occlusion

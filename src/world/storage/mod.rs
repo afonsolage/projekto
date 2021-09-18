@@ -1,6 +1,6 @@
 pub mod chunk;
 pub mod landscape;
 pub mod voxel;
-mod world;
+mod voxworld;
 
-pub use world::VoxWorld;
+pub use voxworld::VoxWorld;

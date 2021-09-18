@@ -8,16 +8,13 @@ pub struct VoxWorld {
 }
 
 impl VoxWorld {
-    pub fn add(&mut self, pos: IVec3) {
-        if self
-            .chunks
-            .insert(pos.clone(), ChunkKind::default())
-            .is_some()
-        {
+    pub fn add(&mut self, pos: IVec3, kind: ChunkKind) {
+        if self.chunks.insert(pos.clone(), kind).is_some() {
             panic!("Created a duplicated chunk at {:?}", &pos);
         }
     }
 
+    #[cfg(test)]
     pub fn remove(&mut self, pos: IVec3) -> Option<ChunkKind> {
         self.chunks.remove(&pos)
     }
@@ -35,13 +32,15 @@ impl VoxWorld {
 mod test {
     use bevy::math::IVec3;
 
+    use crate::world::storage::chunk::ChunkKind;
+
     use super::VoxWorld;
 
     #[test]
     fn add() {
         let mut world = VoxWorld::default();
         assert!(world.get(IVec3::ONE).is_none());
-        world.add(IVec3::ONE);
+        world.add(IVec3::ONE, ChunkKind::default());
         assert!(world.get(IVec3::ONE).is_some());
     }
 
@@ -49,14 +48,14 @@ mod test {
     #[should_panic]
     fn add_duplicated() {
         let mut world = VoxWorld::default();
-        world.add(IVec3::ONE);
-        world.add(IVec3::ONE);
+        world.add(IVec3::ONE, ChunkKind::default());
+        world.add(IVec3::ONE, ChunkKind::default());
     }
 
     #[test]
     fn remove() {
         let mut world = VoxWorld::default();
-        world.add(IVec3::ONE);
+        world.add(IVec3::ONE, ChunkKind::default());
         assert!(world.remove(IVec3::ONE).is_some());
         assert!(world.get(IVec3::ONE).is_none());
     }
