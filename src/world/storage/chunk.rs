@@ -228,7 +228,7 @@ mod tests {
     use bevy::math::IVec3;
     use rand::{random, Rng};
 
-    use crate::world::storage::chunk::AXIS_SIZE;
+    use crate::world::storage::chunk::{ChunkStorageType, AXIS_SIZE};
 
     use super::ChunkStorage;
 
@@ -435,11 +435,12 @@ mod tests {
 
     #[test]
     fn is_empty() {
-        let mut chunk = ChunkStorage::<u8>::default();
+        impl ChunkStorageType for [u8; 3] {}
 
+        let mut chunk = ChunkStorage::<[u8; 3]>::default();
         assert!(chunk.is_empty());
 
-        chunk.set((1, 1, 1).into(), 1);
+        chunk.set((1, 1, 1).into(), [1; 3]);
 
         assert!(!chunk.is_empty());
     }
