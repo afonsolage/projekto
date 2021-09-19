@@ -6,7 +6,7 @@ mod math;
 mod mesh;
 mod pipeline;
 
-pub mod raycast;
+pub mod query;
 pub mod storage;
 
 pub struct WorldPlugin;

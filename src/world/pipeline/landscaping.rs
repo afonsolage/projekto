@@ -78,6 +78,14 @@ fn setup_resources(
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
 }
 
+fn update_landscape_system(entity_map: ResMut<ChunkEntityMap>) {
+    // TODO: Change this to get from an entity later on;
+    let center = IVec3::ZERO;
+
+    let begin = center + IVec3::splat(landscape::BEGIN);
+    let end = center + IVec3::splat(landscape::END);
+}
+
 fn spawn_chunks_system(
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,

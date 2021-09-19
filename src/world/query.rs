@@ -5,6 +5,51 @@ use crate::world::{
     storage::{chunk, voxel},
 };
 
+pub struct RangeIterator {
+    begin: IVec3,
+    end: IVec3,
+    current: IVec3,
+}
+
+impl Iterator for RangeIterator {
+    type Item = IVec3;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for x in self.current.x..self.end.x {
+            for z in self.current.z..self.end.z {
+                for y in self.current.y..self.end.y {
+                    self.current.y += 1;
+                    return Some((x, y, z).into());
+                }
+                self.current.z += 1;
+                self.current.y = self.begin.y;
+            }
+            self.current.x += 1;
+            self.current.z = self.begin.z;
+            self.current.y = self.begin.y;
+        }
+        None
+    }
+}
+
+impl From<(IVec3, IVec3)> for RangeIterator {
+    fn from(t: (IVec3, IVec3)) -> Self {
+        Self {
+            begin: t.0,
+            end: t.1,
+            current: t.0,
+        }
+    }
+}
+
+pub fn range(begin: IVec3, end: IVec3) -> impl Iterator<Item = IVec3> {
+    RangeIterator {
+        begin,
+        end,
+        current: begin,
+    }
+}
+
 #[derive(Default, Debug, Clone, Copy)]
 pub struct RaycastHit {
     pub local: IVec3,
@@ -12,7 +57,7 @@ pub struct RaycastHit {
     pub normal: IVec3,
 }
 
-pub fn intersect(origin: Vec3, dir: Vec3, range: f32) -> Vec<(RaycastHit, Vec<RaycastHit>)> {
+pub fn raycast(origin: Vec3, dir: Vec3, range: f32) -> Vec<(RaycastHit, Vec<RaycastHit>)> {
     let mut result = vec![];
 
     let (hit_locals, hit_positions, hit_normals) = chunk_raycast(origin, dir, range);
@@ -141,9 +186,47 @@ fn voxel_raycast(
 
 #[cfg(test)]
 mod test {
-    use bevy::math::{IVec3, Vec3};
+    use std::vec;
 
-    use crate::world::raycast::RaycastHit;
+    use bevy::math::{IVec3, Vec3};
+    use rand::Rng;
+
+    use crate::world::query::RaycastHit;
+
+    #[test]
+    fn range() {
+        let items = super::range((0, 0, 0).into(), (1, 1, 1).into()).collect::<Vec<_>>();
+        assert_eq!(items, vec![(0, 0, 0).into()]);
+
+        let items = super::range((1, 1, 1).into(), (1, 1, 1).into()).collect::<Vec<_>>();
+        assert_eq!(items, vec![]);
+
+        for _ in 0..100 {
+            let mut rnd = rand::thread_rng();
+
+            let begin = IVec3::new(
+                rnd.gen_range(-5..5),
+                rnd.gen_range(-5..5),
+                rnd.gen_range(-5..5),
+            );
+            let end = IVec3::new(
+                rnd.gen_range(-5..5),
+                rnd.gen_range(-5..5),
+                rnd.gen_range(-5..5),
+            );
+            let items = super::range(begin, end).collect::<Vec<_>>();
+            let mut loop_items = vec![];
+            for x in begin.x..end.x {
+                for z in begin.z..end.z {
+                    for y in begin.y..end.y {
+                        loop_items.push(IVec3::new(x, y, z));
+                    }
+                }
+            }
+
+            assert_eq!(items, loop_items, "Wrong values on range {} {}", begin, end);
+        }
+    }
 
     pub fn eq(vec_a: Vec3, vec_b: Vec3) -> bool {
         vec_a.abs_diff_eq(vec_b, f32::EPSILON)
@@ -155,7 +238,7 @@ mod test {
         range: f32,
         ok_res: &Vec<(RaycastHit, Vec<RaycastHit>)>,
     ) {
-        let res = super::intersect(origin, dir, range);
+        let res = super::raycast(origin, dir, range);
 
         assert_eq!(ok_res.len(), res.len());
 

@@ -20,7 +20,7 @@ use crate::{
     world::{mesh, pipeline::*, storage::*},
 };
 
-use super::raycast;
+use super::query;
 
 pub struct WireframeDebugPlugin;
 
@@ -388,7 +388,7 @@ fn check_raycast_intersections_system(
     q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
 ) {
     for (e, raycast) in q_raycast.iter() {
-        let res = raycast::intersect(raycast.origin, raycast.dir, raycast.range);
+        let res = query::raycast(raycast.origin, raycast.dir, raycast.range);
 
         for (chunk_hit, voxels_hit) in res.iter() {
             let chunk = match world.get(chunk_hit.local) {
@@ -505,7 +505,7 @@ fn remove_voxel_system(
         let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
         let range = 100.0;
 
-        let hit_results = raycast::intersect(origin, dir, range);
+        let hit_results = query::raycast(origin, dir, range);
 
         for (chunk_hit, voxels_hit) in hit_results {
             let chunk = match world.get(chunk_hit.local) {
