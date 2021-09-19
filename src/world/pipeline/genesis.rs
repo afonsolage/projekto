@@ -9,8 +9,6 @@ use crate::world::storage::{
     VoxWorld,
 };
 
-use super::EvtChunkAdded;
-
 const CACHE_PATH: &'static str = "cache/chunks/example";
 const CACHE_EXT: &'static str = "ron";
 
@@ -19,9 +17,13 @@ pub(super) struct GenesisPlugin;
 impl Plugin for GenesisPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<CmdChunkLoad>()
+            .add_event::<CmdChunkUnload>()
             .add_event::<CmdChunkGen>()
+            .add_event::<EvtChunkLoaded>()
+            .add_event::<EvtChunkUnloaded>()
             .add_startup_system_to_stage(super::PipelineStartup::Genesis, setup_vox_world)
-            .add_system_to_stage(super::Pipeline::Genesis, load_cache_system)
+            .add_system_to_stage(super::Pipeline::Genesis, load_cache_system.label("load"))
+            .add_system_to_stage(super::Pipeline::Genesis, unload_cache_system.after("load"))
             .add_system_to_stage(super::Pipeline::Genesis, gen_cache_system);
     }
 }
@@ -33,12 +35,33 @@ struct ChunkCache {
 }
 
 pub struct CmdChunkLoad(pub IVec3);
+pub struct EvtChunkLoaded(pub IVec3);
+
+pub struct CmdChunkUnload(pub IVec3);
+pub struct EvtChunkUnloaded(pub IVec3);
+
 struct CmdChunkGen(IVec3);
 
 fn setup_vox_world(mut commands: Commands) {
     trace_system_run!();
 
     commands.insert_resource(VoxWorld::default());
+}
+
+fn unload_cache_system(
+    mut vox_world: ResMut<VoxWorld>,
+    mut reader: EventReader<CmdChunkUnload>,
+    mut writer: EventWriter<EvtChunkUnloaded>,
+) {
+    let mut _perf = perf_fn!();
+
+    for CmdChunkUnload(local) in reader.iter() {
+        if vox_world.remove(*local).is_none() {
+            warn!("Trying to unload non-existing cache {}", *local);
+        } else {
+            writer.send(EvtChunkUnloaded(*local));
+        }
+    }
 }
 
 fn gen_cache_system(mut reader: EventReader<CmdChunkGen>, mut writer: EventWriter<CmdChunkLoad>) {
@@ -112,7 +135,7 @@ fn load_cache_system(
     mut vox_world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkLoad>,
     mut gen_writer: EventWriter<CmdChunkGen>,
-    mut added_writer: EventWriter<EvtChunkAdded>,
+    mut added_writer: EventWriter<EvtChunkLoaded>,
 ) {
     let mut _perf = perf_fn!();
     for CmdChunkLoad(local) in reader.iter() {
@@ -124,7 +147,7 @@ fn load_cache_system(
         if path.exists() {
             let cache = load_cache(&path);
             vox_world.add(*local, cache.kind);
-            added_writer.send(EvtChunkAdded(*local));
+            added_writer.send(EvtChunkLoaded(*local));
         } else {
             gen_writer.send(CmdChunkGen(*local));
         }

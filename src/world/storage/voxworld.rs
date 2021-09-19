@@ -14,7 +14,6 @@ impl VoxWorld {
         }
     }
 
-    #[cfg(test)]
     pub fn remove(&mut self, pos: IVec3) -> Option<ChunkKind> {
         self.chunks.remove(&pos)
     }

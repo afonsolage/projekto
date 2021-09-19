@@ -1,4 +1,4 @@
-pub const SIZE: usize = 10;
+pub const SIZE: usize = 5;
 pub const BEGIN: i32 = -(SIZE as i32) / 2;
 pub const END: i32 = BEGIN + SIZE as i32;
 

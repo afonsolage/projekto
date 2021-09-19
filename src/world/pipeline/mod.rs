@@ -10,9 +10,7 @@ mod landscaping;
 mod rendering;
 mod terraforming;
 
-pub use terraforming::{
-    CmdChunkAdd, CmdChunkRemove, CmdChunkUpdate, EvtChunkAdded, EvtChunkRemoved, EvtChunkUpdated,
-};
+pub use terraforming::{CmdChunkUpdate, EvtChunkUpdated};
 
 use super::storage::{
     chunk::ChunkStorage,
