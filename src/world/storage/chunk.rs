@@ -70,10 +70,12 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.0.fill(value);
     }
 
+    #[cfg(test)]
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.0.iter()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.iter().all(|k| *k == Default::default())
     }

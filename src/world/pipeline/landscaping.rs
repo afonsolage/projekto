@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::{
     core::FixedTimestep,
     prelude::*,
@@ -5,7 +7,7 @@ use bevy::{
         pipeline::{PipelineDescriptor, RenderPipeline},
         shader::ShaderStages,
     },
-    utils::{HashMap, HashSet},
+    utils::HashMap,
 };
 
 use crate::{
@@ -71,51 +73,81 @@ fn setup_resources(
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
 }
 
+#[derive(Default)]
+struct UpdateLandscapeMeta {
+    load_queue: VecDeque<IVec3>,
+    unload_queue: VecDeque<IVec3>,
+    last_pos: IVec3,
+    pending_load: Vec<IVec3>,
+    pending_unload: Vec<IVec3>,
+}
+
 fn update_landscape_system(
     entity_map: ResMut<ChunkEntityMap>,
-    mut add_writer: EventWriter<CmdChunkLoad>,
-    mut remove_writer: EventWriter<CmdChunkUnload>,
-    mut req_add: Local<HashSet<IVec3>>,
-    mut added: EventReader<EvtChunkLoaded>,
+    mut load_writer: EventWriter<CmdChunkLoad>,
+    mut unload_writer: EventWriter<CmdChunkUnload>,
+    mut loaded_reader: EventReader<EvtChunkLoaded>,
+    mut unloaded_reader: EventReader<EvtChunkUnloaded>,
+    mut meta: Local<UpdateLandscapeMeta>,
     q: Query<&Transform, With<FlyByCamera>>,
-    mut last_pos: Local<IVec3>,
 ) {
     let mut _perf = perf_fn!();
+    perf_scope!(_perf);
 
     let center = match q.single() {
         Ok(t) => chunk::to_local(t.translation),
         Err(_) => return,
     };
 
-    if center == *last_pos {
-        *last_pos = center;
-    }
+    if center != meta.last_pos {
+        meta.last_pos = center;
+        debug!("Updating landscape to center {}", center);
 
-    perf_scope!(_perf);
+        let begin = center + IVec3::splat(landscape::BEGIN);
+        let end = center + IVec3::splat(landscape::END);
 
-    let begin = center + IVec3::splat(landscape::BEGIN);
-    let end = center + IVec3::splat(landscape::END);
+        let visible_locals = query::range(begin, end).collect::<Vec<_>>();
+        let existing_locals = entity_map.0.keys().map(|k| *k).collect::<Vec<_>>();
 
-    let visible_locals = query::range(begin, end).collect::<Vec<_>>();
-    let existing_locals = entity_map.0.keys().map(|k| *k).collect::<Vec<_>>();
+        let (to_load, to_unload) = disjoin(&visible_locals, &existing_locals);
 
-    let (to_add, to_remove) = disjoin(&visible_locals, &existing_locals);
+        for v in to_load {
+            if !meta.load_queue.contains(v) && !meta.pending_load.contains(v) {
+                meta.load_queue.push_back(*v);
+            }
 
-    for EvtChunkLoaded(local) in added.iter() {
-        req_add.remove(local);
-    }
-
-    for local in to_add {
-        if req_add.contains(local) {
-            continue;
+            if meta.unload_queue.contains(v) {
+                meta.unload_queue.retain(|uv| uv != v);
+            }
         }
 
-        add_writer.send(CmdChunkLoad(*local));
-        req_add.insert(*local);
+        for v in to_unload {
+            if !meta.unload_queue.contains(v) && !meta.pending_unload.contains(v) {
+                meta.unload_queue.push_back(*v);
+            }
+
+            if meta.load_queue.contains(v) {
+                meta.load_queue.retain(|uv| uv != v);
+            }
+        }
     }
 
-    for local in to_remove {
-        remove_writer.send(CmdChunkUnload(*local));
+    for EvtChunkLoaded(local) in loaded_reader.iter() {
+        meta.pending_load.retain(|v| v != local);
+    }
+
+    for EvtChunkUnloaded(local) in unloaded_reader.iter() {
+        meta.pending_unload.retain(|v| v != local);
+    }
+
+    if let Some(next) = meta.load_queue.pop_front() {
+        load_writer.send(CmdChunkLoad(next));
+        meta.pending_load.push(next);
+    }
+
+    if let Some(next) = meta.unload_queue.pop_front() {
+        meta.pending_unload.push(next);
+        unload_writer.send(CmdChunkUnload(next));
     }
 }
 

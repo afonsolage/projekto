@@ -101,19 +101,15 @@ fn gen_cache_system(mut reader: EventReader<CmdChunkGen>, mut writer: EventWrite
             }
         }
 
-        if !kinds.is_empty() {
-            let path = local_path(*local);
-            save_cache(
-                &path,
-                &ChunkCache {
-                    local: *local,
-                    kind: kinds,
-                },
-            );
-            writer.send(CmdChunkLoad(*local));
-        } else {
-            trace!("Skipping cache {} since its empty", local);
-        }
+        let path = local_path(*local);
+        save_cache(
+            &path,
+            &ChunkCache {
+                local: *local,
+                kind: kinds,
+            },
+        );
+        writer.send(CmdChunkLoad(*local));
     }
 }
 
