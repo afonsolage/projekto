@@ -85,10 +85,10 @@ impl FacesOcclusion {
         self.0.fill(occluded)
     }
 
-    // #[cfg(test)]
-    // pub fn is_fully_occluded(&self) -> bool {
-    //     return self.0.iter().all(|&b| b);
-    // }
+    #[cfg(test)]
+    pub fn is_fully_occluded(&self) -> bool {
+        return self.0.iter().all(|&b| b);
+    }
 }
 
 impl Index<usize> for FacesOcclusion {

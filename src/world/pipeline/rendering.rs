@@ -177,277 +177,109 @@ fn generate_mesh(
 
 #[cfg(test)]
 mod test {
-    // use bevy::{app::Events, utils::HashMap};
-
-    // use super::*;
-
-    // #[test]
-    // fn faces_occlusion_system_occlude_empty_voxel() {
-    //     // Arrange
-    //     let local = (3, 2, 1).into();
-
-    //     let mut events = Events::<EvtChunkDirty>::default();
-    //     events.send(EvtChunkDirty(local));
-
-    //     let mut voxel_world = storage::VoxWorld::default();
-    //     voxel_world.add(local, ChunkKind::default());
-
-    //     let mut world = World::default();
-    //     world.insert_resource(voxel_world);
-    //     world.insert_resource(events);
-
-    //     let mut entity_map = ChunkEntityMap(HashMap::default());
-
-    //     entity_map.0.insert(
-    //         local,
-    //         world
-    //             .spawn()
-    //             .insert_bundle(ChunkBuildingBundle::default())
-    //             .id(),
-    //     );
-
-    //     world.insert_resource(entity_map);
-
-    //     let mut stage = SystemStage::parallel();
-    //     stage.add_system(super::faces_occlusion_system);
-
-    //     // Act
-    //     stage.run(&mut world);
-
-    //     // Assert
-    //     let faces_occlusion = world
-    //         .query::<&ChunkFacesOcclusion>()
-    //         .iter(&world)
-    //         .next()
-    //         .unwrap();
-
-    //     assert!(
-    //         faces_occlusion.iter().all(|a| a.is_fully_occluded()),
-    //         "A chunk full of empty-kind voxels should be fully occluded"
-    //     );
-    // }
-
-    // #[test]
-    // fn faces_occlusion_system() {
-    //     // Arrange
-    //     let local = (3, 2, 1).into();
-
-    //     let mut events = Events::<EvtChunkDirty>::default();
-    //     events.send(EvtChunkDirty(local));
-
-    //     let mut voxel_world = storage::VoxWorld::default();
-    //     voxel_world.add(local, ChunkKind::default());
-
-    //     let chunk = voxel_world.get_mut(local).unwrap();
-    //     // Top-Bottom occlusion
-    //     chunk.set((1, 1, 1).into(), 1.into());
-    //     chunk.set((1, 2, 1).into(), 1.into());
-
-    //     // Full occluded voxel at (10, 10, 10)
-    //     chunk.set((10, 10, 10).into(), 1.into());
-    //     chunk.set((9, 10, 10).into(), 1.into());
-    //     chunk.set((11, 10, 10).into(), 1.into());
-    //     chunk.set((10, 9, 10).into(), 1.into());
-    //     chunk.set((10, 11, 10).into(), 1.into());
-    //     chunk.set((10, 10, 9).into(), 1.into());
-    //     chunk.set((10, 10, 11).into(), 1.into());
-
-    //     let mut world = World::default();
-    //     world.insert_resource(voxel_world);
-    //     world.insert_resource(events);
-
-    //     let mut entity_map = ChunkEntityMap(HashMap::default());
-
-    //     entity_map.0.insert(
-    //         local,
-    //         world
-    //             .spawn()
-    //             .insert_bundle(ChunkBuildingBundle::default())
-    //             .id(),
-    //     );
-
-    //     world.insert_resource(entity_map);
-
-    //     let mut stage = SystemStage::parallel();
-    //     stage.add_system(super::faces_occlusion_system);
-
-    //     // Act
-    //     stage.run(&mut world);
-
-    //     // Assert
-    //     let faces_occlusion = world
-    //         .query::<&ChunkFacesOcclusion>()
-    //         .iter(&world)
-    //         .next()
-    //         .unwrap();
-
-    //     let faces = faces_occlusion.get((1, 2, 1).into());
-
-    //     assert_eq!(
-    //         faces,
-    //         [false, false, false, true, false, false].into(),
-    //         "Only down face should be occluded by the bottom voxel"
-    //     );
-
-    //     let faces = faces_occlusion.get((1, 1, 1).into());
-
-    //     assert_eq!(
-    //         faces,
-    //         [false, false, true, false, false, false].into(),
-    //         "Only down face should be occluded by the bottom voxel"
-    //     );
-
-    //     let faces = faces_occlusion.get((10, 10, 10).into());
-
-    //     assert_eq!(
-    //         faces,
-    //         [true; voxel::SIDE_COUNT].into(),
-    //         "Voxel fully surrounded by another non-empty voxels should be fully occluded"
-    //     );
-    // }
-
-    // #[test]
-    // fn vertices_computation_system() {
-    //     // Arrange
-    //     let local = (1, 2, 3).into();
-
-    //     let mut events = Events::<EvtChunkDirty>::default();
-    //     events.send(EvtChunkDirty(local));
-
-    //     let mut world = World::default();
-    //     world.insert_resource(events);
-
-    //     let mut entity_map = ChunkEntityMap(HashMap::default());
-
-    //     let side = voxel::Side::Up;
-    //     let faces = ChunkFaces(vec![VoxelFace {
-    //         side,
-    //         vertices: [
-    //             (0, 0, 0).into(),
-    //             (0, 0, 1).into(),
-    //             (1, 0, 1).into(),
-    //             (1, 0, 0).into(),
-    //         ],
-    //     }]);
-
-    //     let entity = world
-    //         .spawn()
-    //         .insert_bundle(ChunkBuildingBundle {
-    //             faces,
-    //             ..Default::default()
-    //         })
-    //         .id();
-
-    //     entity_map.0.insert(local, entity);
-
-    //     world.insert_resource(entity_map);
-
-    //     let mut stage = SystemStage::parallel();
-    //     stage.add_system(super::vertices_computation_system);
-
-    //     // Act
-    //     stage.run(&mut world);
-
-    //     // Assert
-    //     let vertices = world.query::<&ChunkVertices>().iter(&world).next().unwrap();
-
-    //     let normal = side.get_side_normal();
-    //     assert_eq!(
-    //         vertices.0,
-    //         vec![
-    //             VoxelVertex {
-    //                 normal: normal,
-    //                 position: (0.0, 1.0, 0.0).into(),
-    //             },
-    //             VoxelVertex {
-    //                 normal: normal,
-    //                 position: (0.0, 1.0, 2.0).into(),
-    //             },
-    //             VoxelVertex {
-    //                 normal: normal,
-    //                 position: (2.0, 1.0, 2.0).into(),
-    //             },
-    //             VoxelVertex {
-    //                 normal: normal,
-    //                 position: (2.0, 1.0, 0.0).into(),
-    //             },
-    //         ]
-    //     );
-    // }
-
-    // #[test]
-    // fn mesh_generation_system() {
-    //     // Arrange
-    //     let local = (1, 2, 3).into();
-
-    //     let mut events = Events::<EvtChunkDirty>::default();
-    //     events.send(EvtChunkDirty(local));
-
-    //     let mut world = World::default();
-    //     world.insert_resource(events);
-
-    //     let mut entity_map = ChunkEntityMap(HashMap::default());
-
-    //     let asset_server = AssetServer::new(
-    //         FileAssetIo::new(AssetServerSettings::default().asset_folder),
-    //         TaskPool::new(),
-    //     );
-
-    //     // what now...
-
-    //     world.insert_resource(asset_server);
-
-    //     let entity = world
-    //         .spawn()
-    //         .insert_bundle(ChunkBuildingBundle {
-    //             ..Default::default()
-    //         })
-    //         .id();
-
-    //     entity_map.0.insert(local, entity);
-
-    //     world.insert_resource(entity_map);
-
-    //     let mut stage = SystemStage::parallel();
-    //     stage.add_system(super::mesh_generation_system);
-
-    //     // Act
-    //     stage.run(&mut world);
-
-    //     // Assert
-    // }
-
-    // #[test]
-    // fn clean_up_system() {
-    //     // Arrange
-    //     let local = (1, 2, 3).into();
-
-    //     let mut events = Events::<EvtChunkDirty>::default();
-    //     events.send(EvtChunkDirty(local));
-
-    //     let mut world = World::default();
-    //     world.insert_resource(events);
-
-    //     let mut entity_map = ChunkEntityMap(HashMap::default());
-
-    //     let entity = world
-    //         .spawn()
-    //         .insert_bundle(ChunkBuildingBundle {
-    //             ..Default::default()
-    //         })
-    //         .id();
-
-    //     entity_map.0.insert(local, entity);
-
-    //     world.insert_resource(entity_map);
-
-    //     let mut stage = SystemStage::parallel();
-    //     stage.add_system(super::clean_up_system);
-
-    //     // Act
-    //     stage.run(&mut world);
-
-    //     // Assert
-    //     assert!(world.get::<ChunkVertices>(entity).is_none());
-    // }
+    use super::*;
+
+    #[test]
+    fn faces_occlusion_occlude_empty_chunk() {
+        // Arrange
+        let chunk = ChunkKind::default();
+
+        // Act
+        let occlusions = super::faces_occlusion(&chunk);
+
+        // Assert
+        assert!(
+            occlusions.iter().all(|a| a.is_fully_occluded()),
+            "A chunk full of empty-kind voxels should be fully occluded"
+        );
+    }
+
+    #[test]
+    fn faces_occlusion() {
+        // Arrange
+        let mut chunk = ChunkKind::default();
+
+        // Top-Bottom occlusion
+        chunk.set((1, 1, 1).into(), 1.into());
+        chunk.set((1, 2, 1).into(), 1.into());
+
+        // Full occluded voxel at (10, 10, 10)
+        chunk.set((10, 10, 10).into(), 1.into());
+        chunk.set((9, 10, 10).into(), 1.into());
+        chunk.set((11, 10, 10).into(), 1.into());
+        chunk.set((10, 9, 10).into(), 1.into());
+        chunk.set((10, 11, 10).into(), 1.into());
+        chunk.set((10, 10, 9).into(), 1.into());
+        chunk.set((10, 10, 11).into(), 1.into());
+
+        // Act
+        let faces_occlusion = super::faces_occlusion(&chunk);
+
+        // Assert
+        let faces = faces_occlusion.get((1, 2, 1).into());
+
+        assert_eq!(
+            faces,
+            [false, false, false, true, false, false].into(),
+            "Only down face should be occluded by the bottom voxel"
+        );
+
+        let faces = faces_occlusion.get((1, 1, 1).into());
+
+        assert_eq!(
+            faces,
+            [false, false, true, false, false, false].into(),
+            "Only down face should be occluded by the bottom voxel"
+        );
+
+        let faces = faces_occlusion.get((10, 10, 10).into());
+
+        assert_eq!(
+            faces,
+            [true; voxel::SIDE_COUNT].into(),
+            "Voxel fully surrounded by another non-empty voxels should be fully occluded"
+        );
+    }
+
+    #[test]
+    fn vertices_computation() {
+        // Arrange
+        let side = voxel::Side::Up;
+        let faces = vec![VoxelFace {
+            side,
+            vertices: [
+                (0, 0, 0).into(),
+                (0, 0, 1).into(),
+                (1, 0, 1).into(),
+                (1, 0, 0).into(),
+            ],
+        }];
+
+        // Act
+        let vertices = super::vertices_computation(faces);
+
+        // Assert
+        let normal = side.get_side_normal();
+        assert_eq!(
+            vertices,
+            vec![
+                VoxelVertex {
+                    normal: normal,
+                    position: (0.0, 1.0, 0.0).into(),
+                },
+                VoxelVertex {
+                    normal: normal,
+                    position: (0.0, 1.0, 2.0).into(),
+                },
+                VoxelVertex {
+                    normal: normal,
+                    position: (2.0, 1.0, 2.0).into(),
+                },
+                VoxelVertex {
+                    normal: normal,
+                    position: (2.0, 1.0, 0.0).into(),
+                },
+            ]
+        );
+    }
 }
