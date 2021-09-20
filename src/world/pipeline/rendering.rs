@@ -121,7 +121,12 @@ fn mesh_generation_system(
             let vertices = vertices_computation(faces);
             vertices
         });
-        meta.tasks.insert(*local, task);
+
+        assert!(
+            meta.tasks.insert(*local, task).is_none(),
+            "Duplicated mesh generation is forbidden. Chunk {}",
+            *local
+        );
     }
 
     let completed_tasks = meta
