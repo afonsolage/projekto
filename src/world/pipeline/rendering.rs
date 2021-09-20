@@ -15,23 +15,13 @@ use crate::world::{
     },
 };
 
-use super::{
-    ChunkBuildingBundle, ChunkEntityMap, ChunkFacesOcclusion, ChunkVertices, EvtChunkDirty,
-    Pipeline,
-};
+use super::{ChunkEntityMap, ChunkFacesOcclusion, EvtChunkMeshDirty, Pipeline};
 
 pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system_to_stage(
-            Pipeline::Rendering,
-            mesh_generation_system.label("mesh_generation"),
-        )
-        .add_system_to_stage(
-            Pipeline::Rendering,
-            clean_up_system.after("mesh_generation"),
-        );
+        app.add_system_to_stage(Pipeline::Rendering, mesh_generation_system);
     }
 }
 
@@ -75,8 +65,8 @@ fn faces_merging(chunk: &ChunkKind, occlusion: &ChunkFacesOcclusion) -> Vec<Voxe
     mesh::merge_faces(occlusion, chunk)
 }
 
-fn vertices_computation(faces: Vec<VoxelFace>) -> ChunkVertices {
-    let mut vertices = ChunkVertices(Vec::default());
+fn vertices_computation(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
+    let mut vertices = vec![];
 
     for face in faces {
         let normal = face.side.get_side_normal();
@@ -84,7 +74,7 @@ fn vertices_computation(faces: Vec<VoxelFace>) -> ChunkVertices {
         for (i, v) in face.vertices.iter().enumerate() {
             let base_vertex_idx = mesh::VERTICES_INDICES[face.side as usize][i];
             let base_vertex: Vec3 = mesh::VERTICES[base_vertex_idx].into();
-            vertices.0.push(VoxelVertex {
+            vertices.push(VoxelVertex {
                 position: base_vertex + v.as_f32(),
                 normal,
             })
@@ -96,12 +86,12 @@ fn vertices_computation(faces: Vec<VoxelFace>) -> ChunkVertices {
 
 #[derive(Default)]
 struct MeshGenerationMeta {
-    tasks: HashMap<IVec3, Task<ChunkVertices>>,
+    tasks: HashMap<IVec3, Task<Vec<VoxelVertex>>>,
 }
 
 fn mesh_generation_system(
     mut commands: Commands,
-    mut reader: EventReader<EvtChunkDirty>,
+    mut reader: EventReader<EvtChunkMeshDirty>,
     mut meshes: ResMut<Assets<Mesh>>,
     vox_world: Res<VoxWorld>,
     entity_map: Res<ChunkEntityMap>,
@@ -110,7 +100,7 @@ fn mesh_generation_system(
 ) {
     let mut _perf = perf_fn!();
 
-    for EvtChunkDirty(local) in reader.iter() {
+    for EvtChunkMeshDirty(local) in reader.iter() {
         trace_system_run!(local);
         perf_scope!(_perf);
 
@@ -161,7 +151,7 @@ fn mesh_generation_system(
 }
 
 fn generate_mesh(
-    vertices: ChunkVertices,
+    vertices: Vec<VoxelVertex>,
     commands: &mut Commands,
     entity: Entity,
     meshes: &mut ResMut<Assets<Mesh>>,
@@ -171,11 +161,11 @@ fn generate_mesh(
     let mut positions: Vec<[f32; 3]> = vec![];
     let mut normals: Vec<[f32; 3]> = vec![];
 
-    let vertex_count = vertices.0.len();
+    let vertex_count = vertices.len();
 
-    for vertex in vertices.0 {
-        positions.push([vertex.position.x, vertex.position.y, vertex.position.z]);
-        normals.push([vertex.normal.x, vertex.normal.y, vertex.normal.z]);
+    for vertex in vertices {
+        positions.push(vertex.position.into());
+        normals.push(vertex.normal.into());
     }
 
     mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
@@ -185,40 +175,11 @@ fn generate_mesh(
     commands.entity(entity).insert(meshes.add(mesh));
 }
 
-fn clean_up_system(
-    mut commands: Commands,
-    mut reader: EventReader<EvtChunkDirty>,
-    entity_map: Res<ChunkEntityMap>,
-) {
-    let mut _perf = perf_fn!();
-
-    for EvtChunkDirty(local) in reader.iter() {
-        let entity = match entity_map.0.get(local) {
-            None => {
-                warn!(
-                    "Skipping clean up since chunk {} wasn't found on entity map",
-                    *local
-                );
-                continue;
-            }
-            Some(&e) => e,
-        };
-        trace_system_run!(local);
-        perf_scope!(_perf);
-
-        commands
-            .entity(entity)
-            .remove_bundle::<ChunkBuildingBundle>();
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use bevy::{app::Events, utils::HashMap};
+    // use bevy::{app::Events, utils::HashMap};
 
-    use crate::world::pipeline::ChunkBuildingBundle;
-
-    use super::*;
+    // use super::*;
 
     // #[test]
     // fn faces_occlusion_system_occlude_empty_voxel() {
@@ -456,37 +417,37 @@ mod test {
     //     // Assert
     // }
 
-    #[test]
-    fn clean_up_system() {
-        // Arrange
-        let local = (1, 2, 3).into();
+    // #[test]
+    // fn clean_up_system() {
+    //     // Arrange
+    //     let local = (1, 2, 3).into();
 
-        let mut events = Events::<EvtChunkDirty>::default();
-        events.send(EvtChunkDirty(local));
+    //     let mut events = Events::<EvtChunkDirty>::default();
+    //     events.send(EvtChunkDirty(local));
 
-        let mut world = World::default();
-        world.insert_resource(events);
+    //     let mut world = World::default();
+    //     world.insert_resource(events);
 
-        let mut entity_map = ChunkEntityMap(HashMap::default());
+    //     let mut entity_map = ChunkEntityMap(HashMap::default());
 
-        let entity = world
-            .spawn()
-            .insert_bundle(ChunkBuildingBundle {
-                ..Default::default()
-            })
-            .id();
+    //     let entity = world
+    //         .spawn()
+    //         .insert_bundle(ChunkBuildingBundle {
+    //             ..Default::default()
+    //         })
+    //         .id();
 
-        entity_map.0.insert(local, entity);
+    //     entity_map.0.insert(local, entity);
 
-        world.insert_resource(entity_map);
+    //     world.insert_resource(entity_map);
 
-        let mut stage = SystemStage::parallel();
-        stage.add_system(super::clean_up_system);
+    //     let mut stage = SystemStage::parallel();
+    //     stage.add_system(super::clean_up_system);
 
-        // Act
-        stage.run(&mut world);
+    //     // Act
+    //     stage.run(&mut world);
 
-        // Assert
-        assert!(world.get::<ChunkVertices>(entity).is_none());
-    }
+    //     // Assert
+    //     assert!(world.get::<ChunkVertices>(entity).is_none());
+    // }
 }

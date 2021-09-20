@@ -20,15 +20,15 @@ use crate::{
 };
 
 use super::{
-    genesis::CmdChunkLoad, ChunkBuildingBundle, ChunkBundle, ChunkEntityMap, ChunkLocal,
-    ChunkPipeline, EvtChunkDirty, EvtChunkUpdated,
+    genesis::CmdChunkLoad, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline,
+    EvtChunkMeshDirty, EvtChunkUpdated,
 };
 
 pub(super) struct LandscapingPlugin;
 
 impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EvtChunkDirty>()
+        app.add_event::<EvtChunkMeshDirty>()
             .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_resources)
             // .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_landscape)
             .add_system_set_to_stage(
@@ -175,7 +175,7 @@ fn spawn_chunks_system(
     mut entity_map: ResMut<ChunkEntityMap>,
     chunk_pipeline: Res<ChunkPipeline>,
     mut reader: EventReader<EvtChunkLoaded>,
-    mut writer: EventWriter<EvtChunkDirty>,
+    mut writer: EventWriter<EvtChunkMeshDirty>,
 ) {
     let mut _perf = perf_fn!();
     for EvtChunkLoaded(local) in reader.iter() {
@@ -196,7 +196,7 @@ fn spawn_chunks_system(
             })
             .id();
         entity_map.0.insert(*local, entity);
-        writer.send(EvtChunkDirty(*local));
+        writer.send(EvtChunkMeshDirty(*local));
     }
 }
 
@@ -218,22 +218,17 @@ fn despawn_chunks_system(
 }
 
 fn update_chunks_system(
-    mut commands: Commands,
     mut reader: EventReader<EvtChunkUpdated>,
-    mut writer: EventWriter<EvtChunkDirty>,
+    mut writer: EventWriter<EvtChunkMeshDirty>,
     entity_map: ResMut<ChunkEntityMap>,
 ) {
     let mut _perf = perf_fn!();
 
     for EvtChunkUpdated(chunk_local) in reader.iter() {
-        if let Some(&entity) = entity_map.0.get(chunk_local) {
+        if entity_map.0.get(chunk_local).is_some() {
             trace_system_run!(chunk_local);
             perf_scope!(_perf);
-
-            commands
-                .entity(entity)
-                .insert_bundle(ChunkBuildingBundle::default());
-            writer.send(EvtChunkDirty(*chunk_local));
+            writer.send(EvtChunkMeshDirty(*chunk_local));
         }
     }
 }
@@ -245,7 +240,7 @@ mod test {
     use bevy::{app::Events, prelude::*, utils::HashMap};
 
     use crate::world::pipeline::{
-        genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkPipeline, EvtChunkDirty,
+        genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty,
     };
 
     use super::{ChunkEntityMap, EvtChunkLoaded, EvtChunkUpdated};
@@ -283,7 +278,7 @@ mod test {
         let mut world = World::default();
         world.insert_resource(ChunkEntityMap(HashMap::default()));
         world.insert_resource(added_events);
-        world.insert_resource(Events::<EvtChunkDirty>::default());
+        world.insert_resource(Events::<EvtChunkMeshDirty>::default());
         world.insert_resource(ChunkPipeline(Handle::default()));
 
         let mut stage = SystemStage::parallel();
@@ -295,7 +290,7 @@ mod test {
         // Assert
         assert_eq!(
             world
-                .get_resource::<Events<EvtChunkDirty>>()
+                .get_resource::<Events<EvtChunkMeshDirty>>()
                 .unwrap()
                 .iter_current_update_events()
                 .next()
@@ -315,7 +310,7 @@ mod test {
 
         let mut world = World::default();
         world.insert_resource(added_events);
-        world.insert_resource(Events::<super::EvtChunkDirty>::default());
+        world.insert_resource(Events::<super::EvtChunkMeshDirty>::default());
 
         let entity = world
             .spawn()
@@ -348,7 +343,7 @@ mod test {
 
         let mut world = World::default();
         world.insert_resource(added_events);
-        world.insert_resource(Events::<super::EvtChunkDirty>::default());
+        world.insert_resource(Events::<super::EvtChunkMeshDirty>::default());
 
         let mut entity_map = ChunkEntityMap(HashMap::default());
         entity_map.0.insert(
@@ -366,7 +361,7 @@ mod test {
         // Assert
         assert_eq!(
             world
-                .get_resource::<Events<EvtChunkDirty>>()
+                .get_resource::<Events<EvtChunkMeshDirty>>()
                 .unwrap()
                 .iter_current_update_events()
                 .next()

@@ -12,10 +12,7 @@ mod terraforming;
 
 pub use terraforming::{CmdChunkUpdate, EvtChunkUpdated};
 
-use super::storage::{
-    chunk::ChunkStorage,
-    voxel::{self, VoxelFace, VoxelVertex},
-};
+use super::storage::{chunk::ChunkStorage, voxel};
 
 #[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]
 enum Pipeline {
@@ -80,7 +77,7 @@ impl Plugin for PipelinePlugin {
     }
 }
 
-pub struct EvtChunkDirty(pub IVec3);
+pub struct EvtChunkMeshDirty(pub IVec3);
 
 pub struct ChunkLocal(pub IVec3);
 
@@ -90,16 +87,11 @@ pub struct ChunkPipeline(Handle<PipelineDescriptor>);
 
 pub type ChunkFacesOcclusion = ChunkStorage<voxel::FacesOcclusion>;
 
-struct ChunkVertices(Vec<VoxelVertex>);
-struct ChunkFaces(Vec<VoxelFace>);
-
 #[derive(Bundle)]
 pub struct ChunkBundle {
     local: ChunkLocal,
     #[bundle]
     mesh_bundle: MeshBundle,
-    #[bundle]
-    building: ChunkBuildingBundle,
 }
 
 impl Default for ChunkBundle {
@@ -107,24 +99,6 @@ impl Default for ChunkBundle {
         Self {
             local: ChunkLocal(IVec3::ZERO),
             mesh_bundle: MeshBundle::default(),
-            building: ChunkBuildingBundle::default(),
-        }
-    }
-}
-
-#[derive(Bundle)]
-pub struct ChunkBuildingBundle {
-    faces_occlusion: ChunkFacesOcclusion,
-    faces: ChunkFaces,
-    vertices: ChunkVertices,
-}
-
-impl Default for ChunkBuildingBundle {
-    fn default() -> Self {
-        Self {
-            faces_occlusion: ChunkFacesOcclusion::default(),
-            faces: ChunkFaces(vec![]),
-            vertices: ChunkVertices(vec![]),
         }
     }
 }
