@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::{
     core::FixedTimestep,
     prelude::*,
@@ -5,7 +7,7 @@ use bevy::{
         pipeline::{PipelineDescriptor, RenderPipeline},
         shader::ShaderStages,
     },
-    utils::{HashMap, HashSet},
+    utils::HashMap,
 };
 
 use crate::{
@@ -18,15 +20,15 @@ use crate::{
 };
 
 use super::{
-    genesis::CmdChunkLoad, ChunkBuildingBundle, ChunkBundle, ChunkEntityMap, ChunkLocal,
-    ChunkPipeline, EvtChunkDirty, EvtChunkUpdated,
+    genesis::CmdChunkLoad, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline,
+    EvtChunkMeshDirty, EvtChunkUpdated,
 };
 
 pub(super) struct LandscapingPlugin;
 
 impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EvtChunkDirty>()
+        app.add_event::<EvtChunkMeshDirty>()
             .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_resources)
             // .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_landscape)
             .add_system_set_to_stage(
@@ -71,51 +73,87 @@ fn setup_resources(
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
 }
 
+#[derive(Default)]
+struct UpdateLandscapeMeta {
+    load_queue: VecDeque<IVec3>,
+    unload_queue: VecDeque<IVec3>,
+    last_pos: IVec3,
+    next_sync: f32,
+    pending_load: Vec<IVec3>,
+    pending_unload: Vec<IVec3>,
+}
+
 fn update_landscape_system(
+    time: Res<Time>,
     entity_map: ResMut<ChunkEntityMap>,
-    mut add_writer: EventWriter<CmdChunkLoad>,
-    mut remove_writer: EventWriter<CmdChunkUnload>,
-    mut req_add: Local<HashSet<IVec3>>,
-    mut added: EventReader<EvtChunkLoaded>,
+    mut load_writer: EventWriter<CmdChunkLoad>,
+    mut unload_writer: EventWriter<CmdChunkUnload>,
+    mut loaded_reader: EventReader<EvtChunkLoaded>,
+    mut unloaded_reader: EventReader<EvtChunkUnloaded>,
+    mut meta: Local<UpdateLandscapeMeta>,
     q: Query<&Transform, With<FlyByCamera>>,
-    mut last_pos: Local<IVec3>,
 ) {
     let mut _perf = perf_fn!();
+    perf_scope!(_perf);
 
     let center = match q.single() {
         Ok(t) => chunk::to_local(t.translation),
         Err(_) => return,
     };
 
-    if center == *last_pos {
-        *last_pos = center;
-    }
+    meta.next_sync -= time.delta_seconds();
 
-    perf_scope!(_perf);
+    if center != meta.last_pos || meta.next_sync < 0.0 {
+        meta.next_sync = 1.0;
+        meta.last_pos = center;
 
-    let begin = center + IVec3::splat(landscape::BEGIN);
-    let end = center + IVec3::splat(landscape::END);
+        debug!("Updating landscape to center {}", center);
 
-    let visible_locals = query::range(begin, end).collect::<Vec<_>>();
-    let existing_locals = entity_map.0.keys().map(|k| *k).collect::<Vec<_>>();
+        let begin = center + IVec3::splat(landscape::BEGIN);
+        let end = center + IVec3::splat(landscape::END);
 
-    let (to_add, to_remove) = disjoin(&visible_locals, &existing_locals);
+        let visible_locals = query::range(begin, end).collect::<Vec<_>>();
+        let existing_locals = entity_map.0.keys().map(|k| *k).collect::<Vec<_>>();
 
-    for EvtChunkLoaded(local) in added.iter() {
-        req_add.remove(local);
-    }
+        let (to_load, to_unload) = disjoin(&visible_locals, &existing_locals);
 
-    for local in to_add {
-        if req_add.contains(local) {
-            continue;
+        for v in to_load {
+            if !meta.load_queue.contains(v) && !meta.pending_load.contains(v) {
+                meta.load_queue.push_back(*v);
+            }
+
+            if meta.unload_queue.contains(v) {
+                meta.unload_queue.retain(|uv| uv != v);
+            }
         }
 
-        add_writer.send(CmdChunkLoad(*local));
-        req_add.insert(*local);
+        for v in to_unload {
+            if !meta.unload_queue.contains(v) && !meta.pending_unload.contains(v) {
+                meta.unload_queue.push_back(*v);
+            }
+
+            if meta.load_queue.contains(v) {
+                meta.load_queue.retain(|uv| uv != v);
+            }
+        }
     }
 
-    for local in to_remove {
-        remove_writer.send(CmdChunkUnload(*local));
+    for EvtChunkLoaded(local) in loaded_reader.iter() {
+        meta.pending_load.retain(|v| v != local);
+    }
+
+    for EvtChunkUnloaded(local) in unloaded_reader.iter() {
+        meta.pending_unload.retain(|v| v != local);
+    }
+
+    while let Some(next) = meta.load_queue.pop_front() {
+        load_writer.send(CmdChunkLoad(next));
+        meta.pending_load.push(next);
+    }
+
+    while let Some(next) = meta.unload_queue.pop_front() {
+        meta.pending_unload.push(next);
+        unload_writer.send(CmdChunkUnload(next));
     }
 }
 
@@ -137,7 +175,7 @@ fn spawn_chunks_system(
     mut entity_map: ResMut<ChunkEntityMap>,
     chunk_pipeline: Res<ChunkPipeline>,
     mut reader: EventReader<EvtChunkLoaded>,
-    mut writer: EventWriter<EvtChunkDirty>,
+    mut writer: EventWriter<EvtChunkMeshDirty>,
 ) {
     let mut _perf = perf_fn!();
     for EvtChunkLoaded(local) in reader.iter() {
@@ -158,7 +196,7 @@ fn spawn_chunks_system(
             })
             .id();
         entity_map.0.insert(*local, entity);
-        writer.send(EvtChunkDirty(*local));
+        writer.send(EvtChunkMeshDirty(*local));
     }
 }
 
@@ -180,22 +218,17 @@ fn despawn_chunks_system(
 }
 
 fn update_chunks_system(
-    mut commands: Commands,
     mut reader: EventReader<EvtChunkUpdated>,
-    mut writer: EventWriter<EvtChunkDirty>,
+    mut writer: EventWriter<EvtChunkMeshDirty>,
     entity_map: ResMut<ChunkEntityMap>,
 ) {
     let mut _perf = perf_fn!();
 
     for EvtChunkUpdated(chunk_local) in reader.iter() {
-        if let Some(&entity) = entity_map.0.get(chunk_local) {
+        if entity_map.0.get(chunk_local).is_some() {
             trace_system_run!(chunk_local);
             perf_scope!(_perf);
-
-            commands
-                .entity(entity)
-                .insert_bundle(ChunkBuildingBundle::default());
-            writer.send(EvtChunkDirty(*chunk_local));
+            writer.send(EvtChunkMeshDirty(*chunk_local));
         }
     }
 }
@@ -207,7 +240,7 @@ mod test {
     use bevy::{app::Events, prelude::*, utils::HashMap};
 
     use crate::world::pipeline::{
-        genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkPipeline, EvtChunkDirty,
+        genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty,
     };
 
     use super::{ChunkEntityMap, EvtChunkLoaded, EvtChunkUpdated};
@@ -245,7 +278,7 @@ mod test {
         let mut world = World::default();
         world.insert_resource(ChunkEntityMap(HashMap::default()));
         world.insert_resource(added_events);
-        world.insert_resource(Events::<EvtChunkDirty>::default());
+        world.insert_resource(Events::<EvtChunkMeshDirty>::default());
         world.insert_resource(ChunkPipeline(Handle::default()));
 
         let mut stage = SystemStage::parallel();
@@ -257,7 +290,7 @@ mod test {
         // Assert
         assert_eq!(
             world
-                .get_resource::<Events<EvtChunkDirty>>()
+                .get_resource::<Events<EvtChunkMeshDirty>>()
                 .unwrap()
                 .iter_current_update_events()
                 .next()
@@ -277,7 +310,7 @@ mod test {
 
         let mut world = World::default();
         world.insert_resource(added_events);
-        world.insert_resource(Events::<super::EvtChunkDirty>::default());
+        world.insert_resource(Events::<super::EvtChunkMeshDirty>::default());
 
         let entity = world
             .spawn()
@@ -310,7 +343,7 @@ mod test {
 
         let mut world = World::default();
         world.insert_resource(added_events);
-        world.insert_resource(Events::<super::EvtChunkDirty>::default());
+        world.insert_resource(Events::<super::EvtChunkMeshDirty>::default());
 
         let mut entity_map = ChunkEntityMap(HashMap::default());
         entity_map.0.insert(
@@ -328,7 +361,7 @@ mod test {
         // Assert
         assert_eq!(
             world
-                .get_resource::<Events<EvtChunkDirty>>()
+                .get_resource::<Events<EvtChunkMeshDirty>>()
                 .unwrap()
                 .iter_current_update_events()
                 .next()

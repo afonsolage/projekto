@@ -1,6 +1,10 @@
 use std::path::PathBuf;
 
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    tasks::{AsyncComputeTaskPool, Task},
+    utils::HashMap,
+};
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use serde::{Deserialize, Serialize};
 
@@ -64,57 +68,87 @@ fn unload_cache_system(
     }
 }
 
-fn gen_cache_system(mut reader: EventReader<CmdChunkGen>, mut writer: EventWriter<CmdChunkLoad>) {
+#[derive(Default)]
+struct GenCacheMeta {
+    tasks: HashMap<IVec3, Task<()>>,
+}
+
+fn gen_cache_system(
+    mut reader: EventReader<CmdChunkGen>,
+    mut writer: EventWriter<CmdChunkLoad>,
+    task_pool: Res<AsyncComputeTaskPool>,
+    mut meta: Local<GenCacheMeta>,
+) {
     let mut _perf = perf_fn!();
 
     for CmdChunkGen(local) in reader.iter() {
         trace_system_run!(local);
         perf_scope!(_perf);
 
-        let mut noise = FastNoise::seeded(15);
-        noise.set_noise_type(NoiseType::SimplexFractal);
-        noise.set_frequency(0.03);
-        noise.set_fractal_type(FractalType::FBM);
-        noise.set_fractal_octaves(3);
-        noise.set_fractal_gain(0.9);
-        noise.set_fractal_lacunarity(0.5);
+        let chunk_local = *local;
 
-        let world = chunk::to_world(*local);
-        let mut kinds = ChunkKind::default();
+        meta.tasks.insert(
+            *local,
+            task_pool.spawn(async move {
+                let mut noise = FastNoise::seeded(15);
+                noise.set_noise_type(NoiseType::SimplexFractal);
+                noise.set_frequency(0.03);
+                noise.set_fractal_type(FractalType::FBM);
+                noise.set_fractal_octaves(3);
+                noise.set_fractal_gain(0.9);
+                noise.set_fractal_lacunarity(0.5);
 
-        for x in 0..chunk::AXIS_SIZE {
-            for z in 0..chunk::AXIS_SIZE {
-                let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
-                let world_height = ((h + 1.0) / 2.0) * (2 * chunk::AXIS_SIZE) as f32;
+                let world = chunk::to_world(chunk_local);
+                let mut kinds = ChunkKind::default();
 
-                let height_local = world_height - world.y;
+                for x in 0..chunk::AXIS_SIZE {
+                    for z in 0..chunk::AXIS_SIZE {
+                        let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
+                        let world_height = ((h + 1.0) / 2.0) * (2 * chunk::AXIS_SIZE) as f32;
 
-                if height_local < f32::EPSILON {
-                    continue;
+                        let height_local = world_height - world.y;
+
+                        if height_local < f32::EPSILON {
+                            continue;
+                        }
+
+                        let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
+
+                        for y in 0..end {
+                            kinds.set((x as i32, y as i32, z as i32).into(), 1.into());
+                        }
+                    }
                 }
 
-                let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
-
-                for y in 0..end {
-                    kinds.set((x as i32, y as i32, z as i32).into(), 1.into());
-                }
-            }
-        }
-
-        if !kinds.is_empty() {
-            let path = local_path(*local);
-            save_cache(
-                &path,
-                &ChunkCache {
-                    local: *local,
-                    kind: kinds,
-                },
-            );
-            writer.send(CmdChunkLoad(*local));
-        } else {
-            trace!("Skipping cache {} since its empty", local);
-        }
+                let path = local_path(chunk_local);
+                save_cache(
+                    &path,
+                    &ChunkCache {
+                        local: chunk_local,
+                        kind: kinds,
+                    },
+                );
+            }),
+        );
     }
+
+    let completed_tasks = meta
+        .tasks
+        .iter_mut()
+        .filter_map(|(&local, task)| {
+            use futures_lite::future;
+            future::block_on(future::poll_once(task)).map(|_| {
+                writer.send(CmdChunkLoad(local));
+                local
+            })
+        })
+        .collect::<Vec<_>>();
+
+    completed_tasks.iter().for_each(|v| {
+        meta.tasks
+            .remove(v)
+            .expect("Task for load cache must exists");
+    });
 }
 
 fn save_cache(path: &PathBuf, cache: &ChunkCache) {
@@ -131,11 +165,18 @@ fn save_cache(path: &PathBuf, cache: &ChunkCache) {
     ));
 }
 
+#[derive(Default)]
+struct LoadCacheMeta {
+    tasks: HashMap<IVec3, Task<ChunkCache>>,
+}
+
 fn load_cache_system(
     mut vox_world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkLoad>,
     mut gen_writer: EventWriter<CmdChunkGen>,
     mut added_writer: EventWriter<EvtChunkLoaded>,
+    task_pool: Res<AsyncComputeTaskPool>,
+    mut meta: Local<LoadCacheMeta>,
 ) {
     let mut _perf = perf_fn!();
     for CmdChunkLoad(local) in reader.iter() {
@@ -145,13 +186,31 @@ fn load_cache_system(
         let path = local_path(*local);
 
         if path.exists() {
-            let cache = load_cache(&path);
-            vox_world.add(*local, cache.kind);
-            added_writer.send(EvtChunkLoaded(*local));
+            meta.tasks
+                .insert(*local, task_pool.spawn(async move { load_cache(&path) }));
         } else {
             gen_writer.send(CmdChunkGen(*local));
         }
     }
+
+    let completed_tasks = meta
+        .tasks
+        .iter_mut()
+        .filter_map(|(&local, task)| {
+            use futures_lite::future;
+            future::block_on(future::poll_once(task)).map(|cache| {
+                vox_world.add(local, cache.kind);
+                added_writer.send(EvtChunkLoaded(local));
+                local
+            })
+        })
+        .collect::<Vec<_>>();
+
+    completed_tasks.iter().for_each(|v| {
+        meta.tasks
+            .remove(v)
+            .expect("Task for load cache must exists");
+    });
 }
 
 fn load_cache(path: &PathBuf) -> ChunkCache {

@@ -48,7 +48,7 @@ pub trait ChunkStorageType:
 
 impl ChunkStorageType for u8 {}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct ChunkStorage<T: ChunkStorageType>([T; BUFFER_SIZE]);
 
 impl<T: ChunkStorageType> Default for ChunkStorage<T> {
@@ -66,14 +66,16 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.0[to_index(local)] = value;
     }
 
-    pub fn set_all(&mut self, value: T) {
-        self.0.fill(value);
-    }
+    // pub fn set_all(&mut self, value: T) {
+    //     self.0.fill(value);
+    // }
 
+    #[cfg(test)]
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.0.iter()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.iter().all(|k| *k == Default::default())
     }
@@ -193,6 +195,7 @@ pub fn to_local(world: Vec3) -> IVec3 {
     )
 }
 
+#[cfg(test)]
 pub fn overlap_voxel(pos: IVec3) -> (IVec3, IVec3) {
     let overlapping_voxel = math::euclid_rem(pos, AXIS_SIZE as i32);
     let overlapping_dir = (
