@@ -78,11 +78,13 @@ struct UpdateLandscapeMeta {
     load_queue: VecDeque<IVec3>,
     unload_queue: VecDeque<IVec3>,
     last_pos: IVec3,
+    next_sync: f32,
     pending_load: Vec<IVec3>,
     pending_unload: Vec<IVec3>,
 }
 
 fn update_landscape_system(
+    time: Res<Time>,
     entity_map: ResMut<ChunkEntityMap>,
     mut load_writer: EventWriter<CmdChunkLoad>,
     mut unload_writer: EventWriter<CmdChunkUnload>,
@@ -99,8 +101,12 @@ fn update_landscape_system(
         Err(_) => return,
     };
 
-    if center != meta.last_pos {
+    meta.next_sync -= time.delta_seconds();
+
+    if center != meta.last_pos || meta.next_sync < 0.0 {
+        meta.next_sync = 1.0;
         meta.last_pos = center;
+
         debug!("Updating landscape to center {}", center);
 
         let begin = center + IVec3::splat(landscape::BEGIN);
@@ -140,12 +146,12 @@ fn update_landscape_system(
         meta.pending_unload.retain(|v| v != local);
     }
 
-    if let Some(next) = meta.load_queue.pop_front() {
+    while let Some(next) = meta.load_queue.pop_front() {
         load_writer.send(CmdChunkLoad(next));
         meta.pending_load.push(next);
     }
 
-    if let Some(next) = meta.unload_queue.pop_front() {
+    while let Some(next) = meta.unload_queue.pop_front() {
         meta.pending_unload.push(next);
         unload_writer.send(CmdChunkUnload(next));
     }
