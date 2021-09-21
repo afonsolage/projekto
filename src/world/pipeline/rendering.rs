@@ -9,7 +9,7 @@ use futures_lite::future;
 use crate::world::{
     mesh,
     storage::{
-        chunk::{self, ChunkKind},
+        chunk::{self, ChunkKind, ChunkNeighborhood},
         voxel::{self, VoxelFace, VoxelVertex},
         VoxWorld,
     },
@@ -25,7 +25,7 @@ impl Plugin for RenderingPlugin {
     }
 }
 
-fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
+fn faces_occlusion(chunk: &ChunkKind, neighborhood: &ChunkNeighborhood) -> ChunkFacesOcclusion {
     let mut occlusion = ChunkFacesOcclusion::default();
     for voxel in chunk::voxels() {
         let mut voxel_faces = occlusion.get(voxel);
@@ -38,13 +38,12 @@ fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
                 let neighbor_pos = voxel + dir;
 
                 let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
-                    // let (next_chunk_dir, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
+                    let (_, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
 
-                    // if let Some(neighbor_chunk) = world.get(*local + next_chunk_dir) {
-                    //     neighbor_chunk.get(next_chunk_voxel)
-                    // } else {
-                    continue;
-                    // }
+                    match neighborhood.get(side, next_chunk_voxel) {
+                        Some(k) => k,
+                        None => continue,
+                    }
                 } else {
                     chunk.get(neighbor_pos)
                 };
@@ -114,9 +113,10 @@ fn mesh_generation_system(
             }
             Some(&c) => c,
         };
+        let neighborhood = vox_world.neighborhood(*local);
 
         let task = task_pool.spawn(async move {
-            let occlusion = faces_occlusion(&chunk);
+            let occlusion = faces_occlusion(&chunk, &neighborhood);
             let faces = faces_merging(&chunk, &occlusion);
             let vertices = vertices_computation(faces);
             vertices
@@ -188,9 +188,10 @@ mod test {
     fn faces_occlusion_occlude_empty_chunk() {
         // Arrange
         let chunk = ChunkKind::default();
+        let neighborhood = ChunkNeighborhood::default();
 
         // Act
-        let occlusions = super::faces_occlusion(&chunk);
+        let occlusions = super::faces_occlusion(&chunk, &neighborhood);
 
         // Assert
         assert!(
@@ -217,8 +218,10 @@ mod test {
         chunk.set((10, 10, 9).into(), 1.into());
         chunk.set((10, 10, 11).into(), 1.into());
 
+        let neighborhood = ChunkNeighborhood::default();
+
         // Act
-        let faces_occlusion = super::faces_occlusion(&chunk);
+        let faces_occlusion = super::faces_occlusion(&chunk, &neighborhood);
 
         // Assert
         let faces = faces_occlusion.get((1, 2, 1).into());
@@ -244,6 +247,35 @@ mod test {
             [true; voxel::SIDE_COUNT].into(),
             "Voxel fully surrounded by another non-empty voxels should be fully occluded"
         );
+    }
+
+    #[test]
+    fn faces_occlusion_neighborhood() {
+        let mut world = VoxWorld::default();
+
+        let mut top = ChunkKind::default();
+        top.set_all(2.into());
+
+        let mut down = ChunkKind::default();
+        down.set_all(3.into());
+
+        let mut center = ChunkKind::default();
+        center.set((0, chunk::AXIS_ENDING as i32, 0).into(), 1.into());
+        center.set((1, 0, 1).into(), 1.into());
+
+        world.add((0, 1, 0).into(), top);
+        world.add((0, 0, 0).into(), center);
+        world.add((0, -1, 0).into(), down);
+
+        let neighborhood = world.neighborhood((0, 0, 0).into());
+
+        let faces_occlusion = super::faces_occlusion(&center, &neighborhood);
+
+        let faces = faces_occlusion.get((0, chunk::AXIS_ENDING as i32, 0).into());
+        assert_eq!(faces, [false, false, true, false, false, false].into());
+
+        let faces = faces_occlusion.get((1, 0, 1).into());
+        assert_eq!(faces, [false, false, false, true, false, false].into());
     }
 
     #[test]

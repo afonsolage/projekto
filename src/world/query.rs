@@ -32,20 +32,45 @@ impl Iterator for RangeIterator {
     }
 }
 
-impl From<(IVec3, IVec3)> for RangeIterator {
-    fn from(t: (IVec3, IVec3)) -> Self {
-        Self {
-            begin: t.0,
-            end: t.1,
-            current: t.0,
-        }
-    }
-}
-
 pub fn range(begin: IVec3, end: IVec3) -> impl Iterator<Item = IVec3> {
     RangeIterator {
         begin,
         end,
+        current: begin,
+    }
+}
+
+pub struct RangeInclusiveIterator {
+    begin: IVec3,
+    end: IVec3,
+    current: IVec3,
+}
+
+impl Iterator for RangeInclusiveIterator {
+    type Item = IVec3;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for x in self.current.x..=self.end.x {
+            for z in self.current.z..=self.end.z {
+                for y in self.current.y..=self.end.y {
+                    self.current.y += 1;
+                    return Some((x, y, z).into());
+                }
+                self.current.z += 1;
+                self.current.y = self.begin.y;
+            }
+            self.current.x += 1;
+            self.current.z = self.begin.z;
+            self.current.y = self.begin.y;
+        }
+        None
+    }
+}
+
+pub fn range_inclusive(begin: IVec3, end_inclusive: IVec3) -> impl Iterator<Item = IVec3> {
+    RangeInclusiveIterator {
+        begin,
+        end: end_inclusive,
         current: begin,
     }
 }
@@ -225,6 +250,45 @@ mod test {
             }
 
             assert_eq!(items, loop_items, "Wrong values on range {} {}", begin, end);
+        }
+    }
+
+    #[test]
+    fn range_inclusive() {
+        let items = super::range_inclusive((0, 0, 0).into(), (0, 0, 0).into()).collect::<Vec<_>>();
+        assert_eq!(items, vec![(0, 0, 0).into()]);
+
+        let items = super::range_inclusive((1, 2, 1).into(), (1, 1, 1).into()).collect::<Vec<_>>();
+        assert_eq!(items, vec![]);
+
+        for _ in 0..100 {
+            let mut rnd = rand::thread_rng();
+
+            let begin = IVec3::new(
+                rnd.gen_range(-5..5),
+                rnd.gen_range(-5..5),
+                rnd.gen_range(-5..5),
+            );
+            let end_inclusive = IVec3::new(
+                rnd.gen_range(-5..5),
+                rnd.gen_range(-5..5),
+                rnd.gen_range(-5..5),
+            );
+            let items = super::range_inclusive(begin, end_inclusive).collect::<Vec<_>>();
+            let mut loop_items = vec![];
+            for x in begin.x..=end_inclusive.x {
+                for z in begin.z..=end_inclusive.z {
+                    for y in begin.y..=end_inclusive.y {
+                        loop_items.push(IVec3::new(x, y, z));
+                    }
+                }
+            }
+
+            assert_eq!(
+                items, loop_items,
+                "Wrong values on range {} {}",
+                begin, end_inclusive
+            );
         }
     }
 

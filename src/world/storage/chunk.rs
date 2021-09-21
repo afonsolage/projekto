@@ -4,12 +4,12 @@ use bevy::prelude::*;
 
 use serde::{de::DeserializeOwned, ser::SerializeSeq, Deserialize, Serialize};
 
-use crate::world::{math, storage::chunk};
+use crate::world::{math, query, storage::chunk};
 
 use super::voxel;
 
 pub const AXIS_SIZE: usize = 16;
-pub const AXIS_INC_SIZE: usize = AXIS_SIZE - 1;
+pub const AXIS_ENDING: usize = AXIS_SIZE - 1;
 
 // const CHUNK_AXIS_OFFSET: usize = CHUNK_AXIS_SIZE / 2;
 const BUFFER_SIZE: usize = AXIS_SIZE * AXIS_SIZE * AXIS_SIZE;
@@ -66,9 +66,10 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.0[to_index(local)] = value;
     }
 
-    // pub fn set_all(&mut self, value: T) {
-    //     self.0.fill(value);
-    // }
+    #[cfg(test)]
+    pub fn set_all(&mut self, value: T) {
+        self.0.fill(value);
+    }
 
     #[cfg(test)]
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
@@ -161,7 +162,7 @@ pub fn is_at_bounds(local: IVec3) -> bool {
 }
 
 pub fn get_boundary_dir(local: IVec3) -> IVec3 {
-    const END: i32 = AXIS_INC_SIZE as i32;
+    const END: i32 = AXIS_ENDING as i32;
 
     (
         match local.x {
@@ -195,7 +196,61 @@ pub fn to_local(world: Vec3) -> IVec3 {
     )
 }
 
-#[cfg(test)]
+type NeighborhoodSide = [voxel::Kind; AXIS_SIZE * AXIS_SIZE];
+
+#[derive(Default)]
+pub struct ChunkNeighborhood([Option<NeighborhoodSide>; voxel::SIDE_COUNT]);
+
+impl ChunkNeighborhood {
+    pub fn set(&mut self, side: voxel::Side, chunk: &ChunkKind) {
+        const END: i32 = AXIS_ENDING as i32;
+
+        let (begin, end_inclusive) = match side {
+            voxel::Side::Right => ((0, 0, 0).into(), (0, END, END).into()),
+            voxel::Side::Left => ((END, 0, 0).into(), (END, END, END).into()),
+            voxel::Side::Up => ((0, 0, 0).into(), (END, 0, END).into()),
+            voxel::Side::Down => ((0, END, 0).into(), (END, END, END).into()),
+            voxel::Side::Front => ((0, 0, 0).into(), (END, END, 0).into()),
+            voxel::Side::Back => ((0, 0, END).into(), (END, END, END).into()),
+        };
+
+        let mut neighborhood_side = [voxel::Kind::default(); AXIS_SIZE * AXIS_SIZE];
+        for pos in query::range_inclusive(begin, end_inclusive) {
+            let index = Self::to_index(side, pos);
+            neighborhood_side[index] = chunk.get(pos)
+        }
+
+        self.0[side as usize] = Some(neighborhood_side);
+    }
+
+    pub fn get(&self, side: voxel::Side, pos: IVec3) -> Option<voxel::Kind> {
+        self.0[side as usize].map(|ref neighborhood_side| {
+            let index = Self::to_index(side, pos);
+            neighborhood_side[index]
+        })
+    }
+
+    fn to_index(side: voxel::Side, pos: IVec3) -> usize {
+        use voxel::Side;
+
+        assert!(match &side {
+            Side::Right => pos.x == 0,
+            Side::Left => pos.x == AXIS_ENDING as i32,
+            Side::Up => pos.y == 0,
+            Side::Down => pos.y == AXIS_ENDING as i32,
+            Side::Front => pos.z == 0,
+            Side::Back => pos.z == AXIS_ENDING as i32,
+        });
+
+        let index = match side {
+            Side::Right | Side::Left => (pos.z << Z_SHIFT | pos.y << Y_SHIFT) as usize,
+            Side::Up | Side::Down => (pos.x << Z_SHIFT | pos.z << Y_SHIFT) as usize,
+            Side::Front | Side::Back => (pos.x << Z_SHIFT | pos.y << Y_SHIFT) as usize,
+        };
+        index
+    }
+}
+
 pub fn overlap_voxel(pos: IVec3) -> (IVec3, IVec3) {
     let overlapping_voxel = math::euclid_rem(pos, AXIS_SIZE as i32);
     let overlapping_dir = (
@@ -231,9 +286,12 @@ mod tests {
     use bevy::math::IVec3;
     use rand::{random, Rng};
 
-    use crate::world::storage::chunk::{ChunkStorageType, AXIS_SIZE};
+    use crate::world::storage::{
+        chunk::{ChunkKind, ChunkStorageType, AXIS_ENDING, AXIS_SIZE},
+        voxel,
+    };
 
-    use super::ChunkStorage;
+    use super::{ChunkNeighborhood, ChunkStorage};
 
     #[test]
     fn to_xyz() {
@@ -446,5 +504,74 @@ mod tests {
         chunk.set((1, 1, 1).into(), [1; 3]);
 
         assert!(!chunk.is_empty());
+    }
+
+    #[test]
+    fn neighborhood() {
+        use super::voxel::Side;
+
+        let mut neighborhood = ChunkNeighborhood::default();
+
+        for side in voxel::SIDES {
+            assert!(neighborhood.get(side, (0, 0, 0).into()).is_none());
+        }
+
+        let mut top = ChunkKind::default();
+        top.set_all(1.into());
+
+        neighborhood.set(voxel::Side::Up, &top);
+
+        assert_eq!(
+            neighborhood.get(voxel::Side::Up, (1, 0, 3).into()),
+            Some(1.into())
+        );
+
+        let mut kinds_set = vec![];
+        let mut chunks = [ChunkKind::default(); voxel::SIDE_COUNT];
+
+        for side in voxel::SIDES {
+            for _ in 0..1000 {
+                let mut rnd = rand::thread_rng();
+                let kind = rnd.gen_range(1..10).into();
+                let mut pos: IVec3 = (
+                    rnd.gen_range(0..AXIS_SIZE) as i32,
+                    rnd.gen_range(0..AXIS_SIZE) as i32,
+                    rnd.gen_range(0..AXIS_SIZE) as i32,
+                )
+                    .into();
+
+                match side {
+                    Side::Right => pos.x = 0,
+                    Side::Left => pos.x = AXIS_ENDING as i32,
+                    Side::Up => pos.y = 0,
+                    Side::Down => pos.y = AXIS_ENDING as i32,
+                    Side::Front => pos.z = 0,
+                    Side::Back => pos.z = AXIS_ENDING as i32,
+                }
+
+                // Avoid setting different values on same voxel
+                if chunks[side as usize].get(pos) == voxel::Kind::default() {
+                    kinds_set.push((side, pos, kind));
+                    chunks[side as usize].set(pos, kind);
+                }
+            }
+        }
+
+        for side in voxel::SIDES {
+            if !chunks[side as usize].is_empty() {
+                neighborhood.set(side, &chunks[side as usize]);
+            }
+        }
+
+        for (side, pos, kind) in kinds_set {
+            assert_eq!(
+                neighborhood.get(side, pos),
+                Some(kind),
+                "neighborhood get {:?} {} != {:?}",
+                side,
+                pos,
+                Some(kind)
+            );
+        }
     }
 }

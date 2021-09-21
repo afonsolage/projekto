@@ -31,6 +31,7 @@ impl Plugin for WireframeDebugPlugin {
             .add_asset::<WireframeMaterial>()
             .add_system(toggle_mesh_wireframe_system)
             .add_system(toggle_chunk_voxels_wireframe_system)
+            .add_system(toggle_landscape_pause_system)
             .add_system(draw_voxels_system)
             .add_system(do_raycast_system)
             .add_system(draw_raycast_system)
@@ -79,6 +80,17 @@ pub struct DrawVoxels {
 }
 
 // Systems
+
+fn toggle_landscape_pause_system(
+    keyboard: Res<Input<KeyCode>>,
+    mut config: ResMut<LandscapeConfig>,
+) {
+    if !keyboard.just_pressed(KeyCode::F5) {
+        return;
+    }
+
+    config.paused = !config.paused;
+}
 
 fn toggle_chunk_voxels_wireframe_system(
     mut commands: Commands,

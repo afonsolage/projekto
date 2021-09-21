@@ -46,6 +46,11 @@ impl Plugin for LandscapingPlugin {
     }
 }
 
+#[derive(Default)]
+pub struct LandscapeConfig {
+    pub paused: bool,
+}
+
 fn setup_resources(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -71,6 +76,7 @@ fn setup_resources(
 
     commands.insert_resource(ChunkPipeline(pipeline_handle));
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
+    commands.insert_resource(LandscapeConfig::default())
 }
 
 #[derive(Default)]
@@ -86,6 +92,7 @@ struct UpdateLandscapeMeta {
 fn update_landscape_system(
     time: Res<Time>,
     entity_map: ResMut<ChunkEntityMap>,
+    config: Res<LandscapeConfig>,
     mut load_writer: EventWriter<CmdChunkLoad>,
     mut unload_writer: EventWriter<CmdChunkUnload>,
     mut loaded_reader: EventReader<EvtChunkLoaded>,
@@ -95,6 +102,18 @@ fn update_landscape_system(
 ) {
     let mut _perf = perf_fn!();
     perf_scope!(_perf);
+
+    for EvtChunkLoaded(local) in loaded_reader.iter() {
+        meta.pending_load.retain(|v| v != local);
+    }
+
+    for EvtChunkUnloaded(local) in unloaded_reader.iter() {
+        meta.pending_unload.retain(|v| v != local);
+    }
+
+    if config.paused {
+        return;
+    }
 
     let center = match q.single() {
         Ok(t) => chunk::to_local(t.translation),
@@ -136,14 +155,6 @@ fn update_landscape_system(
                 meta.load_queue.retain(|uv| uv != v);
             }
         }
-    }
-
-    for EvtChunkLoaded(local) in loaded_reader.iter() {
-        meta.pending_load.retain(|v| v != local);
-    }
-
-    for EvtChunkUnloaded(local) in unloaded_reader.iter() {
-        meta.pending_unload.retain(|v| v != local);
     }
 
     while let Some(next) = meta.load_queue.pop_front() {

@@ -10,6 +10,7 @@ mod landscaping;
 mod rendering;
 mod terraforming;
 
+pub use landscaping::LandscapeConfig;
 pub use terraforming::{CmdChunkUpdate, EvtChunkUpdated};
 
 use super::storage::{chunk::ChunkStorage, voxel};
