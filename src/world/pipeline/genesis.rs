@@ -62,9 +62,8 @@ fn unload_cache_system(
     for CmdChunkUnload(local) in reader.iter() {
         if vox_world.remove(*local).is_none() {
             warn!("Trying to unload non-existing cache {}", *local);
-        } else {
-            writer.send(EvtChunkUnloaded(*local));
         }
+        writer.send(EvtChunkUnloaded(*local));
     }
 }
 
