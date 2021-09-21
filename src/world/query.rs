@@ -132,7 +132,7 @@ fn chunk_raycast(origin: Vec3, dir: Vec3, range: f32) -> (Vec<IVec3>, Vec<Vec3>,
     let mut current_local = chunk::to_local(origin);
     let mut last_local = current_local;
 
-    let grid_dir = dir.signum().as_i32();
+    let grid_dir = dir.signum().as_ivec3();
     let step_dir = grid_dir.max(IVec3::ZERO);
 
     while current_pos.distance(origin) < range {
@@ -175,7 +175,7 @@ fn voxel_raycast(
     let mut current_local = voxel::to_local(origin);
     let mut last_local = current_local;
 
-    let grid_dir = dir.signum().as_i32();
+    let grid_dir = dir.signum().as_ivec3();
     let step_dir = grid_dir.max(IVec3::ZERO);
 
     while chunk::is_within_bounds(current_local) && current_pos.distance(origin) < range {

@@ -185,7 +185,7 @@ pub fn get_boundary_dir(local: IVec3) -> IVec3 {
 }
 
 pub fn to_world(local: IVec3) -> Vec3 {
-    local.as_f32() * AXIS_SIZE as f32
+    local.as_vec3() * AXIS_SIZE as f32
 }
 
 pub fn to_local(world: Vec3) -> IVec3 {
@@ -383,7 +383,7 @@ mod tests {
 
             // To world just convert from local chunk coordinates (1, 2, -1) to world coordinates (16, 32, -16)
             // assuming AXIS_SIZE = 16
-            assert_eq!(base.as_f32() * AXIS_SIZE as f32, super::to_world(base));
+            assert_eq!(base.as_vec3() * AXIS_SIZE as f32, super::to_world(base));
         }
     }
 

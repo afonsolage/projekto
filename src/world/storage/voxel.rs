@@ -138,7 +138,7 @@ pub fn to_local(world: Vec3) -> IVec3 {
 }
 
 pub fn to_world(local: IVec3, chunk_local: IVec3) -> Vec3 {
-    chunk::to_world(chunk_local) + local.as_f32()
+    chunk::to_world(chunk_local) + local.as_vec3()
 }
 
 #[cfg(test)]
@@ -172,10 +172,10 @@ mod tests {
                 (random::<f32>() * chunk::AXIS_SIZE as f32) as i32,
             );
 
-            let chunk_world = base_chunk.as_f32() * chunk::AXIS_SIZE as f32;
+            let chunk_world = base_chunk.as_vec3() * chunk::AXIS_SIZE as f32;
 
             assert_eq!(
-                chunk_world + base_voxel.as_f32(),
+                chunk_world + base_voxel.as_vec3(),
                 super::to_world(base_voxel, base_chunk)
             );
         }

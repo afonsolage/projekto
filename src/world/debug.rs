@@ -337,7 +337,7 @@ fn draw_voxels_system(
                     wireframe_pipeline_handle.0.clone(),
                 )]),
                 transform: Transform::from_translation(
-                    first_voxel.as_f32() * -1.0 + draw_voxels.offset,
+                    first_voxel.as_vec3() * -1.0 + draw_voxels.offset,
                 ),
                 ..Default::default()
             })
@@ -378,7 +378,7 @@ fn do_raycast_system(
         return;
     }
 
-    if let Ok((transform, camera)) = q_cam.single() {
+    if let Ok((transform, camera)) = q_cam.get_single() {
         if !camera.active {
             return;
         }
@@ -428,7 +428,7 @@ fn check_raycast_intersections_system(
                     .spawn()
                     .insert(RaycastDebug {
                         origin: voxel_hit.position,
-                        dir: voxel_hit.normal.as_f32(),
+                        dir: voxel_hit.normal.as_vec3(),
                         range: 0.08,
                     })
                     .insert(RaycastDebugNoPoint);
@@ -437,7 +437,7 @@ fn check_raycast_intersections_system(
             }
 
             let offset = (raycast.origin
-                - (chunk::to_world(chunk_hit.local) + voxels_hit[0].local.as_f32()))
+                - (chunk::to_world(chunk_hit.local) + voxels_hit[0].local.as_vec3()))
                 * -1.0;
 
             commands.entity(e).with_children(|c| {
@@ -508,7 +508,7 @@ fn remove_voxel_system(
         return;
     }
 
-    if let Ok((transform, camera)) = q_cam.single() {
+    if let Ok((transform, camera)) = q_cam.get_single() {
         if !camera.active {
             return;
         }

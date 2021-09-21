@@ -54,7 +54,7 @@ fn update_fps_text_system(
     diagnostics: Res<Diagnostics>,
     mut q: Query<&mut Text, With<FpsCounterTag>>,
 ) {
-    if let Ok(mut t) = q.single_mut() {
+    if let Ok(mut t) = q.get_single_mut() {
         if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
             if let Some(avg) = fps.average() {
                 t.sections[0].value = format!("{:.0}", avg);

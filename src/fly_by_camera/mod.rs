@@ -46,7 +46,7 @@ impl Default for FlyByCamera {
 // Systems
 
 fn setup_fly_by_camera(mut commands: Commands, q: Query<Entity, With<Camera>>) {
-    match q.single() {
+    match q.get_single() {
         Ok(e) => {
             warn!("Camera already exists, adding FlyByCamera to it");
             commands.entity(e).insert(FlyByCamera::default());
@@ -66,7 +66,7 @@ fn setup_fly_by_camera(mut commands: Commands, q: Query<Entity, With<Camera>>) {
 }
 
 fn is_fly_by_camera_active(q: Query<&FlyByCamera>) -> ShouldRun {
-    match q.single() {
+    match q.get_single() {
         Ok(cam) if cam.active => ShouldRun::Yes,
         _ => ShouldRun::No,
     }
@@ -77,7 +77,7 @@ fn fly_by_camera_move_system(
     input: Res<Input<KeyCode>>,
     mut q: Query<(&mut Transform, &FlyByCamera)>,
 ) {
-    if let Ok((mut transform, fly_by_camera)) = q.single_mut() {
+    if let Ok((mut transform, fly_by_camera)) = q.get_single_mut() {
         let input_vector = calc_input_vector(&input);
 
         let speed = if input.pressed(KeyCode::LShift) {
@@ -103,7 +103,7 @@ fn fly_by_camera_rotate_system(
     mut motion_evt: EventReader<MouseMotion>,
     mut q: Query<(&mut Transform, &mut FlyByCamera)>,
 ) {
-    if let Ok((mut transform, mut fly_by_camera)) = q.single_mut() {
+    if let Ok((mut transform, mut fly_by_camera)) = q.get_single_mut() {
         let mut delta = Vec2::ZERO;
         for ev in motion_evt.iter() {
             delta += ev.delta;
@@ -132,7 +132,7 @@ fn fly_by_camera_grab_mouse_system(
     mut q: Query<&mut FlyByCamera>,
 ) {
     if let Some(window) = windows.get_primary_mut() {
-        if let Ok(mut fly_by_cam) = q.single_mut() {
+        if let Ok(mut fly_by_cam) = q.get_single_mut() {
             if window.cursor_visible() && mouse_btn.just_pressed(MouseButton::Left) {
                 window.set_cursor_visibility(false);
                 window.set_cursor_lock_mode(true);

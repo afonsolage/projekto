@@ -115,7 +115,7 @@ fn update_landscape_system(
         return;
     }
 
-    let center = match q.single() {
+    let center = match q.get_single() {
         Ok(t) => chunk::to_local(t.translation),
         Err(_) => return,
     };

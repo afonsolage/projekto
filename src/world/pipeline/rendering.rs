@@ -74,7 +74,7 @@ fn vertices_computation(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
             let base_vertex_idx = mesh::VERTICES_INDICES[face.side as usize][i];
             let base_vertex: Vec3 = mesh::VERTICES[base_vertex_idx].into();
             vertices.push(VoxelVertex {
-                position: base_vertex + v.as_f32(),
+                position: base_vertex + v.as_vec3(),
                 normal,
             })
         }
