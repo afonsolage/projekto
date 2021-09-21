@@ -15,6 +15,8 @@ This is a general overview of the aspects of the game. Some of these aspects may
     - **Chunk** - A 3d grid containing voxels backed by a single dimension array
     - **Landscape** - Contains all visible chunks
     - **World** - Logical world data storage which holds all voxel persistent data
+      - **ChunkKind** - Contains the kind of chunk
+      - *ChunkLight* - Contains the light of chunk
   - **Query** -- Methods and utilities to query world state
     - **Raycast** -- Projects a ray and check for intersection
   - **Pipeline** -- Systems and components that together composes a pipeline

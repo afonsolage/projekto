@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 
 use bevy::{
-    core::FixedTimestep,
     prelude::*,
     render::{
         pipeline::{PipelineDescriptor, RenderPipeline},
@@ -30,18 +29,13 @@ impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkMeshDirty>()
             .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_resources)
-            // .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_landscape)
             .add_system_set_to_stage(
                 super::Pipeline::Landscaping,
                 SystemSet::new()
                     .with_system(despawn_chunks_system.label("despawn"))
                     .with_system(spawn_chunks_system.label("spawn").after("despawn"))
                     .with_system(update_chunks_system.after("spawn"))
-                    .with_system(
-                        update_landscape_system
-                            .label("update")
-                            .with_run_criteria(FixedTimestep::step(0.1)),
-                    ),
+                    .with_system(update_landscape_system.label("update")),
             );
     }
 }
@@ -59,15 +53,6 @@ fn setup_resources(
     trace_system_run!();
 
     let pipeline_handle = pipelines.add(PipelineDescriptor {
-        // primitive: PrimitiveState {
-        //     topology: PrimitiveTopology::TriangleList,
-        //     strip_index_format: None,
-        //     front_face: FrontFace::Ccw,
-        //     cull_mode: Some(Face::Back),
-        //     polygon_mode: PolygonMode::Fill,
-        //     clamp_depth: false,
-        //     conservative: false,
-        // },
         ..PipelineDescriptor::default_config(ShaderStages {
             vertex: asset_server.load("shaders/voxel.vert"),
             fragment: Some(asset_server.load("shaders/voxel.frag")),
@@ -76,7 +61,7 @@ fn setup_resources(
 
     commands.insert_resource(ChunkPipeline(pipeline_handle));
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
-    commands.insert_resource(LandscapeConfig { paused: true })
+    commands.insert_resource(LandscapeConfig { paused: false })
 }
 
 #[derive(Default)]
