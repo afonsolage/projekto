@@ -6,6 +6,7 @@ use bevy::{
     prelude::*,
     render::camera::Camera,
 };
+use bevy_egui::EguiContext;
 
 pub struct FlyByCameraPlugin;
 
@@ -129,8 +130,17 @@ fn fly_by_camera_grab_mouse_system(
     mut windows: ResMut<Windows>,
     mouse_btn: Res<Input<MouseButton>>,
     key_btn: Res<Input<KeyCode>>,
+    egui_context: Option<Res<EguiContext>>,
     mut q: Query<&mut FlyByCamera>,
 ) {
+    if let Some(context) = egui_context {
+        let ctx = context.ctx();
+        if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
+            return;
+        }
+        
+    }
+
     if let Some(window) = windows.get_primary_mut() {
         if let Ok(mut fly_by_cam) = q.get_single_mut() {
             if window.cursor_visible() && mouse_btn.just_pressed(MouseButton::Left) {

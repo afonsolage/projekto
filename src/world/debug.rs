@@ -26,7 +26,8 @@ pub struct WireframeDebugPlugin;
 
 impl Plugin for WireframeDebugPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(DebugWireframeStateRes::default())
+        app.add_event::<DebugCmd>()
+            .insert_resource(DebugWireframeStateRes::default())
             .add_startup_system(setup_wireframe_shader_system)
             .add_asset::<WireframeMaterial>()
             .add_system(toggle_mesh_wireframe_system)
@@ -36,7 +37,39 @@ impl Plugin for WireframeDebugPlugin {
             .add_system(do_raycast_system)
             .add_system(draw_raycast_system)
             .add_system(check_raycast_intersections_system)
+            .add_system(process_debug_cmd_system)
             .add_system(remove_voxel_system);
+    }
+}
+
+pub struct DebugCmd(pub String);
+
+fn process_debug_cmd_system(
+    mut reader: EventReader<DebugCmd>,
+    mut loaded_writer: EventWriter<CmdChunkLoad>,
+    mut unloaded_writer: EventWriter<CmdChunkUnload>,
+) {
+    for DebugCmd(cmd) in reader.iter() {
+        let args = cmd.split(" ").collect::<Vec<_>>();
+        match args[0] {
+            "load" => {
+                let x = i32::from_str_radix(args[1], 2).expect("Invalid argument!");
+                let y = i32::from_str_radix(args[2], 2).expect("Invalid argument!");
+                let z = i32::from_str_radix(args[3], 2).expect("Invalid argument!");
+
+                loaded_writer.send(CmdChunkLoad((x, y, z).into()));
+            }
+            "unload" => {
+                let x = i32::from_str_radix(args[1], 2).expect("Invalid argument!");
+                let y = i32::from_str_radix(args[2], 2).expect("Invalid argument!");
+                let z = i32::from_str_radix(args[3], 2).expect("Invalid argument!");
+
+                unloaded_writer.send(CmdChunkUnload((x, y, z).into()));
+            }
+            _ => {
+                warn!("Unknown command: {}", cmd);
+            }
+        }
     }
 }
 

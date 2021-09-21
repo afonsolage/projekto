@@ -3,19 +3,46 @@ use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
 };
+use bevy_egui::{egui, EguiContext, EguiPlugin};
+
+use crate::world::DebugCmd;
 
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(FrameTimeDiagnosticsPlugin::default())
+        app.add_plugin(EguiPlugin)
+            .add_plugin(FrameTimeDiagnosticsPlugin::default())
             .add_startup_system(setup_fps_text)
+            .add_system(cmd_window)
             .add_system_set(
                 SystemSet::new()
                     .with_run_criteria(FixedTimestep::step(0.5))
                     .with_system(update_fps_text_system),
             );
     }
+}
+
+#[derive(Default)]
+struct CmdWindowMeta {
+    cmd: String,
+}
+
+fn cmd_window(
+    egui_context: Res<EguiContext>,
+    mut meta: Local<CmdWindowMeta>,
+    mut writer: EventWriter<DebugCmd>,
+) {
+    egui::Window::new("Commands").show(egui_context.ctx(), |ui| {
+        if ui.text_edit_singleline(&mut meta.cmd).lost_focus() {
+            if meta.cmd.is_empty() {
+                return;
+            }
+
+            writer.send(DebugCmd(meta.cmd.clone()));
+            meta.cmd.clear();
+        }
+    });
 }
 
 struct FpsCounterTag;

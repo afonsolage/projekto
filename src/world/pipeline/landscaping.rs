@@ -76,7 +76,7 @@ fn setup_resources(
 
     commands.insert_resource(ChunkPipeline(pipeline_handle));
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
-    commands.insert_resource(LandscapeConfig::default())
+    commands.insert_resource(LandscapeConfig { paused: true })
 }
 
 #[derive(Default)]

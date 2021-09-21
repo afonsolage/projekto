@@ -6,7 +6,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = {git = "https://github.com/bevyengine/bevy"}
+bevy = {git = "https://github.com/bevyengine/bevy", branch="main"}
 env_logger = "0.9.0"
 rand = "0.8.4"
 bracket-noise = "0.8.2"
@@ -14,13 +14,15 @@ ron = "0.6.5"
 serde = "1.0.130"
 once_cell = "1.8.0"
 futures-lite = "1.12.0"
+egui = "0.14.0"
+bevy_egui = {git = "https://github.com/jakobhellermann/bevy_egui", branch="bevy-main"}
 
 [features]
 default = [
     "dev",
     # "perf_counter"
 ]
-dev = ["bevy/dynamic"]
+dev = ["bevy/dynamic", "egui/multi_threaded"]
 perf_counter = []
 
 
