@@ -41,44 +41,63 @@ impl Iterator for ChunkIter {
     }
 }
 
-pub trait ChunkStorageType:
-    Sized + Copy + Default + DeserializeOwned + Serialize + PartialEq
-{
-}
+pub trait ChunkStorageType: Copy + Default + DeserializeOwned + Serialize + PartialEq {}
 
 impl ChunkStorageType for u8 {}
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct ChunkStorage<T: ChunkStorageType>([T; BUFFER_SIZE]);
+#[derive(Debug, Clone)]
+pub struct ChunkStorage<T: ChunkStorageType> {
+    main: Vec<T>,
+    pub neighborhood: ChunkNeighborhood<T>,
+}
 
 impl<T: ChunkStorageType> Default for ChunkStorage<T> {
     fn default() -> Self {
-        Self([T::default(); BUFFER_SIZE])
+        Self {
+            main: vec![T::default(); BUFFER_SIZE],
+            neighborhood: ChunkNeighborhood::default(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.main == other.main
     }
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
     pub fn get(&self, local: IVec3) -> T {
-        self.0[to_index(local)]
+        // if self.main.is_empty() {
+        //     T::default()
+        // } else {
+
+        // }
+        self.main[to_index(local)]
     }
 
     pub fn set(&mut self, local: IVec3, value: T) {
-        self.0[to_index(local)] = value;
+        // if self.main.is_empty() {
+        //     self.main = vec![T::default(); BUFFER_SIZE];
+        // }
+
+        self.main[to_index(local)] = value;
     }
 
     #[cfg(test)]
     pub fn set_all(&mut self, value: T) {
-        self.0.fill(value);
+        self.main.fill(value);
     }
 
     #[cfg(test)]
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
-        self.0.iter()
+        self.main.iter()
     }
 
     #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        self.iter().all(|k| *k == Default::default())
+    pub fn is_default(&self) -> bool {
+        self.iter().all(|&t| t == T::default())
     }
 }
 
@@ -99,15 +118,24 @@ impl<'de, T: ChunkStorageType> Deserialize<'de> for ChunkStorage<T> {
             where
                 A: serde::de::SeqAccess<'de>,
             {
-                let mut arr = [T::default(); chunk::BUFFER_SIZE];
+                let mut vec = vec![];
 
-                for index in 0..chunk::BUFFER_SIZE {
-                    arr[index] = seq
-                        .next_element()?
-                        .ok_or_else(|| serde::de::Error::invalid_length(index, &self))?;
+                while let Some(element) = seq.next_element()? {
+                    vec.push(element);
                 }
 
-                Ok(ChunkStorage(arr))
+                if vec.len() != 0 && vec.len() != chunk::BUFFER_SIZE {
+                    return Err(serde::de::Error::invalid_length(vec.len(), &self));
+                }
+
+                // if vec.is_empty() {
+                //     vec.shrink_to(0);
+                // }
+
+                Ok(ChunkStorage {
+                    main: vec,
+                    neighborhood: ChunkNeighborhood::default(),
+                })
             }
         }
 
@@ -122,7 +150,7 @@ impl<T: ChunkStorageType> Serialize for ChunkStorage<T> {
     {
         let mut seq = serializer.serialize_seq(Some(chunk::BUFFER_SIZE))?;
 
-        for elem in self.0.iter() {
+        for elem in self.main.iter() {
             seq.serialize_element(elem)?;
         }
 
@@ -196,13 +224,13 @@ pub fn to_local(world: Vec3) -> IVec3 {
     )
 }
 
-type NeighborhoodSide = [voxel::Kind; AXIS_SIZE * AXIS_SIZE];
+#[derive(Debug, Default, Clone)]
+pub struct ChunkNeighborhood<T: ChunkStorageType>(
+    [Option<[T; AXIS_SIZE * AXIS_SIZE]>; voxel::SIDE_COUNT],
+);
 
-#[derive(Default)]
-pub struct ChunkNeighborhood([Option<NeighborhoodSide>; voxel::SIDE_COUNT]);
-
-impl ChunkNeighborhood {
-    pub fn set(&mut self, side: voxel::Side, chunk: &ChunkKind) {
+impl<T: ChunkStorageType> ChunkNeighborhood<T> {
+    pub fn set(&mut self, side: voxel::Side, chunk: &ChunkStorage<T>) {
         const END: i32 = AXIS_ENDING as i32;
 
         let (begin, end_inclusive) = match side {
@@ -214,7 +242,7 @@ impl ChunkNeighborhood {
             voxel::Side::Back => ((0, 0, END).into(), (END, END, END).into()),
         };
 
-        let mut neighborhood_side = [voxel::Kind::default(); AXIS_SIZE * AXIS_SIZE];
+        let mut neighborhood_side = [T::default(); AXIS_SIZE * AXIS_SIZE];
         for pos in query::range_inclusive(begin, end_inclusive) {
             let index = Self::to_index(side, pos);
             neighborhood_side[index] = chunk.get(pos)
@@ -223,7 +251,7 @@ impl ChunkNeighborhood {
         self.0[side as usize] = Some(neighborhood_side);
     }
 
-    pub fn get(&self, side: voxel::Side, pos: IVec3) -> Option<voxel::Kind> {
+    pub fn get(&self, side: voxel::Side, pos: IVec3) -> Option<T> {
         self.0[side as usize].map(|ref neighborhood_side| {
             let index = Self::to_index(side, pos);
             neighborhood_side[index]
@@ -495,15 +523,15 @@ mod tests {
     }
 
     #[test]
-    fn is_empty() {
+    fn is_default() {
         impl ChunkStorageType for [u8; 3] {}
 
         let mut chunk = ChunkStorage::<[u8; 3]>::default();
-        assert!(chunk.is_empty());
+        assert!(chunk.is_default());
 
         chunk.set((1, 1, 1).into(), [1; 3]);
 
-        assert!(!chunk.is_empty());
+        assert!(!chunk.is_default());
     }
 
     #[test]
@@ -527,7 +555,7 @@ mod tests {
         );
 
         let mut kinds_set = vec![];
-        let mut chunks = [ChunkKind::default(); voxel::SIDE_COUNT];
+        let mut chunks = vec![ChunkKind::default(); voxel::SIDE_COUNT];
 
         for side in voxel::SIDES {
             for _ in 0..1000 {
@@ -558,7 +586,7 @@ mod tests {
         }
 
         for side in voxel::SIDES {
-            if !chunks[side as usize].is_empty() {
+            if !chunks[side as usize].is_default() {
                 neighborhood.set(side, &chunks[side as usize]);
             }
         }

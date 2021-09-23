@@ -32,10 +32,17 @@ impl Plugin for GenesisPlugin {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ChunkCache {
     local: IVec3,
     kind: ChunkKind,
+}
+
+#[cfg(test)]
+impl PartialEq for ChunkCache {
+    fn eq(&self, other: &Self) -> bool {
+        self.local == other.local && self.kind == other.kind
+    }
 }
 
 pub struct CmdChunkLoad(pub IVec3);

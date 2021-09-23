@@ -29,19 +29,21 @@ impl VoxWorld {
         self.chunks.get_mut(&pos)
     }
 
-    pub fn neighborhood(&self, center: IVec3) -> ChunkNeighborhood {
+    #[cfg(test)]
+    pub fn update_neighborhood(&mut self, pos: IVec3) {
         let mut neighborhood = ChunkNeighborhood::default();
-
         for side in voxel::SIDES {
             let dir = side.get_side_dir();
-            let neighbor = center + dir;
+            let neighbor = pos + dir;
 
-            if let Some(chunk) = self.get(neighbor) {
-                neighborhood.set(side, &chunk);
+            if let Some(neighbor_chunk) = self.get(neighbor) {
+                neighborhood.set(side, neighbor_chunk);
             }
         }
 
-        neighborhood
+        if let Some(chunk) = self.get_mut(pos) {
+            chunk.neighborhood = neighborhood;
+        }
     }
 }
 
@@ -88,7 +90,7 @@ mod test {
     }
 
     #[test]
-    fn neighborhood() {
+    fn update_neighborhood() {
         let mut world = VoxWorld::default();
 
         let center = (1, 1, 1).into();
@@ -104,7 +106,8 @@ mod test {
             world.add(pos, kind);
         }
 
-        let neighborhood = world.neighborhood(center);
+        world.update_neighborhood(center);
+        let kind = world.get(center).unwrap();
 
         for side in voxel::SIDES {
             match side {
@@ -112,7 +115,7 @@ mod test {
                     for a in 0..chunk::AXIS_SIZE {
                         for b in 0..chunk::AXIS_SIZE {
                             assert_eq!(
-                                neighborhood.get(side, (0, a as i32, b as i32).into()),
+                                kind.neighborhood.get(side, (0, a as i32, b as i32).into()),
                                 Some((side as u16).into())
                             );
                         }
@@ -122,7 +125,7 @@ mod test {
                     for a in 0..chunk::AXIS_SIZE {
                         for b in 0..chunk::AXIS_SIZE {
                             assert_eq!(
-                                neighborhood.get(
+                                kind.neighborhood.get(
                                     side,
                                     (chunk::AXIS_ENDING as i32, a as i32, b as i32).into()
                                 ),
@@ -135,7 +138,7 @@ mod test {
                     for a in 0..chunk::AXIS_SIZE {
                         for b in 0..chunk::AXIS_SIZE {
                             assert_eq!(
-                                neighborhood.get(side, (a as i32, 0, b as i32).into()),
+                                kind.neighborhood.get(side, (a as i32, 0, b as i32).into()),
                                 Some((side as u16).into())
                             );
                         }
@@ -145,7 +148,7 @@ mod test {
                     for a in 0..chunk::AXIS_SIZE {
                         for b in 0..chunk::AXIS_SIZE {
                             assert_eq!(
-                                neighborhood.get(
+                                kind.neighborhood.get(
                                     side,
                                     (a as i32, chunk::AXIS_ENDING as i32, b as i32).into()
                                 ),
@@ -158,7 +161,7 @@ mod test {
                     for a in 0..chunk::AXIS_SIZE {
                         for b in 0..chunk::AXIS_SIZE {
                             assert_eq!(
-                                neighborhood.get(side, (a as i32, b as i32, 0).into()),
+                                kind.neighborhood.get(side, (a as i32, b as i32, 0).into()),
                                 Some((side as u16).into())
                             );
                         }
@@ -168,7 +171,7 @@ mod test {
                     for a in 0..chunk::AXIS_SIZE {
                         for b in 0..chunk::AXIS_SIZE {
                             assert_eq!(
-                                neighborhood.get(
+                                kind.neighborhood.get(
                                     side,
                                     (a as i32, b as i32, chunk::AXIS_ENDING as i32).into()
                                 ),

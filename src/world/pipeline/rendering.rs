@@ -9,7 +9,7 @@ use futures_lite::future;
 use crate::world::{
     mesh,
     storage::{
-        chunk::{self, ChunkKind, ChunkNeighborhood},
+        chunk::{self, ChunkKind},
         voxel::{self, VoxelFace, VoxelVertex},
         VoxWorld,
     },
@@ -25,7 +25,7 @@ impl Plugin for RenderingPlugin {
     }
 }
 
-fn faces_occlusion(chunk: &ChunkKind, neighborhood: &ChunkNeighborhood) -> ChunkFacesOcclusion {
+fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
     let mut occlusion = ChunkFacesOcclusion::default();
     for voxel in chunk::voxels() {
         let mut voxel_faces = occlusion.get(voxel);
@@ -40,7 +40,7 @@ fn faces_occlusion(chunk: &ChunkKind, neighborhood: &ChunkNeighborhood) -> Chunk
                 let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
                     let (_, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
 
-                    match neighborhood.get(side, next_chunk_voxel) {
+                    match chunk.neighborhood.get(side, next_chunk_voxel) {
                         Some(k) => k,
                         None => continue,
                     }
@@ -111,12 +111,11 @@ fn mesh_generation_system(
                 );
                 continue;
             }
-            Some(&c) => c,
+            Some(c) => c.clone(),
         };
-        let neighborhood = vox_world.neighborhood(*local);
 
         let task = task_pool.spawn(async move {
-            let occlusion = faces_occlusion(&chunk, &neighborhood);
+            let occlusion = faces_occlusion(&chunk);
             let faces = faces_merging(&chunk, &occlusion);
             let vertices = vertices_computation(faces);
             vertices
@@ -188,10 +187,9 @@ mod test {
     fn faces_occlusion_occlude_empty_chunk() {
         // Arrange
         let chunk = ChunkKind::default();
-        let neighborhood = ChunkNeighborhood::default();
 
         // Act
-        let occlusions = super::faces_occlusion(&chunk, &neighborhood);
+        let occlusions = super::faces_occlusion(&chunk);
 
         // Assert
         assert!(
@@ -218,10 +216,8 @@ mod test {
         chunk.set((10, 10, 9).into(), 1.into());
         chunk.set((10, 10, 11).into(), 1.into());
 
-        let neighborhood = ChunkNeighborhood::default();
-
         // Act
-        let faces_occlusion = super::faces_occlusion(&chunk, &neighborhood);
+        let faces_occlusion = super::faces_occlusion(&chunk);
 
         // Assert
         let faces = faces_occlusion.get((1, 2, 1).into());
@@ -267,9 +263,10 @@ mod test {
         world.add((0, 0, 0).into(), center);
         world.add((0, -1, 0).into(), down);
 
-        let neighborhood = world.neighborhood((0, 0, 0).into());
+        world.update_neighborhood((0, 0, 0).into());
+        let center = world.get((0, 0, 0).into()).unwrap();
 
-        let faces_occlusion = super::faces_occlusion(&center, &neighborhood);
+        let faces_occlusion = super::faces_occlusion(&center);
 
         let faces = faces_occlusion.get((0, chunk::AXIS_ENDING as i32, 0).into());
         assert_eq!(faces, [false, false, true, false, false, false].into());
