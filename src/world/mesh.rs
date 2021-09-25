@@ -82,8 +82,8 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
     ) -> bool {
         !chunk::is_within_bounds(voxel)
             || merged[side as usize].contains(&voxel)
-            || occlusion.get(voxel)[side as usize]
             || chunk.get(voxel).is_empty()
+            || occlusion.get(voxel)[side as usize]
     }
 
     fn find_furthest_eq_voxel(

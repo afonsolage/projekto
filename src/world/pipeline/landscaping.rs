@@ -1,12 +1,6 @@
 use bevy::{
     prelude::*,
-    render::{
-        pipeline::{
-            FrontFace, PipelineDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology,
-            RenderPipeline,
-        },
-        shader::ShaderStages,
-    },
+    render::pipeline::{PipelineDescriptor, RenderPipeline},
     utils::HashMap,
 };
 
@@ -22,7 +16,6 @@ use crate::{
 use super::{
     genesis::{BatchChunkCmdRes, WorldRes},
     ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty, EvtChunkUpdated,
-    EvtChunkUpdatedOld,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -52,6 +45,10 @@ fn setup_resources(
     asset_server: Res<AssetServer>,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
 ) {
+    use bevy::render::{
+        pipeline::{Face, FrontFace, PolygonMode, PrimitiveState, PrimitiveTopology},
+        shader::ShaderStages,
+    };
     trace_system_run!();
 
     let pipeline_handle = pipelines.add(PipelineDescriptor {
@@ -59,7 +56,7 @@ fn setup_resources(
             topology: PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: FrontFace::Ccw,
-            cull_mode: None, //Some(Face::Back),
+            cull_mode: Some(Face::Back),
             polygon_mode: PolygonMode::Fill,
             clamp_depth: false,
             conservative: false,
@@ -212,9 +209,10 @@ mod test {
 
     use crate::world::pipeline::{
         genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty,
+        EvtChunkUpdated,
     };
 
-    use super::{ChunkEntityMap, EvtChunkLoaded, EvtChunkUpdatedOld};
+    use super::{ChunkEntityMap, EvtChunkLoaded};
 
     #[test]
     fn disjoint() {
@@ -309,8 +307,8 @@ mod test {
     #[test]
     fn update_chunks_system() {
         // Arrange
-        let mut added_events = Events::<EvtChunkUpdatedOld>::default();
-        added_events.send(EvtChunkUpdatedOld((1, 2, 3).into()));
+        let mut added_events = Events::<EvtChunkUpdated>::default();
+        added_events.send(EvtChunkUpdated((1, 2, 3).into()));
 
         let mut world = World::default();
         world.insert_resource(added_events);

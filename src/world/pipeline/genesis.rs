@@ -3,6 +3,7 @@ use std::{ops::Deref, path::PathBuf};
 use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task},
+    utils::HashSet,
 };
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use futures_lite::future;
@@ -227,7 +228,7 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
             ChunkCmd::Update(i) => Some(*i),
             _ => None,
         })
-        .collect::<Vec<_>>();
+        .collect::<HashSet<_>>();
 
     for local in unload_items.iter() {
         unload_chunk(&mut world, *local);
@@ -237,22 +238,27 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
             let neighbor = *local + dir;
 
             if !update_items.contains(&neighbor) {
-                update_items.push(neighbor);
+                update_items.insert(neighbor);
             }
         }
     }
 
     for local in load_items.iter() {
         load_chunk(&mut world, *local);
-        update_chunk(&mut world, *local);
 
         for side in voxel::SIDES {
             let dir = side.dir();
             let neighbor = *local + dir;
 
             if !update_items.contains(&neighbor) {
-                update_items.push(neighbor);
+                update_items.insert(neighbor);
             }
+        }
+    }
+
+    for local in load_items.iter() {
+        if !update_items.contains(local) {
+            update_chunk(&mut world, *local);
         }
     }
 
@@ -270,7 +276,7 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
 
 fn unload_chunk(world: &mut VoxWorld, local: IVec3) {
     if world.remove(local).is_none() {
-        warn!("Trying to unload non-existing cache {}", local);
+        warn!("Trying to unload non-existing chunk {}", local);
     }
 }
 

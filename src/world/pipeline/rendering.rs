@@ -11,7 +11,6 @@ use crate::world::{
     storage::{
         chunk::{self, ChunkKind},
         voxel::{self, VoxelFace, VoxelVertex},
-        VoxWorld,
     },
 };
 
@@ -147,30 +146,32 @@ fn generate_mesh(
     meshes: &mut ResMut<Assets<Mesh>>,
 ) {
     if vertices.is_empty() {
-        return;
+        commands.entity(entity).insert(Handle::<Mesh>::default());
+    } else {
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+
+        let mut positions: Vec<[f32; 3]> = vec![];
+        let mut normals: Vec<[f32; 3]> = vec![];
+
+        let vertex_count = vertices.len();
+
+        for vertex in vertices {
+            positions.push(vertex.position.into());
+            normals.push(vertex.normal.into());
+        }
+
+        mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+
+        commands.entity(entity).insert(meshes.add(mesh));
     }
-
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-
-    let mut positions: Vec<[f32; 3]> = vec![];
-    let mut normals: Vec<[f32; 3]> = vec![];
-
-    let vertex_count = vertices.len();
-
-    for vertex in vertices {
-        positions.push(vertex.position.into());
-        normals.push(vertex.normal.into());
-    }
-
-    mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
-    mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-
-    commands.entity(entity).insert(meshes.add(mesh));
 }
 
 #[cfg(test)]
 mod test {
+    use crate::world::storage::VoxWorld;
+
     use super::*;
 
     #[test]
