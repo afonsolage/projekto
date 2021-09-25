@@ -64,8 +64,8 @@ impl BatchChunkCmdRes {
         self.running.clone()
     }
 
-    fn finished(&mut self) -> Vec<ChunkCmd> {
-        std::mem::replace(&mut self.running, vec![])
+    fn finished(&mut self) {
+        self.running.clear();
     }
 
     fn is_cmd_running(&self, cmd: ChunkCmd) -> bool {
@@ -173,8 +173,8 @@ fn update_world_system(
 ) {
     // Only process batches if there is no task already running
     if let Some(ref mut task) = meta.task {
-        if let Some((world, _)) = future::block_on(future::poll_once(task)) {
-            for cmd in batch_res.finished() {
+        if let Some((world, commands)) = future::block_on(future::poll_once(task)) {
+            for cmd in commands {
                 match cmd {
                     ChunkCmd::Load(local) => loaded_writer.send(EvtChunkLoaded(local)),
                     ChunkCmd::Unload(local) => unloaded_writer.send(EvtChunkUnloaded(local)),
@@ -183,6 +183,7 @@ fn update_world_system(
             }
             meta.task = None;
             world_res.set(world);
+            batch_res.finished();
         }
     } else if !batch_res.is_empty() {
         let batch = batch_res.take();
@@ -219,7 +220,7 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
     }
 
     for local in commands.iter().filter_map(|cmd| match cmd {
-        ChunkCmd::Update(i) => Some(*i),
+        ChunkCmd::Load(i) | ChunkCmd::Update(i) => Some(*i),
         _ => None,
     }) {
         update_chunk(&mut world, local);
