@@ -282,35 +282,33 @@ fn toggle_mesh_wireframe_system(
             if let None = wireframe_draw_opt {
                 let mut wireframe_mesh = Mesh::new(PrimitiveTopology::LineList);
 
-                let vertices = meshes
-                    .get_mut(mesh)
-                    .unwrap()
-                    .attribute(Mesh::ATTRIBUTE_POSITION)
-                    .unwrap();
+                if let Some(mesh_asset) = meshes.get_mut(mesh) {
+                    let vertices = mesh_asset.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
 
-                wireframe_mesh.set_indices(Some(Indices::U32(compute_wireframe_indices(
-                    vertices.len(),
-                ))));
-                wireframe_mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices.clone());
+                    wireframe_mesh.set_indices(Some(Indices::U32(compute_wireframe_indices(
+                        vertices.len(),
+                    ))));
+                    wireframe_mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices.clone());
 
-                let wireframe_mesh_handle = meshes.add(wireframe_mesh);
-                let wireframe_pipelines =
-                    RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-                        pipeline_handle.0.clone(),
-                    )]);
+                    let wireframe_mesh_handle = meshes.add(wireframe_mesh);
+                    let wireframe_pipelines =
+                        RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+                            pipeline_handle.0.clone(),
+                        )]);
 
-                let wireframe_draw = WireframeDraw {
-                    original_mesh: mesh.clone(),
-                    original_pipeline: pipelines.clone(),
-                };
+                    let wireframe_draw = WireframeDraw {
+                        original_mesh: mesh.clone(),
+                        original_pipeline: pipelines.clone(),
+                    };
 
-                commands
-                    .entity(e)
-                    .insert(wireframe_mesh_handle) //The new wireframe mesh
-                    .insert(wireframe_pipelines) //The new wireframe shader/pipeline
-                    .insert(Visible::default()) //Why?
-                    .insert(wireframe_draw)
-                    .insert(materials.get("white")); //The old mesh and pipeline, so I can switch back to it
+                    commands
+                        .entity(e)
+                        .insert(wireframe_mesh_handle) //The new wireframe mesh
+                        .insert(wireframe_pipelines) //The new wireframe shader/pipeline
+                        .insert(Visible::default()) //Why?
+                        .insert(wireframe_draw)
+                        .insert(materials.get("white")); //The old mesh and pipeline, so I can switch back to it
+                }
             }
         }
     }

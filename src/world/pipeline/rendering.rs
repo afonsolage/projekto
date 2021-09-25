@@ -34,7 +34,7 @@ fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
             voxel_faces.set_all(true);
         } else {
             for side in voxel::SIDES {
-                let dir = side.get_side_dir();
+                let dir = side.dir();
                 let neighbor_pos = voxel + dir;
 
                 let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
@@ -68,7 +68,7 @@ fn vertices_computation(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
     let mut vertices = vec![];
 
     for face in faces {
-        let normal = face.side.get_side_normal();
+        let normal = face.side.normal();
 
         for (i, v) in face.vertices.iter().enumerate() {
             let base_vertex_idx = mesh::VERTICES_INDICES[face.side as usize][i];
@@ -101,7 +101,7 @@ fn mesh_generation_system(
 
     for EvtChunkMeshDirty(local) in reader.iter() {
         if let Some(chunk) = vox_world.get(*local) {
-            trace_system_run!();
+            trace_system_run!(*local);
             perf_scope!(_perf);
 
             let cloned_chunk = chunk.clone();
@@ -146,6 +146,10 @@ fn generate_mesh(
     entity: Entity,
     meshes: &mut ResMut<Assets<Mesh>>,
 ) {
+    if vertices.is_empty() {
+        return;
+    }
+
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
     let mut positions: Vec<[f32; 3]> = vec![];
@@ -279,7 +283,7 @@ mod test {
         let vertices = super::vertices_computation(faces);
 
         // Assert
-        let normal = side.get_side_normal();
+        let normal = side.normal();
         assert_eq!(
             vertices,
             vec![

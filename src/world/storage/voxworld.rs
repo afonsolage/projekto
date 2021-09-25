@@ -32,7 +32,7 @@ impl VoxWorld {
     pub fn update_neighborhood(&mut self, pos: IVec3) {
         let mut neighborhood = ChunkNeighborhood::default();
         for side in voxel::SIDES {
-            let dir = side.get_side_dir();
+            let dir = side.dir();
             let neighbor = pos + dir;
 
             if let Some(neighbor_chunk) = self.get(neighbor) {
@@ -98,7 +98,7 @@ mod test {
         world.add(center, kind);
 
         for side in voxel::SIDES {
-            let dir = side.get_side_dir();
+            let dir = side.dir();
             let pos = center + dir;
             let mut kind = ChunkKind::default();
             kind.set_all((side as u16).into());

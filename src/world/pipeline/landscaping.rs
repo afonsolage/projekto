@@ -1,7 +1,10 @@
 use bevy::{
     prelude::*,
     render::{
-        pipeline::{PipelineDescriptor, RenderPipeline},
+        pipeline::{
+            FrontFace, PipelineDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology,
+            RenderPipeline,
+        },
         shader::ShaderStages,
     },
     utils::HashMap,
@@ -17,8 +20,9 @@ use crate::{
 };
 
 use super::{
-    genesis::BatchChunkCmdRes, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline,
-    EvtChunkMeshDirty, EvtChunkUpdatedOld,
+    genesis::{BatchChunkCmdRes, WorldRes},
+    ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty, EvtChunkUpdated,
+    EvtChunkUpdatedOld,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -51,6 +55,15 @@ fn setup_resources(
     trace_system_run!();
 
     let pipeline_handle = pipelines.add(PipelineDescriptor {
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: FrontFace::Ccw,
+            cull_mode: None, //Some(Face::Back),
+            polygon_mode: PolygonMode::Fill,
+            clamp_depth: false,
+            conservative: false,
+        },
         ..PipelineDescriptor::default_config(ShaderStages {
             vertex: asset_server.load("shaders/voxel.vert"),
             fragment: Some(asset_server.load("shaders/voxel.frag")),
@@ -72,6 +85,7 @@ fn update_landscape_system(
     time: Res<Time>,
     entity_map: ResMut<ChunkEntityMap>,
     config: Res<LandscapeConfig>,
+    world_res: Res<WorldRes>,
     mut meta: Local<UpdateLandscapeMeta>,
     mut batch: ResMut<BatchChunkCmdRes>,
     q: Query<&Transform, With<FlyByCamera>>,
@@ -79,7 +93,7 @@ fn update_landscape_system(
     let mut _perf = perf_fn!();
     perf_scope!(_perf);
 
-    if config.paused {
+    if config.paused || !world_res.is_ready() {
         return;
     }
 
@@ -175,13 +189,13 @@ fn despawn_chunks_system(
 }
 
 fn update_chunks_system(
-    mut reader: EventReader<EvtChunkUpdatedOld>,
+    mut reader: EventReader<EvtChunkUpdated>,
     mut writer: EventWriter<EvtChunkMeshDirty>,
     entity_map: ResMut<ChunkEntityMap>,
 ) {
     let mut _perf = perf_fn!();
 
-    for EvtChunkUpdatedOld(chunk_local) in reader.iter() {
+    for EvtChunkUpdated(chunk_local) in reader.iter() {
         if entity_map.0.get(chunk_local).is_some() {
             trace_system_run!(chunk_local);
             perf_scope!(_perf);

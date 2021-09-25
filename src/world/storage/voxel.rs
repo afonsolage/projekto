@@ -54,7 +54,7 @@ pub const SIDES: [Side; SIDE_COUNT] = [
 ];
 
 impl Side {
-    pub fn get_side_normal(&self) -> Vec3 {
+    pub fn normal(&self) -> Vec3 {
         match self {
             Side::Right => Vec3::new(1.0, 0.0, 0.0),
             Side::Left => Vec3::new(-1.0, 0.0, 0.0),
@@ -65,7 +65,7 @@ impl Side {
         }
     }
 
-    pub fn get_side_dir(&self) -> IVec3 {
+    pub fn dir(&self) -> IVec3 {
         match self {
             Side::Right => IVec3::X,
             Side::Left => -IVec3::X,
