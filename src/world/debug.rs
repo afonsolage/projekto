@@ -38,8 +38,7 @@ impl Plugin for WireframeDebugPlugin {
             .add_system(draw_raycast_system)
             // .add_system(check_raycast_intersections_system)
             .add_system(process_debug_cmd_system)
-            // .add_system(remove_voxel_system)
-            ;
+            .add_system(remove_voxel_system);
     }
 }
 
