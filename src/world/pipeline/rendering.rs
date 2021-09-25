@@ -15,7 +15,7 @@ use crate::world::{
     },
 };
 
-use super::{ChunkEntityMap, ChunkFacesOcclusion, EvtChunkMeshDirty, Pipeline};
+use super::{genesis::WorldRes, ChunkEntityMap, ChunkFacesOcclusion, EvtChunkMeshDirty, Pipeline};
 
 pub struct RenderingPlugin;
 
@@ -90,68 +90,54 @@ struct MeshGenerationMeta {
 
 fn mesh_generation_system(
     mut commands: Commands,
-    mut reader: EventReader<EvtChunkMeshDirty>,
     mut meshes: ResMut<Assets<Mesh>>,
-    vox_world: Res<VoxWorld>,
+    vox_world: Res<WorldRes>,
     entity_map: Res<ChunkEntityMap>,
     task_pool: Res<AsyncComputeTaskPool>,
     mut meta: Local<MeshGenerationMeta>,
+    mut reader: EventReader<EvtChunkMeshDirty>,
 ) {
     let mut _perf = perf_fn!();
 
     for EvtChunkMeshDirty(local) in reader.iter() {
-        trace_system_run!(local);
-        perf_scope!(_perf);
+        if let Some(chunk) = vox_world.get(*local) {
+            trace_system_run!();
+            perf_scope!(_perf);
 
-        let chunk = match vox_world.get(*local) {
-            None => {
-                warn!(
-                    "Skipping faces occlusion since chunk {} wasn't found on world",
-                    *local
-                );
-                continue;
-            }
-            Some(c) => c.clone(),
-        };
+            let cloned_chunk = chunk.clone();
 
-        let task = task_pool.spawn(async move {
-            let occlusion = faces_occlusion(&chunk);
-            let faces = faces_merging(&chunk, &occlusion);
-            let vertices = vertices_computation(faces);
-            vertices
-        });
+            let task = task_pool.spawn(async move {
+                let occlusion = faces_occlusion(&cloned_chunk);
+                let faces = faces_merging(&cloned_chunk, &occlusion);
+                let vertices = vertices_computation(faces);
+                vertices
+            });
 
-        assert!(
-            meta.tasks.insert(*local, task).is_none(),
-            "Duplicated mesh generation is forbidden. Chunk {}",
-            *local
-        );
+            meta.tasks.insert(*local, task);
+        }
     }
 
     let completed_tasks = meta
         .tasks
         .iter_mut()
-        .filter_map(|(&local, task)| {
-            future::block_on(future::poll_once(task)).map(|v| {
-                match entity_map.0.get(&local) {
-                    None => {
-                        warn!(
-                            "Skipping mesh generation since chunk {} wasn't found on entity map",
-                            local
-                        );
-                    }
-                    Some(&e) => generate_mesh(v, &mut commands, e, &mut meshes),
-                };
-                local
-            })
+        .filter_map(|(local, task)| {
+            future::block_on(future::poll_once(task)).map(|vertices| (*local, vertices))
         })
         .collect::<Vec<_>>();
 
-    completed_tasks.iter().for_each(|v| {
-        meta.tasks
-            .remove(v)
-            .expect("Task for load cache must exists");
-    });
+    for (local, vertices) in completed_tasks {
+        match entity_map.0.get(&local) {
+            None => {
+                warn!(
+                    "Skipping mesh generation since chunk {} wasn't found on entity map",
+                    local
+                );
+            }
+            Some(&e) => generate_mesh(vertices, &mut commands, e, &mut meshes),
+        };
+
+        meta.tasks.remove(&local);
+    }
 }
 
 fn generate_mesh(

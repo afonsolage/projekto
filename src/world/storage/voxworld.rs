@@ -29,7 +29,6 @@ impl VoxWorld {
         self.chunks.get_mut(&pos)
     }
 
-    #[cfg(test)]
     pub fn update_neighborhood(&mut self, pos: IVec3) {
         let mut neighborhood = ChunkNeighborhood::default();
         for side in voxel::SIDES {

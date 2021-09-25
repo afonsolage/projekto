@@ -7,11 +7,12 @@ pub(super) struct TerraformingPlugin;
 impl Plugin for TerraformingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<CmdChunkUpdate>()
-            .add_event::<EvtChunkUpdated>()
-            .add_system_set_to_stage(
-                super::Pipeline::Terraforming,
-                SystemSet::new().with_system(process_update_chunks_system),
-            );
+            .add_event::<EvtChunkUpdatedOld>()
+            // .add_system_set_to_stage(
+            //     super::Pipeline::Terraforming,
+            //     SystemSet::new().with_system(process_update_chunks_system),
+            // )
+            ;
     }
 }
 
@@ -19,12 +20,12 @@ impl Plugin for TerraformingPlugin {
 pub struct CmdChunkUpdate(pub IVec3, pub Vec<(IVec3, voxel::Kind)>);
 
 #[derive(Clone, Copy)]
-pub struct EvtChunkUpdated(pub IVec3);
+pub struct EvtChunkUpdatedOld(pub IVec3);
 
 fn process_update_chunks_system(
     mut world: ResMut<VoxWorld>,
     mut reader: EventReader<CmdChunkUpdate>,
-    mut writer: EventWriter<EvtChunkUpdated>,
+    mut writer: EventWriter<EvtChunkUpdatedOld>,
 ) {
     let mut _perf = perf_fn!();
 
@@ -63,11 +64,11 @@ fn process_update_chunks_system(
         }
 
         debug!("Updating chunk {}", *chunk_local);
-        writer.send(EvtChunkUpdated(*chunk_local));
+        writer.send(EvtChunkUpdatedOld(*chunk_local));
 
         for neighbor in neighbor_chunks {
             debug!("Notifying neighbor chunk {}", neighbor);
-            writer.send(EvtChunkUpdated(neighbor));
+            writer.send(EvtChunkUpdatedOld(neighbor));
         }
     }
 }
@@ -98,7 +99,7 @@ mod test {
         let mut world = prelude::World::default();
         world.insert_resource(voxel_world);
         world.insert_resource(events);
-        world.insert_resource(Events::<EvtChunkUpdated>::default());
+        world.insert_resource(Events::<EvtChunkUpdatedOld>::default());
 
         let mut stage = SystemStage::parallel();
         stage.add_system(super::process_update_chunks_system);
@@ -118,7 +119,7 @@ mod test {
         );
 
         let evt = world
-            .get_resource_mut::<Events<EvtChunkUpdated>>()
+            .get_resource_mut::<Events<EvtChunkUpdatedOld>>()
             .unwrap()
             .iter_current_update_events()
             .next()

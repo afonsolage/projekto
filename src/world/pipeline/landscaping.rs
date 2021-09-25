@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use bevy::{
     prelude::*,
     render::{
@@ -12,15 +10,15 @@ use bevy::{
 use crate::{
     fly_by_camera::FlyByCamera,
     world::{
-        pipeline::genesis::{CmdChunkUnload, EvtChunkLoaded, EvtChunkUnloaded},
+        pipeline::genesis::{EvtChunkLoaded, EvtChunkUnloaded},
         query,
         storage::{chunk, landscape},
     },
 };
 
 use super::{
-    genesis::CmdChunkLoad, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline,
-    EvtChunkMeshDirty, EvtChunkUpdated,
+    genesis::BatchChunkCmdRes, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline,
+    EvtChunkMeshDirty, EvtChunkUpdatedOld,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -66,35 +64,20 @@ fn setup_resources(
 
 #[derive(Default)]
 struct UpdateLandscapeMeta {
-    load_queue: VecDeque<IVec3>,
-    unload_queue: VecDeque<IVec3>,
     last_pos: IVec3,
     next_sync: f32,
-    pending_load: Vec<IVec3>,
-    pending_unload: Vec<IVec3>,
 }
 
 fn update_landscape_system(
     time: Res<Time>,
     entity_map: ResMut<ChunkEntityMap>,
     config: Res<LandscapeConfig>,
-    mut load_writer: EventWriter<CmdChunkLoad>,
-    mut unload_writer: EventWriter<CmdChunkUnload>,
-    mut loaded_reader: EventReader<EvtChunkLoaded>,
-    mut unloaded_reader: EventReader<EvtChunkUnloaded>,
     mut meta: Local<UpdateLandscapeMeta>,
+    mut batch: ResMut<BatchChunkCmdRes>,
     q: Query<&Transform, With<FlyByCamera>>,
 ) {
     let mut _perf = perf_fn!();
     perf_scope!(_perf);
-
-    for EvtChunkLoaded(local) in loaded_reader.iter() {
-        meta.pending_load.retain(|v| v != local);
-    }
-
-    for EvtChunkUnloaded(local) in unloaded_reader.iter() {
-        meta.pending_unload.retain(|v| v != local);
-    }
 
     if config.paused {
         return;
@@ -122,34 +105,12 @@ fn update_landscape_system(
         let (to_load, to_unload) = disjoin(&visible_locals, &existing_locals);
 
         for v in to_load {
-            if !meta.load_queue.contains(v) && !meta.pending_load.contains(v) {
-                meta.load_queue.push_back(*v);
-            }
-
-            if meta.unload_queue.contains(v) {
-                meta.unload_queue.retain(|uv| uv != v);
-            }
+            batch.load(*v);
         }
 
         for v in to_unload {
-            if !meta.unload_queue.contains(v) && !meta.pending_unload.contains(v) {
-                meta.unload_queue.push_back(*v);
-            }
-
-            if meta.load_queue.contains(v) {
-                meta.load_queue.retain(|uv| uv != v);
-            }
+            batch.unload(*v);
         }
-    }
-
-    while let Some(next) = meta.load_queue.pop_front() {
-        load_writer.send(CmdChunkLoad(next));
-        meta.pending_load.push(next);
-    }
-
-    while let Some(next) = meta.unload_queue.pop_front() {
-        meta.pending_unload.push(next);
-        unload_writer.send(CmdChunkUnload(next));
     }
 }
 
@@ -214,13 +175,13 @@ fn despawn_chunks_system(
 }
 
 fn update_chunks_system(
-    mut reader: EventReader<EvtChunkUpdated>,
+    mut reader: EventReader<EvtChunkUpdatedOld>,
     mut writer: EventWriter<EvtChunkMeshDirty>,
     entity_map: ResMut<ChunkEntityMap>,
 ) {
     let mut _perf = perf_fn!();
 
-    for EvtChunkUpdated(chunk_local) in reader.iter() {
+    for EvtChunkUpdatedOld(chunk_local) in reader.iter() {
         if entity_map.0.get(chunk_local).is_some() {
             trace_system_run!(chunk_local);
             perf_scope!(_perf);
@@ -239,7 +200,7 @@ mod test {
         genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty,
     };
 
-    use super::{ChunkEntityMap, EvtChunkLoaded, EvtChunkUpdated};
+    use super::{ChunkEntityMap, EvtChunkLoaded, EvtChunkUpdatedOld};
 
     #[test]
     fn disjoint() {
@@ -334,8 +295,8 @@ mod test {
     #[test]
     fn update_chunks_system() {
         // Arrange
-        let mut added_events = Events::<EvtChunkUpdated>::default();
-        added_events.send(EvtChunkUpdated((1, 2, 3).into()));
+        let mut added_events = Events::<EvtChunkUpdatedOld>::default();
+        added_events.send(EvtChunkUpdatedOld((1, 2, 3).into()));
 
         let mut world = World::default();
         world.insert_resource(added_events);
