@@ -21,9 +21,10 @@ bevy_egui = {git = "https://github.com/jakobhellermann/bevy_egui", branch="bevy-
 [features]
 default = [
     "dev",
-    # "perf_counter"
+    # "perf_counter",
+    "serde_ron",
 ]
-dev = ["serde_ron", "bevy/dynamic", "egui/multi_threaded"]
+dev = [ "bevy/dynamic", "egui/multi_threaded"]
 perf_counter = []
 serde_ron = []
 

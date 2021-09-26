@@ -360,6 +360,8 @@ fn update_chunk(world: &mut VoxWorld, local: IVec3) -> bool {
 }
 
 fn generate_cache(local: IVec3) -> ChunkCache {
+    perf_fn_scope!();
+
     let mut noise = FastNoise::seeded(15);
     noise.set_noise_type(NoiseType::SimplexFractal);
     noise.set_frequency(0.03);
@@ -398,6 +400,8 @@ fn generate_cache(local: IVec3) -> ChunkCache {
 }
 
 fn save_cache(path: &PathBuf, cache: &ChunkCache) {
+    perf_fn_scope!();
+
     let file = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -419,6 +423,8 @@ fn save_cache(path: &PathBuf, cache: &ChunkCache) {
 }
 
 fn load_cache(path: &PathBuf) -> ChunkCache {
+    perf_fn_scope!();
+
     let file = std::fs::OpenOptions::new()
         .read(true)
         .open(path)

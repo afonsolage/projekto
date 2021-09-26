@@ -25,6 +25,8 @@ impl Plugin for RenderingPlugin {
 }
 
 fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
+    perf_fn_scope!();
+
     let mut occlusion = ChunkFacesOcclusion::default();
     for voxel in chunk::voxels() {
         let mut voxel_faces = occlusion.get(voxel);
@@ -60,10 +62,14 @@ fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
 }
 
 fn faces_merging(chunk: &ChunkKind, occlusion: &ChunkFacesOcclusion) -> Vec<VoxelFace> {
+    perf_fn_scope!();
+
     mesh::merge_faces(occlusion, chunk)
 }
 
 fn vertices_computation(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
+    perf_fn_scope!();
+
     let mut vertices = vec![];
 
     for face in faces {
