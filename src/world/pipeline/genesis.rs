@@ -18,7 +18,7 @@ use crate::world::{
 };
 
 const CACHE_PATH: &'static str = "cache/chunks/example";
-const CACHE_EXT: &'static str = "ron";
+const CACHE_EXT: &'static str = "bin";
 
 pub(super) struct GenesisPlugin;
 
@@ -405,6 +405,13 @@ fn save_cache(path: &PathBuf, cache: &ChunkCache) {
         .open(path)
         .expect(&format!("Unable to write to file {}", path.display()));
 
+    #[cfg(not(feature = "serde_ron"))]
+    bincode::serialize_into(file, cache).expect(&format!(
+        "Failed to serialize cache to file {}",
+        path.display()
+    ));
+
+    #[cfg(feature = "serde_ron")]
     ron::ser::to_writer(file, cache).expect(&format!(
         "Failed to serialize cache to file {}",
         path.display()
@@ -417,7 +424,15 @@ fn load_cache(path: &PathBuf) -> ChunkCache {
         .open(path)
         .expect(&format!("Unable to open file {}", path.display()));
 
-    ron::de::from_reader(file).expect(&format!("Failed to parse file {}", path.display()))
+    #[cfg(not(feature = "serde_ron"))]
+    let cache =
+        bincode::deserialize_from(file).expect(&format!("Failed to parse file {}", path.display()));
+
+    #[cfg(feature = "serde_ron")]
+    let cache =
+        ron::de::from_reader(file).expect(&format!("Failed to parse file {}", path.display()));
+
+    cache
 }
 
 fn local_path(local: IVec3) -> PathBuf {
@@ -620,7 +635,11 @@ mod tests {
             .open(&temp_file)
             .unwrap();
 
+        #[cfg(feature = "serde_ron")]
         let cache_loaded: ChunkCache = ron::de::from_reader(file).unwrap();
+
+        #[cfg(not(feature = "serde_ron"))]
+        let cache_loaded: ChunkCache = bincode::deserialize_from(file).unwrap();
 
         assert_eq!(cache, cache_loaded);
     }
@@ -632,7 +651,12 @@ mod tests {
             .truncate(true)
             .open(path)
             .unwrap();
+
+        #[cfg(feature = "serde_ron")]
         ron::ser::to_writer(file, cache).unwrap();
+
+        #[cfg(not(feature = "serde_ron"))]
+        bincode::serialize_into(file, cache).unwrap();
     }
 
     #[test]
