@@ -12,7 +12,7 @@ mod terraforming;
 
 pub use genesis::{EvtChunkLoaded, EvtChunkUnloaded, EvtChunkUpdated, WorldRes};
 pub use landscaping::LandscapeConfig;
-pub use terraforming::{CmdChunkUpdate, EvtChunkUpdatedOld};
+pub use terraforming::{ChunkSystemQuery, ChunkSystemRaycast, CmdChunkUpdate, RaycastResult};
 
 use super::storage::{chunk::ChunkStorage, voxel};
 

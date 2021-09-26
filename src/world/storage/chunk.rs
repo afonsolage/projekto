@@ -180,37 +180,37 @@ pub fn is_within_bounds(local: IVec3) -> bool {
     math::is_within_cubic_bounds(local, 0, AXIS_SIZE as i32 - 1)
 }
 
-// pub fn is_at_bounds(local: IVec3) -> bool {
-//     local.x == 0
-//         || local.y == 0
-//         || local.z == 0
-//         || local.x == AXIS_SIZE as i32 - 1
-//         || local.y == AXIS_SIZE as i32 - 1
-//         || local.z == AXIS_SIZE as i32 - 1
-// }
+pub fn is_at_bounds(local: IVec3) -> bool {
+    local.x == 0
+        || local.y == 0
+        || local.z == 0
+        || local.x == AXIS_SIZE as i32 - 1
+        || local.y == AXIS_SIZE as i32 - 1
+        || local.z == AXIS_SIZE as i32 - 1
+}
 
-// pub fn get_boundary_dir(local: IVec3) -> IVec3 {
-//     const END: i32 = AXIS_ENDING as i32;
+pub fn get_boundary_dir(local: IVec3) -> IVec3 {
+    const END: i32 = AXIS_ENDING as i32;
 
-//     (
-//         match local.x {
-//             0 => -1,
-//             END => 1,
-//             _ => 0,
-//         },
-//         match local.y {
-//             0 => -1,
-//             END => 1,
-//             _ => 0,
-//         },
-//         match local.z {
-//             0 => -1,
-//             END => 1,
-//             _ => 0,
-//         },
-//     )
-//         .into()
-// }
+    (
+        match local.x {
+            0 => -1,
+            END => 1,
+            _ => 0,
+        },
+        match local.y {
+            0 => -1,
+            END => 1,
+            _ => 0,
+        },
+        match local.z {
+            0 => -1,
+            END => 1,
+            _ => 0,
+        },
+    )
+        .into()
+}
 
 pub fn to_world(local: IVec3) -> Vec3 {
     local.as_vec3() * AXIS_SIZE as f32

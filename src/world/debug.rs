@@ -530,29 +530,17 @@ fn draw_raycast_system(
 }
 
 fn remove_voxel_system(
-    world: Res<WorldRes>,
     q_cam: Query<(&Transform, &FlyByCamera)>,
     mouse_input: Res<Input<MouseButton>>,
     mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
+    mut query: ChunkSystemRaycast,
 ) {
-    if !mouse_input.just_pressed(MouseButton::Left) {
-        return;
-    }
-
-    if world.is_ready() {
-        if let Ok((transform, camera)) = q_cam.get_single() {
-            if !camera.active {
-                return;
-            }
-
-            let origin = transform.translation;
-            let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
-            let range = 100.0;
-
-            let hit_results = query::raycast(origin, dir, range);
+    if query.is_waiting() {
+        if let Some(result) = query.fetch() {
+            let hit_results = result.hits();
 
             for (chunk_hit, voxels_hit) in hit_results {
-                let chunk = match world.get(chunk_hit.local) {
+                let chunk = match result.chunks.get(&chunk_hit.local) {
                     Some(c) => c,
                     None => continue,
                 };
@@ -571,6 +559,22 @@ fn remove_voxel_system(
                     return;
                 }
             }
+        }
+    } else {
+        if !mouse_input.just_pressed(MouseButton::Left) {
+            return;
+        }
+
+        if let Ok((transform, camera)) = q_cam.get_single() {
+            if !camera.active {
+                return;
+            }
+
+            let origin = transform.translation;
+            let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
+            let range = 100.0;
+
+            query.raycast(origin, dir, range);
         }
     }
 }

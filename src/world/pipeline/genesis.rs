@@ -266,7 +266,17 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
     }
 
     for (local, voxels) in update_items.iter() {
-        set_chunk(&mut world, *local, voxels);
+        let affected_neighbors = update_voxel(&mut world, *local, voxels);
+
+        if !updated_chunks.contains(local) {
+            updated_chunks.insert(*local);
+        }
+
+        for neighbor in affected_neighbors {
+            if !updated_chunks.contains(&neighbor) {
+                updated_chunks.insert(neighbor);
+            }
+        }
     }
 
     for local in updated_chunks.iter() {
@@ -285,12 +295,33 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
     (world, result)
 }
 
-fn set_chunk(world: &mut VoxWorld, local: IVec3, voxels: &Vec<(IVec3, voxel::Kind)>) {
+fn update_voxel(
+    world: &mut VoxWorld,
+    local: IVec3,
+    voxels: &Vec<(IVec3, voxel::Kind)>,
+) -> HashSet<IVec3> {
+    trace!("Updating chunk {} values {:?}", local, voxels);
+
+    let mut affected_neighbors = HashSet::default();
+
     if let Some(chunk) = world.get_mut(local) {
         for (voxel, kind) in voxels {
             chunk.set(*voxel, *kind);
+
+            if chunk::is_at_bounds(*voxel) {
+                //TODO: Add tests on those new functions
+                let neighbor = chunk::get_boundary_dir(*voxel) + local;
+
+                if !affected_neighbors.contains(&neighbor) {
+                    affected_neighbors.insert(neighbor);
+                }
+            }
         }
+    } else {
+        warn!("Failed to set voxel. Chunk {} wasn't found.", local);
     }
+
+    affected_neighbors
 }
 
 fn unload_chunk(world: &mut VoxWorld, local: IVec3) {
