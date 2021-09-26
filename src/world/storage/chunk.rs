@@ -184,9 +184,9 @@ pub fn is_at_bounds(local: IVec3) -> bool {
     local.x == 0
         || local.y == 0
         || local.z == 0
-        || local.x == AXIS_SIZE as i32 - 1
-        || local.y == AXIS_SIZE as i32 - 1
-        || local.z == AXIS_SIZE as i32 - 1
+        || local.x == AXIS_ENDING as i32
+        || local.y == AXIS_ENDING as i32
+        || local.z == AXIS_ENDING as i32
 }
 
 pub fn get_boundary_dir(local: IVec3) -> IVec3 {
@@ -601,5 +601,38 @@ mod tests {
                 Some(kind)
             );
         }
+    }
+
+    #[test]
+    fn is_at_bounds() {
+        let local = (1, 1, 1).into();
+        assert_eq!(super::is_at_bounds(local), false);
+
+        let local = (1, 0, 1).into();
+        assert_eq!(super::is_at_bounds(local), true);
+
+        let local = (1, AXIS_ENDING as i32, 1).into();
+        assert_eq!(super::is_at_bounds(local), true);
+
+        let local = (0, 0, 0).into();
+        assert_eq!(super::is_at_bounds(local), true);
+
+        let local = (2, 1, 14).into();
+        assert_eq!(super::is_at_bounds(local), false);
+    }
+
+    #[test]
+    fn get_boundary_dir() {
+        let local = (0, 0, 0).into();
+        assert_eq!(super::get_boundary_dir(local), (-1, -1, -1).into());
+
+        let local = (1, 2, 3).into();
+        assert_eq!(super::get_boundary_dir(local), (0, 0, 0).into());
+
+        let local = (AXIS_ENDING as i32, 2, 3).into();
+        assert_eq!(super::get_boundary_dir(local), (1, 0, 0).into());
+
+        let local = (AXIS_ENDING as i32, AXIS_ENDING as i32, AXIS_ENDING as i32).into();
+        assert_eq!(super::get_boundary_dir(local), (1, 1, 1).into());
     }
 }
