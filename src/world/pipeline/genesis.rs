@@ -25,7 +25,10 @@ impl Plugin for GenesisPlugin {
             .add_event::<EvtChunkUnloaded>()
             .add_event::<EvtChunkUpdated>()
             .add_startup_system_to_stage(super::PipelineStartup::Genesis, setup_resources)
-            .add_system_to_stage(super::Pipeline::Genesis, update_world_system);
+            .add_system_to_stage(
+                super::Pipeline::Genesis,
+                update_world_system.label("update"),
+            );
     }
 }
 

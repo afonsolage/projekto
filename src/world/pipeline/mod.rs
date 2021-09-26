@@ -10,7 +10,7 @@ mod landscaping;
 mod rendering;
 mod terraforming;
 
-pub use genesis::{EvtChunkLoaded, EvtChunkUnloaded, EvtChunkUpdated};
+pub use genesis::{EvtChunkLoaded, EvtChunkUnloaded, EvtChunkUpdated, WorldRes};
 pub use landscaping::LandscapeConfig;
 pub use terraforming::{CmdChunkUpdate, EvtChunkUpdatedOld};
 

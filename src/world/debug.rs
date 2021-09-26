@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, task::Poll};
 
 use bevy::{
     prelude::*,
@@ -530,7 +530,7 @@ fn draw_raycast_system(
 }
 
 fn remove_voxel_system(
-    world: Res<VoxWorld>,
+    world: Res<WorldRes>,
     q_cam: Query<(&Transform, &FlyByCamera)>,
     mouse_input: Res<Input<MouseButton>>,
     mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
@@ -539,35 +539,37 @@ fn remove_voxel_system(
         return;
     }
 
-    if let Ok((transform, camera)) = q_cam.get_single() {
-        if !camera.active {
-            return;
-        }
-
-        let origin = transform.translation;
-        let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
-        let range = 100.0;
-
-        let hit_results = query::raycast(origin, dir, range);
-
-        for (chunk_hit, voxels_hit) in hit_results {
-            let chunk = match world.get(chunk_hit.local) {
-                Some(c) => c,
-                None => continue,
-            };
-
-            for voxel_hit in voxels_hit {
-                if chunk.get(voxel_hit.local).is_empty() {
-                    continue;
-                }
-
-                debug!("Hit voxel at {:?} {:?}", chunk_hit.local, voxel_hit.local);
-                set_voxel_writer.send(CmdChunkUpdate(
-                    chunk_hit.local,
-                    vec![(voxel_hit.local, 0.into())],
-                ));
-
+    if world.is_ready() {
+        if let Ok((transform, camera)) = q_cam.get_single() {
+            if !camera.active {
                 return;
+            }
+
+            let origin = transform.translation;
+            let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
+            let range = 100.0;
+
+            let hit_results = query::raycast(origin, dir, range);
+
+            for (chunk_hit, voxels_hit) in hit_results {
+                let chunk = match world.get(chunk_hit.local) {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                for voxel_hit in voxels_hit {
+                    if chunk.get(voxel_hit.local).is_empty() {
+                        continue;
+                    }
+
+                    debug!("Hit voxel at {:?} {:?}", chunk_hit.local, voxel_hit.local);
+                    set_voxel_writer.send(CmdChunkUpdate(
+                        chunk_hit.local,
+                        vec![(voxel_hit.local, 0.into())],
+                    ));
+
+                    return;
+                }
             }
         }
     }
