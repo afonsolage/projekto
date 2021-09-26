@@ -20,13 +20,14 @@ pub fn euclid_rem(vec: IVec3, div: i32) -> IVec3 {
     )
 }
 
+#[derive(Debug, PartialEq, PartialOrd)]
 pub enum Vec3Element {
     X,
     Y,
     Z,
 }
 
-pub fn min_element(vec: Vec3) -> Vec3Element {
+pub fn abs_min_element(vec: Vec3) -> Vec3Element {
     let vec = vec.abs();
 
     if vec.x < vec.y && vec.x < vec.z {
@@ -37,28 +38,6 @@ pub fn min_element(vec: Vec3) -> Vec3Element {
         Vec3Element::Z
     }
 }
-
-// pub fn get_min_abs_axis(vec: Vec3) -> f32 {
-//     let abs = vec.abs();
-//     if abs.x < abs.y && abs.x < abs.z {
-//         vec.x
-//     } else if abs.y < abs.x && abs.y < abs.z {
-//         vec.y
-//     } else {
-//         vec.z
-//     }
-// }
-
-// pub fn to_unit_axis_ivec3(vec: Vec3) -> IVec3 {
-//     let abs = vec.normalize().abs();
-//     if abs.x > abs.y && abs.x > abs.z {
-//         (vec.x.signum() as i32) * IVec3::X
-//     } else if abs.y > abs.x && abs.y > abs.z {
-//         (vec.y.signum() as i32) * IVec3::Y
-//     } else {
-//         (vec.z.signum() as i32) * IVec3::Z
-//     }
-// }
 
 pub fn to_unit_dir(dir: IVec3) -> Vec<IVec3> {
     let mut result = vec![];
@@ -86,6 +65,55 @@ pub fn to_unit_dir(dir: IVec3) -> Vec<IVec3> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn is_within_cubic_bounds() {
+        assert_eq!(super::is_within_cubic_bounds((1, 2, 3).into(), 0, 15), true);
+        assert_eq!(
+            super::is_within_cubic_bounds((-1, 2, 3).into(), 0, 15),
+            false
+        );
+        assert_eq!(super::is_within_cubic_bounds((0, 0, 0).into(), 0, 15), true);
+        assert_eq!(
+            super::is_within_cubic_bounds((15, 15, 15).into(), 0, 15),
+            true
+        );
+        assert_eq!(
+            super::is_within_cubic_bounds((15, 16, 15).into(), 0, 15),
+            false
+        );
+    }
+
+    #[test]
+    fn floor() {
+        let floor = super::floor((14.3, -1.1, -17.0).into());
+        assert_eq!(floor, (14, -2, -17).into());
+    }
+
+    #[test]
+    fn euclid_rem() {
+        let rem = super::euclid_rem((16, -1, -17).into(), 15);
+        assert_eq!(rem, (1, 14, 13).into());
+
+        let rem = super::euclid_rem((14, 0, 0).into(), 15);
+        assert_eq!(rem, (14, 0, 0).into());
+
+        let rem = super::euclid_rem((-15, 16, 0).into(), 15);
+        assert_eq!(rem, (0, 1, 0).into());
+    }
+
+    #[test]
+    fn min_element() {
+        let min = super::abs_min_element((-5.0, 4.0, 3.0).into());
+        assert_eq!(min, super::Vec3Element::Z);
+
+        let min = super::abs_min_element((5.0, -1.0, -3.0).into());
+        assert_eq!(min, super::Vec3Element::Y);
+
+        let min = super::abs_min_element((0.0, 0.0, 0.0).into());
+        assert_eq!(min, super::Vec3Element::Z);
+    }
+
     #[test]
     fn to_unit_dir() {
         let dirs = super::to_unit_dir((0, 0, 0).into());

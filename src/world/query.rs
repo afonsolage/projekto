@@ -188,7 +188,7 @@ fn voxel_raycast(
         let next_local = current_local + step_dir;
         let delta = (voxel::to_world(next_local, chunk_local) - current_pos) / dir;
 
-        let distance = match math::min_element(delta) {
+        let distance = match math::abs_min_element(delta) {
             math::Vec3Element::X => {
                 current_local.x += grid_dir.x;
                 delta.x
