@@ -61,13 +61,13 @@ fn setup_resources(mut commands: Commands) {
 
 #[derive(Default)]
 pub struct BatchChunkCmdRes {
-    pending: Vec<ChunkCmd>,
-    running: Vec<ChunkCmd>,
+    pending: HashMap<IVec3, ChunkCmd>,
+    running: HashMap<IVec3, ChunkCmd>,
 }
 
 impl BatchChunkCmdRes {
-    fn take(&mut self) -> Vec<ChunkCmd> {
-        self.running = std::mem::replace(&mut self.pending, vec![]);
+    fn take(&mut self) -> HashMap<IVec3, ChunkCmd> {
+        self.running = std::mem::replace(&mut self.pending, HashMap::default());
         self.running.clone()
     }
 
@@ -75,19 +75,12 @@ impl BatchChunkCmdRes {
         self.running.clear();
     }
 
-    fn is_cmd_running(&self, cmd: &ChunkCmd) -> bool {
-        self.running.iter().any(|running_cmd| running_cmd == cmd)
-    }
-
-    fn remove_pending_cmd(&mut self, local: IVec3) {
-        self.pending.retain(|cmd| {
-            let i = match cmd {
-                ChunkCmd::Load(i) => i,
-                ChunkCmd::Unload(i) => i,
-                ChunkCmd::Update(i, _) => i,
-            };
-            *i != local
-        });
+    fn is_cmd_running(&self, local: IVec3, cmd: ChunkCmd) -> bool {
+        if let Some(running_cmd) = self.running.get(&local) {
+            *running_cmd == cmd
+        } else {
+            false
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -95,44 +88,31 @@ impl BatchChunkCmdRes {
     }
 
     pub fn load(&mut self, local: IVec3) {
-        let cmd = ChunkCmd::Load(local);
-        if self.is_cmd_running(&cmd) {
+        if self.is_cmd_running(local, ChunkCmd::Load) {
             warn!("Chunk {} is already loading", local);
             return;
         }
-
-        self.remove_pending_cmd(local);
-        self.pending.push(cmd);
+        self.pending.insert(local, ChunkCmd::Load);
     }
 
     pub fn unload(&mut self, local: IVec3) {
-        let cmd = ChunkCmd::Unload(local);
-        if self.is_cmd_running(&cmd) {
+        if self.is_cmd_running(local, ChunkCmd::Unload) {
             warn!("Chunk {} is already unloading", local);
             return;
         }
-
-        self.remove_pending_cmd(local);
-        self.pending.push(cmd);
+        self.pending.insert(local, ChunkCmd::Unload);
     }
 
     pub fn update(&mut self, local: IVec3, voxels: Vec<(IVec3, voxel::Kind)>) {
-        let cmd = ChunkCmd::Update(local, voxels);
-        if self.is_cmd_running(&cmd) {
-            warn!("Chunk {} is already updating", local);
-            return;
-        }
-
-        self.remove_pending_cmd(local);
-        self.pending.push(cmd);
+        self.pending.insert(local, ChunkCmd::Update(voxels));
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum ChunkCmd {
-    Load(IVec3),
-    Unload(IVec3),
-    Update(IVec3, Vec<(IVec3, voxel::Kind)>),
+    Load,
+    Unload,
+    Update(Vec<(IVec3, voxel::Kind)>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -185,8 +165,11 @@ fn update_world_system(
     mut unloaded_writer: EventWriter<EvtChunkUnloaded>,
     mut updated_writer: EventWriter<EvtChunkUpdated>,
 ) {
+    let mut _perf = perf_fn!();
     // Only process batches if there is no task already running
     if let Some(ref mut task) = meta.task {
+        perf_scope!(_perf);
+
         if let Some((world, commands)) = future::block_on(future::poll_once(task)) {
             for cmd in commands {
                 match cmd {
@@ -202,6 +185,7 @@ fn update_world_system(
             batch_res.finished();
         }
     } else if !batch_res.is_empty() {
+        perf_scope!(_perf);
         let batch = batch_res.take();
         let world = world_res.take();
 
@@ -220,27 +204,32 @@ fn update_world_system(
     );
 }
 
-fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<ChunkCmdResult>) {
+fn process_batch(
+    mut world: VoxWorld,
+    commands: HashMap<IVec3, ChunkCmd>,
+) -> (VoxWorld, Vec<ChunkCmdResult>) {
+    let mut _perf = perf_fn!();
+
     let unload_items = commands
         .iter()
-        .filter_map(|cmd| match cmd {
-            ChunkCmd::Unload(i) => Some(*i),
+        .filter_map(|(local, cmd)| match cmd {
+            ChunkCmd::Unload => Some(*local),
             _ => None,
         })
         .collect::<Vec<_>>();
 
     let load_items = commands
         .iter()
-        .filter_map(|cmd| match cmd {
-            ChunkCmd::Load(i) => Some(*i),
+        .filter_map(|(local, cmd)| match cmd {
+            ChunkCmd::Load => Some(*local),
             _ => None,
         })
         .collect::<Vec<_>>();
 
     let update_items = commands
         .iter()
-        .filter_map(|cmd| match cmd {
-            ChunkCmd::Update(i, ref v) => Some((*i, v)),
+        .filter_map(|(local, cmd)| match cmd {
+            ChunkCmd::Update(ref v) => Some((*local, v)),
             _ => None,
         })
         .collect::<HashMap<_, _>>();
@@ -248,14 +237,18 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
     let mut dirty_chunks = HashSet::default();
 
     for local in unload_items.iter() {
+        perf_scope!(_perf);
+
         dirty_chunks.extend(unload_chunk(&mut world, *local));
     }
 
     for local in load_items.iter() {
+        perf_scope!(_perf);
         dirty_chunks.extend(load_chunk(&mut world, *local));
     }
 
     for (local, voxels) in update_items.iter() {
+        perf_scope!(_perf);
         dirty_chunks.extend(update_voxel(&mut world, *local, voxels));
     }
 
@@ -271,6 +264,7 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
         .collect::<Vec<_>>();
 
     for local in dirty_chunks.iter() {
+        perf_scope!(_perf);
         update_chunk(&mut world, *local);
     }
 
@@ -297,7 +291,6 @@ fn update_voxel(
     voxels: &Vec<(IVec3, voxel::Kind)>,
 ) -> HashSet<IVec3> {
     trace!("Updating chunk {} values {:?}", local, voxels);
-
     let mut dirty_chunks = HashSet::default();
 
     if let Some(chunk) = world.get_mut(local) {
@@ -322,6 +315,8 @@ fn update_voxel(
 }
 
 fn unload_chunk(world: &mut VoxWorld, local: IVec3) -> HashSet<IVec3> {
+    perf_fn_scope!();
+
     let mut dirty_chunks = HashSet::default();
 
     if world.remove(local).is_none() {
@@ -334,6 +329,8 @@ fn unload_chunk(world: &mut VoxWorld, local: IVec3) -> HashSet<IVec3> {
 }
 
 fn load_chunk(world: &mut VoxWorld, local: IVec3) -> HashSet<IVec3> {
+    perf_fn_scope!();
+
     let path = local_path(local);
 
     let cache = if path.exists() {
@@ -352,6 +349,8 @@ fn load_chunk(world: &mut VoxWorld, local: IVec3) -> HashSet<IVec3> {
 }
 
 fn update_chunk(world: &mut VoxWorld, local: IVec3) -> bool {
+    perf_fn_scope!();
+
     if world.get(local).is_some() {
         world.update_neighborhood(local);
         true

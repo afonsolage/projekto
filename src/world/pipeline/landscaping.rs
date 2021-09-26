@@ -1,7 +1,7 @@
 use bevy::{
     prelude::*,
     render::pipeline::{PipelineDescriptor, RenderPipeline},
-    utils::HashMap,
+    utils::{HashMap, HashSet},
 };
 
 use crate::{
@@ -88,7 +88,6 @@ fn update_landscape_system(
     q: Query<&Transform, With<FlyByCamera>>,
 ) {
     let mut _perf = perf_fn!();
-    perf_scope!(_perf);
 
     if config.paused || !world_res.is_ready() {
         return;
@@ -102,6 +101,7 @@ fn update_landscape_system(
     meta.next_sync -= time.delta_seconds();
 
     if center != meta.last_pos || meta.next_sync < 0.0 {
+        perf_scope!(_perf);
         meta.next_sync = 1.0;
         meta.last_pos = center;
 
@@ -110,32 +110,19 @@ fn update_landscape_system(
         let begin = center + IVec3::splat(landscape::BEGIN);
         let end = center + IVec3::splat(landscape::END);
 
-        let visible_locals = query::range(begin, end).collect::<Vec<_>>();
-        let existing_locals = entity_map.0.keys().map(|k| *k).collect::<Vec<_>>();
+        let visible_locals = query::range(begin, end).collect::<HashSet<_>>();
+        let existing_locals = entity_map.0.keys().map(|k| *k).collect::<HashSet<_>>();
 
-        let (to_load, to_unload) = disjoin(&visible_locals, &existing_locals);
+        visible_locals
+            .iter()
+            .filter(|&i| !existing_locals.contains(i))
+            .for_each(|v| batch.load(*v));
 
-        for v in to_load {
-            batch.load(*v);
-        }
-
-        for v in to_unload {
-            batch.unload(*v);
-        }
+        existing_locals
+            .iter()
+            .filter(|&i| !visible_locals.contains(i))
+            .for_each(|v| batch.unload(*v));
     }
-}
-
-fn disjoin<'a>(
-    set_a: &'a [IVec3],
-    set_b: &'a [IVec3],
-) -> (
-    impl Iterator<Item = &'a IVec3>,
-    impl Iterator<Item = &'a IVec3>,
-) {
-    (
-        set_a.iter().filter(move |v| !set_b.contains(v)),
-        set_b.iter().filter(move |v| !set_a.contains(v)),
-    )
 }
 
 fn spawn_chunks_system(
@@ -203,8 +190,6 @@ fn update_chunks_system(
 
 #[cfg(test)]
 mod test {
-    use std::vec;
-
     use bevy::{app::Events, prelude::*, utils::HashMap};
 
     use crate::world::pipeline::{
@@ -213,30 +198,6 @@ mod test {
     };
 
     use super::{ChunkEntityMap, EvtChunkLoaded};
-
-    #[test]
-    fn disjoint() {
-        let a = vec![
-            (0, 0, 0).into(),
-            (1, 1, 1).into(),
-            (2, 2, 2).into(),
-            (3, 3, 3).into(),
-        ];
-        let b = vec![
-            (0, 0, 0).into(),
-            (1, 1, 1).into(),
-            (2, 2, 3).into(),
-            (3, 3, 4).into(),
-        ];
-
-        let (d_a, d_b) = super::disjoin(&a, &b);
-
-        let disjoint_a = d_a.map(|v| *v).collect::<Vec<_>>();
-        let disjoint_b = d_b.map(|v| *v).collect::<Vec<_>>();
-
-        assert_eq!(disjoint_a, vec![(2, 2, 2).into(), (3, 3, 3).into()]);
-        assert_eq!(disjoint_b, vec![(2, 2, 3).into(), (3, 3, 4).into()]);
-    }
 
     #[test]
     fn spawn_chunks_system() {

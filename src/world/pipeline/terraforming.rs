@@ -17,7 +17,6 @@ impl Plugin for TerraformingPlugin {
                 super::Pipeline::Terraforming,
                 SystemSet::new()
                     .with_system(process_update_chunks_system)
-                    .with_system(test_query_system)
                     .with_system(handle_queries_system),
             );
     }
@@ -110,26 +109,6 @@ fn handle_queries_system(world: Res<WorldRes>, mut queries_res: ResMut<ChunkQuer
             .collect();
 
         queries_res.results.insert(id, result);
-    }
-}
-
-fn test_query_system(keyboard: Res<Input<KeyCode>>, mut query: ChunkSystemQuery) {
-    if query.is_waiting() {
-        if let Some(result) = query.fetch() {
-            info!("Some!");
-            for (local, _) in result {
-                dbg!(local);
-            }
-        }
-    } else {
-        if !keyboard.just_pressed(KeyCode::F12) {
-            return;
-        }
-
-        // TODO: Add raycast, add tests and refactor current system. Should I rename this module? Maybe querying?
-
-        info!("Sending query");
-        query.query(vec![(0, 0, 0).into()]);
     }
 }
 
