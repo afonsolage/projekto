@@ -383,6 +383,9 @@ fn generate_cache(local: IVec3) -> ChunkCache {
         }
     }
     let path = local_path(local);
+
+    assert!(!path.exists(), "Cache already exists!");
+
     let chunk_cache = ChunkCache { local, kind: kinds };
     save_cache(&path, &chunk_cache);
 
@@ -435,6 +438,55 @@ mod tests {
     use std::fs::remove_file;
 
     use super::*;
+
+    #[test]
+    fn generate_cache() {
+        let local = (5432, 4321, 5555).into();
+        let cache = super::generate_cache(local);
+        let path = local_path(local);
+
+        assert!(path.exists(), "Generate cache should save cache on disk");
+        assert_eq!(
+            cache.local, local,
+            "Generate cache should have the same local as the given one"
+        );
+
+        remove_file(path).expect("File should exists");
+    }
+
+    #[test]
+    #[should_panic]
+    fn generate_cache_panic() {
+        let local = (9999, 9998, 9997).into();
+        let _ = remove_file(local_path(local));
+
+        super::generate_cache(local);
+        super::generate_cache(local);
+    }
+
+    #[test]
+    fn local_path_test() {
+        let path = super::local_path((0, 0, 0).into())
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        assert!(path.ends_with(&format!("0_0_0.{}", CACHE_EXT)));
+
+        let path = super::local_path((-1, 0, 0).into())
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        assert!(path.ends_with(&format!("-1_0_0.{}", CACHE_EXT)));
+
+        let path = super::local_path((-1, 3333, -461).into())
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        assert!(path.ends_with(&format!("-1_3333_-461.{}", CACHE_EXT)));
+    }
 
     #[test]
     fn test_ser_de() {
