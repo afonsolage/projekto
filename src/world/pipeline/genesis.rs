@@ -9,9 +9,12 @@ use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use futures_lite::future;
 use serde::{Deserialize, Serialize};
 
-use crate::world::storage::{
-    chunk::{self, ChunkKind},
-    voxel, VoxWorld,
+use crate::world::{
+    math,
+    storage::{
+        chunk::{self, ChunkKind},
+        voxel, VoxWorld,
+    },
 };
 
 const CACHE_PATH: &'static str = "cache/chunks/example";
@@ -302,8 +305,11 @@ fn update_voxel(
             chunk.set(*voxel, *kind);
 
             if chunk::is_at_bounds(*voxel) {
-                let neighbor = chunk::get_boundary_dir(*voxel) + local;
-                dirty_chunks.insert(neighbor);
+                let neighbor_dir = chunk::get_boundary_dir(*voxel);
+                for unit_dir in math::to_unit_dir(neighbor_dir) {
+                    let neighbor = unit_dir + local;
+                    dirty_chunks.insert(neighbor);
+                }
             }
         }
 
@@ -438,6 +444,116 @@ mod tests {
     use std::fs::remove_file;
 
     use super::*;
+
+    #[test]
+    fn update_voxel() {
+        let mut world = VoxWorld::default();
+        let local = (0, 0, 0).into();
+        world.add(local, ChunkKind::default());
+
+        let voxels = vec![
+            ((0, 0, 0).into(), 1.into()),
+            ((1, 1, 1).into(), 2.into()),
+            ((0, chunk::AXIS_ENDING as i32, 5).into(), 3.into()),
+        ];
+
+        let dirty_chunks = super::update_voxel(&mut world, local, &voxels);
+
+        let chunk = world.get(local).unwrap();
+
+        assert_eq!(chunk.get((0, 0, 0).into()), 1.into());
+        assert_eq!(chunk.get((1, 1, 1).into()), 2.into());
+        assert_eq!(
+            chunk.get((0, chunk::AXIS_ENDING as i32, 5).into()),
+            3.into()
+        );
+
+        assert_eq!(
+            dirty_chunks.len(),
+            5,
+            "Should have 5 dirty chunks = central, left, down, back and up chunk. Currently {:?}",
+            dirty_chunks
+        );
+    }
+
+    #[test]
+    fn unload_chunk() {
+        let local = (9111, -9222, 9333).into();
+        let mut world = VoxWorld::default();
+
+        world.add(local, ChunkKind::default());
+
+        let dirty_chunks = super::unload_chunk(&mut world, local);
+
+        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT);
+        assert!(
+            world.get(local).is_none(),
+            "Chunk should be removed from world"
+        );
+    }
+
+    #[test]
+    fn load_chunk() {
+        // Load existing cache
+        let local = (9943, 9943, 9999).into();
+        let path = super::local_path(local);
+        let chunk = ChunkKind::default();
+
+        create_cache(&path, &ChunkCache { local, kind: chunk });
+
+        let mut world = VoxWorld::default();
+
+        let dirty_chunks = super::load_chunk(&mut world, local);
+
+        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT + 1);
+        assert!(dirty_chunks.contains(&local));
+        assert!(world.get(local).is_some(), "Chunk should be added to world");
+
+        let _ = remove_file(path);
+
+        // Load non-existing cache
+        let local = (9942, 9944, 9421).into();
+        let path = super::local_path(local);
+        let _ = remove_file(&path);
+
+        let mut world = VoxWorld::default();
+        let dirty_chunks = super::load_chunk(&mut world, local);
+
+        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT + 1);
+        assert!(dirty_chunks.contains(&local));
+        assert!(path.exists(), "Cache file should be created by load_chunk");
+        assert!(world.get(local).is_some(), "Chunk should be added to world");
+
+        let _ = remove_file(path);
+    }
+
+    #[test]
+    fn update_chunk() {
+        let mut world = VoxWorld::default();
+        assert_eq!(
+            super::update_chunk(&mut world, (0, 0, 0).into()),
+            false,
+            "should return false when chunk doesn't exists"
+        );
+
+        world.add((0, 0, 0).into(), ChunkKind::default());
+        world.add((0, 1, 0).into(), ChunkKind::default());
+
+        assert_eq!(
+            super::update_chunk(&mut world, (0, 0, 0).into()),
+            true,
+            "should return true when chunk doesn't exists"
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+        assert!(
+            chunk
+                .neighborhood
+                .get(super::voxel::Side::Up, (0, 0, 0).into())
+                .is_some(),
+            "Neighborhood should be updated on update_chunk call"
+        );
+    }
 
     #[test]
     fn generate_cache() {

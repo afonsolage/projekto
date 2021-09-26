@@ -59,3 +59,48 @@ pub fn min_element(vec: Vec3) -> Vec3Element {
 //         (vec.z.signum() as i32) * IVec3::Z
 //     }
 // }
+
+pub fn to_unit_dir(dir: IVec3) -> Vec<IVec3> {
+    let mut result = vec![];
+
+    if dir.x == 1 {
+        result.push((1, 0, 0).into());
+    } else if dir.x == -1 {
+        result.push((-1, 0, 0).into());
+    }
+
+    if dir.y == 1 {
+        result.push((0, 1, 0).into());
+    } else if dir.y == -1 {
+        result.push((0, -1, 0).into());
+    }
+
+    if dir.z == 1 {
+        result.push((0, 0, 1).into());
+    } else if dir.z == -1 {
+        result.push((0, 0, -1).into());
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn to_unit_dir() {
+        let dirs = super::to_unit_dir((0, 0, 0).into());
+        assert_eq!(dirs, vec![]);
+
+        let dirs = super::to_unit_dir((1, 0, 0).into());
+        assert_eq!(dirs, vec![(1, 0, 0).into()]);
+
+        let dirs = super::to_unit_dir((1, 1, 0).into());
+        assert_eq!(dirs, vec![(1, 0, 0).into(), (0, 1, 0).into()]);
+
+        let dirs = super::to_unit_dir((1, 1, -1).into());
+        assert_eq!(
+            dirs,
+            vec![(1, 0, 0).into(), (0, 1, 0).into(), (0, 0, -1).into()]
+        );
+    }
+}
