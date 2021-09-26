@@ -1,4 +1,4 @@
-use std::{collections::HashMap, task::Poll};
+use std::collections::{HashMap, VecDeque};
 
 use bevy::{
     prelude::*,
@@ -20,8 +20,6 @@ use crate::{
     world::{mesh, pipeline::*, storage::*},
 };
 
-use super::query;
-
 pub struct WireframeDebugPlugin;
 
 impl Plugin for WireframeDebugPlugin {
@@ -31,47 +29,47 @@ impl Plugin for WireframeDebugPlugin {
             .add_startup_system(setup_wireframe_shader_system)
             .add_asset::<WireframeMaterial>()
             .add_system(toggle_mesh_wireframe_system)
-            // .add_system(toggle_chunk_voxels_wireframe_system)
+            .add_system(toggle_chunk_voxels_wireframe_system)
             .add_system(toggle_landscape_pause_system)
             .add_system(draw_voxels_system)
             .add_system(do_raycast_system)
             .add_system(draw_raycast_system)
-            // .add_system(check_raycast_intersections_system)
-            .add_system(process_debug_cmd_system)
+            .add_system(check_raycast_intersections_system)
+            // .add_system(process_debug_cmd_system)
             .add_system(remove_voxel_system);
     }
 }
 
 pub struct DebugCmd(pub String);
 
-fn process_debug_cmd_system(
-    mut reader: EventReader<DebugCmd>,
-    // mut loaded_writer: EventWriter<CmdChunkLoad>,
-    // mut unloaded_writer: EventWriter<CmdChunkUnload>,
-) {
-    for DebugCmd(cmd) in reader.iter() {
-        let args = cmd.split(" ").collect::<Vec<_>>();
-        match args[0] {
-            "load" => {
-                let x = i32::from_str_radix(args[1], 2).expect("Invalid argument!");
-                let y = i32::from_str_radix(args[2], 2).expect("Invalid argument!");
-                let z = i32::from_str_radix(args[3], 2).expect("Invalid argument!");
+// fn process_debug_cmd_system(
+//     mut reader: EventReader<DebugCmd>,
+//     // mut loaded_writer: EventWriter<CmdChunkLoad>,
+//     // mut unloaded_writer: EventWriter<CmdChunkUnload>,
+// ) {
+//     for DebugCmd(cmd) in reader.iter() {
+//         let args = cmd.split(" ").collect::<Vec<_>>();
+//         match args[0] {
+//             "load" => {
+//                 let x = i32::from_str_radix(args[1], 2).expect("Invalid argument!");
+//                 let y = i32::from_str_radix(args[2], 2).expect("Invalid argument!");
+//                 let z = i32::from_str_radix(args[3], 2).expect("Invalid argument!");
 
-                // loaded_writer.send(CmdChunkLoad((x, y, z).into()));
-            }
-            "unload" => {
-                let x = i32::from_str_radix(args[1], 2).expect("Invalid argument!");
-                let y = i32::from_str_radix(args[2], 2).expect("Invalid argument!");
-                let z = i32::from_str_radix(args[3], 2).expect("Invalid argument!");
+//                 // loaded_writer.send(CmdChunkLoad((x, y, z).into()));
+//             }
+//             "unload" => {
+//                 let x = i32::from_str_radix(args[1], 2).expect("Invalid argument!");
+//                 let y = i32::from_str_radix(args[2], 2).expect("Invalid argument!");
+//                 let z = i32::from_str_radix(args[3], 2).expect("Invalid argument!");
 
-                // unloaded_writer.send(CmdChunkUnload((x, y, z).into()));
-            }
-            _ => {
-                warn!("Unknown command: {}", cmd);
-            }
-        }
-    }
-}
+//                 // unloaded_writer.send(CmdChunkUnload((x, y, z).into()));
+//             }
+//             _ => {
+//                 warn!("Unknown command: {}", cmd);
+//             }
+//         }
+//     }
+// }
 
 // Resources
 #[derive(Default)]
@@ -127,43 +125,50 @@ fn toggle_landscape_pause_system(
 
 fn toggle_chunk_voxels_wireframe_system(
     mut commands: Commands,
-    voxel_world: Res<VoxWorld>,
     keyboard: Res<Input<KeyCode>>,
     mut wireframe_state: ResMut<DebugWireframeStateRes>,
+    mut chunk_query: ChunkSystemQuery,
     q_chunks: Query<(Entity, &ChunkLocal)>,
     q_draws: Query<(Entity, &Parent), With<DrawVoxels>>,
 ) {
-    if !keyboard.just_pressed(KeyCode::F2) {
-        return;
-    }
+    if chunk_query.is_waiting() {
+        if let Some(chunks) = chunk_query.fetch() {
+            for (e, local) in q_chunks.iter() {
+                let chunk = match chunks.get(&local.0) {
+                    Some(c) => c,
+                    None => continue,
+                };
 
-    wireframe_state.show_voxel = !wireframe_state.show_voxel;
+                let voxels = chunk::voxels()
+                    .filter(|&v| !chunk.get(v).is_empty())
+                    .collect();
 
-    if !wireframe_state.show_voxel {
-        for (e, parent) in q_draws.iter() {
-            // Remove only entities with DrawVoxels and with a Chunk as a parent
-            if q_chunks.iter().any(|(c_e, _)| c_e.eq(&parent.0)) {
-                commands.entity(e).despawn();
+                commands.entity(e).with_children(|c| {
+                    c.spawn().insert(DrawVoxels {
+                        color: "gray".into(),
+                        voxels,
+                        ..Default::default()
+                    });
+                });
             }
         }
     } else {
-        for (e, local) in q_chunks.iter() {
-            let chunk = match voxel_world.get(local.0) {
-                Some(c) => c,
-                None => continue,
-            };
+        if !keyboard.just_pressed(KeyCode::F2) {
+            return;
+        }
 
-            let voxels = chunk::voxels()
-                .filter(|&v| !chunk.get(v).is_empty())
-                .collect();
+        wireframe_state.show_voxel = !wireframe_state.show_voxel;
 
-            commands.entity(e).with_children(|c| {
-                c.spawn().insert(DrawVoxels {
-                    color: "gray".into(),
-                    voxels,
-                    ..Default::default()
-                });
-            });
+        if !wireframe_state.show_voxel {
+            for (e, parent) in q_draws.iter() {
+                // Remove only entities with DrawVoxels and with a Chunk as a parent
+                if q_chunks.iter().any(|(c_e, _)| c_e.eq(&parent.0)) {
+                    commands.entity(e).despawn();
+                }
+            }
+        } else {
+            let chunks = q_chunks.iter().map(|(_, c)| c.0).collect();
+            chunk_query.query(chunks);
         }
     }
 }
@@ -424,60 +429,91 @@ fn do_raycast_system(
     }
 }
 
+#[derive(Default)]
+struct CheckRaycastIntersectionsSystemMeta {
+    req_entity: Option<Entity>,
+    pending: VecDeque<Entity>,
+}
+
+impl CheckRaycastIntersectionsSystemMeta {
+    fn reset(&mut self) {
+        self.req_entity = None;
+    }
+}
+
 fn check_raycast_intersections_system(
+    mut meta: Local<CheckRaycastIntersectionsSystemMeta>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    world: Res<VoxWorld>,
-    q_raycast: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
+    mut chunk_raycast: ChunkSystemRaycast,
+    added_q: Query<Entity, (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
+    raycast_q: Query<&RaycastDebug, Without<RaycastDebugNoPoint>>,
 ) {
-    for (e, raycast) in q_raycast.iter() {
-        let res = query::raycast(raycast.origin, raycast.dir, raycast.range);
+    for e in added_q.iter() {
+        meta.pending.push_back(e);
+    }
 
-        for (chunk_hit, voxels_hit) in res.iter() {
-            let chunk = match world.get(chunk_hit.local) {
-                Some(c) => c,
-                None => continue,
-            };
+    if chunk_raycast.is_waiting() {
+        if let Some(result) = chunk_raycast.fetch() {
+            let hits = result.hits();
 
-            if voxels_hit.is_empty() {
-                warn!(
-                    "Raycast returned empty voxels list at {:?} ({:?})",
-                    raycast, &chunk_hit.local
-                );
-                continue;
-            }
+            for (chunk_hit, voxels_hit) in hits.iter() {
+                let chunk = match result.chunks.get(&chunk_hit.local) {
+                    Some(c) => c,
+                    None => continue,
+                };
 
-            let mut voxels = vec![];
-            for voxel_hit in voxels_hit.iter() {
-                if chunk.get(voxel_hit.local).is_empty() {
+                if voxels_hit.is_empty() {
+                    warn!(
+                        "Raycast returned empty voxels list at {:?}",
+                        &chunk_hit.local
+                    );
                     continue;
                 }
 
-                add_debug_ball(&mut commands, &mut meshes, voxel_hit.position);
+                let mut voxels = vec![];
+                for voxel_hit in voxels_hit.iter() {
+                    if chunk.get(voxel_hit.local).is_empty() {
+                        continue;
+                    }
+
+                    add_debug_ball(&mut commands, &mut meshes, voxel_hit.position);
+
+                    commands
+                        .spawn()
+                        .insert(RaycastDebug {
+                            origin: voxel_hit.position,
+                            dir: voxel_hit.normal.as_vec3(),
+                            range: 0.08,
+                        })
+                        .insert(RaycastDebugNoPoint);
+
+                    voxels.push(voxel_hit.local);
+                }
+
+                let offset = (result.origin
+                    - (chunk::to_world(chunk_hit.local) + voxels_hit[0].local.as_vec3()))
+                    * -1.0;
 
                 commands
-                    .spawn()
-                    .insert(RaycastDebug {
-                        origin: voxel_hit.position,
-                        dir: voxel_hit.normal.as_vec3(),
-                        range: 0.08,
-                    })
-                    .insert(RaycastDebugNoPoint);
-
-                voxels.push(voxel_hit.local);
+                    .entity(meta.req_entity.unwrap())
+                    .with_children(|c| {
+                        c.spawn().insert(DrawVoxels {
+                            color: "pink".into(),
+                            offset,
+                            voxels,
+                        });
+                    });
             }
 
-            let offset = (raycast.origin
-                - (chunk::to_world(chunk_hit.local) + voxels_hit[0].local.as_vec3()))
-                * -1.0;
-
-            commands.entity(e).with_children(|c| {
-                c.spawn().insert(DrawVoxels {
-                    color: "pink".into(),
-                    offset,
-                    voxels,
-                });
-            });
+            meta.reset();
+        }
+    } else {
+        if let Some(next) = meta.pending.pop_front() {
+            if let Ok(debug_raycast) = raycast_q.get(next) {
+                meta.req_entity = Some(next);
+                chunk_raycast.raycast(debug_raycast.origin, debug_raycast.dir, debug_raycast.range);
+            }
         }
     }
 }
