@@ -132,9 +132,16 @@ enum ChunkCmd {
     Update(IVec3, Vec<(IVec3, voxel::Kind)>),
 }
 
+#[derive(Clone, Debug, PartialEq)]
+enum ChunkCmdResult {
+    Loaded(IVec3),
+    Unloaded(IVec3),
+    Updated(IVec3),
+}
+
 #[derive(Default)]
 struct ProcessBatchSystemMeta {
-    task: Option<Task<(VoxWorld, Vec<ChunkCmd>)>>,
+    task: Option<Task<(VoxWorld, Vec<ChunkCmdResult>)>>,
 }
 
 pub struct WorldRes(Option<VoxWorld>);
@@ -180,9 +187,11 @@ fn update_world_system(
         if let Some((world, commands)) = future::block_on(future::poll_once(task)) {
             for cmd in commands {
                 match cmd {
-                    ChunkCmd::Load(local) => loaded_writer.send(EvtChunkLoaded(local)),
-                    ChunkCmd::Unload(local) => unloaded_writer.send(EvtChunkUnloaded(local)),
-                    ChunkCmd::Update(local, _) => updated_writer.send(EvtChunkUpdated(local)),
+                    ChunkCmdResult::Loaded(local) => loaded_writer.send(EvtChunkLoaded(local)),
+                    ChunkCmdResult::Unloaded(local) => {
+                        unloaded_writer.send(EvtChunkUnloaded(local))
+                    }
+                    ChunkCmdResult::Updated(local) => updated_writer.send(EvtChunkUpdated(local)),
                 }
             }
             meta.task = None;
@@ -208,7 +217,7 @@ fn update_world_system(
     );
 }
 
-fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<ChunkCmd>) {
+fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<ChunkCmdResult>) {
     let unload_items = commands
         .iter()
         .filter_map(|cmd| match cmd {
@@ -233,63 +242,47 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
         })
         .collect::<HashMap<_, _>>();
 
-    let mut updated_chunks = HashSet::default();
+    let mut dirty_chunks = HashSet::default();
 
     for local in unload_items.iter() {
-        unload_chunk(&mut world, *local);
-
-        for side in voxel::SIDES {
-            let dir = side.dir();
-            let neighbor = *local + dir;
-
-            if !updated_chunks.contains(&neighbor) {
-                updated_chunks.insert(neighbor);
-            }
-        }
+        dirty_chunks.extend(unload_chunk(&mut world, *local));
     }
 
     for local in load_items.iter() {
-        load_chunk(&mut world, *local);
-
-        for side in voxel::SIDES {
-            let dir = side.dir();
-            let neighbor = *local + dir;
-
-            if !updated_chunks.contains(&neighbor) {
-                updated_chunks.insert(neighbor);
-            }
-        }
-
-        if !updated_chunks.contains(local) {
-            updated_chunks.insert(*local);
-        }
+        dirty_chunks.extend(load_chunk(&mut world, *local));
     }
 
     for (local, voxels) in update_items.iter() {
-        let affected_neighbors = update_voxel(&mut world, *local, voxels);
-
-        if !updated_chunks.contains(local) {
-            updated_chunks.insert(*local);
-        }
-
-        for neighbor in affected_neighbors {
-            if !updated_chunks.contains(&neighbor) {
-                updated_chunks.insert(neighbor);
-            }
-        }
+        dirty_chunks.extend(update_voxel(&mut world, *local, voxels));
     }
 
-    for local in updated_chunks.iter() {
+    let updated_chunks = dirty_chunks
+        .drain()
+        .filter_map(|local| {
+            if update_chunk(&mut world, local) {
+                Some(local)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for local in dirty_chunks.iter() {
         update_chunk(&mut world, *local);
     }
 
     let mut result = vec![];
-    result.extend(unload_items.into_iter().map(|l| ChunkCmd::Unload(l)));
-    result.extend(load_items.into_iter().map(|l| ChunkCmd::Load(l)));
+
+    result.extend(
+        unload_items
+            .into_iter()
+            .map(|l| ChunkCmdResult::Unloaded(l)),
+    );
+    result.extend(load_items.into_iter().map(|l| ChunkCmdResult::Loaded(l)));
     result.extend(
         updated_chunks
             .into_iter()
-            .map(|l| ChunkCmd::Update(l, vec![])),
+            .map(|l| ChunkCmdResult::Updated(l)),
     );
 
     (world, result)
@@ -302,35 +295,39 @@ fn update_voxel(
 ) -> HashSet<IVec3> {
     trace!("Updating chunk {} values {:?}", local, voxels);
 
-    let mut affected_neighbors = HashSet::default();
+    let mut dirty_chunks = HashSet::default();
 
     if let Some(chunk) = world.get_mut(local) {
         for (voxel, kind) in voxels {
             chunk.set(*voxel, *kind);
 
             if chunk::is_at_bounds(*voxel) {
-                //TODO: Add tests on those new functions
                 let neighbor = chunk::get_boundary_dir(*voxel) + local;
-
-                if !affected_neighbors.contains(&neighbor) {
-                    affected_neighbors.insert(neighbor);
-                }
+                dirty_chunks.insert(neighbor);
             }
         }
+
+        dirty_chunks.insert(local);
     } else {
         warn!("Failed to set voxel. Chunk {} wasn't found.", local);
     }
 
-    affected_neighbors
+    dirty_chunks
 }
 
-fn unload_chunk(world: &mut VoxWorld, local: IVec3) {
+fn unload_chunk(world: &mut VoxWorld, local: IVec3) -> HashSet<IVec3> {
+    let mut dirty_chunks = HashSet::default();
+
     if world.remove(local).is_none() {
         warn!("Trying to unload non-existing chunk {}", local);
+    } else {
+        dirty_chunks.extend(voxel::SIDES.map(|s| s.dir() + local))
     }
+
+    dirty_chunks
 }
 
-fn load_chunk(world: &mut VoxWorld, local: IVec3) {
+fn load_chunk(world: &mut VoxWorld, local: IVec3) -> HashSet<IVec3> {
     let path = local_path(local);
 
     let cache = if path.exists() {
@@ -340,11 +337,20 @@ fn load_chunk(world: &mut VoxWorld, local: IVec3) {
     };
 
     world.add(local, cache.kind);
+
+    voxel::SIDES
+        .iter()
+        .map(|s| s.dir() + local)
+        .chain(std::iter::once(local))
+        .collect()
 }
 
-fn update_chunk(world: &mut VoxWorld, local: IVec3) {
+fn update_chunk(world: &mut VoxWorld, local: IVec3) -> bool {
     if world.get(local).is_some() {
         world.update_neighborhood(local);
+        true
+    } else {
+        false
     }
 }
 
