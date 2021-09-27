@@ -78,29 +78,21 @@ impl BatchChunkCmdRes {
         self.running.clear();
     }
 
-    fn is_cmd_running(&self, local: IVec3, cmd: ChunkCmd) -> bool {
-        if let Some(running_cmd) = self.running.get(&local) {
-            *running_cmd == cmd
-        } else {
-            false
-        }
-    }
-
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }
 
     pub fn load(&mut self, local: IVec3) {
-        if self.is_cmd_running(local, ChunkCmd::Load) {
-            warn!("Chunk {} is already loading", local);
+        if let Some(cmd) = self.running.get(&local) {
+            warn!("Chunk {:?} cmd already exists: ", cmd);
             return;
         }
         self.pending.insert(local, ChunkCmd::Load);
     }
 
     pub fn unload(&mut self, local: IVec3) {
-        if self.is_cmd_running(local, ChunkCmd::Unload) {
-            warn!("Chunk {} is already unloading", local);
+        if let Some(cmd) = self.running.get(&local) {
+            warn!("Chunk {:?} cmd already exists: ", cmd);
             return;
         }
         self.pending.insert(local, ChunkCmd::Unload);
