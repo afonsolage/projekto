@@ -9,6 +9,8 @@ mod pipeline;
 pub mod query;
 pub mod storage;
 
+pub use debug::DebugCmd;
+
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {

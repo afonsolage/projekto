@@ -10,7 +10,9 @@ mod landscaping;
 mod rendering;
 mod terraforming;
 
-pub use terraforming::{CmdChunkUpdate, EvtChunkUpdated};
+pub use genesis::{EvtChunkLoaded, EvtChunkUnloaded, EvtChunkUpdated, WorldRes};
+pub use landscaping::LandscapeConfig;
+pub use terraforming::{ChunkSystemQuery, ChunkSystemRaycast, CmdChunkUpdate, RaycastResult};
 
 use super::storage::{chunk::ChunkStorage, voxel};
 

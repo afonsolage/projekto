@@ -10,12 +10,11 @@ use crate::world::{
     mesh,
     storage::{
         chunk::{self, ChunkKind},
-        voxel::{self, VoxelFace, VoxelVertex},
-        VoxWorld,
+        voxel::{self, FacesOcclusion, VoxelFace, VoxelVertex},
     },
 };
 
-use super::{ChunkEntityMap, ChunkFacesOcclusion, EvtChunkMeshDirty, Pipeline};
+use super::{genesis::WorldRes, ChunkEntityMap, ChunkFacesOcclusion, EvtChunkMeshDirty, Pipeline};
 
 pub struct RenderingPlugin;
 
@@ -26,32 +25,31 @@ impl Plugin for RenderingPlugin {
 }
 
 fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
+    perf_fn_scope!();
+
     let mut occlusion = ChunkFacesOcclusion::default();
     for voxel in chunk::voxels() {
-        let mut voxel_faces = occlusion.get(voxel);
+        let mut voxel_faces = FacesOcclusion::default();
 
         if chunk.get(voxel).is_empty() {
             voxel_faces.set_all(true);
         } else {
             for side in voxel::SIDES {
-                let dir = side.get_side_dir();
+                let dir = side.dir();
                 let neighbor_pos = voxel + dir;
 
                 let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
-                    // let (next_chunk_dir, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
+                    let (_, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
 
-                    // if let Some(neighbor_chunk) = world.get(*local + next_chunk_dir) {
-                    //     neighbor_chunk.get(next_chunk_voxel)
-                    // } else {
-                    continue;
-                    // }
+                    match chunk.neighborhood.get(side, next_chunk_voxel) {
+                        Some(k) => k,
+                        None => continue,
+                    }
                 } else {
                     chunk.get(neighbor_pos)
                 };
 
-                if !neighbor_kind.is_empty() {
-                    voxel_faces[side as usize] = true;
-                }
+                voxel_faces.set(side, !neighbor_kind.is_empty());
             }
         }
 
@@ -62,20 +60,24 @@ fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
 }
 
 fn faces_merging(chunk: &ChunkKind, occlusion: &ChunkFacesOcclusion) -> Vec<VoxelFace> {
+    perf_fn_scope!();
+
     mesh::merge_faces(occlusion, chunk)
 }
 
 fn vertices_computation(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
+    perf_fn_scope!();
+
     let mut vertices = vec![];
 
     for face in faces {
-        let normal = face.side.get_side_normal();
+        let normal = face.side.normal();
 
         for (i, v) in face.vertices.iter().enumerate() {
             let base_vertex_idx = mesh::VERTICES_INDICES[face.side as usize][i];
             let base_vertex: Vec3 = mesh::VERTICES[base_vertex_idx].into();
             vertices.push(VoxelVertex {
-                position: base_vertex + v.as_f32(),
+                position: base_vertex + v.as_vec3(),
                 normal,
             })
         }
@@ -91,68 +93,57 @@ struct MeshGenerationMeta {
 
 fn mesh_generation_system(
     mut commands: Commands,
-    mut reader: EventReader<EvtChunkMeshDirty>,
     mut meshes: ResMut<Assets<Mesh>>,
-    vox_world: Res<VoxWorld>,
+    vox_world: Res<WorldRes>,
     entity_map: Res<ChunkEntityMap>,
     task_pool: Res<AsyncComputeTaskPool>,
     mut meta: Local<MeshGenerationMeta>,
+    mut reader: EventReader<EvtChunkMeshDirty>,
 ) {
     let mut _perf = perf_fn!();
 
     for EvtChunkMeshDirty(local) in reader.iter() {
-        trace_system_run!(local);
-        perf_scope!(_perf);
+        if let Some(chunk) = vox_world.get(*local) {
+            trace_system_run!(*local);
+            perf_scope!(_perf);
 
-        let chunk = match vox_world.get(*local) {
-            None => {
-                warn!(
-                    "Skipping faces occlusion since chunk {} wasn't found on world",
-                    *local
-                );
-                continue;
-            }
-            Some(&c) => c,
-        };
+            let cloned_chunk = chunk.clone();
+            let task = task_pool.spawn(async move {
+                let occlusion = faces_occlusion(&cloned_chunk);
 
-        let task = task_pool.spawn(async move {
-            let occlusion = faces_occlusion(&chunk);
-            let faces = faces_merging(&chunk, &occlusion);
-            let vertices = vertices_computation(faces);
-            vertices
-        });
+                if occlusion.iter().all(|oc| oc.is_fully_occluded()) {
+                    vec![]
+                } else {
+                    let faces = faces_merging(&cloned_chunk, &occlusion);
+                    vertices_computation(faces)
+                }
+            });
 
-        assert!(
-            meta.tasks.insert(*local, task).is_none(),
-            "Duplicated mesh generation is forbidden. Chunk {}",
-            *local
-        );
+            meta.tasks.insert(*local, task);
+        }
     }
 
     let completed_tasks = meta
         .tasks
         .iter_mut()
-        .filter_map(|(&local, task)| {
-            future::block_on(future::poll_once(task)).map(|v| {
-                match entity_map.0.get(&local) {
-                    None => {
-                        warn!(
-                            "Skipping mesh generation since chunk {} wasn't found on entity map",
-                            local
-                        );
-                    }
-                    Some(&e) => generate_mesh(v, &mut commands, e, &mut meshes),
-                };
-                local
-            })
+        .filter_map(|(local, task)| {
+            future::block_on(future::poll_once(task)).map(|vertices| (*local, vertices))
         })
         .collect::<Vec<_>>();
 
-    completed_tasks.iter().for_each(|v| {
-        meta.tasks
-            .remove(v)
-            .expect("Task for load cache must exists");
-    });
+    for (local, vertices) in completed_tasks {
+        match entity_map.0.get(&local) {
+            None => {
+                warn!(
+                    "Skipping mesh generation since chunk {} wasn't found on entity map",
+                    local
+                );
+            }
+            Some(&e) => generate_mesh(vertices, &mut commands, e, &mut meshes),
+        };
+
+        meta.tasks.remove(&local);
+    }
 }
 
 fn generate_mesh(
@@ -161,27 +152,33 @@ fn generate_mesh(
     entity: Entity,
     meshes: &mut ResMut<Assets<Mesh>>,
 ) {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    if vertices.is_empty() {
+        commands.entity(entity).insert(Handle::<Mesh>::default());
+    } else {
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
-    let mut positions: Vec<[f32; 3]> = vec![];
-    let mut normals: Vec<[f32; 3]> = vec![];
+        let mut positions: Vec<[f32; 3]> = vec![];
+        let mut normals: Vec<[f32; 3]> = vec![];
 
-    let vertex_count = vertices.len();
+        let vertex_count = vertices.len();
 
-    for vertex in vertices {
-        positions.push(vertex.position.into());
-        normals.push(vertex.normal.into());
+        for vertex in vertices {
+            positions.push(vertex.position.into());
+            normals.push(vertex.normal.into());
+        }
+
+        mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+
+        commands.entity(entity).insert(meshes.add(mesh));
     }
-
-    mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
-    mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-
-    commands.entity(entity).insert(meshes.add(mesh));
 }
 
 #[cfg(test)]
 mod test {
+    use crate::world::storage::VoxWorld;
+
     use super::*;
 
     #[test]
@@ -247,6 +244,36 @@ mod test {
     }
 
     #[test]
+    fn faces_occlusion_neighborhood() {
+        let mut world = VoxWorld::default();
+
+        let mut top = ChunkKind::default();
+        top.set_all(2.into());
+
+        let mut down = ChunkKind::default();
+        down.set_all(3.into());
+
+        let mut center = ChunkKind::default();
+        center.set((0, chunk::AXIS_ENDING as i32, 0).into(), 1.into());
+        center.set((1, 0, 1).into(), 1.into());
+
+        world.add((0, 1, 0).into(), top);
+        world.add((0, 0, 0).into(), center);
+        world.add((0, -1, 0).into(), down);
+
+        world.update_neighborhood((0, 0, 0).into());
+        let center = world.get((0, 0, 0).into()).unwrap();
+
+        let faces_occlusion = super::faces_occlusion(&center);
+
+        let faces = faces_occlusion.get((0, chunk::AXIS_ENDING as i32, 0).into());
+        assert_eq!(faces, [false, false, true, false, false, false].into());
+
+        let faces = faces_occlusion.get((1, 0, 1).into());
+        assert_eq!(faces, [false, false, false, true, false, false].into());
+    }
+
+    #[test]
     fn vertices_computation() {
         // Arrange
         let side = voxel::Side::Up;
@@ -264,7 +291,7 @@ mod test {
         let vertices = super::vertices_computation(faces);
 
         // Assert
-        let normal = side.get_side_normal();
+        let normal = side.normal();
         assert_eq!(
             vertices,
             vec![

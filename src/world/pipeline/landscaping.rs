@@ -1,27 +1,21 @@
-use std::collections::VecDeque;
-
 use bevy::{
-    core::FixedTimestep,
     prelude::*,
-    render::{
-        pipeline::{PipelineDescriptor, RenderPipeline},
-        shader::ShaderStages,
-    },
-    utils::HashMap,
+    render::pipeline::{PipelineDescriptor, RenderPipeline},
+    utils::{HashMap, HashSet},
 };
 
 use crate::{
     fly_by_camera::FlyByCamera,
     world::{
-        pipeline::genesis::{CmdChunkUnload, EvtChunkLoaded, EvtChunkUnloaded},
+        pipeline::genesis::{EvtChunkLoaded, EvtChunkUnloaded},
         query,
         storage::{chunk, landscape},
     },
 };
 
 use super::{
-    genesis::CmdChunkLoad, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline,
-    EvtChunkMeshDirty, EvtChunkUpdated,
+    genesis::{BatchChunkCmdRes, WorldRes},
+    ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty, EvtChunkUpdated,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -30,20 +24,20 @@ impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkMeshDirty>()
             .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_resources)
-            // .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_landscape)
             .add_system_set_to_stage(
                 super::Pipeline::Landscaping,
                 SystemSet::new()
                     .with_system(despawn_chunks_system.label("despawn"))
                     .with_system(spawn_chunks_system.label("spawn").after("despawn"))
                     .with_system(update_chunks_system.after("spawn"))
-                    .with_system(
-                        update_landscape_system
-                            .label("update")
-                            .with_run_criteria(FixedTimestep::step(0.1)),
-                    ),
+                    .with_system(update_landscape_system.label("update")),
             );
     }
+}
+
+#[derive(Default)]
+pub struct LandscapeConfig {
+    pub paused: bool,
 }
 
 fn setup_resources(
@@ -51,18 +45,22 @@ fn setup_resources(
     asset_server: Res<AssetServer>,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
 ) {
+    use bevy::render::{
+        pipeline::{Face, FrontFace, PolygonMode, PrimitiveState, PrimitiveTopology},
+        shader::ShaderStages,
+    };
     trace_system_run!();
 
     let pipeline_handle = pipelines.add(PipelineDescriptor {
-        // primitive: PrimitiveState {
-        //     topology: PrimitiveTopology::TriangleList,
-        //     strip_index_format: None,
-        //     front_face: FrontFace::Ccw,
-        //     cull_mode: Some(Face::Back),
-        //     polygon_mode: PolygonMode::Fill,
-        //     clamp_depth: false,
-        //     conservative: false,
-        // },
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: FrontFace::Ccw,
+            cull_mode: Some(Face::Back),
+            polygon_mode: PolygonMode::Fill,
+            clamp_depth: false,
+            conservative: false,
+        },
         ..PipelineDescriptor::default_config(ShaderStages {
             vertex: asset_server.load("shaders/voxel.vert"),
             fragment: Some(asset_server.load("shaders/voxel.frag")),
@@ -71,32 +69,31 @@ fn setup_resources(
 
     commands.insert_resource(ChunkPipeline(pipeline_handle));
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
+    commands.insert_resource(LandscapeConfig { paused: false })
 }
 
 #[derive(Default)]
 struct UpdateLandscapeMeta {
-    load_queue: VecDeque<IVec3>,
-    unload_queue: VecDeque<IVec3>,
     last_pos: IVec3,
     next_sync: f32,
-    pending_load: Vec<IVec3>,
-    pending_unload: Vec<IVec3>,
 }
 
 fn update_landscape_system(
     time: Res<Time>,
     entity_map: ResMut<ChunkEntityMap>,
-    mut load_writer: EventWriter<CmdChunkLoad>,
-    mut unload_writer: EventWriter<CmdChunkUnload>,
-    mut loaded_reader: EventReader<EvtChunkLoaded>,
-    mut unloaded_reader: EventReader<EvtChunkUnloaded>,
+    config: Res<LandscapeConfig>,
+    world_res: Res<WorldRes>,
     mut meta: Local<UpdateLandscapeMeta>,
+    mut batch: ResMut<BatchChunkCmdRes>,
     q: Query<&Transform, With<FlyByCamera>>,
 ) {
     let mut _perf = perf_fn!();
-    perf_scope!(_perf);
 
-    let center = match q.single() {
+    if config.paused || !world_res.is_ready() {
+        return;
+    }
+
+    let center = match q.get_single() {
         Ok(t) => chunk::to_local(t.translation),
         Err(_) => return,
     };
@@ -104,6 +101,7 @@ fn update_landscape_system(
     meta.next_sync -= time.delta_seconds();
 
     if center != meta.last_pos || meta.next_sync < 0.0 {
+        perf_scope!(_perf);
         meta.next_sync = 1.0;
         meta.last_pos = center;
 
@@ -112,62 +110,19 @@ fn update_landscape_system(
         let begin = center + IVec3::splat(landscape::BEGIN);
         let end = center + IVec3::splat(landscape::END);
 
-        let visible_locals = query::range(begin, end).collect::<Vec<_>>();
-        let existing_locals = entity_map.0.keys().map(|k| *k).collect::<Vec<_>>();
+        let visible_locals = query::range(begin, end).collect::<HashSet<_>>();
+        let existing_locals = entity_map.0.keys().map(|k| *k).collect::<HashSet<_>>();
 
-        let (to_load, to_unload) = disjoin(&visible_locals, &existing_locals);
+        visible_locals
+            .iter()
+            .filter(|&i| !existing_locals.contains(i))
+            .for_each(|v| batch.load(*v));
 
-        for v in to_load {
-            if !meta.load_queue.contains(v) && !meta.pending_load.contains(v) {
-                meta.load_queue.push_back(*v);
-            }
-
-            if meta.unload_queue.contains(v) {
-                meta.unload_queue.retain(|uv| uv != v);
-            }
-        }
-
-        for v in to_unload {
-            if !meta.unload_queue.contains(v) && !meta.pending_unload.contains(v) {
-                meta.unload_queue.push_back(*v);
-            }
-
-            if meta.load_queue.contains(v) {
-                meta.load_queue.retain(|uv| uv != v);
-            }
-        }
+        existing_locals
+            .iter()
+            .filter(|&i| !visible_locals.contains(i))
+            .for_each(|v| batch.unload(*v));
     }
-
-    for EvtChunkLoaded(local) in loaded_reader.iter() {
-        meta.pending_load.retain(|v| v != local);
-    }
-
-    for EvtChunkUnloaded(local) in unloaded_reader.iter() {
-        meta.pending_unload.retain(|v| v != local);
-    }
-
-    while let Some(next) = meta.load_queue.pop_front() {
-        load_writer.send(CmdChunkLoad(next));
-        meta.pending_load.push(next);
-    }
-
-    while let Some(next) = meta.unload_queue.pop_front() {
-        meta.pending_unload.push(next);
-        unload_writer.send(CmdChunkUnload(next));
-    }
-}
-
-fn disjoin<'a>(
-    set_a: &'a [IVec3],
-    set_b: &'a [IVec3],
-) -> (
-    impl Iterator<Item = &'a IVec3>,
-    impl Iterator<Item = &'a IVec3>,
-) {
-    (
-        set_a.iter().filter(move |v| !set_b.contains(v)),
-        set_b.iter().filter(move |v| !set_a.contains(v)),
-    )
 }
 
 fn spawn_chunks_system(
@@ -235,39 +190,14 @@ fn update_chunks_system(
 
 #[cfg(test)]
 mod test {
-    use std::vec;
-
     use bevy::{app::Events, prelude::*, utils::HashMap};
 
     use crate::world::pipeline::{
         genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty,
+        EvtChunkUpdated,
     };
 
-    use super::{ChunkEntityMap, EvtChunkLoaded, EvtChunkUpdated};
-
-    #[test]
-    fn disjoint() {
-        let a = vec![
-            (0, 0, 0).into(),
-            (1, 1, 1).into(),
-            (2, 2, 2).into(),
-            (3, 3, 3).into(),
-        ];
-        let b = vec![
-            (0, 0, 0).into(),
-            (1, 1, 1).into(),
-            (2, 2, 3).into(),
-            (3, 3, 4).into(),
-        ];
-
-        let (d_a, d_b) = super::disjoin(&a, &b);
-
-        let disjoint_a = d_a.map(|v| *v).collect::<Vec<_>>();
-        let disjoint_b = d_b.map(|v| *v).collect::<Vec<_>>();
-
-        assert_eq!(disjoint_a, vec![(2, 2, 2).into(), (3, 3, 3).into()]);
-        assert_eq!(disjoint_b, vec![(2, 2, 3).into(), (3, 3, 4).into()]);
-    }
+    use super::{ChunkEntityMap, EvtChunkLoaded};
 
     #[test]
     fn spawn_chunks_system() {

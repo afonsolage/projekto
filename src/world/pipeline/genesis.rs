@@ -1,157 +1,407 @@
-use std::path::PathBuf;
+use std::{ops::Deref, path::PathBuf, vec};
 
 use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task},
-    utils::HashMap,
+    utils::{HashMap, HashSet},
 };
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
+use futures_lite::future;
 use serde::{Deserialize, Serialize};
 
-use crate::world::storage::{
-    chunk::{self, ChunkKind},
-    VoxWorld,
+use crate::world::{
+    math,
+    storage::{
+        chunk::{self, ChunkKind},
+        voxel, VoxWorld,
+    },
 };
 
 const CACHE_PATH: &'static str = "cache/chunks/example";
-const CACHE_EXT: &'static str = "ron";
+const CACHE_EXT: &'static str = "bin";
 
 pub(super) struct GenesisPlugin;
 
 impl Plugin for GenesisPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<CmdChunkLoad>()
-            .add_event::<CmdChunkUnload>()
-            .add_event::<CmdChunkGen>()
-            .add_event::<EvtChunkLoaded>()
+        app.add_event::<EvtChunkLoaded>()
             .add_event::<EvtChunkUnloaded>()
-            .add_startup_system_to_stage(super::PipelineStartup::Genesis, setup_vox_world)
-            .add_system_to_stage(super::Pipeline::Genesis, load_cache_system.label("load"))
-            .add_system_to_stage(super::Pipeline::Genesis, unload_cache_system.after("load"))
-            .add_system_to_stage(super::Pipeline::Genesis, gen_cache_system);
+            .add_event::<EvtChunkUpdated>()
+            .add_startup_system_to_stage(super::PipelineStartup::Genesis, setup_resources)
+            .add_system_to_stage(
+                super::Pipeline::Genesis,
+                update_world_system.label("update"),
+            );
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ChunkCache {
     local: IVec3,
     kind: ChunkKind,
 }
 
-pub struct CmdChunkLoad(pub IVec3);
-pub struct EvtChunkLoaded(pub IVec3);
-
-pub struct CmdChunkUnload(pub IVec3);
-pub struct EvtChunkUnloaded(pub IVec3);
-
-struct CmdChunkGen(IVec3);
-
-fn setup_vox_world(mut commands: Commands) {
-    trace_system_run!();
-
-    commands.insert_resource(VoxWorld::default());
+#[cfg(test)]
+impl PartialEq for ChunkCache {
+    fn eq(&self, other: &Self) -> bool {
+        self.local == other.local && self.kind == other.kind
+    }
 }
 
-fn unload_cache_system(
-    mut vox_world: ResMut<VoxWorld>,
-    mut reader: EventReader<CmdChunkUnload>,
-    mut writer: EventWriter<EvtChunkUnloaded>,
-) {
-    let mut _perf = perf_fn!();
+pub struct EvtChunkLoaded(pub IVec3);
+pub struct EvtChunkUnloaded(pub IVec3);
+pub struct EvtChunkUpdated(pub IVec3);
 
-    for CmdChunkUnload(local) in reader.iter() {
-        if vox_world.remove(*local).is_none() {
-            warn!("Trying to unload non-existing cache {}", *local);
-        } else {
-            writer.send(EvtChunkUnloaded(*local));
-        }
-    }
+fn setup_resources(mut commands: Commands) {
+    trace_system_run!();
+
+    commands.insert_resource(WorldRes(Some(VoxWorld::default())));
+    commands.insert_resource(BatchChunkCmdRes::default());
 }
 
 #[derive(Default)]
-struct GenCacheMeta {
-    tasks: HashMap<IVec3, Task<()>>,
+pub struct BatchChunkCmdRes {
+    pending: HashMap<IVec3, ChunkCmd>,
+    running: HashMap<IVec3, ChunkCmd>,
 }
 
-fn gen_cache_system(
-    mut reader: EventReader<CmdChunkGen>,
-    mut writer: EventWriter<CmdChunkLoad>,
-    task_pool: Res<AsyncComputeTaskPool>,
-    mut meta: Local<GenCacheMeta>,
-) {
-    let mut _perf = perf_fn!();
-
-    for CmdChunkGen(local) in reader.iter() {
-        trace_system_run!(local);
-        perf_scope!(_perf);
-
-        let chunk_local = *local;
-
-        meta.tasks.insert(
-            *local,
-            task_pool.spawn(async move {
-                let mut noise = FastNoise::seeded(15);
-                noise.set_noise_type(NoiseType::SimplexFractal);
-                noise.set_frequency(0.03);
-                noise.set_fractal_type(FractalType::FBM);
-                noise.set_fractal_octaves(3);
-                noise.set_fractal_gain(0.9);
-                noise.set_fractal_lacunarity(0.5);
-
-                let world = chunk::to_world(chunk_local);
-                let mut kinds = ChunkKind::default();
-
-                for x in 0..chunk::AXIS_SIZE {
-                    for z in 0..chunk::AXIS_SIZE {
-                        let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
-                        let world_height = ((h + 1.0) / 2.0) * (2 * chunk::AXIS_SIZE) as f32;
-
-                        let height_local = world_height - world.y;
-
-                        if height_local < f32::EPSILON {
-                            continue;
-                        }
-
-                        let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
-
-                        for y in 0..end {
-                            kinds.set((x as i32, y as i32, z as i32).into(), 1.into());
-                        }
-                    }
-                }
-
-                let path = local_path(chunk_local);
-                save_cache(
-                    &path,
-                    &ChunkCache {
-                        local: chunk_local,
-                        kind: kinds,
-                    },
-                );
-            }),
-        );
+impl BatchChunkCmdRes {
+    fn take(&mut self) -> HashMap<IVec3, ChunkCmd> {
+        self.running = std::mem::replace(&mut self.pending, HashMap::default());
+        self.running.clone()
     }
 
-    let completed_tasks = meta
-        .tasks
-        .iter_mut()
-        .filter_map(|(&local, task)| {
-            use futures_lite::future;
-            future::block_on(future::poll_once(task)).map(|_| {
-                writer.send(CmdChunkLoad(local));
-                local
-            })
+    fn finished(&mut self) {
+        self.running.clear();
+    }
+
+    fn is_cmd_running(&self, local: IVec3, cmd: ChunkCmd) -> bool {
+        if let Some(running_cmd) = self.running.get(&local) {
+            *running_cmd == cmd
+        } else {
+            false
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    pub fn load(&mut self, local: IVec3) {
+        if self.is_cmd_running(local, ChunkCmd::Load) {
+            warn!("Chunk {} is already loading", local);
+            return;
+        }
+        self.pending.insert(local, ChunkCmd::Load);
+    }
+
+    pub fn unload(&mut self, local: IVec3) {
+        if self.is_cmd_running(local, ChunkCmd::Unload) {
+            warn!("Chunk {} is already unloading", local);
+            return;
+        }
+        self.pending.insert(local, ChunkCmd::Unload);
+    }
+
+    pub fn update(&mut self, local: IVec3, voxels: Vec<(IVec3, voxel::Kind)>) {
+        self.pending.insert(local, ChunkCmd::Update(voxels));
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum ChunkCmd {
+    Load,
+    Unload,
+    Update(Vec<(IVec3, voxel::Kind)>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum ChunkCmdResult {
+    Loaded(IVec3),
+    Unloaded(IVec3),
+    Updated(IVec3),
+}
+
+#[derive(Default)]
+struct ProcessBatchSystemMeta {
+    task: Option<Task<(VoxWorld, Vec<ChunkCmdResult>)>>,
+}
+
+pub struct WorldRes(Option<VoxWorld>);
+
+impl WorldRes {
+    pub fn is_ready(&self) -> bool {
+        self.0.is_some()
+    }
+
+    pub fn take(&mut self) -> VoxWorld {
+        self.0
+            .take()
+            .expect("You can take world only when it's ready")
+    }
+
+    pub fn set(&mut self, world: VoxWorld) {
+        assert!(
+            self.0.replace(world).is_none(),
+            "There can be only one world at a time"
+        );
+    }
+}
+
+impl Deref for WorldRes {
+    type Target = VoxWorld;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().expect("WorldRes should be ready")
+    }
+}
+
+fn update_world_system(
+    task_pool: Res<AsyncComputeTaskPool>,
+    mut batch_res: ResMut<BatchChunkCmdRes>,
+    mut meta: Local<ProcessBatchSystemMeta>,
+    mut world_res: ResMut<WorldRes>,
+    mut loaded_writer: EventWriter<EvtChunkLoaded>,
+    mut unloaded_writer: EventWriter<EvtChunkUnloaded>,
+    mut updated_writer: EventWriter<EvtChunkUpdated>,
+) {
+    let mut _perf = perf_fn!();
+    // Only process batches if there is no task already running
+    if let Some(ref mut task) = meta.task {
+        perf_scope!(_perf);
+
+        if let Some((world, commands)) = future::block_on(future::poll_once(task)) {
+            for cmd in commands {
+                match cmd {
+                    ChunkCmdResult::Loaded(local) => loaded_writer.send(EvtChunkLoaded(local)),
+                    ChunkCmdResult::Unloaded(local) => {
+                        unloaded_writer.send(EvtChunkUnloaded(local))
+                    }
+                    ChunkCmdResult::Updated(local) => updated_writer.send(EvtChunkUpdated(local)),
+                }
+            }
+            meta.task = None;
+            world_res.set(world);
+            batch_res.finished();
+        }
+    } else if !batch_res.is_empty() {
+        perf_scope!(_perf);
+        let batch = batch_res.take();
+        let world = world_res.take();
+
+        meta.task = Some(task_pool.spawn(async move { process_batch(world, batch) }));
+    }
+
+    assert_ne!(
+        meta.task.is_none(),
+        !world_res.is_ready(),
+        "The world should exists only in one place at a time"
+    );
+    assert_ne!(
+        meta.task.is_some(),
+        world_res.is_ready(),
+        "The world should exists only in one place at a time"
+    );
+}
+
+fn process_batch(
+    mut world: VoxWorld,
+    commands: HashMap<IVec3, ChunkCmd>,
+) -> (VoxWorld, Vec<ChunkCmdResult>) {
+    let mut _perf = perf_fn!();
+
+    let unload_items = commands
+        .iter()
+        .filter_map(|(local, cmd)| match cmd {
+            ChunkCmd::Unload => Some(*local),
+            _ => None,
         })
         .collect::<Vec<_>>();
 
-    completed_tasks.iter().for_each(|v| {
-        meta.tasks
-            .remove(v)
-            .expect("Task for load cache must exists");
-    });
+    let load_items = commands
+        .iter()
+        .filter_map(|(local, cmd)| match cmd {
+            ChunkCmd::Load => Some(*local),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let update_items = commands
+        .iter()
+        .filter_map(|(local, cmd)| match cmd {
+            ChunkCmd::Update(ref v) => Some((*local, v)),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+
+    let mut dirty_chunks = HashSet::default();
+
+    for local in unload_items.iter() {
+        perf_scope!(_perf);
+
+        dirty_chunks.extend(unload_chunk(&mut world, *local));
+    }
+
+    for local in load_items.iter() {
+        perf_scope!(_perf);
+        dirty_chunks.extend(load_chunk(&mut world, *local));
+    }
+
+    for (local, voxels) in update_items.iter() {
+        perf_scope!(_perf);
+        dirty_chunks.extend(update_voxel(&mut world, *local, voxels));
+    }
+
+    let updated_chunks = dirty_chunks
+        .drain()
+        .filter_map(|local| {
+            if update_chunk(&mut world, local) {
+                Some(local)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for local in dirty_chunks.iter() {
+        perf_scope!(_perf);
+        update_chunk(&mut world, *local);
+    }
+
+    let mut result = vec![];
+
+    result.extend(
+        unload_items
+            .into_iter()
+            .map(|l| ChunkCmdResult::Unloaded(l)),
+    );
+    result.extend(load_items.into_iter().map(|l| ChunkCmdResult::Loaded(l)));
+    result.extend(
+        updated_chunks
+            .into_iter()
+            .map(|l| ChunkCmdResult::Updated(l)),
+    );
+
+    (world, result)
+}
+
+fn update_voxel(
+    world: &mut VoxWorld,
+    local: IVec3,
+    voxels: &Vec<(IVec3, voxel::Kind)>,
+) -> HashSet<IVec3> {
+    trace!("Updating chunk {} values {:?}", local, voxels);
+    let mut dirty_chunks = HashSet::default();
+
+    if let Some(chunk) = world.get_mut(local) {
+        for (voxel, kind) in voxels {
+            chunk.set(*voxel, *kind);
+
+            if chunk::is_at_bounds(*voxel) {
+                let neighbor_dir = chunk::get_boundary_dir(*voxel);
+                for unit_dir in math::to_unit_dir(neighbor_dir) {
+                    let neighbor = unit_dir + local;
+                    dirty_chunks.insert(neighbor);
+                }
+            }
+        }
+
+        dirty_chunks.insert(local);
+    } else {
+        warn!("Failed to set voxel. Chunk {} wasn't found.", local);
+    }
+
+    dirty_chunks
+}
+
+fn unload_chunk(world: &mut VoxWorld, local: IVec3) -> HashSet<IVec3> {
+    perf_fn_scope!();
+
+    let mut dirty_chunks = HashSet::default();
+
+    if world.remove(local).is_none() {
+        warn!("Trying to unload non-existing chunk {}", local);
+    } else {
+        dirty_chunks.extend(voxel::SIDES.map(|s| s.dir() + local))
+    }
+
+    dirty_chunks
+}
+
+fn load_chunk(world: &mut VoxWorld, local: IVec3) -> HashSet<IVec3> {
+    perf_fn_scope!();
+
+    let path = local_path(local);
+
+    let cache = if path.exists() {
+        load_cache(&path)
+    } else {
+        generate_cache(local)
+    };
+
+    world.add(local, cache.kind);
+
+    voxel::SIDES
+        .iter()
+        .map(|s| s.dir() + local)
+        .chain(std::iter::once(local))
+        .collect()
+}
+
+fn update_chunk(world: &mut VoxWorld, local: IVec3) -> bool {
+    perf_fn_scope!();
+
+    if world.get(local).is_some() {
+        world.update_neighborhood(local);
+        true
+    } else {
+        false
+    }
+}
+
+fn generate_cache(local: IVec3) -> ChunkCache {
+    perf_fn_scope!();
+
+    let mut noise = FastNoise::seeded(15);
+    noise.set_noise_type(NoiseType::SimplexFractal);
+    noise.set_frequency(0.03);
+    noise.set_fractal_type(FractalType::FBM);
+    noise.set_fractal_octaves(3);
+    noise.set_fractal_gain(0.9);
+    noise.set_fractal_lacunarity(0.5);
+    let world = chunk::to_world(local);
+    let mut kinds = ChunkKind::default();
+    for x in 0..chunk::AXIS_SIZE {
+        for z in 0..chunk::AXIS_SIZE {
+            let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
+            let world_height = ((h + 1.0) / 2.0) * (2 * chunk::AXIS_SIZE) as f32;
+
+            let height_local = world_height - world.y;
+
+            if height_local < f32::EPSILON {
+                continue;
+            }
+
+            let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
+
+            for y in 0..end {
+                kinds.set((x as i32, y as i32, z as i32).into(), 1.into());
+            }
+        }
+    }
+    let path = local_path(local);
+
+    assert!(!path.exists(), "Cache already exists!");
+
+    let chunk_cache = ChunkCache { local, kind: kinds };
+    save_cache(&path, &chunk_cache);
+
+    chunk_cache
 }
 
 fn save_cache(path: &PathBuf, cache: &ChunkCache) {
+    perf_fn_scope!();
+
     let file = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -159,67 +409,36 @@ fn save_cache(path: &PathBuf, cache: &ChunkCache) {
         .open(path)
         .expect(&format!("Unable to write to file {}", path.display()));
 
+    #[cfg(not(feature = "serde_ron"))]
+    bincode::serialize_into(file, cache).expect(&format!(
+        "Failed to serialize cache to file {}",
+        path.display()
+    ));
+
+    #[cfg(feature = "serde_ron")]
     ron::ser::to_writer(file, cache).expect(&format!(
         "Failed to serialize cache to file {}",
         path.display()
     ));
 }
 
-#[derive(Default)]
-struct LoadCacheMeta {
-    tasks: HashMap<IVec3, Task<ChunkCache>>,
-}
-
-fn load_cache_system(
-    mut vox_world: ResMut<VoxWorld>,
-    mut reader: EventReader<CmdChunkLoad>,
-    mut gen_writer: EventWriter<CmdChunkGen>,
-    mut added_writer: EventWriter<EvtChunkLoaded>,
-    task_pool: Res<AsyncComputeTaskPool>,
-    mut meta: Local<LoadCacheMeta>,
-) {
-    let mut _perf = perf_fn!();
-    for CmdChunkLoad(local) in reader.iter() {
-        trace_system_run!(local);
-        perf_scope!(_perf);
-
-        let path = local_path(*local);
-
-        if path.exists() {
-            meta.tasks
-                .insert(*local, task_pool.spawn(async move { load_cache(&path) }));
-        } else {
-            gen_writer.send(CmdChunkGen(*local));
-        }
-    }
-
-    let completed_tasks = meta
-        .tasks
-        .iter_mut()
-        .filter_map(|(&local, task)| {
-            use futures_lite::future;
-            future::block_on(future::poll_once(task)).map(|cache| {
-                vox_world.add(local, cache.kind);
-                added_writer.send(EvtChunkLoaded(local));
-                local
-            })
-        })
-        .collect::<Vec<_>>();
-
-    completed_tasks.iter().for_each(|v| {
-        meta.tasks
-            .remove(v)
-            .expect("Task for load cache must exists");
-    });
-}
-
 fn load_cache(path: &PathBuf) -> ChunkCache {
+    perf_fn_scope!();
+
     let file = std::fs::OpenOptions::new()
         .read(true)
         .open(path)
         .expect(&format!("Unable to open file {}", path.display()));
 
-    ron::de::from_reader(file).expect(&format!("Failed to parse file {}", path.display()))
+    #[cfg(not(feature = "serde_ron"))]
+    let cache =
+        bincode::deserialize_from(file).expect(&format!("Failed to parse file {}", path.display()));
+
+    #[cfg(feature = "serde_ron")]
+    let cache =
+        ron::de::from_reader(file).expect(&format!("Failed to parse file {}", path.display()));
+
+    cache
 }
 
 fn local_path(local: IVec3) -> PathBuf {
@@ -247,6 +466,165 @@ mod tests {
     use super::*;
 
     #[test]
+    fn update_voxel() {
+        let mut world = VoxWorld::default();
+        let local = (0, 0, 0).into();
+        world.add(local, ChunkKind::default());
+
+        let voxels = vec![
+            ((0, 0, 0).into(), 1.into()),
+            ((1, 1, 1).into(), 2.into()),
+            ((0, chunk::AXIS_ENDING as i32, 5).into(), 3.into()),
+        ];
+
+        let dirty_chunks = super::update_voxel(&mut world, local, &voxels);
+
+        let chunk = world.get(local).unwrap();
+
+        assert_eq!(chunk.get((0, 0, 0).into()), 1.into());
+        assert_eq!(chunk.get((1, 1, 1).into()), 2.into());
+        assert_eq!(
+            chunk.get((0, chunk::AXIS_ENDING as i32, 5).into()),
+            3.into()
+        );
+
+        assert_eq!(
+            dirty_chunks.len(),
+            5,
+            "Should have 5 dirty chunks = central, left, down, back and up chunk. Currently {:?}",
+            dirty_chunks
+        );
+    }
+
+    #[test]
+    fn unload_chunk() {
+        let local = (9111, -9222, 9333).into();
+        let mut world = VoxWorld::default();
+
+        world.add(local, ChunkKind::default());
+
+        let dirty_chunks = super::unload_chunk(&mut world, local);
+
+        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT);
+        assert!(
+            world.get(local).is_none(),
+            "Chunk should be removed from world"
+        );
+    }
+
+    #[test]
+    fn load_chunk() {
+        // Load existing cache
+        let local = (9943, 9943, 9999).into();
+        let path = super::local_path(local);
+        let chunk = ChunkKind::default();
+
+        create_cache(&path, &ChunkCache { local, kind: chunk });
+
+        let mut world = VoxWorld::default();
+
+        let dirty_chunks = super::load_chunk(&mut world, local);
+
+        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT + 1);
+        assert!(dirty_chunks.contains(&local));
+        assert!(world.get(local).is_some(), "Chunk should be added to world");
+
+        let _ = remove_file(path);
+
+        // Load non-existing cache
+        let local = (9942, 9944, 9421).into();
+        let path = super::local_path(local);
+        let _ = remove_file(&path);
+
+        let mut world = VoxWorld::default();
+        let dirty_chunks = super::load_chunk(&mut world, local);
+
+        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT + 1);
+        assert!(dirty_chunks.contains(&local));
+        assert!(path.exists(), "Cache file should be created by load_chunk");
+        assert!(world.get(local).is_some(), "Chunk should be added to world");
+
+        let _ = remove_file(path);
+    }
+
+    #[test]
+    fn update_chunk() {
+        let mut world = VoxWorld::default();
+        assert_eq!(
+            super::update_chunk(&mut world, (0, 0, 0).into()),
+            false,
+            "should return false when chunk doesn't exists"
+        );
+
+        world.add((0, 0, 0).into(), ChunkKind::default());
+        world.add((0, 1, 0).into(), ChunkKind::default());
+
+        assert_eq!(
+            super::update_chunk(&mut world, (0, 0, 0).into()),
+            true,
+            "should return true when chunk doesn't exists"
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+        assert!(
+            chunk
+                .neighborhood
+                .get(super::voxel::Side::Up, (0, 0, 0).into())
+                .is_some(),
+            "Neighborhood should be updated on update_chunk call"
+        );
+    }
+
+    #[test]
+    fn generate_cache() {
+        let local = (5432, 4321, 5555).into();
+        let cache = super::generate_cache(local);
+        let path = local_path(local);
+
+        assert!(path.exists(), "Generate cache should save cache on disk");
+        assert_eq!(
+            cache.local, local,
+            "Generate cache should have the same local as the given one"
+        );
+
+        remove_file(path).expect("File should exists");
+    }
+
+    #[test]
+    #[should_panic]
+    fn generate_cache_panic() {
+        let local = (9999, 9998, 9997).into();
+        let _ = remove_file(local_path(local));
+
+        super::generate_cache(local);
+        super::generate_cache(local);
+    }
+
+    #[test]
+    fn local_path_test() {
+        let path = super::local_path((0, 0, 0).into())
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        assert!(path.ends_with(&format!("0_0_0.{}", CACHE_EXT)));
+
+        let path = super::local_path((-1, 0, 0).into())
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        assert!(path.ends_with(&format!("-1_0_0.{}", CACHE_EXT)));
+
+        let path = super::local_path((-1, 3333, -461).into())
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        assert!(path.ends_with(&format!("-1_3333_-461.{}", CACHE_EXT)));
+    }
+
+    #[test]
     fn test_ser_de() {
         let mut temp_file = std::env::temp_dir();
         temp_file.push("test.tmp");
@@ -263,7 +641,11 @@ mod tests {
             .open(&temp_file)
             .unwrap();
 
+        #[cfg(feature = "serde_ron")]
         let cache_loaded: ChunkCache = ron::de::from_reader(file).unwrap();
+
+        #[cfg(not(feature = "serde_ron"))]
+        let cache_loaded: ChunkCache = bincode::deserialize_from(file).unwrap();
 
         assert_eq!(cache, cache_loaded);
     }
@@ -275,7 +657,12 @@ mod tests {
             .truncate(true)
             .open(path)
             .unwrap();
+
+        #[cfg(feature = "serde_ron")]
         ron::ser::to_writer(file, cache).unwrap();
+
+        #[cfg(not(feature = "serde_ron"))]
+        bincode::serialize_into(file, cache).unwrap();
     }
 
     #[test]

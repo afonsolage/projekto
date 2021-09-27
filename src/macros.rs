@@ -35,6 +35,13 @@ macro_rules! perf_scope {
     };
 }
 
+macro_rules! perf_fn_scope {
+    () => {
+        let mut _perf = perf_fn!();
+        perf_scope!(_perf);
+    };
+}
+
 macro_rules! trace_system_run {
     ($e:expr) => {
         trace!("{} working on {:?}", fn_name!(), $e);
