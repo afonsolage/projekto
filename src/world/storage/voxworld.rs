@@ -12,7 +12,7 @@ pub struct VoxWorld {
 
 impl VoxWorld {
     pub fn add(&mut self, local: IVec3, kind: ChunkKind) {
-        if self.chunks.insert(local.clone(), kind).is_some() {
+        if self.chunks.insert(local, kind).is_some() {
             panic!("Created a duplicated chunk at {:?}", &local);
         }
     }

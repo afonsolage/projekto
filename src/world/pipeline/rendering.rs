@@ -264,7 +264,7 @@ mod test {
         world.update_neighborhood((0, 0, 0).into());
         let center = world.get((0, 0, 0).into()).unwrap();
 
-        let faces_occlusion = super::faces_occlusion(&center);
+        let faces_occlusion = super::faces_occlusion(center);
 
         let faces = faces_occlusion.get((0, chunk::AXIS_ENDING as i32, 0).into());
         assert_eq!(faces, [false, false, true, false, false, false].into());
@@ -296,19 +296,19 @@ mod test {
             vertices,
             vec![
                 VoxelVertex {
-                    normal: normal,
+                    normal,
                     position: (0.0, 1.0, 0.0).into(),
                 },
                 VoxelVertex {
-                    normal: normal,
+                    normal,
                     position: (0.0, 1.0, 2.0).into(),
                 },
                 VoxelVertex {
-                    normal: normal,
+                    normal,
                     position: (2.0, 1.0, 2.0).into(),
                 },
                 VoxelVertex {
-                    normal: normal,
+                    normal,
                     position: (2.0, 1.0, 0.0).into(),
                 },
             ]

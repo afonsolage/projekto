@@ -1,4 +1,7 @@
-use std::{ops::Deref, path::PathBuf, vec};
+use std::{
+    ops::Deref,
+    path::{Path, PathBuf},
+};
 
 use bevy::{
     prelude::*,
@@ -17,8 +20,8 @@ use crate::world::{
     },
 };
 
-const CACHE_PATH: &'static str = "cache/chunks/example";
-const CACHE_EXT: &'static str = "bin";
+const CACHE_PATH: &str = "cache/chunks/example";
+const CACHE_EXT: &str = "bin";
 
 pub(super) struct GenesisPlugin;
 
@@ -67,7 +70,7 @@ pub struct BatchChunkCmdRes {
 
 impl BatchChunkCmdRes {
     fn take(&mut self) -> HashMap<IVec3, ChunkCmd> {
-        self.running = std::mem::replace(&mut self.pending, HashMap::default());
+        self.running = std::mem::take(&mut self.pending);
         self.running.clone()
     }
 
@@ -252,35 +255,14 @@ fn process_batch(
         dirty_chunks.extend(update_voxel(&mut world, *local, voxels));
     }
 
-    let updated_chunks = dirty_chunks
+    let mut result = dirty_chunks
         .drain()
-        .filter_map(|local| {
-            if update_chunk(&mut world, local) {
-                Some(local)
-            } else {
-                None
-            }
-        })
+        .filter(|local| update_chunk(&mut world, *local))
+        .map(ChunkCmdResult::Updated)
         .collect::<Vec<_>>();
 
-    for local in dirty_chunks.iter() {
-        perf_scope!(_perf);
-        update_chunk(&mut world, *local);
-    }
-
-    let mut result = vec![];
-
-    result.extend(
-        unload_items
-            .into_iter()
-            .map(|l| ChunkCmdResult::Unloaded(l)),
-    );
-    result.extend(load_items.into_iter().map(|l| ChunkCmdResult::Loaded(l)));
-    result.extend(
-        updated_chunks
-            .into_iter()
-            .map(|l| ChunkCmdResult::Updated(l)),
-    );
+    result.extend(unload_items.into_iter().map(ChunkCmdResult::Unloaded));
+    result.extend(load_items.into_iter().map(ChunkCmdResult::Loaded));
 
     (world, result)
 }
@@ -288,7 +270,7 @@ fn process_batch(
 fn update_voxel(
     world: &mut VoxWorld,
     local: IVec3,
-    voxels: &Vec<(IVec3, voxel::Kind)>,
+    voxels: &[(IVec3, voxel::Kind)],
 ) -> HashSet<IVec3> {
     trace!("Updating chunk {} values {:?}", local, voxels);
     let mut dirty_chunks = HashSet::default();
@@ -399,7 +381,7 @@ fn generate_cache(local: IVec3) -> ChunkCache {
     chunk_cache
 }
 
-fn save_cache(path: &PathBuf, cache: &ChunkCache) {
+fn save_cache(path: &Path, cache: &ChunkCache) {
     perf_fn_scope!();
 
     let file = std::fs::OpenOptions::new()
@@ -407,32 +389,28 @@ fn save_cache(path: &PathBuf, cache: &ChunkCache) {
         .truncate(true)
         .create(true)
         .open(path)
-        .expect(&format!("Unable to write to file {}", path.display()));
+        .unwrap_or_else(|_| panic!("Unable to write to file {}", path.display()));
 
     #[cfg(not(feature = "serde_ron"))]
-    bincode::serialize_into(file, cache).expect(&format!(
-        "Failed to serialize cache to file {}",
-        path.display()
-    ));
+    bincode::serialize_into(file, cache)
+        .unwrap_or_else(|_| panic!("Failed to serialize cache to file {}", path.display()));
 
     #[cfg(feature = "serde_ron")]
-    ron::ser::to_writer(file, cache).expect(&format!(
-        "Failed to serialize cache to file {}",
-        path.display()
-    ));
+    ron::ser::to_writer(file, cache)
+        .unwrap_or_else(|_| panic!("Failed to serialize cache to file {}", path.display()));
 }
 
-fn load_cache(path: &PathBuf) -> ChunkCache {
+fn load_cache(path: &Path) -> ChunkCache {
     perf_fn_scope!();
 
     let file = std::fs::OpenOptions::new()
         .read(true)
         .open(path)
-        .expect(&format!("Unable to open file {}", path.display()));
+        .unwrap_or_else(|_| panic!("Unable to open file {}", path.display()));
 
     #[cfg(not(feature = "serde_ron"))]
-    let cache =
-        bincode::deserialize_from(file).expect(&format!("Failed to parse file {}", path.display()));
+    let cache = bincode::deserialize_from(file)
+        .unwrap_or_else(|_| panic!("Failed to parse file {}", path.display()));
 
     #[cfg(feature = "serde_ron")]
     let cache =
@@ -550,18 +528,16 @@ mod tests {
     #[test]
     fn update_chunk() {
         let mut world = VoxWorld::default();
-        assert_eq!(
-            super::update_chunk(&mut world, (0, 0, 0).into()),
-            false,
+        assert!(
+            !super::update_chunk(&mut world, (0, 0, 0).into()),
             "should return false when chunk doesn't exists"
         );
 
         world.add((0, 0, 0).into(), ChunkKind::default());
         world.add((0, 1, 0).into(), ChunkKind::default());
 
-        assert_eq!(
+        assert!(
             super::update_chunk(&mut world, (0, 0, 0).into()),
-            true,
             "should return true when chunk doesn't exists"
         );
 
@@ -650,7 +626,7 @@ mod tests {
         assert_eq!(cache, cache_loaded);
     }
 
-    fn create_cache(path: &PathBuf, cache: &ChunkCache) {
+    fn create_cache(path: &Path, cache: &ChunkCache) {
         let file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)

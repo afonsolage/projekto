@@ -128,7 +128,7 @@ impl<'de, T: ChunkStorageType> Deserialize<'de> for ChunkStorage<T> {
                     vec.push(element);
                 }
 
-                if vec.len() != 0 && vec.len() != chunk::BUFFER_SIZE {
+                if !vec.is_empty() && vec.len() != chunk::BUFFER_SIZE {
                     return Err(serde::de::Error::invalid_length(vec.len(), &self));
                 }
 
@@ -274,12 +274,11 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
             Side::Back => pos.z == AXIS_ENDING as i32,
         });
 
-        let index = match side {
+        match side {
             Side::Right | Side::Left => (pos.z << Z_SHIFT | pos.y << Y_SHIFT) as usize,
             Side::Up | Side::Down => (pos.x << Z_SHIFT | pos.z << Y_SHIFT) as usize,
             Side::Front | Side::Back => (pos.x << Z_SHIFT | pos.y << Y_SHIFT) as usize,
-        };
-        index
+        }
     }
 }
 
@@ -610,19 +609,19 @@ mod tests {
     #[test]
     fn is_at_bounds() {
         let local = (1, 1, 1).into();
-        assert_eq!(super::is_at_bounds(local), false);
+        assert!(!super::is_at_bounds(local));
 
         let local = (1, 0, 1).into();
-        assert_eq!(super::is_at_bounds(local), true);
+        assert!(super::is_at_bounds(local));
 
         let local = (1, AXIS_ENDING as i32, 1).into();
-        assert_eq!(super::is_at_bounds(local), true);
+        assert!(super::is_at_bounds(local));
 
         let local = (0, 0, 0).into();
-        assert_eq!(super::is_at_bounds(local), true);
+        assert!(super::is_at_bounds(local));
 
         let local = (2, 1, 14).into();
-        assert_eq!(super::is_at_bounds(local), false);
+        assert!(!super::is_at_bounds(local));
     }
 
     #[test]

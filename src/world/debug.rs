@@ -282,37 +282,35 @@ fn toggle_mesh_wireframe_system(
                     .remove::<WireframeDraw>()
                     .remove::<Handle<WireframeMaterial>>();
             }
-        } else {
-            if let None = wireframe_draw_opt {
-                let mut wireframe_mesh = Mesh::new(PrimitiveTopology::LineList);
+        } else if wireframe_draw_opt.is_none() {
+            let mut wireframe_mesh = Mesh::new(PrimitiveTopology::LineList);
 
-                if let Some(mesh_asset) = meshes.get_mut(mesh) {
-                    let vertices = mesh_asset.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
+            if let Some(mesh_asset) = meshes.get_mut(mesh) {
+                let vertices = mesh_asset.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
 
-                    wireframe_mesh.set_indices(Some(Indices::U32(compute_wireframe_indices(
-                        vertices.len(),
-                    ))));
-                    wireframe_mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices.clone());
+                wireframe_mesh.set_indices(Some(Indices::U32(compute_wireframe_indices(
+                    vertices.len(),
+                ))));
+                wireframe_mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices.clone());
 
-                    let wireframe_mesh_handle = meshes.add(wireframe_mesh);
-                    let wireframe_pipelines =
-                        RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-                            pipeline_handle.0.clone(),
-                        )]);
+                let wireframe_mesh_handle = meshes.add(wireframe_mesh);
+                let wireframe_pipelines =
+                    RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+                        pipeline_handle.0.clone(),
+                    )]);
 
-                    let wireframe_draw = WireframeDraw {
-                        original_mesh: mesh.clone(),
-                        original_pipeline: pipelines.clone(),
-                    };
+                let wireframe_draw = WireframeDraw {
+                    original_mesh: mesh.clone(),
+                    original_pipeline: pipelines.clone(),
+                };
 
-                    commands
-                        .entity(e)
-                        .insert(wireframe_mesh_handle) //The new wireframe mesh
-                        .insert(wireframe_pipelines) //The new wireframe shader/pipeline
-                        .insert(Visible::default()) //Why?
-                        .insert(wireframe_draw)
-                        .insert(materials.get("white")); //The old mesh and pipeline, so I can switch back to it
-                }
+                commands
+                    .entity(e)
+                    .insert(wireframe_mesh_handle) //The new wireframe mesh
+                    .insert(wireframe_pipelines) //The new wireframe shader/pipeline
+                    .insert(Visible::default()) //Why?
+                    .insert(wireframe_draw)
+                    .insert(materials.get("white")); //The old mesh and pipeline, so I can switch back to it
             }
         }
     }
@@ -508,12 +506,10 @@ fn check_raycast_intersections_system(
 
             meta.reset();
         }
-    } else {
-        if let Some(next) = meta.pending.pop_front() {
-            if let Ok(debug_raycast) = raycast_q.get(next) {
-                meta.req_entity = Some(next);
-                chunk_raycast.raycast(debug_raycast.origin, debug_raycast.dir, debug_raycast.range);
-            }
+    } else if let Some(next) = meta.pending.pop_front() {
+        if let Ok(debug_raycast) = raycast_q.get(next) {
+            meta.req_entity = Some(next);
+            chunk_raycast.raycast(debug_raycast.origin, debug_raycast.dir, debug_raycast.range);
         }
     }
 }

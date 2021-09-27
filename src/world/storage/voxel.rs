@@ -91,7 +91,7 @@ impl FacesOcclusion {
     }
 
     pub fn is_fully_occluded(&self) -> bool {
-        return self.0 & FULL_OCCLUDED_MASK == FULL_OCCLUDED_MASK;
+        self.0 & FULL_OCCLUDED_MASK == FULL_OCCLUDED_MASK
     }
 
     pub fn is_occluded(&self, side: Side) -> bool {
@@ -165,39 +165,39 @@ mod tests {
     #[test]
     fn faces_occlusion() {
         let mut occlusion = FacesOcclusion::default();
-        assert_eq!(occlusion.is_fully_occluded(), false);
+        assert!(!occlusion.is_fully_occluded());
 
         for side in super::SIDES {
-            assert_eq!(occlusion.is_occluded(side), false);
+            assert!(!occlusion.is_occluded(side));
         }
 
         occlusion.set(super::Side::Up, true);
-        assert_eq!(occlusion.is_occluded(super::Side::Up), true);
+        assert!(occlusion.is_occluded(super::Side::Up));
 
         occlusion.set(super::Side::Back, true);
-        assert_eq!(occlusion.is_occluded(super::Side::Back), true);
+        assert!(occlusion.is_occluded(super::Side::Back));
 
         for side in super::SIDES {
             occlusion.set(side, true);
         }
 
-        assert_eq!(occlusion.is_fully_occluded(), true);
+        assert!(occlusion.is_fully_occluded());
 
         for side in super::SIDES {
-            assert_eq!(occlusion.is_occluded(side), true);
+            assert!(occlusion.is_occluded(side));
         }
 
         occlusion.set(super::Side::Back, false);
-        assert_eq!(occlusion.is_occluded(super::Side::Back), false);
+        assert!(!occlusion.is_occluded(super::Side::Back));
 
         for side in super::SIDES {
             occlusion.set(side, false);
         }
 
-        assert_eq!(occlusion.is_fully_occluded(), false);
+        assert!(!occlusion.is_fully_occluded());
 
         for side in super::SIDES {
-            assert_eq!(occlusion.is_occluded(side), false);
+            assert!(!occlusion.is_occluded(side));
         }
     }
 
@@ -265,9 +265,9 @@ mod tests {
             );
 
             let sign = Vec3::new(
-                if random::<bool>() { 1.0 } else { 1.0 },
-                if random::<bool>() { 1.0 } else { 1.0 },
-                if random::<bool>() { 1.0 } else { 1.0 },
+                if random::<bool>() { 1.0 } else { -1.0 },
+                if random::<bool>() { 1.0 } else { -1.0 },
+                if random::<bool>() { 1.0 } else { -1.0 },
             );
 
             // Generate some floating number between 0.0 and 0.9 just to simulate the fraction of world coordinates

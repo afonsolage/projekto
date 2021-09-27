@@ -68,20 +68,11 @@ mod tests {
 
     #[test]
     fn is_within_cubic_bounds() {
-        assert_eq!(super::is_within_cubic_bounds((1, 2, 3).into(), 0, 15), true);
-        assert_eq!(
-            super::is_within_cubic_bounds((-1, 2, 3).into(), 0, 15),
-            false
-        );
-        assert_eq!(super::is_within_cubic_bounds((0, 0, 0).into(), 0, 15), true);
-        assert_eq!(
-            super::is_within_cubic_bounds((15, 15, 15).into(), 0, 15),
-            true
-        );
-        assert_eq!(
-            super::is_within_cubic_bounds((15, 16, 15).into(), 0, 15),
-            false
-        );
+        assert!(super::is_within_cubic_bounds((1, 2, 3).into(), 0, 15));
+        assert!(!super::is_within_cubic_bounds((-1, 2, 3).into(), 0, 15));
+        assert!(super::is_within_cubic_bounds((0, 0, 0).into(), 0, 15));
+        assert!(super::is_within_cubic_bounds((15, 15, 15).into(), 0, 15));
+        assert!(!super::is_within_cubic_bounds((15, 16, 15).into(), 0, 15));
     }
 
     #[test]

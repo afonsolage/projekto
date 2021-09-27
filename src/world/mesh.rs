@@ -98,7 +98,7 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
         // perf_fn_scope!();
         let mut next_voxel = begin + step;
 
-        while !should_skip_voxel(&merged, next_voxel, side, chunk, occlusion) {
+        while !should_skip_voxel(merged, next_voxel, side, chunk, occlusion) {
             next_voxel += step;
         }
         next_voxel -= step;

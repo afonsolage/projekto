@@ -111,7 +111,7 @@ fn update_landscape_system(
         let end = center + IVec3::splat(landscape::END);
 
         let visible_locals = query::range(begin, end).collect::<HashSet<_>>();
-        let existing_locals = entity_map.0.keys().map(|k| *k).collect::<HashSet<_>>();
+        let existing_locals = entity_map.0.keys().copied().collect::<HashSet<_>>();
 
         visible_locals
             .iter()
@@ -147,7 +147,6 @@ fn spawn_chunks_system(
                     transform: Transform::from_translation(chunk::to_world(*local)),
                     ..Default::default()
                 },
-                ..Default::default()
             })
             .id();
         entity_map.0.insert(*local, entity);

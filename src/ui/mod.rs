@@ -66,7 +66,7 @@ fn setup_fps_text(mut commands: Commands, asset_server: Res<AssetServer>) {
             text: Text::with_section(
                 "0",
                 TextStyle {
-                    font: font.clone(),
+                    font,
                     font_size: 30.0,
                     color: Color::YELLOW,
                 },

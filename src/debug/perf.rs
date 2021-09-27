@@ -146,7 +146,7 @@ impl Drop for PerfCounterGuard {
         self.calc_meta();
 
         if self.counter > 0 {
-            PERF_MAP.lock().unwrap().insert(&self);
+            PERF_MAP.lock().unwrap().insert(self);
         }
     }
 }

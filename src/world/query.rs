@@ -17,12 +17,13 @@ impl Iterator for RangeIterator {
     fn next(&mut self) -> Option<Self::Item> {
         for x in self.current.x..self.end.x {
             for z in self.current.z..self.end.z {
-                for y in self.current.y..self.end.y {
+                if let Some(y) = (self.current.y..self.end.y).next() {
                     self.current.y += 1;
                     return Some((x, y, z).into());
+                } else {
+                    self.current.z += 1;
+                    self.current.y = self.begin.y;
                 }
-                self.current.z += 1;
-                self.current.y = self.begin.y;
             }
             self.current.x += 1;
             self.current.z = self.begin.z;
@@ -52,12 +53,13 @@ impl Iterator for RangeInclusiveIterator {
     fn next(&mut self) -> Option<Self::Item> {
         for x in self.current.x..=self.end.x {
             for z in self.current.z..=self.end.z {
-                for y in self.current.y..=self.end.y {
+                if let Some(y) = (self.current.y..=self.end.y).next() {
                     self.current.y += 1;
                     return Some((x, y, z).into());
+                } else {
+                    self.current.z += 1;
+                    self.current.y = self.begin.y;
                 }
-                self.current.z += 1;
-                self.current.y = self.begin.y;
             }
             self.current.x += 1;
             self.current.z = self.begin.z;
@@ -300,7 +302,7 @@ mod test {
         origin: Vec3,
         dir: Vec3,
         range: f32,
-        ok_res: &Vec<(RaycastHit, Vec<RaycastHit>)>,
+        ok_res: &[(RaycastHit, Vec<RaycastHit>)],
     ) {
         let res = super::raycast(origin, dir, range);
 

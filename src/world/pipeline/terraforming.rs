@@ -50,7 +50,7 @@ pub struct ChunkQuery {
 impl ChunkQuery {
     pub fn request(&mut self, chunks: Vec<IVec3>) -> usize {
         assert!(
-            chunks.len() > 0,
+            !chunks.is_empty(),
             "At least one chunk local should be provided."
         );
         self.next_id += 1;
