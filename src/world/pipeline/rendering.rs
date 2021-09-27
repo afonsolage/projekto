@@ -10,6 +10,7 @@ use crate::world::{
     mesh,
     storage::{
         chunk::{self, ChunkKind},
+        landscape,
         voxel::{self, FacesOcclusion, VoxelFace, VoxelVertex},
     },
 };
@@ -86,10 +87,15 @@ fn vertices_computation(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
     vertices
 }
 
+type BatchResult = Vec<(IVec3, Vec<VoxelVertex>)>;
+
 #[derive(Default)]
 struct MeshGenerationMeta {
-    tasks: HashMap<IVec3, Task<Vec<VoxelVertex>>>,
+    tasks: HashMap<usize, Task<BatchResult>>,
+    batch_id: usize,
 }
+
+const MESH_BATCH_SIZE: usize = landscape::SIZE * landscape::SIZE;
 
 fn mesh_generation_system(
     mut commands: Commands,
@@ -102,25 +108,23 @@ fn mesh_generation_system(
 ) {
     let mut _perf = perf_fn!();
 
-    for EvtChunkMeshDirty(local) in reader.iter() {
-        if let Some(chunk) = vox_world.get(*local) {
-            trace_system_run!(*local);
-            perf_scope!(_perf);
+    let chunks = reader
+        .iter()
+        .filter_map(|evt| vox_world.get(evt.0).map(|c| (evt.0, c)))
+        .collect::<Vec<_>>();
 
-            let cloned_chunk = chunk.clone();
-            let task = task_pool.spawn(async move {
-                let occlusion = faces_occlusion(&cloned_chunk);
+    for batch in chunks.chunks(MESH_BATCH_SIZE).into_iter() {
+        let id = meta.batch_id;
+        meta.batch_id += 1;
 
-                if occlusion.iter().all(|oc| oc.is_fully_occluded()) {
-                    vec![]
-                } else {
-                    let faces = faces_merging(&cloned_chunk, &occlusion);
-                    vertices_computation(faces)
-                }
-            });
+        let owned_batch = batch
+            .iter()
+            .map(|(local, c)| (*local, (*c).clone()))
+            .collect();
 
-            meta.tasks.insert(*local, task);
-        }
+        let task = task_pool.spawn(async move { generate_vertices(owned_batch) });
+
+        meta.tasks.insert(id, task);
     }
 
     let completed_tasks = meta
@@ -131,19 +135,42 @@ fn mesh_generation_system(
         })
         .collect::<Vec<_>>();
 
-    for (local, vertices) in completed_tasks {
-        match entity_map.0.get(&local) {
-            None => {
+    for (batch_id, batch_result) in completed_tasks {
+        for (local, vertices) in batch_result {
+            if let Some(&e) = entity_map.0.get(&local) {
+                generate_mesh(vertices, &mut commands, e, &mut meshes)
+            } else {
                 warn!(
                     "Skipping mesh generation since chunk {} wasn't found on entity map",
                     local
                 );
             }
-            Some(&e) => generate_mesh(vertices, &mut commands, e, &mut meshes),
+        }
+
+        meta.tasks.remove(&batch_id);
+    }
+}
+
+fn generate_vertices(chunks: Vec<(IVec3, ChunkKind)>) -> BatchResult {
+    let mut _perf = perf_fn!();
+
+    let mut result = vec![];
+
+    for (local, chunk) in chunks {
+        perf_scope!(_perf);
+
+        let occlusion = faces_occlusion(&chunk);
+        let vertices = if !occlusion.iter().all(|oc| oc.is_fully_occluded()) {
+            let faces = faces_merging(&chunk, &occlusion);
+            vertices_computation(faces)
+        } else {
+            vec![]
         };
 
-        meta.tasks.remove(&local);
+        result.push((local, vertices));
     }
+
+    result
 }
 
 fn generate_mesh(
