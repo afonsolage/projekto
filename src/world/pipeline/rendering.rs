@@ -10,7 +10,7 @@ use crate::world::{
     mesh,
     storage::{
         chunk::{self, ChunkKind},
-        voxel::{self, VoxelFace, VoxelVertex},
+        voxel::{self, FacesOcclusion, VoxelFace, VoxelVertex},
     },
 };
 
@@ -29,7 +29,7 @@ fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
 
     let mut occlusion = ChunkFacesOcclusion::default();
     for voxel in chunk::voxels() {
-        let mut voxel_faces = occlusion.get(voxel);
+        let mut voxel_faces = FacesOcclusion::default();
 
         if chunk.get(voxel).is_empty() {
             voxel_faces.set_all(true);
@@ -49,9 +49,7 @@ fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
                     chunk.get(neighbor_pos)
                 };
 
-                if !neighbor_kind.is_empty() {
-                    voxel_faces[side as usize] = true;
-                }
+                voxel_faces.set(side, !neighbor_kind.is_empty());
             }
         }
 
@@ -110,12 +108,15 @@ fn mesh_generation_system(
             perf_scope!(_perf);
 
             let cloned_chunk = chunk.clone();
-
             let task = task_pool.spawn(async move {
                 let occlusion = faces_occlusion(&cloned_chunk);
-                let faces = faces_merging(&cloned_chunk, &occlusion);
-                let vertices = vertices_computation(faces);
-                vertices
+
+                if occlusion.iter().all(|oc| oc.is_fully_occluded()) {
+                    vec![]
+                } else {
+                    let faces = faces_merging(&cloned_chunk, &occlusion);
+                    vertices_computation(faces)
+                }
             });
 
             meta.tasks.insert(*local, task);

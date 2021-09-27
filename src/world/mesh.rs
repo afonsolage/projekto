@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use bevy::math::IVec3;
 
-use crate::world::storage::voxel;
+use crate::world::{query, storage::voxel};
 
 use super::{
     pipeline::ChunkFacesOcclusion,
@@ -74,26 +74,28 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
 
 pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<VoxelFace> {
     fn should_skip_voxel(
-        merged: &[HashSet<IVec3>; voxel::SIDE_COUNT],
+        merged: &HashSet<IVec3>,
         voxel: IVec3,
         side: voxel::Side,
         chunk: &ChunkKind,
         occlusion: &ChunkFacesOcclusion,
     ) -> bool {
+        // perf_fn_scope!();
         !chunk::is_within_bounds(voxel)
-            || merged[side as usize].contains(&voxel)
             || chunk.get(voxel).is_empty()
-            || occlusion.get(voxel)[side as usize]
+            || merged.contains(&voxel)
+            || occlusion.get(voxel).is_occluded(side)
     }
 
     fn find_furthest_eq_voxel(
         begin: IVec3,
         step: IVec3,
-        merged: &[HashSet<IVec3>; voxel::SIDE_COUNT],
+        merged: &HashSet<IVec3>,
         side: voxel::Side,
         chunk: &ChunkKind,
         occlusion: &ChunkFacesOcclusion,
     ) -> IVec3 {
+        // perf_fn_scope!();
         let mut next_voxel = begin + step;
 
         while !should_skip_voxel(&merged, next_voxel, side, chunk, occlusion) {
@@ -104,15 +106,8 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
         next_voxel
     }
 
+    let mut _perf = perf_fn!();
     let mut faces_vertices = vec![];
-    let mut merged = [
-        HashSet::new(),
-        HashSet::new(),
-        HashSet::new(),
-        HashSet::new(),
-        HashSet::new(),
-        HashSet::new(),
-    ];
 
     let side_axis = [
         (IVec3::Y, IVec3::Z),
@@ -123,13 +118,16 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
         (IVec3::Y, IVec3::X),
     ];
 
-    for voxel in chunk::voxels() {
-        for side in voxel::SIDES {
-            let axis = side_axis[side as usize];
+    for side in voxel::SIDES {
+        let axis = side_axis[side as usize];
+        let mut merged = HashSet::default();
 
+        for voxel in chunk::voxels() {
             if should_skip_voxel(&merged, voxel, side, chunk, occlusion) {
                 continue;
             }
+
+            perf_scope!(_perf);
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
@@ -152,13 +150,7 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
             v3 -= step;
             let v4 = v1 + (v3 - v2);
 
-            for mx in v1.x..=v3.x {
-                for my in v1.y..=v3.y {
-                    for mz in v1.z..=v3.z {
-                        merged[side as usize].insert((mx, my, mz).into());
-                    }
-                }
-            }
+            merged.extend(query::range_inclusive(v1, v3));
 
             faces_vertices.push(VoxelFace {
                 vertices: [v1, v2, v3, v4],

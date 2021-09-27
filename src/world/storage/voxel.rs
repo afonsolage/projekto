@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
-use std::ops::{Index, IndexMut};
 
 use crate::world::math;
 
@@ -78,36 +77,47 @@ impl Side {
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub struct FacesOcclusion([bool; SIDE_COUNT]);
+pub struct FacesOcclusion(u8);
+
+const FULL_OCCLUDED_MASK: u8 = 0b0011_1111;
 
 impl FacesOcclusion {
     pub fn set_all(&mut self, occluded: bool) {
-        self.0.fill(occluded)
+        if occluded {
+            self.0 = FULL_OCCLUDED_MASK;
+        } else {
+            self.0 = 0;
+        }
     }
 
-    #[cfg(test)]
     pub fn is_fully_occluded(&self) -> bool {
-        return self.0.iter().all(|&b| b);
+        return self.0 & FULL_OCCLUDED_MASK == FULL_OCCLUDED_MASK;
     }
-}
 
-impl Index<usize> for FacesOcclusion {
-    type Output = bool;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
+    pub fn is_occluded(&self, side: Side) -> bool {
+        let mask = 1 << side as usize;
+        self.0 & mask == mask
     }
-}
 
-impl IndexMut<usize> for FacesOcclusion {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
+    pub fn set(&mut self, side: Side, occluded: bool) {
+        let mask = 1 << side as usize;
+        if occluded {
+            self.0 |= mask;
+        } else {
+            self.0 &= !mask;
+        }
     }
 }
 
 impl From<[bool; 6]> for FacesOcclusion {
     fn from(v: [bool; 6]) -> Self {
-        Self(v)
+        let mut result = Self::default();
+
+        for side in SIDES {
+            result.set(side, v[side as usize]);
+        }
+
+        result
     }
 }
 
@@ -150,7 +160,46 @@ mod tests {
 
     use crate::world::storage::voxel::KindDescription;
 
-    use super::chunk;
+    use super::{chunk, FacesOcclusion};
+
+    #[test]
+    fn faces_occlusion() {
+        let mut occlusion = FacesOcclusion::default();
+        assert_eq!(occlusion.is_fully_occluded(), false);
+
+        for side in super::SIDES {
+            assert_eq!(occlusion.is_occluded(side), false);
+        }
+
+        occlusion.set(super::Side::Up, true);
+        assert_eq!(occlusion.is_occluded(super::Side::Up), true);
+
+        occlusion.set(super::Side::Back, true);
+        assert_eq!(occlusion.is_occluded(super::Side::Back), true);
+
+        for side in super::SIDES {
+            occlusion.set(side, true);
+        }
+
+        assert_eq!(occlusion.is_fully_occluded(), true);
+
+        for side in super::SIDES {
+            assert_eq!(occlusion.is_occluded(side), true);
+        }
+
+        occlusion.set(super::Side::Back, false);
+        assert_eq!(occlusion.is_occluded(super::Side::Back), false);
+
+        for side in super::SIDES {
+            occlusion.set(side, false);
+        }
+
+        assert_eq!(occlusion.is_fully_occluded(), false);
+
+        for side in super::SIDES {
+            assert_eq!(occlusion.is_occluded(side), false);
+        }
+    }
 
     #[test]
     fn to_world() {

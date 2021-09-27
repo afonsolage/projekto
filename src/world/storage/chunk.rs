@@ -12,7 +12,7 @@ pub const AXIS_SIZE: usize = 16;
 pub const AXIS_ENDING: usize = AXIS_SIZE - 1;
 
 // const CHUNK_AXIS_OFFSET: usize = CHUNK_AXIS_SIZE / 2;
-const BUFFER_SIZE: usize = AXIS_SIZE * AXIS_SIZE * AXIS_SIZE;
+pub const BUFFER_SIZE: usize = AXIS_SIZE * AXIS_SIZE * AXIS_SIZE;
 
 const X_MASK: usize = 0b_1111_0000_0000;
 const Z_MASK: usize = 0b_0000_1111_0000;
@@ -90,14 +90,18 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.main.fill(value);
     }
 
-    #[cfg(test)]
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.main.iter()
     }
 
     #[cfg(test)]
     pub fn is_default(&self) -> bool {
-        self.iter().all(|&t| t == T::default())
+        self.is_all(T::default())
+    }
+
+    #[cfg(test)]
+    pub fn is_all(&self, value: T) -> bool {
+        self.iter().all(|t| *t == value)
     }
 }
 
@@ -160,7 +164,7 @@ impl<T: ChunkStorageType> Serialize for ChunkStorage<T> {
 
 pub type ChunkKind = ChunkStorage<voxel::Kind>;
 
-fn to_index(local: IVec3) -> usize {
+pub fn to_index(local: IVec3) -> usize {
     (local.x << X_SHIFT | local.y << Y_SHIFT | local.z << Z_SHIFT) as usize
 }
 
