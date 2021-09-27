@@ -14,17 +14,22 @@ impl Plugin for PerfCounterPlugin {
 }
 
 pub(super) fn print_perf_counter(input_keys: Res<Input<KeyCode>>) {
+    let ctrl = input_keys.any_pressed([KeyCode::LControl, KeyCode::RControl]);
     if input_keys.just_pressed(KeyCode::F12) {
-        let guard = PERF_MAP.lock().unwrap();
+        let mut guard = PERF_MAP.lock().unwrap();
+        if ctrl {
+            guard.0.clear();
+            info!("Performance Counter cleared");
+        } else {
+            let mut output = String::default();
+            let mut counters = guard.0.values().collect::<Vec<_>>();
+            counters.sort_by(|a, b| (b.elapsed / b.counter).cmp(&(a.elapsed / a.counter)));
+            for p in counters {
+                output += format!("{}\n", p).as_str();
+            }
 
-        let mut output = String::default();
-        let mut counters = guard.0.values().collect::<Vec<_>>();
-        counters.sort_by(|a, b| (b.elapsed / b.counter).cmp(&(a.elapsed / a.counter)));
-        for p in counters {
-            output += format!("{}\n", p).as_str();
+            info!("Performance Counter: \n{}", output);
         }
-
-        info!("Performance Counter: \n{}", output);
     }
 }
 
