@@ -23,13 +23,18 @@ default = [
     "dev",
     # "perf_counter",
     # "serde_ron",
+    # "mem_alloc",
 ]
 dev = [ "bevy/dynamic", "egui/multi_threaded"]
 perf_counter = []
+mem_alloc = []
 serde_ron = []
 
 [profile.dev.package.ron]
 opt-level = 3
 
 [profile.dev.package.bincode]
+opt-level = 3
+
+[profile.dev.package.bevy]
 opt-level = 3

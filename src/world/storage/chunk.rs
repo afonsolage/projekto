@@ -22,6 +22,10 @@ const X_SHIFT: usize = 8;
 const Z_SHIFT: usize = 4;
 const Y_SHIFT: usize = 0;
 
+#[cfg(feature = "mem_alloc")]
+pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
+    once_cell::sync::Lazy::new(std::sync::atomic::AtomicUsize::default);
+
 #[derive(Default)]
 pub struct ChunkIter {
     iter_index: usize,
@@ -45,7 +49,7 @@ pub trait ChunkStorageType: Copy + Default + DeserializeOwned + Serialize + Part
 
 impl ChunkStorageType for u8 {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ChunkStorage<T: ChunkStorageType> {
     main: Vec<T>,
     pub neighborhood: ChunkNeighborhood<T>,
@@ -53,10 +57,15 @@ pub struct ChunkStorage<T: ChunkStorageType> {
 
 impl<T: ChunkStorageType> Default for ChunkStorage<T> {
     fn default() -> Self {
-        Self {
-            main: vec![T::default(); BUFFER_SIZE],
-            neighborhood: ChunkNeighborhood::default(),
-        }
+        Self::new(vec![T::default(); BUFFER_SIZE])
+    }
+}
+
+impl<T: ChunkStorageType> Clone for ChunkStorage<T> {
+    fn clone(&self) -> Self {
+        let mut cloned = Self::new(self.main.clone());
+        cloned.neighborhood = self.neighborhood.clone();
+        cloned
     }
 }
 
@@ -68,6 +77,16 @@ impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
+    fn new(main: Vec<T>) -> Self {
+        #[cfg(feature = "mem_alloc")]
+        ALLOC_COUNT.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+
+        Self {
+            main,
+            neighborhood: ChunkNeighborhood::default(),
+        }
+    }
+
     pub fn get(&self, local: IVec3) -> T {
         // if self.main.is_empty() {
         //     T::default()
@@ -136,10 +155,7 @@ impl<'de, T: ChunkStorageType> Deserialize<'de> for ChunkStorage<T> {
                 //     vec.shrink_to(0);
                 // }
 
-                Ok(ChunkStorage {
-                    main: vec,
-                    neighborhood: ChunkNeighborhood::default(),
-                })
+                Ok(ChunkStorage::new(vec))
             }
         }
 
@@ -159,6 +175,13 @@ impl<T: ChunkStorageType> Serialize for ChunkStorage<T> {
         }
 
         seq.end()
+    }
+}
+
+#[cfg(feature = "mem_alloc")]
+impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
+    fn drop(&mut self) {
+        ALLOC_COUNT.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
     }
 }
 
