@@ -30,11 +30,8 @@ perf_counter = []
 mem_alloc = []
 serde_ron = []
 
-[profile.dev.package.ron]
+[profile.dev.package."*"]
 opt-level = 3
 
-[profile.dev.package.bincode]
-opt-level = 3
-
-[profile.dev.package.bevy]
+[profile.test]
 opt-level = 3
