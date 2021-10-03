@@ -216,7 +216,7 @@ fn process_batch(
     mut world: VoxWorld,
     commands: HashMap<IVec3, ChunkCmd>,
 ) -> (VoxWorld, Vec<ChunkCmdResult>) {
-    let mut _perf = perf_fn!();
+    perf_fn_scope!();
 
     let (load, unload, update) = split_commands(commands);
 
@@ -241,6 +241,8 @@ fn process_batch(
 }
 
 fn update_chunks(locals: &[(IVec3, VoxelUpdateList)], world: &mut VoxWorld) -> HashSet<IVec3> {
+    perf_fn_scope!();
+
     let mut dirty_chunks = HashSet::default();
 
     for (local, voxels) in locals {
@@ -387,6 +389,8 @@ fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
 }
 
 fn update_neighborhood(world: &mut VoxWorld, local: IVec3) {
+    perf_fn_scope!();
+
     let mut neighborhood = ChunkNeighborhood::default();
     for side in voxel::SIDES {
         let dir = side.dir();
