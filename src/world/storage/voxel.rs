@@ -90,6 +90,7 @@ impl FacesOcclusion {
         }
     }
 
+    #[cfg(test)]
     pub fn is_fully_occluded(&self) -> bool {
         self.0 & FULL_OCCLUDED_MASK == FULL_OCCLUDED_MASK
     }

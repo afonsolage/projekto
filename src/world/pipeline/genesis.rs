@@ -90,6 +90,10 @@ impl BatchChunkCmdRes {
     pub fn update(&mut self, local: IVec3, voxels: Vec<(IVec3, voxel::Kind)>) {
         self.pending.insert(local, ChunkCmd::Update(voxels));
     }
+
+    pub fn is_running(&mut self) -> bool {
+        !self.running.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

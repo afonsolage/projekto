@@ -88,7 +88,7 @@ fn update_landscape_system(
 ) {
     let mut _perf = perf_fn!();
 
-    if config.paused {
+    if config.paused || batch.is_running() {
         return;
     }
 

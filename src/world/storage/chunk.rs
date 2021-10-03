@@ -122,6 +122,7 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.main.fill(value);
     }
 
+    #[cfg(test)]
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.main.iter()
     }
