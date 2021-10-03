@@ -42,7 +42,7 @@ impl Plugin for GenesisPlugin {
 
 pub struct EvtChunkLoaded(pub IVec3);
 pub struct EvtChunkUnloaded(pub IVec3);
-pub struct EvtChunkUpdated(pub IVec3);
+pub struct EvtChunkUpdated(pub IVec3, pub Vec<VoxelVertex>);
 
 fn setup_resources(mut commands: Commands) {
     trace_system_run!();
@@ -103,7 +103,7 @@ enum ChunkCmd {
 enum ChunkCmdResult {
     Loaded(IVec3),
     Unloaded(IVec3),
-    Updated(IVec3),
+    Updated(IVec3, Vec<VoxelVertex>),
 }
 
 #[derive(Default)]
@@ -161,7 +161,9 @@ fn update_world_system(
                     ChunkCmdResult::Unloaded(local) => {
                         unloaded_writer.send(EvtChunkUnloaded(local))
                     }
-                    ChunkCmdResult::Updated(local) => updated_writer.send(EvtChunkUpdated(local)),
+                    ChunkCmdResult::Updated(local, vertices) => {
+                        updated_writer.send(EvtChunkUpdated(local, vertices))
+                    }
                 }
             }
             meta.task = None;
@@ -227,7 +229,11 @@ fn process_batch(
     let mut result = vec![];
     result.extend(load.iter().map(|&l| ChunkCmdResult::Loaded(l)));
     result.extend(unload.iter().map(|&l| ChunkCmdResult::Unloaded(l)));
-    result.extend(updated_chunks.iter().map(|&l| ChunkCmdResult::Updated(l)));
+    result.extend(
+        updated_chunks
+            .into_iter()
+            .map(|(l, v)| ChunkCmdResult::Updated(l, v)),
+    );
 
     (world, result)
 }
@@ -303,7 +309,10 @@ fn load_chunks(locals: &[IVec3], world: &mut VoxWorld) -> HashSet<IVec3> {
     dirty_chunks
 }
 
-fn process_chunk_pipeline(chunks: HashSet<IVec3>, world: &mut VoxWorld) -> Vec<IVec3> {
+fn process_chunk_pipeline(
+    chunks: HashSet<IVec3>,
+    world: &mut VoxWorld,
+) -> Vec<(IVec3, Vec<VoxelVertex>)> {
     perf_fn_scope!();
 
     chunks
@@ -314,7 +323,7 @@ fn process_chunk_pipeline(chunks: HashSet<IVec3>, world: &mut VoxWorld) -> Vec<I
                 let occlusion = faces_occlusion(&chunk.kind);
                 let faces = faces_merging(&chunk.kind, &occlusion);
                 chunk.vertices = vertices_computation(faces);
-                local
+                (local, chunk.vertices.clone())
             })
         })
         .collect()
@@ -653,7 +662,9 @@ mod tests {
         let chunks = vec![(0, 0, 0).into(), (0, 1, 0).into()]
             .into_iter()
             .collect();
-        let updated = super::process_chunk_pipeline(chunks, &mut world);
+        let (updated, _): (Vec<_>, Vec<_>) = super::process_chunk_pipeline(chunks, &mut world)
+            .into_iter()
+            .unzip();
 
         let updated_test = vec![(0, 0, 0).into(), (0, 1, 0).into()];
         assert!(

@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::{
-    genesis::{BatchChunkCmdRes, WorldRes},
-    ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty, EvtChunkUpdated,
+    genesis::BatchChunkCmdRes, ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline,
+    EvtChunkMeshDirty, EvtChunkUpdated,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -82,14 +82,13 @@ fn update_landscape_system(
     time: Res<Time>,
     entity_map: ResMut<ChunkEntityMap>,
     config: Res<LandscapeConfig>,
-    world_res: Res<WorldRes>,
     mut meta: Local<UpdateLandscapeMeta>,
     mut batch: ResMut<BatchChunkCmdRes>,
     q: Query<&Transform, With<FlyByCamera>>,
 ) {
     let mut _perf = perf_fn!();
 
-    if config.paused || !world_res.is_ready() {
+    if config.paused {
         return;
     }
 
@@ -130,7 +129,6 @@ fn spawn_chunks_system(
     mut entity_map: ResMut<ChunkEntityMap>,
     chunk_pipeline: Res<ChunkPipeline>,
     mut reader: EventReader<EvtChunkLoaded>,
-    mut writer: EventWriter<EvtChunkMeshDirty>,
 ) {
     let mut _perf = perf_fn!();
     for EvtChunkLoaded(local) in reader.iter() {
@@ -150,7 +148,6 @@ fn spawn_chunks_system(
             })
             .id();
         entity_map.0.insert(*local, entity);
-        writer.send(EvtChunkMeshDirty(*local));
     }
 }
 
@@ -178,11 +175,11 @@ fn update_chunks_system(
 ) {
     let mut _perf = perf_fn!();
 
-    for EvtChunkUpdated(chunk_local) in reader.iter() {
-        if entity_map.0.get(chunk_local).is_some() {
-            trace_system_run!(chunk_local);
+    for EvtChunkUpdated(local, vertices) in reader.iter() {
+        if entity_map.0.get(local).is_some() {
+            trace_system_run!(local);
             perf_scope!(_perf);
-            writer.send(EvtChunkMeshDirty(*chunk_local));
+            writer.send(EvtChunkMeshDirty(*local, vertices.clone()));
         }
     }
 }
@@ -207,7 +204,6 @@ mod test {
         let mut world = World::default();
         world.insert_resource(ChunkEntityMap(HashMap::default()));
         world.insert_resource(added_events);
-        world.insert_resource(Events::<EvtChunkMeshDirty>::default());
         world.insert_resource(ChunkPipeline(Handle::default()));
 
         let mut stage = SystemStage::parallel();
@@ -217,17 +213,6 @@ mod test {
         stage.run(&mut world);
 
         // Assert
-        assert_eq!(
-            world
-                .get_resource::<Events<EvtChunkMeshDirty>>()
-                .unwrap()
-                .iter_current_update_events()
-                .next()
-                .unwrap()
-                .0,
-            IVec3::ONE
-        );
-
         assert_eq!(world.query::<&ChunkLocal>().iter(&world).len(), 1);
     }
 
@@ -268,7 +253,7 @@ mod test {
     fn update_chunks_system() {
         // Arrange
         let mut added_events = Events::<EvtChunkUpdated>::default();
-        added_events.send(EvtChunkUpdated((1, 2, 3).into()));
+        added_events.send(EvtChunkUpdated((1, 2, 3).into(), vec![]));
 
         let mut world = World::default();
         world.insert_resource(added_events);

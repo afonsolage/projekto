@@ -14,7 +14,10 @@ pub use genesis::{EvtChunkLoaded, EvtChunkUnloaded, EvtChunkUpdated, WorldRes};
 pub use landscaping::LandscapeConfig;
 pub use terraforming::{ChunkSystemQuery, ChunkSystemRaycast, CmdChunkUpdate, RaycastResult};
 
-use super::storage::{chunk::ChunkStorage, voxel};
+use super::storage::{
+    chunk::ChunkStorage,
+    voxel::{self, VoxelVertex},
+};
 
 #[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]
 enum Pipeline {
@@ -79,7 +82,7 @@ impl Plugin for PipelinePlugin {
     }
 }
 
-pub struct EvtChunkMeshDirty(pub IVec3);
+pub struct EvtChunkMeshDirty(pub IVec3, pub Vec<VoxelVertex>);
 
 pub struct ChunkLocal(pub IVec3);
 
