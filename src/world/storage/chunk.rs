@@ -26,10 +26,17 @@ const Y_SHIFT: usize = 0;
 pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
     once_cell::sync::Lazy::new(std::sync::atomic::AtomicUsize::default);
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Chunk {
     pub kind: ChunkKind,
     pub vertices: Vec<VoxelVertex>,
+}
+
+#[cfg(test)]
+impl PartialEq for Chunk {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.vertices == other.vertices
+    }
 }
 
 #[derive(Default)]

@@ -285,7 +285,7 @@ fn load_chunks(locals: &[IVec3], world: &mut VoxWorld) -> HashSet<IVec3> {
         let path = local_path(*local);
 
         let chunk = if path.exists() {
-            load_cache(&path)
+            load_chunk(&path)
         } else {
             generate_chunk(*local)
         };
@@ -455,7 +455,7 @@ fn save_chunk(path: &Path, chunk: &Chunk) {
         .unwrap_or_else(|_| panic!("Failed to serialize cache to file {}", path.display()));
 }
 
-fn load_cache(path: &Path) -> Chunk {
+fn load_chunk(path: &Path) -> Chunk {
     perf_fn_scope!();
 
     let file = std::fs::OpenOptions::new()
@@ -491,11 +491,74 @@ mod tests {
 
     use super::*;
 
+    fn create_cache(path: &Path, cache: &Chunk) {
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+
+        bincode::serialize_into(file, cache).unwrap();
+    }
+
     #[test]
-    fn update_voxel() {
+    fn split_commands() {
+        let commands = HashMap::default();
+        let (load, unload, update) = super::split_commands(commands);
+
+        assert!(load.is_empty());
+        assert!(unload.is_empty());
+        assert!(update.is_empty());
+
+        let mut commands = HashMap::default();
+        commands.insert((1, 1, 1).into(), ChunkCmd::Load);
+
+        let (load, unload, update) = super::split_commands(commands);
+
+        assert_eq!(load, vec![(1, 1, 1).into()]);
+        assert!(unload.is_empty());
+        assert!(update.is_empty());
+
+        let mut commands = HashMap::default();
+        commands.insert((2, 2, 2).into(), ChunkCmd::Load);
+        commands.insert((3, 3, 3).into(), ChunkCmd::Load);
+        commands.insert((4, 4, 4).into(), ChunkCmd::Unload);
+        commands.insert((5, 5, 5).into(), ChunkCmd::Load);
+
+        let (load, unload, update) = super::split_commands(commands);
+
+        let test_load = vec![(2, 2, 2).into(), (3, 3, 3).into(), (5, 5, 5).into()];
+
+        assert!(load.iter().all(|v| test_load.contains(v)));
+        assert_eq!(unload, vec![(4, 4, 4).into()]);
+        assert!(update.is_empty());
+
+        let mut commands = HashMap::default();
+        commands.insert((2, 2, 2).into(), ChunkCmd::Load);
+        commands.insert(
+            (3, 3, 3).into(),
+            ChunkCmd::Update(vec![((0, 0, 1).into(), 1.into())]),
+        );
+        commands.insert((4, 4, 4).into(), ChunkCmd::Unload);
+        commands.insert((5, 5, 5).into(), ChunkCmd::Load);
+
+        let (load, unload, update) = super::split_commands(commands);
+        let test_load = vec![(5, 5, 5).into(), (2, 2, 2).into()];
+
+        assert!(load.iter().all(|v| test_load.contains(v)));
+        assert_eq!(unload, vec![(4, 4, 4).into()]);
+        assert_eq!(
+            update,
+            vec![((3, 3, 3).into(), vec![((0, 0, 1).into(), 1.into())])]
+        );
+    }
+
+    #[test]
+    fn update_chunks() {
         let mut world = VoxWorld::default();
         let local = (0, 0, 0).into();
-        world.add(local, ChunkKind::default());
+        world.add(local, Chunk::default());
 
         let voxels = vec![
             ((0, 0, 0).into(), 1.into()),
@@ -503,14 +566,16 @@ mod tests {
             ((0, chunk::AXIS_ENDING as i32, 5).into(), 3.into()),
         ];
 
-        let dirty_chunks = super::update_voxel(&mut world, local, &voxels);
+        let chunks = vec![(local, voxels)];
+
+        let dirty_chunks = super::update_chunks(&chunks, &mut world);
 
         let chunk = world.get(local).unwrap();
 
-        assert_eq!(chunk.get((0, 0, 0).into()), 1.into());
-        assert_eq!(chunk.get((1, 1, 1).into()), 2.into());
+        assert_eq!(chunk.kind.get((0, 0, 0).into()), 1.into());
+        assert_eq!(chunk.kind.get((1, 1, 1).into()), 2.into());
         assert_eq!(
-            chunk.get((0, chunk::AXIS_ENDING as i32, 5).into()),
+            chunk.kind.get((0, chunk::AXIS_ENDING as i32, 5).into()),
             3.into()
         );
 
@@ -523,13 +588,13 @@ mod tests {
     }
 
     #[test]
-    fn unload_chunk() {
+    fn unload_chunks() {
         let local = (9111, -9222, 9333).into();
         let mut world = VoxWorld::default();
 
-        world.add(local, ChunkKind::default());
+        world.add(local, Chunk::default());
 
-        let dirty_chunks = super::unload_chunk(&mut world, local);
+        let dirty_chunks = super::unload_chunks(&[local], &mut world);
 
         assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT);
         assert!(
@@ -539,17 +604,17 @@ mod tests {
     }
 
     #[test]
-    fn load_chunk() {
+    fn load_chunks() {
         // Load existing cache
         let local = (9943, 9943, 9999).into();
         let path = super::local_path(local);
-        let chunk = ChunkKind::default();
+        let chunk = Chunk::default();
 
-        create_cache(&path, &ChunkCache { local, kind: chunk });
+        create_cache(&path, &chunk);
 
         let mut world = VoxWorld::default();
 
-        let dirty_chunks = super::load_chunk(&mut world, local);
+        let dirty_chunks = super::load_chunks(&[local], &mut world);
 
         assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT + 1);
         assert!(dirty_chunks.contains(&local));
@@ -563,7 +628,7 @@ mod tests {
         let _ = remove_file(&path);
 
         let mut world = VoxWorld::default();
-        let dirty_chunks = super::load_chunk(&mut world, local);
+        let dirty_chunks = super::load_chunks(&[local], &mut world);
 
         assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT + 1);
         assert!(dirty_chunks.contains(&local));
@@ -574,43 +639,64 @@ mod tests {
     }
 
     #[test]
-    fn update_chunk() {
+    fn process_chunk_pipeline() {
         let mut world = VoxWorld::default();
+        let chunks = vec![(0, 0, 0).into()].into_iter().collect();
         assert!(
-            !super::update_chunk(&mut world, (0, 0, 0).into()),
-            "should return false when chunk doesn't exists"
+            super::process_chunk_pipeline(chunks, &mut world).is_empty(),
+            "should return empty list when chunk doesn't exists"
         );
 
-        world.add((0, 0, 0).into(), ChunkKind::default());
-        world.add((0, 1, 0).into(), ChunkKind::default());
+        world.add((0, 0, 0).into(), Chunk::default());
+        world.add((0, 1, 0).into(), Chunk::default());
 
+        let chunks = vec![(0, 0, 0).into(), (0, 1, 0).into()]
+            .into_iter()
+            .collect();
+        let updated = super::process_chunk_pipeline(chunks, &mut world);
+
+        let updated_test = vec![(0, 0, 0).into(), (0, 1, 0).into()];
         assert!(
-            super::update_chunk(&mut world, (0, 0, 0).into()),
-            "should return true when chunk doesn't exists"
+            updated.iter().all(|l| updated_test.contains(l)),
+            "Should return the updated chunks list"
         );
 
         let chunk = world.get((0, 0, 0).into()).unwrap();
         assert!(
             chunk
+                .kind
                 .neighborhood
                 .get(super::voxel::Side::Up, (0, 0, 0).into())
                 .is_some(),
             "Neighborhood should be updated on update_chunk call"
         );
+
+        assert!(
+            chunk.vertices.is_empty(),
+            "Should be empty, since all voxels are empty blocks"
+        );
+
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+        chunk.kind.set((0, 0, 0).into(), 1.into());
+
+        let chunks = vec![(0, 0, 0).into()].into_iter().collect();
+        let _ = super::process_chunk_pipeline(chunks, &mut world);
+
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+        assert_eq!(
+            chunk.vertices.len(),
+            4 * super::voxel::SIDE_COUNT, //4 vertex per face
+            "Should not be empty, since there is one non-empty voxel"
+        );
     }
 
     #[test]
-    fn generate_cache() {
+    fn generate_chunk() {
         let local = (5432, 4321, 5555).into();
-        let cache = super::generate_chunk(local);
+        let _ = super::generate_chunk(local);
         let path = local_path(local);
 
         assert!(path.exists(), "Generate cache should save cache on disk");
-        assert_eq!(
-            cache.local, local,
-            "Generate cache should have the same local as the given one"
-        );
-
         remove_file(path).expect("File should exists");
     }
 
@@ -653,40 +739,18 @@ mod tests {
         let mut temp_file = std::env::temp_dir();
         temp_file.push("test.tmp");
 
-        let cache = ChunkCache {
-            local: IVec3::ZERO,
-            kind: ChunkKind::default(),
-        };
+        let chunk = Chunk::default();
 
-        create_cache(&temp_file, &cache);
+        create_cache(&temp_file, &chunk);
 
         let file = std::fs::OpenOptions::new()
             .read(true)
             .open(&temp_file)
             .unwrap();
 
-        #[cfg(feature = "serde_ron")]
-        let cache_loaded: ChunkCache = ron::de::from_reader(file).unwrap();
+        let cache_loaded: Chunk = bincode::deserialize_from(file).unwrap();
 
-        #[cfg(not(feature = "serde_ron"))]
-        let cache_loaded: ChunkCache = bincode::deserialize_from(file).unwrap();
-
-        assert_eq!(cache, cache_loaded);
-    }
-
-    fn create_cache(path: &Path, cache: &ChunkCache) {
-        let file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)
-            .unwrap();
-
-        #[cfg(feature = "serde_ron")]
-        ron::ser::to_writer(file, cache).unwrap();
-
-        #[cfg(not(feature = "serde_ron"))]
-        bincode::serialize_into(file, cache).unwrap();
+        assert_eq!(chunk, cache_loaded);
     }
 
     #[test]
@@ -704,45 +768,279 @@ mod tests {
     }
 
     #[test]
-    fn load_cache() {
+    fn load_chunk() {
         let local = (-9998, 0, 9998).into();
 
-        let cache = ChunkCache {
-            local,
-            kind: ChunkKind::default(),
-        };
+        let chunk = Chunk::default();
 
         let path = local_path(local);
-        create_cache(&path, &cache);
+        create_cache(&path, &chunk);
 
-        let loaded_cache = super::load_cache(&path);
+        let loaded_chunk = super::load_chunk(&path);
 
-        assert_eq!(cache, loaded_cache);
+        assert_eq!(chunk, loaded_chunk);
 
         remove_file(path).unwrap();
     }
 
     #[test]
-    fn save_cache() {
+    fn save_chunk() {
         let local = (-921, 0, 2319).into();
 
-        let cache = ChunkCache {
-            local,
-            kind: ChunkKind::default(),
-        };
+        let chunk = Chunk::default();
 
         let path = local_path(local);
 
         assert!(!path.exists());
 
-        super::save_chunk(&path, &cache);
+        super::save_chunk(&path, &chunk);
 
         assert!(path.exists());
 
-        let loaded_cache = super::load_cache(&path);
+        let loaded_chunk = super::load_chunk(&path);
 
-        assert_eq!(cache, loaded_cache);
+        assert_eq!(chunk, loaded_chunk);
 
         remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn update_neighborhood() {
+        let mut world = VoxWorld::default();
+
+        let center = (1, 1, 1).into();
+        let mut chunk = Chunk::default();
+        chunk.kind.set_all(10.into());
+        world.add(center, chunk);
+
+        for side in voxel::SIDES {
+            let dir = side.dir();
+            let pos = center + dir;
+            let mut chunk = Chunk::default();
+            chunk.kind.set_all((side as u16).into());
+            world.add(pos, chunk);
+        }
+
+        super::update_neighborhood(&mut world, center);
+        let chunk = world.get(center).unwrap();
+
+        for side in voxel::SIDES {
+            match side {
+                voxel::Side::Right => {
+                    for a in 0..chunk::AXIS_SIZE {
+                        for b in 0..chunk::AXIS_SIZE {
+                            assert_eq!(
+                                chunk
+                                    .kind
+                                    .neighborhood
+                                    .get(side, (0, a as i32, b as i32).into()),
+                                Some((side as u16).into())
+                            );
+                        }
+                    }
+                }
+                voxel::Side::Left => {
+                    for a in 0..chunk::AXIS_SIZE {
+                        for b in 0..chunk::AXIS_SIZE {
+                            assert_eq!(
+                                chunk.kind.neighborhood.get(
+                                    side,
+                                    (chunk::AXIS_ENDING as i32, a as i32, b as i32).into()
+                                ),
+                                Some((side as u16).into())
+                            );
+                        }
+                    }
+                }
+                voxel::Side::Up => {
+                    for a in 0..chunk::AXIS_SIZE {
+                        for b in 0..chunk::AXIS_SIZE {
+                            assert_eq!(
+                                chunk
+                                    .kind
+                                    .neighborhood
+                                    .get(side, (a as i32, 0, b as i32).into()),
+                                Some((side as u16).into())
+                            );
+                        }
+                    }
+                }
+                voxel::Side::Down => {
+                    for a in 0..chunk::AXIS_SIZE {
+                        for b in 0..chunk::AXIS_SIZE {
+                            assert_eq!(
+                                chunk.kind.neighborhood.get(
+                                    side,
+                                    (a as i32, chunk::AXIS_ENDING as i32, b as i32).into()
+                                ),
+                                Some((side as u16).into())
+                            );
+                        }
+                    }
+                }
+                voxel::Side::Front => {
+                    for a in 0..chunk::AXIS_SIZE {
+                        for b in 0..chunk::AXIS_SIZE {
+                            assert_eq!(
+                                chunk
+                                    .kind
+                                    .neighborhood
+                                    .get(side, (a as i32, b as i32, 0).into()),
+                                Some((side as u16).into())
+                            );
+                        }
+                    }
+                }
+                voxel::Side::Back => {
+                    for a in 0..chunk::AXIS_SIZE {
+                        for b in 0..chunk::AXIS_SIZE {
+                            assert_eq!(
+                                chunk.kind.neighborhood.get(
+                                    side,
+                                    (a as i32, b as i32, chunk::AXIS_ENDING as i32).into()
+                                ),
+                                Some((side as u16).into())
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn faces_occlusion_occlude_empty_chunk() {
+        // Arrange
+        let chunk = ChunkKind::default();
+
+        // Act
+        let occlusions = super::faces_occlusion(&chunk);
+
+        // Assert
+        assert!(
+            occlusions.iter().all(|a| a.is_fully_occluded()),
+            "A chunk full of empty-kind voxels should be fully occluded"
+        );
+    }
+
+    #[test]
+    fn faces_occlusion() {
+        // Arrange
+        let mut chunk = ChunkKind::default();
+
+        // Top-Bottom occlusion
+        chunk.set((1, 1, 1).into(), 1.into());
+        chunk.set((1, 2, 1).into(), 1.into());
+
+        // Full occluded voxel at (10, 10, 10)
+        chunk.set((10, 10, 10).into(), 1.into());
+        chunk.set((9, 10, 10).into(), 1.into());
+        chunk.set((11, 10, 10).into(), 1.into());
+        chunk.set((10, 9, 10).into(), 1.into());
+        chunk.set((10, 11, 10).into(), 1.into());
+        chunk.set((10, 10, 9).into(), 1.into());
+        chunk.set((10, 10, 11).into(), 1.into());
+
+        // Act
+        let faces_occlusion = super::faces_occlusion(&chunk);
+
+        // Assert
+        let faces = faces_occlusion.get((1, 2, 1).into());
+
+        assert_eq!(
+            faces,
+            [false, false, false, true, false, false].into(),
+            "Only down face should be occluded by the bottom voxel"
+        );
+
+        let faces = faces_occlusion.get((1, 1, 1).into());
+
+        assert_eq!(
+            faces,
+            [false, false, true, false, false, false].into(),
+            "Only down face should be occluded by the bottom voxel"
+        );
+
+        let faces = faces_occlusion.get((10, 10, 10).into());
+
+        assert_eq!(
+            faces,
+            [true; voxel::SIDE_COUNT].into(),
+            "Voxel fully surrounded by another non-empty voxels should be fully occluded"
+        );
+    }
+
+    #[test]
+    fn faces_occlusion_neighborhood() {
+        let mut world = VoxWorld::default();
+
+        let mut top = Chunk::default();
+        top.kind.set_all(2.into());
+
+        let mut down = Chunk::default();
+        down.kind.set_all(3.into());
+
+        let mut center = Chunk::default();
+        center
+            .kind
+            .set((0, chunk::AXIS_ENDING as i32, 0).into(), 1.into());
+        center.kind.set((1, 0, 1).into(), 1.into());
+
+        world.add((0, 1, 0).into(), top);
+        world.add((0, 0, 0).into(), center);
+        world.add((0, -1, 0).into(), down);
+
+        super::update_neighborhood(&mut world, (0, 0, 0).into());
+        let center = world.get((0, 0, 0).into()).unwrap();
+
+        let faces_occlusion = super::faces_occlusion(&center.kind);
+
+        let faces = faces_occlusion.get((0, chunk::AXIS_ENDING as i32, 0).into());
+        assert_eq!(faces, [false, false, true, false, false, false].into());
+
+        let faces = faces_occlusion.get((1, 0, 1).into());
+        assert_eq!(faces, [false, false, false, true, false, false].into());
+    }
+
+    #[test]
+    fn vertices_computation() {
+        // Arrange
+        let side = voxel::Side::Up;
+        let faces = vec![VoxelFace {
+            side,
+            vertices: [
+                (0, 0, 0).into(),
+                (0, 0, 1).into(),
+                (1, 0, 1).into(),
+                (1, 0, 0).into(),
+            ],
+        }];
+
+        // Act
+        let vertices = super::vertices_computation(faces);
+
+        // Assert
+        let normal = side.normal();
+        assert_eq!(
+            vertices,
+            vec![
+                VoxelVertex {
+                    normal,
+                    position: (0.0, 1.0, 0.0).into(),
+                },
+                VoxelVertex {
+                    normal,
+                    position: (0.0, 1.0, 2.0).into(),
+                },
+                VoxelVertex {
+                    normal,
+                    position: (2.0, 1.0, 2.0).into(),
+                },
+                VoxelVertex {
+                    normal,
+                    position: (2.0, 1.0, 0.0).into(),
+                },
+            ]
+        );
     }
 }
