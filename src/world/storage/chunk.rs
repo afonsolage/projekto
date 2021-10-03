@@ -122,17 +122,14 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.main.fill(value);
     }
 
-    #[cfg(test)]
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.main.iter()
     }
 
-    #[cfg(test)]
     pub fn is_default(&self) -> bool {
         self.is_all(T::default())
     }
 
-    #[cfg(test)]
     pub fn is_all(&self, value: T) -> bool {
         self.iter().all(|t| *t == value)
     }
@@ -161,13 +158,9 @@ impl<'de, T: ChunkStorageType> Deserialize<'de> for ChunkStorage<T> {
                     vec.push(element);
                 }
 
-                if !vec.is_empty() && vec.len() != chunk::BUFFER_SIZE {
-                    return Err(serde::de::Error::invalid_length(vec.len(), &self));
+                if vec.is_empty() {
+                    vec = vec![T::default(); chunk::BUFFER_SIZE];
                 }
-
-                // if vec.is_empty() {
-                //     vec.shrink_to(0);
-                // }
 
                 Ok(ChunkStorage::new(vec))
             }
@@ -182,13 +175,16 @@ impl<T: ChunkStorageType> Serialize for ChunkStorage<T> {
     where
         S: serde::Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(chunk::BUFFER_SIZE))?;
+        if self.is_default() {
+            serializer.serialize_seq(Some(0))?.end()
+        } else {
+            let mut seq = serializer.serialize_seq(Some(chunk::BUFFER_SIZE))?;
 
-        for elem in self.main.iter() {
-            seq.serialize_element(elem)?;
+            for elem in self.main.iter() {
+                seq.serialize_element(elem)?;
+            }
+            seq.end()
         }
-
-        seq.end()
     }
 }
 
