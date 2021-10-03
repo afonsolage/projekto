@@ -1,6 +1,5 @@
 pub mod chunk;
 pub mod landscape;
-pub mod sector;
 pub mod voxel;
 mod voxworld;
 

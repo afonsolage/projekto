@@ -119,7 +119,7 @@ fn mesh_generation_system(
 
         let owned_batch = batch
             .iter()
-            .map(|(local, c)| (*local, (*c).clone()))
+            .map(|(local, c)| (*local, c.kind.clone()))
             .collect();
 
         let task = task_pool.spawn(async move { generate_vertices(owned_batch) });

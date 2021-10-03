@@ -6,7 +6,7 @@ use serde::{de::DeserializeOwned, ser::SerializeSeq, Deserialize, Serialize};
 
 use crate::world::{math, query, storage::chunk};
 
-use super::voxel;
+use super::voxel::{self, VoxelVertex};
 
 pub const AXIS_SIZE: usize = 16;
 pub const AXIS_ENDING: usize = AXIS_SIZE - 1;
@@ -25,6 +25,12 @@ const Y_SHIFT: usize = 0;
 #[cfg(feature = "mem_alloc")]
 pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
     once_cell::sync::Lazy::new(std::sync::atomic::AtomicUsize::default);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Chunk {
+    pub kind: ChunkKind,
+    pub vertices: Vec<VoxelVertex>,
+}
 
 #[derive(Default)]
 pub struct ChunkIter {

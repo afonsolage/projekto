@@ -1,48 +1,29 @@
 use bevy::{prelude::*, utils::HashMap};
 
-use super::{
-    chunk::{ChunkKind, ChunkNeighborhood},
-    voxel,
-};
+use super::chunk::Chunk;
 
 #[derive(Default)]
 pub struct VoxWorld {
-    chunks: HashMap<IVec3, ChunkKind>,
+    chunks: HashMap<IVec3, Chunk>,
 }
 
 impl VoxWorld {
-    pub fn add(&mut self, local: IVec3, kind: ChunkKind) {
-        if self.chunks.insert(local, kind).is_some() {
+    pub fn add(&mut self, local: IVec3, chunk: Chunk) {
+        if self.chunks.insert(local, chunk).is_some() {
             panic!("Created a duplicated chunk at {:?}", &local);
         }
     }
 
-    pub fn remove(&mut self, local: IVec3) -> Option<ChunkKind> {
+    pub fn remove(&mut self, local: IVec3) -> Option<Chunk> {
         self.chunks.remove(&local)
     }
 
-    pub fn get(&self, local: IVec3) -> Option<&ChunkKind> {
+    pub fn get(&self, local: IVec3) -> Option<&Chunk> {
         self.chunks.get(&local)
     }
 
-    pub fn get_mut(&mut self, local: IVec3) -> Option<&mut ChunkKind> {
+    pub fn get_mut(&mut self, local: IVec3) -> Option<&mut Chunk> {
         self.chunks.get_mut(&local)
-    }
-
-    pub fn update_neighborhood(&mut self, local: IVec3) {
-        let mut neighborhood = ChunkNeighborhood::default();
-        for side in voxel::SIDES {
-            let dir = side.dir();
-            let neighbor = local + dir;
-
-            if let Some(neighbor_chunk) = self.get(neighbor) {
-                neighborhood.set(side, neighbor_chunk);
-            }
-        }
-
-        if let Some(chunk) = self.get_mut(local) {
-            chunk.neighborhood = neighborhood;
-        }
     }
 }
 
