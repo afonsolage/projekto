@@ -220,24 +220,22 @@ fn process_batch(
 
     let (load, unload, update) = split_commands(commands);
 
-    let mut dirty_chunks = HashSet::default();
+    unload_chunks(&unload, &mut world);
 
-    dirty_chunks.extend(unload_chunks(&unload, &mut world));
-    dirty_chunks.extend(load_chunks(&load, &mut world));
+    let mut dirty_chunks = load_chunks(&load, &mut world);
     dirty_chunks.extend(update_chunks(&update, &mut world));
 
-    let updated_chunks = process_chunk_pipeline(dirty_chunks, &mut world);
-
-    // TODO: Send all batch related events
+    let mut updated_chunks = process_chunk_pipeline(dirty_chunks, &mut world);
+    updated_chunks.extend(&load);
 
     let mut result = vec![];
-    result.extend(load.iter().map(|&l| ChunkCmdResult::Loaded(l)));
-    result.extend(unload.iter().map(|&l| ChunkCmdResult::Unloaded(l)));
-    result.extend(
-        updated_chunks
-            .into_iter()
-            .map(|(l, v)| ChunkCmdResult::Updated(l, v)),
-    );
+    result.extend(load.into_iter().map(ChunkCmdResult::Loaded));
+    result.extend(unload.into_iter().map(ChunkCmdResult::Unloaded));
+    result.extend(updated_chunks.into_iter().filter_map(|l| {
+        world
+            .get(l)
+            .map(|c| ChunkCmdResult::Updated(l, c.vertices.clone()))
+    }));
 
     (world, result)
 }
@@ -270,20 +268,14 @@ fn update_chunks(locals: &[(IVec3, VoxelUpdateList)], world: &mut VoxWorld) -> H
     dirty_chunks
 }
 
-fn unload_chunks(locals: &[IVec3], world: &mut VoxWorld) -> HashSet<IVec3> {
+fn unload_chunks(locals: &[IVec3], world: &mut VoxWorld) {
     perf_fn_scope!();
-
-    let mut dirty_chunks = HashSet::default();
 
     for local in locals {
         if world.remove(*local).is_none() {
             warn!("Trying to unload non-existing chunk {}", local);
-        } else {
-            dirty_chunks.extend(voxel::SIDES.map(|s| s.dir() + *local))
         }
     }
-
-    dirty_chunks
 }
 
 fn load_chunks(locals: &[IVec3], world: &mut VoxWorld) -> HashSet<IVec3> {
@@ -297,26 +289,23 @@ fn load_chunks(locals: &[IVec3], world: &mut VoxWorld) -> HashSet<IVec3> {
         let chunk = if path.exists() {
             load_chunk(&path)
         } else {
+            dirty_chunks.extend(
+                voxel::SIDES
+                    .iter()
+                    .map(|s| s.dir() + *local)
+                    .chain(std::iter::once(*local)),
+            );
+
             generate_chunk(*local)
         };
 
         world.add(*local, chunk);
-
-        dirty_chunks.extend(
-            voxel::SIDES
-                .iter()
-                .map(|s| s.dir() + *local)
-                .chain(std::iter::once(*local)),
-        );
     }
 
     dirty_chunks
 }
 
-fn process_chunk_pipeline(
-    chunks: HashSet<IVec3>,
-    world: &mut VoxWorld,
-) -> Vec<(IVec3, Vec<VoxelVertex>)> {
+fn process_chunk_pipeline(chunks: HashSet<IVec3>, world: &mut VoxWorld) -> HashSet<IVec3> {
     perf_fn_scope!();
 
     chunks
@@ -327,7 +316,9 @@ fn process_chunk_pipeline(
                 let occlusion = faces_occlusion(&chunk.kind);
                 let faces = faces_merging(&chunk.kind, &occlusion);
                 chunk.vertices = vertices_computation(faces);
-                (local, chunk.vertices.clone())
+                let path = local_path(local);
+                save_chunk(&path, chunk);
+                local
             })
         })
         .collect()
@@ -607,9 +598,8 @@ mod tests {
 
         world.add(local, Chunk::default());
 
-        let dirty_chunks = super::unload_chunks(&[local], &mut world);
+        super::unload_chunks(&[local], &mut world);
 
-        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT);
         assert!(
             world.get(local).is_none(),
             "Chunk should be removed from world"
@@ -629,8 +619,7 @@ mod tests {
 
         let dirty_chunks = super::load_chunks(&[local], &mut world);
 
-        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT + 1);
-        assert!(dirty_chunks.contains(&local));
+        assert_eq!(dirty_chunks.len(), 0);
         assert!(world.get(local).is_some(), "Chunk should be added to world");
 
         let _ = remove_file(path);
@@ -666,9 +655,7 @@ mod tests {
         let chunks = vec![(0, 0, 0).into(), (0, 1, 0).into()]
             .into_iter()
             .collect();
-        let (updated, _): (Vec<_>, Vec<_>) = super::process_chunk_pipeline(chunks, &mut world)
-            .into_iter()
-            .unzip();
+        let updated = super::process_chunk_pipeline(chunks, &mut world);
 
         let updated_test = vec![(0, 0, 0).into(), (0, 1, 0).into()];
         assert!(
