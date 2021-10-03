@@ -17,6 +17,7 @@ once_cell = "1.8.0"
 futures-lite = "1.12.0"
 egui = "0.14.0"
 bevy_egui = {git = "https://github.com/jakobhellermann/bevy_egui", branch="bevy-main"}
+snap = "1"
 
 [features]
 default = [

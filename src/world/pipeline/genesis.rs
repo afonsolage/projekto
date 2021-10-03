@@ -459,7 +459,10 @@ fn save_chunk(path: &Path, chunk: &Chunk) {
         .open(path)
         .unwrap_or_else(|_| panic!("Unable to write to file {}", path.display()));
 
-    bincode::serialize_into(file, chunk)
+    let buffer = std::io::BufWriter::new(file);
+    let encoder = snap::write::FrameEncoder::new(buffer);
+
+    bincode::serialize_into(encoder, chunk)
         .unwrap_or_else(|_| panic!("Failed to serialize cache to file {}", path.display()));
 }
 
@@ -471,7 +474,10 @@ fn load_chunk(path: &Path) -> Chunk {
         .open(path)
         .unwrap_or_else(|_| panic!("Unable to open file {}", path.display()));
 
-    bincode::deserialize_from(file)
+    let reader = std::io::BufReader::new(file);
+    let decoder = snap::read::FrameDecoder::new(reader);
+
+    bincode::deserialize_from(decoder)
         .unwrap_or_else(|_| panic!("Failed to parse file {}", path.display()))
 }
 
@@ -507,7 +513,9 @@ mod tests {
             .open(path)
             .unwrap();
 
-        bincode::serialize_into(file, cache).unwrap();
+        let buffer = std::io::BufWriter::new(file);
+        let encoder = snap::write::FrameEncoder::new(buffer);
+        bincode::serialize_into(encoder, cache).unwrap();
     }
 
     #[test]
@@ -754,7 +762,10 @@ mod tests {
             .open(&temp_file)
             .unwrap();
 
-        let cache_loaded: Chunk = bincode::deserialize_from(file).unwrap();
+        let buffer = std::io::BufReader::new(file);
+        let decoder = snap::read::FrameDecoder::new(buffer);
+
+        let cache_loaded: Chunk = bincode::deserialize_from(decoder).unwrap();
 
         assert_eq!(chunk, cache_loaded);
     }
