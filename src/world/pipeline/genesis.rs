@@ -188,108 +188,115 @@ fn update_world_system(
     );
 }
 
+type VoxelUpdateList = Vec<(IVec3, voxel::Kind)>;
+
+fn split_commands(
+    commands: HashMap<IVec3, ChunkCmd>,
+) -> (Vec<IVec3>, Vec<IVec3>, Vec<(IVec3, VoxelUpdateList)>) {
+    let mut load = vec![];
+    let mut unload = vec![];
+    let mut update = vec![];
+
+    commands.into_iter().for_each(|(local, cmd)| match cmd {
+        ChunkCmd::Load => load.push(local),
+        ChunkCmd::Unload => unload.push(local),
+        ChunkCmd::Update(v) => update.push((local, v)),
+    });
+
+    (load, unload, update)
+}
+
 fn process_batch(
     mut world: VoxWorld,
     commands: HashMap<IVec3, ChunkCmd>,
 ) -> (VoxWorld, Vec<ChunkCmdResult>) {
     let mut _perf = perf_fn!();
 
-    let mut dirty_chunks = unload_chunks(&commands, &mut world);
-    dirty_chunks.extend(load_chunks(&commands, &mut world));
-    dirty_chunks.extend(update_chunks(&commands, &mut world));
+    let (load, unload, update) = split_commands(commands);
+
+    let mut dirty_chunks = HashSet::default();
+
+    dirty_chunks.extend(unload_chunks(&unload, &mut world));
+    dirty_chunks.extend(load_chunks(&load, &mut world));
+    dirty_chunks.extend(update_chunks(&update, &mut world));
 
     let updated_chunks = process_chunk_pipeline(dirty_chunks, &mut world);
 
     // TODO: Send all batch related events
 
-    let mut result = commands
-        .iter()
-        .map(|(&local, cmd)| match cmd {
-            ChunkCmd::Load => ChunkCmdResult::Loaded(local),
-            ChunkCmd::Unload => ChunkCmdResult::Unloaded(local),
-            ChunkCmd::Update(_) => ChunkCmdResult::Updated(local),
-        })
-        .collect::<Vec<_>>();
-
-    result.extend(updated_chunks.into_iter().map(ChunkCmdResult::Unloaded));
+    let mut result = vec![];
+    result.extend(load.iter().map(|&l| ChunkCmdResult::Loaded(l)));
+    result.extend(unload.iter().map(|&l| ChunkCmdResult::Unloaded(l)));
+    result.extend(updated_chunks.iter().map(|&l| ChunkCmdResult::Updated(l)));
 
     (world, result)
 }
 
-fn update_chunks(commands: &HashMap<IVec3, ChunkCmd>, world: &mut VoxWorld) -> HashSet<IVec3> {
+fn update_chunks(locals: &[(IVec3, VoxelUpdateList)], world: &mut VoxWorld) -> HashSet<IVec3> {
     let mut dirty_chunks = HashSet::default();
 
-    for (local, voxels) in commands.iter().filter_map(|(local, cmd)| match cmd {
-        ChunkCmd::Update(v) => Some((*local, v)),
-        _ => None,
-    }) {
+    for (local, voxels) in locals {
         trace!("Updating chunk {} values {:?}", local, voxels);
 
-        if let Some(chunk) = world.get_mut(local) {
+        if let Some(chunk) = world.get_mut(*local) {
             for (voxel, kind) in voxels {
                 chunk.kind.set(*voxel, *kind);
 
                 if chunk::is_at_bounds(*voxel) {
                     let neighbor_dir = chunk::get_boundary_dir(*voxel);
                     for unit_dir in math::to_unit_dir(neighbor_dir) {
-                        let neighbor = unit_dir + local;
+                        let neighbor = unit_dir + *local;
                         dirty_chunks.insert(neighbor);
                     }
                 }
             }
 
-            dirty_chunks.insert(local);
+            dirty_chunks.insert(*local);
         } else {
-            warn!("Failed to set voxel. Chunk {} wasn't found.", local);
+            warn!("Failed to set voxel. Chunk {} wasn't found.", *local);
         }
     }
 
     dirty_chunks
 }
 
-fn unload_chunks(commands: &HashMap<IVec3, ChunkCmd>, world: &mut VoxWorld) -> HashSet<IVec3> {
+fn unload_chunks(locals: &[IVec3], world: &mut VoxWorld) -> HashSet<IVec3> {
     perf_fn_scope!();
 
     let mut dirty_chunks = HashSet::default();
 
-    for local in commands.iter().filter_map(|(local, cmd)| match cmd {
-        ChunkCmd::Unload => Some(*local),
-        _ => None,
-    }) {
-        if world.remove(local).is_none() {
+    for local in locals {
+        if world.remove(*local).is_none() {
             warn!("Trying to unload non-existing chunk {}", local);
         } else {
-            dirty_chunks.extend(voxel::SIDES.map(|s| s.dir() + local))
+            dirty_chunks.extend(voxel::SIDES.map(|s| s.dir() + *local))
         }
     }
 
     dirty_chunks
 }
 
-fn load_chunks(commands: &HashMap<IVec3, ChunkCmd>, world: &mut VoxWorld) -> HashSet<IVec3> {
+fn load_chunks(locals: &[IVec3], world: &mut VoxWorld) -> HashSet<IVec3> {
     perf_fn_scope!();
 
     let mut dirty_chunks = HashSet::default();
 
-    for local in commands.iter().filter_map(|(local, cmd)| match cmd {
-        ChunkCmd::Load => Some(*local),
-        _ => None,
-    }) {
-        let path = local_path(local);
+    for local in locals {
+        let path = local_path(*local);
 
         let chunk = if path.exists() {
             load_cache(&path)
         } else {
-            generate_chunk(local)
+            generate_chunk(*local)
         };
 
-        world.add(local, chunk);
+        world.add(*local, chunk);
 
         dirty_chunks.extend(
             voxel::SIDES
                 .iter()
-                .map(|s| s.dir() + local)
-                .chain(std::iter::once(local)),
+                .map(|s| s.dir() + *local)
+                .chain(std::iter::once(*local)),
         );
     }
 
