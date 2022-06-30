@@ -1,34 +1,33 @@
 [package]
 name = "projekto"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = {git = "https://github.com/bevyengine/bevy", branch="main"}
+bevy = "0.7.0"
 env_logger = "0.9.0"
 rand = "0.8.4"
 bracket-noise = "0.8.2"
-ron = "0.6.5"
+ron = "0.7.1"
 serde = "1.0.130"
 bincode = "1.3.3"
 once_cell = "1.8.0"
 futures-lite = "1.12.0"
-egui = "0.14.0"
-bevy_egui = {git = "https://github.com/jakobhellermann/bevy_egui", branch="bevy-main"}
+bevy_egui = "0.14.0"
 
 [features]
-default = [
-    "dev",
-    # "perf_counter",
-    # "serde_ron",
-    # "mem_alloc",
-]
-dev = [ "bevy/dynamic", "egui/multi_threaded"]
-perf_counter = []
-mem_alloc = []
-serde_ron = []
+# default = [
+#     "dev",
+#     # "perf_counter",
+#     # "serde_ron",
+#     # "mem_alloc",
+# ]
+# dev = ["bevy/dynamic"]
+# perf_counter = []
+# mem_alloc = []
+# serde_ron = []
 
 [profile.dev.package.ron]
 opt-level = 3

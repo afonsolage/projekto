@@ -22,6 +22,8 @@ macro_rules! perf_fn {
         {
             crate::debug::perf::PerfCounterGuard::new(fn_name!())
         }
+        #[cfg(not(feature = "perf_counter"))]
+        1
     }};
 }
 

@@ -23,7 +23,7 @@ impl Plugin for FlyByCameraPlugin {
     }
 }
 
-// Component s
+#[derive(Component)]
 pub struct FlyByCamera {
     pub move_speed: f32,
     pub move_speed_boost: f32,
@@ -130,11 +130,11 @@ fn fly_by_camera_grab_mouse_system(
     mut windows: ResMut<Windows>,
     mouse_btn: Res<Input<MouseButton>>,
     key_btn: Res<Input<KeyCode>>,
-    egui_context: Option<Res<EguiContext>>,
+    egui_context: Option<ResMut<EguiContext>>,
     mut q: Query<&mut FlyByCamera>,
 ) {
-    if let Some(context) = egui_context {
-        let ctx = context.ctx();
+    if let Some(mut context) = egui_context {
+        let ctx = context.ctx_mut();
         if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
             return;
         }

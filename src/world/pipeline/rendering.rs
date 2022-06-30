@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    render::{mesh::Indices, pipeline::PrimitiveTopology},
+    render::mesh::{Indices, PrimitiveTopology},
     tasks::{AsyncComputeTaskPool, Task},
     utils::HashMap,
 };
@@ -113,7 +113,7 @@ fn mesh_generation_system(
         .filter_map(|evt| vox_world.get(evt.0).map(|c| (evt.0, c)))
         .collect::<Vec<_>>();
 
-    for batch in chunks.chunks(MESH_BATCH_SIZE).into_iter() {
+    for batch in chunks.chunks(MESH_BATCH_SIZE) {
         let id = meta.batch_id;
         meta.batch_id += 1;
 
@@ -195,8 +195,10 @@ fn generate_mesh(
         }
 
         mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
-        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-        mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0; vertex_count]);
+
 
         commands.entity(entity).insert(meshes.add(mesh));
     }

@@ -1,3 +1,6 @@
+//https://github.com/bevyengine/bevy/issues/4601
+#![allow(clippy::forget_non_drop)] 
+
 use bevy::prelude::*;
 
 #[macro_use]
@@ -16,11 +19,10 @@ mod ui;
 use ui::UiPlugin;
 
 fn main() {
-    env_logger::init();
+    // env_logger::init();
 
     App::new()
         .insert_resource(WindowDescriptor {
-            vsync: false,
             ..Default::default()
         })
         .insert_resource(Msaa { samples: 4 })

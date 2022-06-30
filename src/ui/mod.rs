@@ -53,6 +53,7 @@ impl Plugin for UiPlugin {
 //     });
 // }
 
+#[derive(Component)]
 struct FpsCounterTag;
 fn setup_fps_text(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/FiraSans-Bold.ttf");

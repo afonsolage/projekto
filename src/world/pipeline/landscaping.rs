@@ -1,13 +1,15 @@
 use bevy::{
     prelude::*,
-    render::pipeline::{PipelineDescriptor, RenderPipeline},
-    utils::{HashMap, HashSet},
+    utils::{HashMap, HashSet}, render::view::NoFrustumCulling,
 };
 
 use crate::{
     fly_by_camera::FlyByCamera,
     world::{
-        pipeline::genesis::{EvtChunkLoaded, EvtChunkUnloaded},
+        pipeline::{
+            genesis::{EvtChunkLoaded, EvtChunkUnloaded},
+            ChunkMaterial, ChunkMaterialHandle,
+        },
         query,
         storage::{chunk, landscape},
     },
@@ -15,7 +17,7 @@ use crate::{
 
 use super::{
     genesis::{BatchChunkCmdRes, WorldRes},
-    ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty, EvtChunkUpdated,
+    ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -23,6 +25,7 @@ pub(super) struct LandscapingPlugin;
 impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkMeshDirty>()
+            .add_plugin(MaterialPlugin::<ChunkMaterial>::default())
             .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_resources)
             .add_system_set_to_stage(
                 super::Pipeline::Landscaping,
@@ -40,34 +43,11 @@ pub struct LandscapeConfig {
     pub paused: bool,
 }
 
-fn setup_resources(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut pipelines: ResMut<Assets<PipelineDescriptor>>,
-) {
-    use bevy::render::{
-        pipeline::{Face, FrontFace, PolygonMode, PrimitiveState, PrimitiveTopology},
-        shader::ShaderStages,
-    };
+fn setup_resources(mut commands: Commands, mut materials: ResMut<Assets<ChunkMaterial>>) {
     trace_system_run!();
+    let material = materials.add(ChunkMaterial);
 
-    let pipeline_handle = pipelines.add(PipelineDescriptor {
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: FrontFace::Ccw,
-            cull_mode: Some(Face::Back),
-            polygon_mode: PolygonMode::Fill,
-            clamp_depth: false,
-            conservative: false,
-        },
-        ..PipelineDescriptor::default_config(ShaderStages {
-            vertex: asset_server.load("shaders/voxel.vert"),
-            fragment: Some(asset_server.load("shaders/voxel.frag")),
-        })
-    });
-
-    commands.insert_resource(ChunkPipeline(pipeline_handle));
+    commands.insert_resource(ChunkMaterialHandle(material));
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
     commands.insert_resource(LandscapeConfig { paused: false })
 }
@@ -128,7 +108,7 @@ fn update_landscape_system(
 fn spawn_chunks_system(
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
-    chunk_pipeline: Res<ChunkPipeline>,
+    chunk_pipeline: Res<ChunkMaterialHandle>,
     mut reader: EventReader<EvtChunkLoaded>,
     mut writer: EventWriter<EvtChunkMeshDirty>,
 ) {
@@ -140,14 +120,13 @@ fn spawn_chunks_system(
         let entity = commands
             .spawn_bundle(ChunkBundle {
                 local: ChunkLocal(*local),
-                mesh_bundle: MeshBundle {
-                    render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-                        chunk_pipeline.0.clone(),
-                    )]),
+                mesh_bundle: MaterialMeshBundle {
+                    material: chunk_pipeline.0.clone(),
                     transform: Transform::from_translation(chunk::to_world(*local)),
                     ..Default::default()
                 },
             })
+            .insert(NoFrustumCulling)
             .id();
         entity_map.0.insert(*local, entity);
         writer.send(EvtChunkMeshDirty(*local));
@@ -189,10 +168,10 @@ fn update_chunks_system(
 
 #[cfg(test)]
 mod test {
-    use bevy::{app::Events, prelude::*, utils::HashMap};
+    use bevy::{ecs::event::Events, prelude::*, utils::HashMap};
 
     use crate::world::pipeline::{
-        genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkPipeline, EvtChunkMeshDirty,
+        genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkMaterialHandle, EvtChunkMeshDirty,
         EvtChunkUpdated,
     };
 
@@ -208,7 +187,7 @@ mod test {
         world.insert_resource(ChunkEntityMap(HashMap::default()));
         world.insert_resource(added_events);
         world.insert_resource(Events::<EvtChunkMeshDirty>::default());
-        world.insert_resource(ChunkPipeline(Handle::default()));
+        world.insert_resource(ChunkMaterialHandle(Handle::default()));
 
         let mut stage = SystemStage::parallel();
         stage.add_system(super::spawn_chunks_system);
