@@ -21,7 +21,7 @@ let ambient_intensity = vec3<f32>(0.25, 0.25, 0.25);
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
-    out.clip_position = view.view_proj * mesh.model * vec4<f32>(vertex.position, 4.0);
+    out.clip_position = view.view_proj * mesh.model * vec4<f32>(vertex.position, 1.0);
     out.light_intensity = max(dot(vertex.normal, sun_dir), 0.0) + ambient_intensity;
 
     return out;
