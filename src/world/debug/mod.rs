@@ -2,23 +2,17 @@ use std::collections::{HashMap, VecDeque};
 
 use bevy::{
     prelude::*,
-    reflect::TypeUuid,
-    render::{
-        mesh::Indices,
-        pipeline::{
-            FrontFace, PipelineDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology,
-            RenderPipeline,
-        },
-        render_graph::{base::node::MAIN_PASS, AssetRenderResourcesNode, RenderGraph},
-        renderer::RenderResources,
-        shader::ShaderStages,
-    },
+    render::mesh::{Indices, PrimitiveTopology},
 };
 
 use crate::{
     fly_by_camera::FlyByCamera,
     world::{mesh, pipeline::*, storage::*},
 };
+
+use self::wireframe::WireframeMaterial;
+
+mod wireframe;
 
 pub struct WireframeDebugPlugin;
 
@@ -28,6 +22,7 @@ impl Plugin for WireframeDebugPlugin {
             .insert_resource(DebugWireframeStateRes::default())
             .add_startup_system(setup_wireframe_shader_system)
             .add_asset::<WireframeMaterial>()
+            .add_plugin(MaterialPlugin::<WireframeMaterial>::default())
             .add_system(toggle_mesh_wireframe_system)
             .add_system(toggle_chunk_voxels_wireframe_system)
             .add_system(toggle_landscape_pause_system)
@@ -77,33 +72,27 @@ struct DebugWireframeStateRes {
     show_voxel: bool,
     wireframe: bool,
 }
-struct WireframePipelineRes(Handle<PipelineDescriptor>);
-
-#[derive(RenderResources, Default, TypeUuid)]
-#[uuid = "1e08866c-0b8a-437e-8bce-37733b25127e"]
-struct WireframeMaterial {
-    pub color: Color,
-}
 
 #[derive(Default)]
-struct WireframeMaterialsRes(HashMap<String, Handle<WireframeMaterial>>);
+struct WireframeMaterialsMap(HashMap<String, Handle<WireframeMaterial>>);
 
-// Components
+#[derive(Component)]
 struct WireframeDraw {
     original_mesh: Handle<Mesh>,
-    original_pipeline: RenderPipelines,
+    original_material: Handle<ChunkMaterial>,
 }
 
-#[derive(Debug)]
+#[derive(Component, Debug)]
 struct RaycastDebug {
     origin: Vec3,
     dir: Vec3,
     range: f32,
 }
 
+#[derive(Component)]
 struct RaycastDebugNoPoint;
 
-#[derive(Default)]
+#[derive(Component, Default)]
 pub struct DrawVoxels {
     color: String,
     voxels: Vec<IVec3>,
@@ -173,78 +162,38 @@ fn toggle_chunk_voxels_wireframe_system(
     }
 }
 
-impl WireframeMaterialsRes {
-    fn get(&self, color: &str) -> Handle<WireframeMaterial> {
-        self.0.get(color).unwrap().clone()
-    }
-
-    fn add(&mut self, color: &str, handle: Handle<WireframeMaterial>) {
-        self.0.insert(color.into(), handle);
-    }
-}
-
 fn setup_wireframe_shader_system(
     mut commands: Commands,
-    mut pipelines: ResMut<Assets<PipelineDescriptor>>,
-    mut render_graph: ResMut<RenderGraph>,
     mut materials: ResMut<Assets<WireframeMaterial>>,
-    asset_server: Res<AssetServer>,
 ) {
-    let pipeline_handle = pipelines.add(PipelineDescriptor {
-        name: Some("Wireframe Chunk".into()),
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: FrontFace::Ccw,
-            cull_mode: None,
-            polygon_mode: PolygonMode::Fill,
-            clamp_depth: false,
-            conservative: false,
-        },
-        ..PipelineDescriptor::default_config(ShaderStages {
-            vertex: asset_server.load("shaders/wireframe.vert"),
-            fragment: Some(asset_server.load("shaders/wireframe.frag")),
-        })
-    });
+    let mut wireframe_materials = WireframeMaterialsMap::default();
 
-    render_graph.add_system_node(
-        "wireframe_material",
-        AssetRenderResourcesNode::<WireframeMaterial>::new(true),
-    );
-
-    if let Err(error) = render_graph.add_node_edge("wireframe_material", MAIN_PASS) {
-        error!("Failed to setup render graph: {}", error);
-    };
-
-    commands.insert_resource(WireframePipelineRes(pipeline_handle));
-
-    let mut wireframe_materials = WireframeMaterialsRes::default();
-    wireframe_materials.add(
-        "red",
+    wireframe_materials.0.insert(
+        "red".into(),
         materials.add(WireframeMaterial { color: Color::RED }),
     );
-    wireframe_materials.add(
-        "white",
+    wireframe_materials.0.insert(
+        "white".into(),
         materials.add(WireframeMaterial {
             color: Color::WHITE,
         }),
     );
-    wireframe_materials.add(
-        "green",
+    wireframe_materials.0.insert(
+        "green".into(),
         materials.add(WireframeMaterial {
             color: Color::GREEN,
         }),
     );
-    wireframe_materials.add(
-        "pink",
+    wireframe_materials.0.insert(
+        "pink".into(),
         materials.add(WireframeMaterial { color: Color::PINK }),
     );
-    wireframe_materials.add(
-        "blue",
+    wireframe_materials.0.insert(
+        "blue".into(),
         materials.add(WireframeMaterial { color: Color::BLUE }),
     );
-    wireframe_materials.add(
-        "gray",
+    wireframe_materials.0.insert(
+        "gray".into(),
         materials.add(WireframeMaterial { color: Color::GRAY }),
     );
 
@@ -255,15 +204,10 @@ fn toggle_mesh_wireframe_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut debug_state: ResMut<DebugWireframeStateRes>,
-    materials: Res<WireframeMaterialsRes>,
-    pipeline_handle: Res<WireframePipelineRes>,
+    materials: Res<WireframeMaterialsMap>,
     keyboard: Res<Input<KeyCode>>,
-    q: Query<(
-        Entity,
-        &Handle<Mesh>,
-        &RenderPipelines,
-        Option<&WireframeDraw>,
-    )>,
+    to_wireframe: Query<(Entity, &Handle<Mesh>, &Handle<ChunkMaterial>), Without<WireframeDraw>>,
+    to_original: Query<(Entity, &WireframeDraw)>,
 ) {
     if !keyboard.just_pressed(KeyCode::F1) {
         return;
@@ -272,17 +216,8 @@ fn toggle_mesh_wireframe_system(
     debug_state.wireframe = !debug_state.wireframe;
     info!("Mesh wireframe was set to {}", debug_state.wireframe);
 
-    for (e, mesh, pipelines, wireframe_draw_opt) in q.iter() {
-        if !debug_state.wireframe {
-            if let Some(wireframe_draw) = wireframe_draw_opt {
-                commands
-                    .entity(e)
-                    .insert(wireframe_draw.original_mesh.clone())
-                    .insert(wireframe_draw.original_pipeline.clone())
-                    .remove::<WireframeDraw>()
-                    .remove::<Handle<WireframeMaterial>>();
-            }
-        } else if wireframe_draw_opt.is_none() {
+    if debug_state.wireframe {
+        for (e, mesh, material) in to_wireframe.iter() {
             let mut wireframe_mesh = Mesh::new(PrimitiveTopology::LineList);
 
             if let Some(mesh_asset) = meshes.get_mut(mesh) {
@@ -291,27 +226,34 @@ fn toggle_mesh_wireframe_system(
                 wireframe_mesh.set_indices(Some(Indices::U32(compute_wireframe_indices(
                     vertices.len(),
                 ))));
-                wireframe_mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices.clone());
+                wireframe_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices.clone());
+
+                //Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
+                wireframe_mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![0f32; vertices.len()]);
+                wireframe_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0f32; vertices.len()]);
 
                 let wireframe_mesh_handle = meshes.add(wireframe_mesh);
-                let wireframe_pipelines =
-                    RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-                        pipeline_handle.0.clone(),
-                    )]);
-
                 let wireframe_draw = WireframeDraw {
                     original_mesh: mesh.clone(),
-                    original_pipeline: pipelines.clone(),
+                    original_material: material.clone(),
                 };
 
                 commands
                     .entity(e)
                     .insert(wireframe_mesh_handle) //The new wireframe mesh
-                    .insert(wireframe_pipelines) //The new wireframe shader/pipeline
-                    .insert(Visible::default()) //Why?
                     .insert(wireframe_draw)
-                    .insert(materials.get("white")); //The old mesh and pipeline, so I can switch back to it
+                    .insert(materials.0.get("white").unwrap().clone())
+                    .remove::<Handle<ChunkMaterial>>();
             }
+        }
+    } else {
+        for (e, wireframe) in to_original.iter() {
+            commands
+                .entity(e)
+                .insert(wireframe.original_mesh.clone())
+                .insert(wireframe.original_material.clone())
+                .remove::<WireframeDraw>()
+                .remove::<Handle<WireframeMaterial>>();
         }
     }
 }
@@ -344,8 +286,7 @@ fn compute_wireframe_indices(vertex_count: usize) -> Vec<u32> {
 fn draw_voxels_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    materials: Res<WireframeMaterialsRes>,
-    wireframe_pipeline_handle: Res<WireframePipelineRes>,
+    materials: Res<WireframeMaterialsMap>,
     q: Query<(Entity, &DrawVoxels), Added<DrawVoxels>>,
 ) {
     for (e, draw_voxels) in q.iter() {
@@ -358,24 +299,24 @@ fn draw_voxels_system(
         let first_voxel = draw_voxels.voxels[0];
 
         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
-        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+
+        //Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![0f32; vertices.len()]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0f32; vertices.len()]);
+
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
         mesh.set_indices(Some(Indices::U32(indices)));
 
         let mesh_handle = meshes.add(mesh);
 
-        commands
-            .entity(e)
-            .insert_bundle(MeshBundle {
-                mesh: mesh_handle,
-                render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-                    wireframe_pipeline_handle.0.clone(),
-                )]),
-                transform: Transform::from_translation(
-                    first_voxel.as_vec3() * -1.0 + draw_voxels.offset,
-                ),
-                ..Default::default()
-            })
-            .insert(materials.get(&draw_voxels.color));
+        commands.entity(e).insert_bundle(MaterialMeshBundle {
+            mesh: mesh_handle,
+            material: materials.0.get(&draw_voxels.color).unwrap().clone(),
+            transform: Transform::from_translation(
+                first_voxel.as_vec3() * -1.0 + draw_voxels.offset,
+            ),
+            ..Default::default()
+        });
     }
 }
 
@@ -531,8 +472,7 @@ fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, po
 fn draw_raycast_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    materials: Res<WireframeMaterialsRes>,
-    wireframe_pipeline_handle: Res<WireframePipelineRes>,
+    materials: Res<WireframeMaterialsMap>,
     q: Query<(Entity, &RaycastDebug), Without<Handle<Mesh>>>,
 ) {
     for (e, raycast) in q.iter() {
@@ -542,22 +482,22 @@ fn draw_raycast_system(
         let indices = vec![0, 1];
 
         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
-        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+
+        //Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![0f32; vertices.len()]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0f32; vertices.len()]);
+
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
         mesh.set_indices(Some(Indices::U32(indices)));
 
         let mesh_handle = meshes.add(mesh);
 
-        commands
-            .entity(e)
-            .insert_bundle(MeshBundle {
-                mesh: mesh_handle,
-                transform: Transform::from_translation(raycast.origin),
-                render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-                    wireframe_pipeline_handle.0.clone(),
-                )]),
-                ..Default::default()
-            })
-            .insert(materials.get("pink"));
+        commands.entity(e).insert_bundle(MaterialMeshBundle {
+            mesh: mesh_handle,
+            transform: Transform::from_translation(raycast.origin),
+            material: materials.0.get("pink").unwrap().clone(),
+            ..Default::default()
+        });
     }
 }
 

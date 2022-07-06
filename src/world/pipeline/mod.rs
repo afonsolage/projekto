@@ -117,7 +117,7 @@ impl Default for ChunkBundle {
 }
 
 #[derive(Component)]
-pub struct ChunkMaterialHandle(Handle<ChunkMaterial>);
+pub struct ChunkMaterialHandle(pub Handle<ChunkMaterial>);
 
 #[derive(Debug, Clone, TypeUuid)]
 #[uuid = "f690fd1e-d5d8-45ab-8225-97e2a3f056e0"]
