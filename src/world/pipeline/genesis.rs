@@ -20,7 +20,7 @@ use crate::world::{
     },
 };
 
-const CACHE_PATH: &str = "cache/chunks/example";
+const CACHE_PATH: &str = "cache/chunks/";
 const CACHE_EXT: &str = "bin";
 
 pub(super) struct GenesisPlugin;
@@ -57,6 +57,10 @@ pub struct EvtChunkUpdated(pub IVec3);
 
 fn setup_resources(mut commands: Commands) {
     trace_system_run!();
+
+    if !std::path::Path::new(CACHE_PATH).exists() {
+        std::fs::create_dir_all(CACHE_PATH).unwrap();
+    }
 
     commands.insert_resource(WorldRes(Some(VoxWorld::default())));
     commands.insert_resource(BatchChunkCmdRes::default());
