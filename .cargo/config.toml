@@ -23,4 +23,4 @@ rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/zld", "-Zshare-generics=y"]
 
 
 [env]
-RUST_LOG = "error"
+RUST_LOG = "error,projekto=debug"
