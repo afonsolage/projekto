@@ -66,6 +66,10 @@ fn setup_resources(mut commands: Commands) {
     commands.insert_resource(BatchChunkCmdRes::default());
 }
 
+/**
+Hold chunk commands to be processed in batch.
+Internally uses a double buffered list of commands to keep track of what is running and what is pending.
+*/
 #[derive(Default)]
 pub struct BatchChunkCmdRes {
     pending: HashMap<IVec3, ChunkCmd>,
@@ -73,19 +77,34 @@ pub struct BatchChunkCmdRes {
 }
 
 impl BatchChunkCmdRes {
-    fn take(&mut self) -> HashMap<IVec3, ChunkCmd> {
-        self.running = std::mem::take(&mut self.pending);
+    /**
+    Swap the running and pending buffers
+
+    Returns a clone of the running buffer
+     */
+    fn swap_and_clone(&mut self) -> HashMap<IVec3, ChunkCmd> {
+        // Since the running buffer is always cleared when the batch is finished, this swap has no side-effects
+        std::mem::swap(&mut self.running, &mut self.pending);
         self.running.clone()
     }
 
+    /**
+    Clears the running buffer
+    */
     fn finished(&mut self) {
         self.running.clear();
     }
 
-    pub fn is_empty(&self) -> bool {
+    /**
+    Checks if there is pending commands to be processed
+     */
+    pub fn has_pending_commands(&self) -> bool {
         self.pending.is_empty()
     }
 
+    /**
+    Adds a load command to the batch
+     */
     pub fn load(&mut self, local: IVec3) {
         if let Some(cmd) = self.running.get(&local) {
             warn!("Chunk {:?} cmd already exists: ", cmd);
@@ -94,6 +113,9 @@ impl BatchChunkCmdRes {
         self.pending.insert(local, ChunkCmd::Load);
     }
 
+    /**
+    Adds an unload command to the batch
+     */
     pub fn unload(&mut self, local: IVec3) {
         if let Some(cmd) = self.running.get(&local) {
             warn!("Chunk {:?} cmd already exists: ", cmd);
@@ -102,6 +124,9 @@ impl BatchChunkCmdRes {
         self.pending.insert(local, ChunkCmd::Unload);
     }
 
+    /**
+    Adds an update command to the batch
+     */
     pub fn update(&mut self, local: IVec3, voxels: Vec<(IVec3, voxel::Kind)>) {
         self.pending.insert(local, ChunkCmd::Update(voxels));
     }
@@ -119,11 +144,6 @@ enum ChunkCmdResult {
     Loaded(IVec3),
     Unloaded(IVec3),
     Updated(IVec3),
-}
-
-#[derive(Default)]
-struct ProcessBatchSystemMeta {
-    task: Option<Task<(VoxWorld, Vec<ChunkCmdResult>)>>,
 }
 
 pub struct WorldRes(Option<VoxWorld>);
@@ -155,6 +175,22 @@ impl Deref for WorldRes {
     }
 }
 
+/**
+ * This is a meta data struct used only by [`update_world_system`]
+ */
+#[derive(Default)]
+struct ProcessBatchSystemMeta {
+    running_task: Option<Task<(VoxWorld, Vec<ChunkCmdResult>)>>,
+}
+
+/**
+ * System which process pending commands and updates the world.
+ *
+ * Since there can be only one copy of World at any given time, when this system process commands
+ * it takes ownership of the [`VoxWorld`] from [`WorldRes`] until all the batch is processed.
+ *
+ * This can take several frames.
+ */
 fn update_world_system(
     task_pool: Res<AsyncComputeTaskPool>,
     mut batch_res: ResMut<BatchChunkCmdRes>,
@@ -165,11 +201,13 @@ fn update_world_system(
     mut updated_writer: EventWriter<EvtChunkUpdated>,
 ) {
     let mut _perf = perf_fn!();
-    // Only process batches if there is no task already running
-    if let Some(ref mut task) = meta.task {
+
+    if let Some(ref mut task) = meta.running_task {
         perf_scope!(_perf);
 
+        // Check if task has finished
         if let Some((world, commands)) = future::block_on(future::poll_once(task)) {
+            // Dispatch all events generated from this batch
             for cmd in commands {
                 match cmd {
                     ChunkCmdResult::Loaded(local) => loaded_writer.send(EvtChunkLoaded(local)),
@@ -179,27 +217,29 @@ fn update_world_system(
                     ChunkCmdResult::Updated(local) => updated_writer.send(EvtChunkUpdated(local)),
                 }
             }
-            meta.task = None;
+
+            // Give back the VoxWorld to WorldRes
+            meta.running_task = None;
             world_res.set(world);
             batch_res.finished();
         }
-    } else if !batch_res.is_empty() {
+    } else if !batch_res.has_pending_commands() {
         perf_scope!(_perf);
-        let batch = batch_res.take();
+        let batch = batch_res.swap_and_clone();
         let world = world_res.take();
 
-        meta.task = Some(task_pool.spawn(async move { process_batch(world, batch) }));
+        meta.running_task = Some(task_pool.spawn(async move { process_batch(world, batch) }));
     }
 
     assert_ne!(
-        meta.task.is_none(),
+        meta.running_task.is_none(),
         !world_res.is_ready(),
-        "The world should exists only in one place at a time"
+        "The world should exists only in one place at any given time"
     );
     assert_ne!(
-        meta.task.is_some(),
+        meta.running_task.is_some(),
         world_res.is_ready(),
-        "The world should exists only in one place at a time"
+        "The world should exists only in one place at any given time"
     );
 }
 
