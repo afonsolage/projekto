@@ -1,3 +1,5 @@
+
+
 use std::marker::PhantomData;
 
 use bevy::prelude::*;
@@ -10,7 +12,7 @@ use super::voxel;
 
 pub const X_AXIS_SIZE: usize = 16;
 pub const Z_AXIS_SIZE: usize = 16;
-pub const Y_AXIS_SIZE: usize = 128;
+pub const Y_AXIS_SIZE: usize = 16;
 
 pub const X_END: i32 = (X_AXIS_SIZE - 1) as i32;
 pub const Z_END: i32 = (Z_AXIS_SIZE - 1) as i32;
@@ -19,13 +21,14 @@ pub const Y_END: i32 = (Y_AXIS_SIZE - 1) as i32;
 // const CHUNK_AXIS_OFFSET: usize = CHUNK_AXIS_SIZE / 2;
 pub const BUFFER_SIZE: usize = X_AXIS_SIZE * Z_AXIS_SIZE * Y_AXIS_SIZE;
 
-const X_MASK: usize = 0b_0111_1000_0000_0000;
-const Z_MASK: usize = 0b_0000_0111_1000_0000;
-const Y_MASK: usize = 0b_0000_0000_0111_1111;
-
-const X_SHIFT: usize = 11;
-const Z_SHIFT: usize = 7;
+const X_SHIFT: usize = (Z_AXIS_SIZE.log2() + Z_SHIFT as u32) as usize;
+const Z_SHIFT: usize = Y_AXIS_SIZE.log2() as usize;
 const Y_SHIFT: usize = 0;
+
+const X_MASK: usize = (X_AXIS_SIZE - 1) << X_SHIFT;
+const Z_MASK: usize = (Z_AXIS_SIZE - 1) << Z_SHIFT;
+const Y_MASK: usize = Y_AXIS_SIZE - 1;
+
 
 #[cfg(feature = "mem_alloc")]
 pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
