@@ -387,15 +387,15 @@ mod tests {
 
         assert_eq!(
             IVec3::new(1, 0, 1),
-            super::from_index((super::Y_AXIS_SIZE * 2) * super::Z_AXIS_SIZE)
+            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE)
         );
         assert_eq!(
             IVec3::new(1, 1, 1),
-            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Z_AXIS_SIZE + 1)
+            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE + 1)
         );
         assert_eq!(
             IVec3::new(1, 2, 1),
-            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Z_AXIS_SIZE + 2)
+            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE + 2)
         );
     }
 
@@ -424,15 +424,15 @@ mod tests {
 
         assert_eq!(
             super::to_index((1, 0, 1).into()),
-            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Z_AXIS_SIZE
+            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE
         );
         assert_eq!(
             super::to_index((1, 1, 1).into()),
-            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Z_AXIS_SIZE + 1
+            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE + 1
         );
         assert_eq!(
             super::to_index((1, 2, 1).into()),
-            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Z_AXIS_SIZE + 2
+            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE + 2
         );
     }
 

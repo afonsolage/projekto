@@ -392,7 +392,7 @@ fn generate_cache(local: IVec3) -> ChunkCache {
     for x in 0..chunk::X_AXIS_SIZE {
         for z in 0..chunk::Z_AXIS_SIZE {
             let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
-            let world_height = ((h + 1.0) / 2.0) * (2 * chunk::Y_AXIS_SIZE) as f32;
+            let world_height = ((h + 1.0) / 2.0) * (chunk::X_AXIS_SIZE * 2) as f32;
 
             let height_local = world_height - world.y;
 

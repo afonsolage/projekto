@@ -258,7 +258,7 @@ mod tests {
         );
         assert_eq!(
             IVec3::new(15, 1, 0),
-            super::to_local(Vec3::new(-0.3, chunk::Y_END as f32 + 1.0, 0.0))
+            super::to_local(Vec3::new(-0.3, chunk::Y_AXIS_SIZE as f32 + 1.0, 0.0))
         );
         assert_eq!(
             IVec3::new(1, chunk::Y_END, 1),
