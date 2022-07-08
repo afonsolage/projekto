@@ -111,8 +111,8 @@ mod test {
         for side in voxel::SIDES {
             match side {
                 voxel::Side::Right => {
-                    for a in 0..chunk::AXIS_SIZE {
-                        for b in 0..chunk::AXIS_SIZE {
+                    for a in 0..chunk::Y_AXIS_SIZE {
+                        for b in 0..chunk::Z_AXIS_SIZE {
                             assert_eq!(
                                 kind.neighborhood.get(side, (0, a as i32, b as i32).into()),
                                 Some((side as u16).into())
@@ -121,12 +121,12 @@ mod test {
                     }
                 }
                 voxel::Side::Left => {
-                    for a in 0..chunk::AXIS_SIZE {
-                        for b in 0..chunk::AXIS_SIZE {
+                    for a in 0..chunk::Y_AXIS_SIZE {
+                        for b in 0..chunk::Z_AXIS_SIZE {
                             assert_eq!(
                                 kind.neighborhood.get(
                                     side,
-                                    (chunk::AXIS_ENDING as i32, a as i32, b as i32).into()
+                                    (chunk::X_END as i32, a as i32, b as i32).into()
                                 ),
                                 Some((side as u16).into())
                             );
@@ -134,8 +134,8 @@ mod test {
                     }
                 }
                 voxel::Side::Up => {
-                    for a in 0..chunk::AXIS_SIZE {
-                        for b in 0..chunk::AXIS_SIZE {
+                    for a in 0..chunk::X_AXIS_SIZE {
+                        for b in 0..chunk::Z_AXIS_SIZE {
                             assert_eq!(
                                 kind.neighborhood.get(side, (a as i32, 0, b as i32).into()),
                                 Some((side as u16).into())
@@ -144,12 +144,12 @@ mod test {
                     }
                 }
                 voxel::Side::Down => {
-                    for a in 0..chunk::AXIS_SIZE {
-                        for b in 0..chunk::AXIS_SIZE {
+                    for a in 0..chunk::X_AXIS_SIZE {
+                        for b in 0..chunk::Z_AXIS_SIZE {
                             assert_eq!(
                                 kind.neighborhood.get(
                                     side,
-                                    (a as i32, chunk::AXIS_ENDING as i32, b as i32).into()
+                                    (a as i32, chunk::Y_END as i32, b as i32).into()
                                 ),
                                 Some((side as u16).into())
                             );
@@ -157,8 +157,8 @@ mod test {
                     }
                 }
                 voxel::Side::Front => {
-                    for a in 0..chunk::AXIS_SIZE {
-                        for b in 0..chunk::AXIS_SIZE {
+                    for a in 0..chunk::X_AXIS_SIZE {
+                        for b in 0..chunk::Y_AXIS_SIZE {
                             assert_eq!(
                                 kind.neighborhood.get(side, (a as i32, b as i32, 0).into()),
                                 Some((side as u16).into())
@@ -167,12 +167,12 @@ mod test {
                     }
                 }
                 voxel::Side::Back => {
-                    for a in 0..chunk::AXIS_SIZE {
-                        for b in 0..chunk::AXIS_SIZE {
+                    for a in 0..chunk::X_AXIS_SIZE {
+                        for b in 0..chunk::Y_AXIS_SIZE {
                             assert_eq!(
                                 kind.neighborhood.get(
                                     side,
-                                    (a as i32, b as i32, chunk::AXIS_ENDING as i32).into()
+                                    (a as i32, b as i32, chunk::Z_END as i32).into()
                                 ),
                                 Some((side as u16).into())
                             );

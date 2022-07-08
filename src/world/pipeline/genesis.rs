@@ -389,10 +389,10 @@ fn generate_cache(local: IVec3) -> ChunkCache {
     noise.set_fractal_lacunarity(0.5);
     let world = chunk::to_world(local);
     let mut kinds = ChunkKind::default();
-    for x in 0..chunk::AXIS_SIZE {
-        for z in 0..chunk::AXIS_SIZE {
+    for x in 0..chunk::X_AXIS_SIZE {
+        for z in 0..chunk::Z_AXIS_SIZE {
             let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
-            let world_height = ((h + 1.0) / 2.0) * (2 * chunk::AXIS_SIZE) as f32;
+            let world_height = ((h + 1.0) / 2.0) * (2 * chunk::Y_AXIS_SIZE) as f32;
 
             let height_local = world_height - world.y;
 
@@ -400,7 +400,7 @@ fn generate_cache(local: IVec3) -> ChunkCache {
                 continue;
             }
 
-            let end = usize::min(height_local as usize, chunk::AXIS_SIZE);
+            let end = usize::min(height_local as usize, chunk::Y_AXIS_SIZE);
 
             for y in 0..end {
                 kinds.set((x as i32, y as i32, z as i32).into(), 1.into());
@@ -488,7 +488,7 @@ mod tests {
         let voxels = vec![
             ((0, 0, 0).into(), 1.into()),
             ((1, 1, 1).into(), 2.into()),
-            ((0, chunk::AXIS_ENDING as i32, 5).into(), 3.into()),
+            ((0, chunk::Y_END as i32, 5).into(), 3.into()),
         ];
 
         let dirty_chunks = super::update_voxel(&mut world, local, &voxels);
@@ -498,7 +498,7 @@ mod tests {
         assert_eq!(chunk.get((0, 0, 0).into()), 1.into());
         assert_eq!(chunk.get((1, 1, 1).into()), 2.into());
         assert_eq!(
-            chunk.get((0, chunk::AXIS_ENDING as i32, 5).into()),
+            chunk.get((0, chunk::Y_END as i32, 5).into()),
             3.into()
         );
 

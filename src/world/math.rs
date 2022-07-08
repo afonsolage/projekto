@@ -20,6 +20,14 @@ pub fn euclid_rem(vec: IVec3, div: i32) -> IVec3 {
     )
 }
 
+pub fn euclid_rem_vec(vec: IVec3, div: IVec3) -> IVec3 {
+    IVec3::new(
+        vec.x.rem_euclid(div.x),
+        vec.y.rem_euclid(div.y),
+        vec.z.rem_euclid(div.z),
+    )
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd)]
 pub enum Vec3Element {
     X,

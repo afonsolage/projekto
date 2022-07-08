@@ -283,7 +283,7 @@ mod test {
         down.set_all(3.into());
 
         let mut center = ChunkKind::default();
-        center.set((0, chunk::AXIS_ENDING as i32, 0).into(), 1.into());
+        center.set((0, chunk::Y_END as i32, 0).into(), 1.into());
         center.set((1, 0, 1).into(), 1.into());
 
         world.add((0, 1, 0).into(), top);
@@ -295,7 +295,7 @@ mod test {
 
         let faces_occlusion = super::faces_occlusion(center);
 
-        let faces = faces_occlusion.get((0, chunk::AXIS_ENDING as i32, 0).into());
+        let faces = faces_occlusion.get((0, chunk::Y_END as i32, 0).into());
         assert_eq!(faces, [false, false, true, false, false, false].into());
 
         let faces = faces_occlusion.get((1, 0, 1).into());
