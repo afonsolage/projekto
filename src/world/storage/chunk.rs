@@ -1,5 +1,3 @@
-
-
 use std::marker::PhantomData;
 
 use bevy::prelude::*;
@@ -28,7 +26,6 @@ const Y_SHIFT: usize = 0;
 const X_MASK: usize = (X_AXIS_SIZE - 1) << X_SHIFT;
 const Z_MASK: usize = (Z_AXIS_SIZE - 1) << Z_SHIFT;
 const Y_MASK: usize = Y_AXIS_SIZE - 1;
-
 
 #[cfg(feature = "mem_alloc")]
 pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
@@ -477,7 +474,7 @@ mod tests {
         );
         assert_eq!(
             IVec3::new(-3, 0, 5),
-            super::to_local(Vec3::new(-32.1, 20.0, 88.1))
+            super::to_local(Vec3::new(-32.1, chunk::Y_AXIS_SIZE as f32 - 0.1, 88.1))
         );
 
         const TEST_COUNT: usize = 1000;

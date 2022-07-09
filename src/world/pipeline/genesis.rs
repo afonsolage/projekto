@@ -72,8 +72,8 @@ Internally uses a double buffered list of commands to keep track of what is runn
 */
 #[derive(Default)]
 pub struct BatchChunkCmdRes {
-    pending: HashMap<IVec3, ChunkCmd>,
-    running: HashMap<IVec3, ChunkCmd>,
+    pending: Vec<ChunkCmd>,
+    running: Vec<ChunkCmd>,
 }
 
 impl BatchChunkCmdRes {
@@ -82,7 +82,7 @@ impl BatchChunkCmdRes {
 
     Returns a clone of the running buffer
      */
-    fn swap_and_clone(&mut self) -> HashMap<IVec3, ChunkCmd> {
+    fn swap_and_clone(&mut self) -> Vec<ChunkCmd> {
         // Since the running buffer is always cleared when the batch is finished, this swap has no side-effects
         std::mem::swap(&mut self.running, &mut self.pending);
         self.running.clone()
@@ -106,37 +106,29 @@ impl BatchChunkCmdRes {
     Adds a load command to the batch
      */
     pub fn load(&mut self, local: IVec3) {
-        if let Some(cmd) = self.running.get(&local) {
-            warn!("Chunk {:?} cmd already exists: ", cmd);
-            return;
-        }
-        self.pending.insert(local, ChunkCmd::Load);
+        self.pending.push(ChunkCmd::Load(local));
     }
 
     /**
     Adds an unload command to the batch
      */
     pub fn unload(&mut self, local: IVec3) {
-        if let Some(cmd) = self.running.get(&local) {
-            warn!("Chunk {:?} cmd already exists: ", cmd);
-            return;
-        }
-        self.pending.insert(local, ChunkCmd::Unload);
+        self.pending.push(ChunkCmd::Unload(local));
     }
 
     /**
     Adds an update command to the batch
      */
     pub fn update(&mut self, local: IVec3, voxels: Vec<(IVec3, voxel::Kind)>) {
-        self.pending.insert(local, ChunkCmd::Update(voxels));
+        self.pending.push(ChunkCmd::Update(local, voxels));
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum ChunkCmd {
-    Load,
-    Unload,
-    Update(Vec<(IVec3, voxel::Kind)>),
+    Load(IVec3),
+    Unload(IVec3),
+    Update(IVec3, Vec<(IVec3, voxel::Kind)>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -243,32 +235,150 @@ fn update_world_system(
     );
 }
 
-fn process_batch(
-    mut world: VoxWorld,
-    commands: HashMap<IVec3, ChunkCmd>,
-) -> (VoxWorld, Vec<ChunkCmdResult>) {
+/**
+This functions optimize the command list removing duplicated commands or commands that nullifies each other.
+
+**Rules**
+ 1. Skips any duplicated commands (*Load* -> *Load*, *Update* -> *Update*, *Unload* -> *Unload*).
+ 2. Skips *Load* and remove existing *Unload* cmd when chunk exists already.
+ 3. Skips *Unload* and remove existing *Load* cmd when chunk doesn't exists already.
+ 4. Skips *Unload* when chunk doesn't exists already.
+ 5. Skips *Load* when chunk exists already.
+ 6. Skips *Update* if the chunk doesn't exists already.
+ 7. Replaces *Update* by *Unload* if the chunk exists already.
+ 8. Replaces *Update* by *Load* if the chunk doesn't exists already. [Removed]
+ 9. Skips *Update* if there is an *Unload* cmd already.
+
+**This functions does preserves the insertion order**
+
+**Returns** an optmized command list
+*/
+fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd> {
+    let mut map = HashMap::<IVec3, (u32, ChunkCmd)>::new();
+
+    // Used to preserve command insertion order
+    let mut order = 0u32;
+
+    for cmd in commands {
+        match cmd {
+            ChunkCmd::Load(local) => {
+                let chunk_exists = world.get(local).is_some();
+
+                if let Some((_, existing_cmd)) = map.get(&local) {
+                    match existing_cmd {
+                        ChunkCmd::Load(_) => continue, // Rule 1
+                        ChunkCmd::Unload(_) if chunk_exists => {
+                            // Rule 2
+                            map.remove(&local);
+                            continue;
+                        }
+                        _ => {
+                            panic!(
+                                "Undefined behaviour for {:?} and {:?} when chunk_exists = {:?}",
+                                cmd, existing_cmd, chunk_exists
+                            );
+                        }
+                    }
+                } else if chunk_exists {
+                    // Rule 5
+                    continue;
+                }
+
+                order += 1;
+                let existing = map.insert(local, (order, cmd));
+
+                debug_assert!(existing.is_none(), "This should never happens, since all existing cases should be handled by above match");
+            }
+            ChunkCmd::Unload(local) => {
+                let chunk_exists = world.get(local).is_some();
+
+                if let Some((_, existing_cmd)) = map.get(&local) {
+                    match existing_cmd {
+                        ChunkCmd::Unload(_) => continue, // Rule 1
+                        ChunkCmd::Load(_) if !chunk_exists => {
+                            // Rule 3
+                            map.remove(&local);
+                            continue;
+                        }
+                        ChunkCmd::Update(_, _) if chunk_exists => {
+                            // Rule 7
+                            order += 1;
+                            map.insert(local, (order, cmd.clone()));
+                            continue;
+                        }
+                        _ => {
+                            panic!(
+                                "Undefined behaviour for {:?} and {:?} when chunk_exists = {:?}",
+                                cmd, existing_cmd, chunk_exists
+                            );
+                        }
+                    }
+                } else if !chunk_exists {
+                    // Rule 4
+                    continue;
+                }
+
+                order += 1;
+                let existing = map.insert(local, (order, cmd));
+
+                debug_assert!(existing.is_none(), "This should never happens, since all existing cases should be handled by above match");
+            }
+            ChunkCmd::Update(local, _) => {
+                if world.get(local).is_none() {
+                    // Rule 6
+                    continue;
+                }
+
+                if let Some((_, existing_cmd)) = map.get(&local) {
+                    match existing_cmd {
+                        ChunkCmd::Update(_, _) => continue, // Rule 1. TODO: Maybe merge update data in the future?
+                        ChunkCmd::Unload(_) => continue,    // Rule 9.
+                        _ => {
+                            panic!("Undefined behaviour for {:?} and {:?}", cmd, existing_cmd);
+                        }
+                    }
+                }
+
+                order += 1;
+                let existing = map.insert(local, (order, cmd));
+
+                debug_assert!(existing.is_none(), "This should never happens, since all existing cases should be handled by above match");
+            }
+        }
+    }
+
+    // TODO: Change this to `into_values` when Bevy is updated to 0.8
+    let mut values = map.values().collect::<Vec<_>>();
+    values.sort_by(|&t1, &t2| t1.0.cmp(&t2.0));
+
+    values.into_iter().map(|(_, cmd)| cmd.clone()).collect()
+}
+
+fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<ChunkCmdResult>) {
     let mut _perf = perf_fn!();
+
+    let commands = optimize_commands(&world, commands);
 
     let unload_items = commands
         .iter()
-        .filter_map(|(local, cmd)| match cmd {
-            ChunkCmd::Unload => Some(*local),
+        .filter_map(|cmd| match cmd {
+            ChunkCmd::Unload(local) => Some(*local),
             _ => None,
         })
         .collect::<Vec<_>>();
 
     let load_items = commands
         .iter()
-        .filter_map(|(local, cmd)| match cmd {
-            ChunkCmd::Load => Some(*local),
+        .filter_map(|cmd| match cmd {
+            ChunkCmd::Load(local) => Some(*local),
             _ => None,
         })
         .collect::<Vec<_>>();
 
     let update_items = commands
         .iter()
-        .filter_map(|(local, cmd)| match cmd {
-            ChunkCmd::Update(ref v) => Some((*local, v)),
+        .filter_map(|cmd| match cmd {
+            ChunkCmd::Update(local, ref v) => Some((*local, v)),
             _ => None,
         })
         .collect::<HashMap<_, _>>();
@@ -497,10 +607,7 @@ mod tests {
 
         assert_eq!(chunk.get((0, 0, 0).into()), 1.into());
         assert_eq!(chunk.get((1, 1, 1).into()), 2.into());
-        assert_eq!(
-            chunk.get((0, chunk::Y_END as i32, 5).into()),
-            3.into()
-        );
+        assert_eq!(chunk.get((0, chunk::Y_END as i32, 5).into()), 3.into());
 
         assert_eq!(
             dirty_chunks.len(),
@@ -732,5 +839,176 @@ mod tests {
         assert_eq!(cache, loaded_cache);
 
         remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn optimize_commands_preserve_insertion_order() {
+        let cmds = (0..100)
+            .into_iter()
+            .map(|i| ChunkCmd::Load((i, i, i).into()))
+            .collect::<Vec<_>>();
+
+        let optmized = super::optimize_commands(&VoxWorld::default(), cmds.clone());
+
+        assert_eq!(cmds, optmized);
+    }
+
+    #[test]
+    fn optimize_commands_rule_1() {
+        let cmds = vec![
+            ChunkCmd::Load((1, 1, 1).into()),
+            ChunkCmd::Load((1, 2, 1).into()),
+            ChunkCmd::Load((1, 1, 1).into()),
+            ChunkCmd::Load((1, 1, 1).into()),
+            ChunkCmd::Load((1, 2, 1).into()),
+            ChunkCmd::Load((1, 1, 1).into()),
+            ChunkCmd::Load((1, 3, 1).into()),
+            ChunkCmd::Load((1, 2, 1).into()),
+        ];
+        let world = VoxWorld::default();
+
+        let optmized = super::optimize_commands(&world, cmds.clone());
+
+        assert_eq!(
+            optmized,
+            vec![
+                ChunkCmd::Load((1, 1, 1).into()),
+                ChunkCmd::Load((1, 2, 1).into()),
+                ChunkCmd::Load((1, 3, 1).into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn optimize_commands_rule_2() {
+        let cmds = vec![
+            ChunkCmd::Unload((1, 1, 1).into()),
+            ChunkCmd::Load((1, 1, 1).into()),
+        ];
+        let mut world = VoxWorld::default();
+        world.add((1, 1, 1).into(), Default::default());
+
+        let optmized = super::optimize_commands(&world, cmds.clone());
+
+        assert_eq!(optmized, vec![]);
+    }
+
+    #[test]
+    fn optimize_commands_rule_3() {
+        let cmds = vec![
+            ChunkCmd::Load((1, 1, 1).into()),
+            ChunkCmd::Unload((1, 1, 1).into()),
+        ];
+        let world = VoxWorld::default();
+
+        let optmized = super::optimize_commands(&world, cmds.clone());
+
+        assert_eq!(optmized, vec![]);
+    }
+
+    #[test]
+    fn optimize_commands_rule_4() {
+        let cmds = vec![ChunkCmd::Unload((1, 1, 1).into())];
+        let world = VoxWorld::default();
+
+        let optmized = super::optimize_commands(&world, cmds.clone());
+
+        assert_eq!(optmized, vec![]);
+    }
+
+    #[test]
+    fn optimize_commands_rule_5() {
+        let cmds = vec![ChunkCmd::Load((1, 1, 1).into())];
+        let mut world = VoxWorld::default();
+        world.add((1, 1, 1).into(), Default::default());
+
+        let optmized = super::optimize_commands(&world, cmds.clone());
+
+        assert_eq!(optmized, vec![]);
+    }
+
+    #[test]
+    fn optimize_commands_rule_6() {
+        let cmds = vec![ChunkCmd::Update((1, 1, 1).into(), vec![])];
+        let world = VoxWorld::default();
+
+        let optmized = super::optimize_commands(&world, cmds.clone());
+
+        assert_eq!(optmized, vec![]);
+    }
+
+    #[test]
+    fn optimize_commands_rule_7() {
+        let cmds = vec![
+            ChunkCmd::Update((1, 1, 1).into(), vec![]),
+            ChunkCmd::Unload((1, 1, 1).into()),
+        ];
+        let mut world = VoxWorld::default();
+        world.add((1, 1, 1).into(), Default::default());
+
+        let optmized = super::optimize_commands(&world, cmds.clone());
+
+        assert_eq!(optmized, vec![ChunkCmd::Unload((1, 1, 1).into())]);
+    }
+
+    #[test]
+    fn optimize_commands_rule_9() {
+        let cmds = vec![
+            ChunkCmd::Unload((1, 1, 1).into()),
+            ChunkCmd::Update((1, 1, 1).into(), vec![]),
+        ];
+        let mut world = VoxWorld::default();
+        world.add((1, 1, 1).into(), Default::default());
+
+        let optmized = super::optimize_commands(&world, cmds.clone());
+
+        assert_eq!(optmized, vec![ChunkCmd::Unload((1, 1, 1).into())]);
+    }
+
+    #[test]
+    fn optimize_commands_all_rules() {
+        let cmds = vec![
+            ChunkCmd::Load((0, 0, 0).into()),
+            ChunkCmd::Load((1, 1, 1).into()), // Skipped by Rule 1
+            
+            ChunkCmd::Unload((1, 1, 1).into()), // Removed by Rule 2
+            ChunkCmd::Load((1, 1, 1).into()), // Skipped by Rule 2
+            
+            ChunkCmd::Update((1, 1, 1).into(), vec![]),
+
+            ChunkCmd::Load((1, 2, 1).into()),   // Removed by Rule 3
+            ChunkCmd::Unload((1, 2, 1).into()), // Skipped by Rule 3
+
+            ChunkCmd::Unload((1, 2, 1).into()), // Skipped by rule 4
+
+            ChunkCmd::Load((1, 3, 1).into()),   // Skipped by Rule 5
+            
+            ChunkCmd::Update((1, 4, 1).into(), vec![]), // Skipped by Rule 6
+
+            ChunkCmd::Update((1, 5, 1).into(), vec![]), // Replaced by Rule 7
+            ChunkCmd::Update((1, 5, 1).into(), vec![]), // Replaced by Rule 1
+            ChunkCmd::Update((1, 5, 1).into(), vec![]), // Replaced by Rule 1
+            ChunkCmd::Unload((1, 5, 1).into()),
+            ChunkCmd::Unload((1, 6, 1).into()),
+            ChunkCmd::Update((1, 6, 1).into(), vec![]), // Skipped by Rule 9
+        ];
+
+        let mut world = VoxWorld::default();
+        world.add((1, 1, 1).into(), Default::default());
+        world.add((1, 3, 1).into(), Default::default());
+        world.add((1, 5, 1).into(), Default::default());
+        world.add((1, 6, 1).into(), Default::default());
+
+        let optmized = super::optimize_commands(&world, cmds.clone());
+
+        assert_eq!(
+            optmized,
+            vec![
+                ChunkCmd::Load((0, 0, 0).into()),
+                ChunkCmd::Update((1, 1, 1).into(), vec![]),
+                ChunkCmd::Unload((1, 5, 1).into()),
+                ChunkCmd::Unload((1, 6, 1).into())
+            ]
+        );
     }
 }
