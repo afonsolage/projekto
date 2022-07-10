@@ -117,6 +117,7 @@ fn mesh_generation_system(
     let chunks = reader
         .iter()
         .filter_map(|evt| vox_world.get(evt.0).map(|c| (evt.0, c)))
+        .filter(|(_, c)| !c.is_empty())
         .collect::<Vec<_>>();
 
     for batch in chunks.chunks(MESH_BATCH_SIZE) {
