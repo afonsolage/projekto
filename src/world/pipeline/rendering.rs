@@ -95,6 +95,11 @@ struct MeshGenerationMeta {
     batch_id: usize,
 }
 
+#[derive(Default)]
+pub struct MeshGenerationCounter {
+    pub task_counter: usize,
+}
+
 const MESH_BATCH_SIZE: usize = landscape::HORIZONTAL_SIZE * landscape::HORIZONTAL_SIZE;
 
 fn mesh_generation_system(
@@ -105,6 +110,7 @@ fn mesh_generation_system(
     task_pool: Res<AsyncComputeTaskPool>,
     mut meta: Local<MeshGenerationMeta>,
     mut reader: EventReader<EvtChunkMeshDirty>,
+    counter: Option<ResMut<MeshGenerationCounter>>,
 ) {
     let mut _perf = perf_fn!();
 
@@ -148,6 +154,14 @@ fn mesh_generation_system(
         }
 
         meta.tasks.remove(&batch_id);
+    }
+
+    if let Some(mut counter) = counter {
+        counter.task_counter = meta.tasks.len();
+    } else {
+        commands.insert_resource(MeshGenerationCounter {
+            task_counter: meta.tasks.len(),
+        });
     }
 }
 
@@ -198,7 +212,6 @@ fn generate_mesh(
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0; vertex_count]);
-
 
         commands.entity(entity).insert(meshes.add(mesh));
     }

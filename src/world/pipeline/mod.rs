@@ -21,6 +21,9 @@ mod landscaping;
 mod rendering;
 mod terraforming;
 
+pub use rendering::MeshGenerationCounter;
+
+pub use genesis::BatchChunkCmdRes;
 pub use genesis::{EvtChunkLoaded, EvtChunkUnloaded, EvtChunkUpdated, WorldRes};
 pub use landscaping::LandscapeConfig;
 pub use terraforming::{ChunkSystemQuery, ChunkSystemRaycast, CmdChunkUpdate, RaycastResult};
