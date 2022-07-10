@@ -312,7 +312,7 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
 }
 
 pub fn overlap_voxel(pos: IVec3) -> (IVec3, IVec3) {
-    let overlapping_voxel = math::euclid_rem_vec(
+    let overlapping_voxel = math::euclid_rem(
         pos,
         IVec3::new(X_AXIS_SIZE as i32, Y_AXIS_SIZE as i32, Z_AXIS_SIZE as i32),
     );

@@ -1,9 +1,5 @@
 use bevy::prelude::*;
 
-pub fn is_within_cubic_bounds(pos: IVec3, min: i32, max: i32) -> bool {
-    pos.min_element() >= min && pos.max_element() <= max
-}
-
 pub fn floor(vec: Vec3) -> IVec3 {
     IVec3::new(
         vec.x.floor() as i32,
@@ -12,15 +8,7 @@ pub fn floor(vec: Vec3) -> IVec3 {
     )
 }
 
-pub fn euclid_rem(vec: IVec3, div: i32) -> IVec3 {
-    IVec3::new(
-        vec.x.rem_euclid(div),
-        vec.y.rem_euclid(div),
-        vec.z.rem_euclid(div),
-    )
-}
-
-pub fn euclid_rem_vec(vec: IVec3, div: IVec3) -> IVec3 {
+pub fn euclid_rem(vec: IVec3, div: IVec3) -> IVec3 {
     IVec3::new(
         vec.x.rem_euclid(div.x),
         vec.y.rem_euclid(div.y),
@@ -75,15 +63,6 @@ pub fn to_unit_dir(dir: IVec3) -> Vec<IVec3> {
 mod tests {
 
     #[test]
-    fn is_within_cubic_bounds() {
-        assert!(super::is_within_cubic_bounds((1, 2, 3).into(), 0, 15));
-        assert!(!super::is_within_cubic_bounds((-1, 2, 3).into(), 0, 15));
-        assert!(super::is_within_cubic_bounds((0, 0, 0).into(), 0, 15));
-        assert!(super::is_within_cubic_bounds((15, 15, 15).into(), 0, 15));
-        assert!(!super::is_within_cubic_bounds((15, 16, 15).into(), 0, 15));
-    }
-
-    #[test]
     fn floor() {
         let floor = super::floor((14.3, -1.1, -17.0).into());
         assert_eq!(floor, (14, -2, -17).into());
@@ -91,14 +70,14 @@ mod tests {
 
     #[test]
     fn euclid_rem() {
-        let rem = super::euclid_rem((16, -1, -17).into(), 15);
+        let rem = super::euclid_rem((16, -1, -17).into(), (15, 15, 15).into());
         assert_eq!(rem, (1, 14, 13).into());
 
-        let rem = super::euclid_rem((14, 0, 0).into(), 15);
+        let rem = super::euclid_rem((14, 0, 0).into(), (15, 15, 8).into());
         assert_eq!(rem, (14, 0, 0).into());
 
-        let rem = super::euclid_rem((-15, 16, 0).into(), 15);
-        assert_eq!(rem, (0, 1, 0).into());
+        let rem = super::euclid_rem((-15, 32, 0).into(), (15, 30, 15).into());
+        assert_eq!(rem, (0, 2, 0).into());
     }
 
     #[test]

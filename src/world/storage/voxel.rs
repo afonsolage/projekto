@@ -144,7 +144,7 @@ pub fn to_local(world: Vec3) -> IVec3 {
 
     // Get the euclidean remainder
     // This transform (1, -1, 17) into (1, 15, 1)
-    math::euclid_rem_vec(
+    math::euclid_rem(
         vec,
         IVec3::new(
             chunk::X_AXIS_SIZE as i32,
