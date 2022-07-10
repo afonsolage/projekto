@@ -5,6 +5,9 @@ use crate::world::{
     storage::{chunk, voxel},
 };
 
+/**
+ An interator which produced a finite number of [`IVec3`] ranging from `begin` until `end` exclusive
+ */
 pub struct RangeIterator {
     begin: IVec3,
     end: IVec3,
@@ -41,6 +44,9 @@ pub fn range(begin: IVec3, end: IVec3) -> impl Iterator<Item = IVec3> {
     }
 }
 
+/**
+ An interator which produced a finite number of [`IVec3`] ranging from `begin` until `end` inclusive
+ */
 pub struct RangeInclusiveIterator {
     begin: IVec3,
     end: IVec3,

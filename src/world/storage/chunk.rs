@@ -8,19 +8,24 @@ use crate::world::{math, query, storage::chunk};
 
 use super::voxel;
 
-pub const AXIS_SIZE: usize = 16;
-pub const AXIS_ENDING: usize = AXIS_SIZE - 1;
+pub const X_AXIS_SIZE: usize = 16;
+pub const Z_AXIS_SIZE: usize = 16;
+pub const Y_AXIS_SIZE: usize = 16;
+
+pub const X_END: i32 = (X_AXIS_SIZE - 1) as i32;
+pub const Z_END: i32 = (Z_AXIS_SIZE - 1) as i32;
+pub const Y_END: i32 = (Y_AXIS_SIZE - 1) as i32;
 
 // const CHUNK_AXIS_OFFSET: usize = CHUNK_AXIS_SIZE / 2;
-pub const BUFFER_SIZE: usize = AXIS_SIZE * AXIS_SIZE * AXIS_SIZE;
+pub const BUFFER_SIZE: usize = X_AXIS_SIZE * Z_AXIS_SIZE * Y_AXIS_SIZE;
 
-const X_MASK: usize = 0b_1111_0000_0000;
-const Z_MASK: usize = 0b_0000_1111_0000;
-const Y_MASK: usize = 0b_0000_0000_1111;
-
-const X_SHIFT: usize = 8;
-const Z_SHIFT: usize = 4;
+const X_SHIFT: usize = (Z_AXIS_SIZE.log2() + Z_SHIFT as u32) as usize;
+const Z_SHIFT: usize = Y_AXIS_SIZE.log2() as usize;
 const Y_SHIFT: usize = 0;
+
+const X_MASK: usize = (X_AXIS_SIZE - 1) << X_SHIFT;
+const Z_MASK: usize = (Z_AXIS_SIZE - 1) << Z_SHIFT;
+const Y_MASK: usize = Y_AXIS_SIZE - 1;
 
 #[cfg(feature = "mem_alloc")]
 pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
@@ -204,35 +209,38 @@ pub fn voxels() -> impl Iterator<Item = IVec3> {
 }
 
 pub fn is_within_bounds(local: IVec3) -> bool {
-    math::is_within_cubic_bounds(local, 0, AXIS_SIZE as i32 - 1)
+    local.x >= 0
+        && local.x < X_AXIS_SIZE as i32
+        && local.z >= 0
+        && local.z < Z_AXIS_SIZE as i32
+        && local.y >= 0
+        && local.y < Y_AXIS_SIZE as i32
 }
 
 pub fn is_at_bounds(local: IVec3) -> bool {
     local.x == 0
         || local.y == 0
         || local.z == 0
-        || local.x == AXIS_ENDING as i32
-        || local.y == AXIS_ENDING as i32
-        || local.z == AXIS_ENDING as i32
+        || local.x == (X_AXIS_SIZE - 1) as i32
+        || local.y == (Y_AXIS_SIZE - 1) as i32
+        || local.z == (Z_AXIS_SIZE - 1) as i32
 }
 
 pub fn get_boundary_dir(local: IVec3) -> IVec3 {
-    const END: i32 = AXIS_ENDING as i32;
-
     (
         match local.x {
             0 => -1,
-            END => 1,
+            X_END => 1,
             _ => 0,
         },
         match local.y {
             0 => -1,
-            END => 1,
+            Y_END => 1,
             _ => 0,
         },
         match local.z {
             0 => -1,
-            END => 1,
+            Z_END => 1,
             _ => 0,
         },
     )
@@ -240,36 +248,34 @@ pub fn get_boundary_dir(local: IVec3) -> IVec3 {
 }
 
 pub fn to_world(local: IVec3) -> Vec3 {
-    local.as_vec3() * AXIS_SIZE as f32
+    local.as_vec3() * Vec3::new(X_AXIS_SIZE as f32, Y_AXIS_SIZE as f32, Z_AXIS_SIZE as f32)
 }
 
 pub fn to_local(world: Vec3) -> IVec3 {
     IVec3::new(
-        (world.x / AXIS_SIZE as f32).floor() as i32,
-        (world.y / AXIS_SIZE as f32).floor() as i32,
-        (world.z / AXIS_SIZE as f32).floor() as i32,
+        (world.x / X_AXIS_SIZE as f32).floor() as i32,
+        (world.y / Y_AXIS_SIZE as f32).floor() as i32,
+        (world.z / Z_AXIS_SIZE as f32).floor() as i32,
     )
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct ChunkNeighborhood<T: ChunkStorageType>(
-    [Option<[T; AXIS_SIZE * AXIS_SIZE]>; voxel::SIDE_COUNT],
+    [Option<[T; Z_AXIS_SIZE * Y_AXIS_SIZE]>; voxel::SIDE_COUNT],
 );
 
 impl<T: ChunkStorageType> ChunkNeighborhood<T> {
     pub fn set(&mut self, side: voxel::Side, chunk: &ChunkStorage<T>) {
-        const END: i32 = AXIS_ENDING as i32;
-
         let (begin, end_inclusive) = match side {
-            voxel::Side::Right => ((0, 0, 0).into(), (0, END, END).into()),
-            voxel::Side::Left => ((END, 0, 0).into(), (END, END, END).into()),
-            voxel::Side::Up => ((0, 0, 0).into(), (END, 0, END).into()),
-            voxel::Side::Down => ((0, END, 0).into(), (END, END, END).into()),
-            voxel::Side::Front => ((0, 0, 0).into(), (END, END, 0).into()),
-            voxel::Side::Back => ((0, 0, END).into(), (END, END, END).into()),
+            voxel::Side::Right => ((0, 0, 0).into(), (0, Y_END, Z_END).into()),
+            voxel::Side::Left => ((X_END, 0, 0).into(), (X_END, Y_END, Z_END).into()),
+            voxel::Side::Up => ((0, 0, 0).into(), (X_END, 0, Z_END).into()),
+            voxel::Side::Down => ((0, Y_END, 0).into(), (X_END, Y_END, Z_END).into()),
+            voxel::Side::Front => ((0, 0, 0).into(), (X_END, Y_END, 0).into()),
+            voxel::Side::Back => ((0, 0, Z_END).into(), (X_END, Y_END, Z_END).into()),
         };
 
-        let mut neighborhood_side = [T::default(); AXIS_SIZE * AXIS_SIZE];
+        let mut neighborhood_side = [T::default(); Z_AXIS_SIZE * Y_AXIS_SIZE];
         for pos in query::range_inclusive(begin, end_inclusive) {
             let index = Self::to_index(side, pos);
             neighborhood_side[index] = chunk.get(pos)
@@ -290,11 +296,11 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
 
         assert!(match &side {
             Side::Right => pos.x == 0,
-            Side::Left => pos.x == AXIS_ENDING as i32,
+            Side::Left => pos.x == X_END as i32,
             Side::Up => pos.y == 0,
-            Side::Down => pos.y == AXIS_ENDING as i32,
+            Side::Down => pos.y == Y_END as i32,
             Side::Front => pos.z == 0,
-            Side::Back => pos.z == AXIS_ENDING as i32,
+            Side::Back => pos.z == Z_END as i32,
         });
 
         match side {
@@ -306,25 +312,29 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
 }
 
 pub fn overlap_voxel(pos: IVec3) -> (IVec3, IVec3) {
-    let overlapping_voxel = math::euclid_rem(pos, AXIS_SIZE as i32);
+    let overlapping_voxel = math::euclid_rem(
+        pos,
+        IVec3::new(X_AXIS_SIZE as i32, Y_AXIS_SIZE as i32, Z_AXIS_SIZE as i32),
+    );
+
     let overlapping_dir = (
         if pos.x < 0 {
             -1
-        } else if pos.x >= AXIS_SIZE as i32 {
+        } else if pos.x >= X_AXIS_SIZE as i32 {
             1
         } else {
             0
         },
         if pos.y < 0 {
             -1
-        } else if pos.y >= AXIS_SIZE as i32 {
+        } else if pos.y >= Y_AXIS_SIZE as i32 {
             1
         } else {
             0
         },
         if pos.z < 0 {
             -1
-        } else if pos.z >= AXIS_SIZE as i32 {
+        } else if pos.z >= Z_AXIS_SIZE as i32 {
             1
         } else {
             0
@@ -340,12 +350,7 @@ mod tests {
     use bevy::math::IVec3;
     use rand::{random, Rng};
 
-    use crate::world::storage::{
-        chunk::{ChunkKind, ChunkStorageType, AXIS_ENDING, AXIS_SIZE},
-        voxel,
-    };
-
-    use super::{ChunkNeighborhood, ChunkStorage};
+    use super::*;
 
     #[test]
     fn to_xyz() {
@@ -353,34 +358,44 @@ mod tests {
         assert_eq!(IVec3::new(0, 1, 0), super::from_index(1));
         assert_eq!(IVec3::new(0, 2, 0), super::from_index(2));
 
-        assert_eq!(IVec3::new(0, 0, 1), super::from_index(super::AXIS_SIZE));
-        assert_eq!(IVec3::new(0, 1, 1), super::from_index(super::AXIS_SIZE + 1));
-        assert_eq!(IVec3::new(0, 2, 1), super::from_index(super::AXIS_SIZE + 2));
+        assert_eq!(
+            IVec3::new(0, 0, 1),
+            super::from_index(super::Y_AXIS_SIZE),
+            "X >> Z >> Y, so one Z unit should be a full Y axis"
+        );
+        assert_eq!(
+            IVec3::new(0, 1, 1),
+            super::from_index(super::Y_AXIS_SIZE + 1)
+        );
+        assert_eq!(
+            IVec3::new(0, 2, 1),
+            super::from_index(super::Y_AXIS_SIZE + 2)
+        );
 
         assert_eq!(
             IVec3::new(1, 0, 0),
-            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE)
+            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE)
         );
         assert_eq!(
             IVec3::new(1, 1, 0),
-            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + 1)
+            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + 1)
         );
         assert_eq!(
             IVec3::new(1, 2, 0),
-            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + 2)
+            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + 2)
         );
 
         assert_eq!(
             IVec3::new(1, 0, 1),
-            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE)
+            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE)
         );
         assert_eq!(
             IVec3::new(1, 1, 1),
-            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 1)
+            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE + 1)
         );
         assert_eq!(
             IVec3::new(1, 2, 1),
-            super::from_index(super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 2)
+            super::from_index(super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE + 2)
         );
     }
 
@@ -390,34 +405,34 @@ mod tests {
         assert_eq!(super::to_index((0, 1, 0).into()), 1);
         assert_eq!(super::to_index((0, 2, 0).into()), 2);
 
-        assert_eq!(super::to_index((0, 0, 1).into()), super::AXIS_SIZE);
-        assert_eq!(super::to_index((0, 1, 1).into()), super::AXIS_SIZE + 1);
-        assert_eq!(super::to_index((0, 2, 1).into()), super::AXIS_SIZE + 2);
+        assert_eq!(super::to_index((0, 0, 1).into()), super::Y_AXIS_SIZE);
+        assert_eq!(super::to_index((0, 1, 1).into()), super::Y_AXIS_SIZE + 1);
+        assert_eq!(super::to_index((0, 2, 1).into()), super::Y_AXIS_SIZE + 2);
 
         assert_eq!(
             super::to_index((1, 0, 0).into()),
-            super::AXIS_SIZE * super::AXIS_SIZE
+            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE
         );
         assert_eq!(
             super::to_index((1, 1, 0).into()),
-            super::AXIS_SIZE * super::AXIS_SIZE + 1
+            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + 1
         );
         assert_eq!(
             super::to_index((1, 2, 0).into()),
-            super::AXIS_SIZE * super::AXIS_SIZE + 2
+            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + 2
         );
 
         assert_eq!(
             super::to_index((1, 0, 1).into()),
-            super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE
+            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE
         );
         assert_eq!(
             super::to_index((1, 1, 1).into()),
-            super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 1
+            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE + 1
         );
         assert_eq!(
             super::to_index((1, 2, 1).into()),
-            super::AXIS_SIZE * super::AXIS_SIZE + super::AXIS_SIZE + 2
+            super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE + 2
         );
     }
 
@@ -437,7 +452,11 @@ mod tests {
 
             // To world just convert from local chunk coordinates (1, 2, -1) to world coordinates (16, 32, -16)
             // assuming AXIS_SIZE = 16
-            assert_eq!(base.as_vec3() * AXIS_SIZE as f32, super::to_world(base));
+            assert_eq!(
+                base.as_vec3()
+                    * Vec3::new(X_AXIS_SIZE as f32, Y_AXIS_SIZE as f32, Z_AXIS_SIZE as f32),
+                super::to_world(base)
+            );
         }
     }
 
@@ -454,8 +473,8 @@ mod tests {
             super::to_local(Vec3::new(3.0, -15.8, 0.0))
         );
         assert_eq!(
-            IVec3::new(-3, 1, 5),
-            super::to_local(Vec3::new(-32.1, 20.0, 88.1))
+            IVec3::new(-3, 0, 5),
+            super::to_local(Vec3::new(-32.1, chunk::Y_AXIS_SIZE as f32 - 0.1, 88.1))
         );
 
         const TEST_COUNT: usize = 1000;
@@ -471,15 +490,15 @@ mod tests {
             // This fragment is just used to check if rounding will be correct, since it should not affect
             // the overall chunk local position
             let frag = Vec3::new(
-                random::<f32>() * (AXIS_SIZE - 1) as f32,
-                random::<f32>() * (AXIS_SIZE - 1) as f32,
-                random::<f32>() * (AXIS_SIZE - 1) as f32,
+                random::<f32>() * (X_AXIS_SIZE - 1) as f32,
+                random::<f32>() * (Y_AXIS_SIZE - 1) as f32,
+                random::<f32>() * (Z_AXIS_SIZE - 1) as f32,
             );
 
             let world = Vec3::new(
-                (base.x * AXIS_SIZE as i32) as f32 + frag.x,
-                (base.y * AXIS_SIZE as i32) as f32 + frag.y,
-                (base.z * AXIS_SIZE as i32) as f32 + frag.z,
+                (base.x * X_AXIS_SIZE as i32) as f32 + frag.x,
+                (base.y * Y_AXIS_SIZE as i32) as f32 + frag.y,
+                (base.z * Z_AXIS_SIZE as i32) as f32 + frag.z,
             );
 
             // To local convert from world chunk coordinates (15.4, 1.1, -0.5) to local coordinates (1, 0, -1)
@@ -494,9 +513,9 @@ mod tests {
         let mut last = IVec3::ZERO;
 
         for pos in super::voxels() {
-            assert!(pos.x >= 0 && pos.x < super::AXIS_SIZE as i32);
-            assert!(pos.y >= 0 && pos.y < super::AXIS_SIZE as i32);
-            assert!(pos.z >= 0 && pos.z < super::AXIS_SIZE as i32);
+            assert!(pos.x >= 0 && pos.x < super::X_AXIS_SIZE as i32);
+            assert!(pos.y >= 0 && pos.y < super::Y_AXIS_SIZE as i32);
+            assert!(pos.z >= 0 && pos.z < super::Z_AXIS_SIZE as i32);
 
             if first == None {
                 first = Some(pos);
@@ -508,9 +527,9 @@ mod tests {
         assert_eq!(
             last,
             (
-                AXIS_SIZE as i32 - 1,
-                AXIS_SIZE as i32 - 1,
-                AXIS_SIZE as i32 - 1
+                X_AXIS_SIZE as i32 - 1,
+                Y_AXIS_SIZE as i32 - 1,
+                Z_AXIS_SIZE as i32 - 1
             )
                 .into()
         );
@@ -588,19 +607,19 @@ mod tests {
                 let mut rnd = rand::thread_rng();
                 let kind = rnd.gen_range(1..10).into();
                 let mut pos: IVec3 = (
-                    rnd.gen_range(0..AXIS_SIZE) as i32,
-                    rnd.gen_range(0..AXIS_SIZE) as i32,
-                    rnd.gen_range(0..AXIS_SIZE) as i32,
+                    rnd.gen_range(0..X_AXIS_SIZE) as i32,
+                    rnd.gen_range(0..Y_AXIS_SIZE) as i32,
+                    rnd.gen_range(0..Z_AXIS_SIZE) as i32,
                 )
                     .into();
 
                 match side {
                     Side::Right => pos.x = 0,
-                    Side::Left => pos.x = AXIS_ENDING as i32,
+                    Side::Left => pos.x = X_END as i32,
                     Side::Up => pos.y = 0,
-                    Side::Down => pos.y = AXIS_ENDING as i32,
+                    Side::Down => pos.y = Y_END as i32,
                     Side::Front => pos.z = 0,
-                    Side::Back => pos.z = AXIS_ENDING as i32,
+                    Side::Back => pos.z = Z_END as i32,
                 }
 
                 // Avoid setting different values on same voxel
@@ -637,7 +656,7 @@ mod tests {
         let local = (1, 0, 1).into();
         assert!(super::is_at_bounds(local));
 
-        let local = (1, AXIS_ENDING as i32, 1).into();
+        let local = (1, Y_END as i32, 1).into();
         assert!(super::is_at_bounds(local));
 
         let local = (0, 0, 0).into();
@@ -655,10 +674,10 @@ mod tests {
         let local = (1, 2, 3).into();
         assert_eq!(super::get_boundary_dir(local), (0, 0, 0).into());
 
-        let local = (AXIS_ENDING as i32, 2, 3).into();
+        let local = (X_END as i32, 2, 3).into();
         assert_eq!(super::get_boundary_dir(local), (1, 0, 0).into());
 
-        let local = (AXIS_ENDING as i32, AXIS_ENDING as i32, AXIS_ENDING as i32).into();
+        let local = (X_END as i32, Y_END as i32, Z_END as i32).into();
         assert_eq!(super::get_boundary_dir(local), (1, 1, 1).into());
     }
 }

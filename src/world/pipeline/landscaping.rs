@@ -87,8 +87,8 @@ fn update_landscape_system(
 
         debug!("Updating landscape to center {}", center);
 
-        let begin = center + IVec3::splat(landscape::BEGIN);
-        let end = center + IVec3::splat(landscape::END);
+        let begin = center + IVec3::new(landscape::BEGIN, -1, landscape::BEGIN);
+        let end = center + IVec3::new(landscape::END, 1, landscape::END);
 
         let visible_locals = query::range(begin, end).collect::<HashSet<_>>();
         let existing_locals = entity_map.0.keys().copied().collect::<HashSet<_>>();

@@ -144,7 +144,14 @@ pub fn to_local(world: Vec3) -> IVec3 {
 
     // Get the euclidean remainder
     // This transform (1, -1, 17) into (1, 15, 1)
-    math::euclid_rem(vec, chunk::AXIS_SIZE as i32)
+    math::euclid_rem(
+        vec,
+        IVec3::new(
+            chunk::X_AXIS_SIZE as i32,
+            chunk::Y_AXIS_SIZE as i32,
+            chunk::Z_AXIS_SIZE as i32,
+        ),
+    )
 }
 
 pub fn to_world(local: IVec3, chunk_local: IVec3) -> Vec3 {
@@ -216,12 +223,17 @@ mod tests {
             );
 
             let base_voxel = IVec3::new(
-                (random::<f32>() * chunk::AXIS_SIZE as f32) as i32,
-                (random::<f32>() * chunk::AXIS_SIZE as f32) as i32,
-                (random::<f32>() * chunk::AXIS_SIZE as f32) as i32,
+                (random::<f32>() * chunk::X_AXIS_SIZE as f32) as i32,
+                (random::<f32>() * chunk::Y_AXIS_SIZE as f32) as i32,
+                (random::<f32>() * chunk::Z_AXIS_SIZE as f32) as i32,
             );
 
-            let chunk_world = base_chunk.as_vec3() * chunk::AXIS_SIZE as f32;
+            let chunk_world = base_chunk.as_vec3()
+                * Vec3::new(
+                    chunk::X_AXIS_SIZE as f32,
+                    chunk::Y_AXIS_SIZE as f32,
+                    chunk::Z_AXIS_SIZE as f32,
+                );
 
             assert_eq!(
                 chunk_world + base_voxel.as_vec3(),
@@ -246,10 +258,10 @@ mod tests {
         );
         assert_eq!(
             IVec3::new(15, 1, 0),
-            super::to_local(Vec3::new(-0.3, 17.3, 0.0))
+            super::to_local(Vec3::new(-0.3, chunk::Y_AXIS_SIZE as f32 + 1.0, 0.0))
         );
         assert_eq!(
-            IVec3::new(1, 15, 1),
+            IVec3::new(1, chunk::Y_END, 1),
             super::to_local(Vec3::new(1.1, -0.3, 17.5))
         );
 
@@ -259,9 +271,9 @@ mod tests {
         for _ in 0..TEST_COUNT {
             // Generate a valid voxel number between 0 and chunk::AXIS_SIZE
             let base = IVec3::new(
-                (random::<f32>() * chunk::AXIS_SIZE as f32) as i32,
-                (random::<f32>() * chunk::AXIS_SIZE as f32) as i32,
-                (random::<f32>() * chunk::AXIS_SIZE as f32) as i32,
+                (random::<f32>() * chunk::X_AXIS_SIZE as f32) as i32,
+                (random::<f32>() * chunk::Y_AXIS_SIZE as f32) as i32,
+                (random::<f32>() * chunk::Z_AXIS_SIZE as f32) as i32,
             );
 
             let sign = Vec3::new(
@@ -279,9 +291,9 @@ mod tests {
 
             // Compute a valid world coordinates using the base voxel, the sign and the floating number
             let world = Vec3::new(
-                ((random::<f32>() * MAG * sign.x) as i32 * chunk::AXIS_SIZE as i32 + base.x) as f32,
-                ((random::<f32>() * MAG * sign.y) as i32 * chunk::AXIS_SIZE as i32 + base.y) as f32,
-                ((random::<f32>() * MAG * sign.z) as i32 * chunk::AXIS_SIZE as i32 + base.z) as f32,
+                ((random::<f32>() * MAG * sign.x) as i32 * chunk::X_AXIS_SIZE as i32 + base.x) as f32,
+                ((random::<f32>() * MAG * sign.y) as i32 * chunk::Y_AXIS_SIZE as i32 + base.y) as f32,
+                ((random::<f32>() * MAG * sign.z) as i32 * chunk::X_AXIS_SIZE as i32 + base.z) as f32,
             );
 
             assert_eq!(

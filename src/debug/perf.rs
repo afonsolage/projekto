@@ -13,7 +13,7 @@ impl Plugin for PerfCounterPlugin {
     }
 }
 
-pub(super) fn print_perf_counter(input_keys: Res<Input<KeyCode>>) {
+pub(super) fn print_perf_counter(input_keys: Res<Input<KeyCode>>, time: Res<Time>) {
     let ctrl = input_keys.any_pressed([KeyCode::LControl, KeyCode::RControl]);
     if input_keys.just_pressed(KeyCode::F12) {
         let mut guard = PERF_MAP.lock().unwrap();
@@ -28,6 +28,7 @@ pub(super) fn print_perf_counter(input_keys: Res<Input<KeyCode>>) {
                 output += format!("{}\n", p).as_str();
             }
 
+            info!("Time since startup: \n{}", time.seconds_since_startup());
             info!("Performance Counter: \n{}", output);
         }
     }
