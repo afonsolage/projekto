@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use bevy::math::IVec3;
 
 use crate::world::{query, storage::voxel};
@@ -73,8 +71,9 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
 }
 
 pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<VoxelFace> {
+    #[inline]
     fn should_skip_voxel(
-        merged: &HashSet<IVec3>,
+        merged: &Vec<usize>,
         voxel: IVec3,
         side: voxel::Side,
         chunk: &ChunkKind,
@@ -83,14 +82,15 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
         // perf_fn_scope!();
         !chunk::is_within_bounds(voxel)
             || chunk.get(voxel).is_empty()
-            || merged.contains(&voxel)
+            || merged[chunk::to_index(voxel)] == 1
             || occlusion.get(voxel).is_occluded(side)
     }
 
+    #[inline]
     fn find_furthest_eq_voxel(
         begin: IVec3,
         step: IVec3,
-        merged: &HashSet<IVec3>,
+        merged: &Vec<usize>,
         side: voxel::Side,
         chunk: &ChunkKind,
         occlusion: &ChunkFacesOcclusion,
@@ -120,7 +120,7 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
 
     for side in voxel::SIDES {
         let axis = side_axis[side as usize];
-        let mut merged = HashSet::default();
+        let mut merged = vec![0; chunk::BUFFER_SIZE];
 
         for voxel in chunk::voxels() {
             if should_skip_voxel(&merged, voxel, side, chunk, occlusion) {
@@ -150,7 +150,9 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
             v3 -= step;
             let v4 = v1 + (v3 - v2);
 
-            merged.extend(query::range_inclusive(v1, v3));
+            for voxel in query::range_inclusive(v1, v3) {
+                merged[chunk::to_index(voxel)] = 1;
+            }
 
             faces_vertices.push(VoxelFace {
                 vertices: [v1, v2, v3, v4],

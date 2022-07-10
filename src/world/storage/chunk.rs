@@ -8,9 +8,9 @@ use crate::world::{math, query, storage::chunk};
 
 use super::voxel;
 
-pub const X_AXIS_SIZE: usize = 16;
-pub const Z_AXIS_SIZE: usize = 16;
-pub const Y_AXIS_SIZE: usize = 16;
+pub const X_AXIS_SIZE: usize = 32;
+pub const Z_AXIS_SIZE: usize = 32;
+pub const Y_AXIS_SIZE: usize = 32;
 
 pub const X_END: i32 = (X_AXIS_SIZE - 1) as i32;
 pub const Z_END: i32 = (Z_AXIS_SIZE - 1) as i32;
@@ -123,7 +123,6 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.is_all(T::default())
     }
 
-    #[cfg(test)]
     pub fn is_all(&self, value: T) -> bool {
         self.iter().all(|t| *t == value)
     }
@@ -191,6 +190,12 @@ impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
 }
 
 pub type ChunkKind = ChunkStorage<voxel::Kind>;
+
+impl ChunkKind {
+    pub fn is_empty(&self) -> bool {
+        self.is_all(0u16.into())
+    }
+}
 
 pub fn to_index(local: IVec3) -> usize {
     (local.x << X_SHIFT | local.y << Y_SHIFT | local.z << Z_SHIFT) as usize
@@ -294,7 +299,7 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
     fn to_index(side: voxel::Side, pos: IVec3) -> usize {
         use voxel::Side;
 
-        assert!(match &side {
+        debug_assert!(match &side {
             Side::Right => pos.x == 0,
             Side::Left => pos.x == X_END as i32,
             Side::Up => pos.y == 0,
