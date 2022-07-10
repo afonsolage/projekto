@@ -1,4 +1,5 @@
 use std::{
+    io::{Read, Write},
     ops::Deref,
     path::{Path, PathBuf},
 };
@@ -562,7 +563,7 @@ fn generate_cache(local: IVec3) -> ChunkCache {
 fn save_cache(path: &Path, cache: &ChunkCache) {
     perf_fn_scope!();
 
-    let file = std::fs::OpenOptions::new()
+    let mut file = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
         .create(true)
@@ -570,8 +571,19 @@ fn save_cache(path: &Path, cache: &ChunkCache) {
         .unwrap_or_else(|_| panic!("Unable to write to file {}", path.display()));
 
     #[cfg(not(feature = "serde_ron"))]
-    bincode::serialize_into(file, cache)
-        .unwrap_or_else(|_| panic!("Failed to serialize cache to file {}", path.display()));
+    {
+        let bincode = bincode::serialize(cache)
+            .unwrap_or_else(|_| panic!("Failed to serialize cache {}", path.display()));
+
+        let compressed = lz4_flex::compress_prepend_size(&bincode);
+
+        file.write_all(&compressed).unwrap_or_else(|_| {
+            panic!(
+                "Failed to write compressed data to cache {}",
+                path.display()
+            )
+        });
+    }
 
     #[cfg(feature = "serde_ron")]
     ron::ser::to_writer(file, cache)
@@ -581,20 +593,32 @@ fn save_cache(path: &Path, cache: &ChunkCache) {
 fn load_cache(path: &Path) -> ChunkCache {
     perf_fn_scope!();
 
-    let file = std::fs::OpenOptions::new()
+    let mut file = std::fs::OpenOptions::new()
         .read(true)
         .open(path)
         .unwrap_or_else(|_| panic!("Unable to open file {}", path.display()));
 
     #[cfg(not(feature = "serde_ron"))]
-    let cache = bincode::deserialize_from(file)
-        .unwrap_or_else(|_| panic!("Failed to parse file {}", path.display()));
+    {
+        let mut compressed = Vec::new();
+        file.read_to_end(&mut compressed)
+            .unwrap_or_else(|_| panic!("Failed to read file {}", path.display()));
+
+        let decompressed = lz4_flex::decompress_size_prepended(&compressed)
+            .unwrap_or_else(|_| panic!("Failed to decompresse cache {}", path.display()));
+
+        let cache = bincode::deserialize(&decompressed)
+            .unwrap_or_else(|_| panic!("Failed to parse file {}", path.display()));
+
+        cache
+    }
 
     #[cfg(feature = "serde_ron")]
-    let cache =
-        ron::de::from_reader(file).expect(&format!("Failed to parse file {}", path.display()));
-
-    cache
+    {
+        let cache =
+            ron::de::from_reader(file).expect(&format!("Failed to parse file {}", path.display()));
+        cache
+    }
 }
 
 fn local_path(local: IVec3) -> PathBuf {
