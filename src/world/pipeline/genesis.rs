@@ -85,6 +85,9 @@ impl BatchChunkCmdRes {
     fn swap_and_clone(&mut self) -> Vec<ChunkCmd> {
         // Since the running buffer is always cleared when the batch is finished, this swap has no side-effects
         std::mem::swap(&mut self.running, &mut self.pending);
+
+        debug!("Running: {:?}", Self::count_chunk_cmd(&self.running));
+
         self.running.clone()
     }
 
@@ -92,6 +95,7 @@ impl BatchChunkCmdRes {
     Clears the running buffer
     */
     fn finished(&mut self) {
+        debug!("Finished!");
         self.running.clear();
     }
 
@@ -121,6 +125,34 @@ impl BatchChunkCmdRes {
      */
     pub fn update(&mut self, local: IVec3, voxels: Vec<(IVec3, voxel::Kind)>) {
         self.pending.push(ChunkCmd::Update(local, voxels));
+    }
+
+    fn count_chunk_cmd(vec: &Vec<ChunkCmd>) -> (i32, i32, i32) {
+        vec.iter()
+            .map(|c| match &c {
+                ChunkCmd::Load(_) => (1, 0, 0),
+                ChunkCmd::Unload(_) => (0, 1, 0),
+                ChunkCmd::Update(_, _) => (0, 0, 1),
+            })
+            .fold((0, 0, 0), |s, v| (s.0 + v.0, s.1 + v.1, s.2 + v.2))
+    }
+}
+
+impl std::fmt::Display for BatchChunkCmdRes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (pending_load, pending_unload, pending_update) = Self::count_chunk_cmd(&self.pending);
+        let (running_load, running_unload, running_update) = Self::count_chunk_cmd(&self.running);
+
+        write!(
+            f,
+            "Running LD: {} UL: {} UP: {} | Pending LD: {} UL: {} UP: {}",
+            running_load,
+            running_unload,
+            running_update,
+            pending_load,
+            pending_unload,
+            pending_update,
+        )
     }
 }
 
@@ -969,22 +1001,15 @@ mod tests {
     fn optimize_commands_all_rules() {
         let cmds = vec![
             ChunkCmd::Load((0, 0, 0).into()),
-            ChunkCmd::Load((1, 1, 1).into()), // Skipped by Rule 1
-            
+            ChunkCmd::Load((1, 1, 1).into()),   // Skipped by Rule 1
             ChunkCmd::Unload((1, 1, 1).into()), // Removed by Rule 2
-            ChunkCmd::Load((1, 1, 1).into()), // Skipped by Rule 2
-            
+            ChunkCmd::Load((1, 1, 1).into()),   // Skipped by Rule 2
             ChunkCmd::Update((1, 1, 1).into(), vec![]),
-
             ChunkCmd::Load((1, 2, 1).into()),   // Removed by Rule 3
             ChunkCmd::Unload((1, 2, 1).into()), // Skipped by Rule 3
-
             ChunkCmd::Unload((1, 2, 1).into()), // Skipped by rule 4
-
             ChunkCmd::Load((1, 3, 1).into()),   // Skipped by Rule 5
-            
             ChunkCmd::Update((1, 4, 1).into(), vec![]), // Skipped by Rule 6
-
             ChunkCmd::Update((1, 5, 1).into(), vec![]), // Replaced by Rule 7
             ChunkCmd::Update((1, 5, 1).into(), vec![]), // Replaced by Rule 1
             ChunkCmd::Update((1, 5, 1).into(), vec![]), // Replaced by Rule 1

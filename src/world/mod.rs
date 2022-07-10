@@ -3,7 +3,7 @@ use bevy::prelude::*;
 mod debug;
 mod math;
 mod mesh;
-mod pipeline;
+pub mod pipeline;
 
 pub mod query;
 pub mod storage;

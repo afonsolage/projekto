@@ -1,5 +1,5 @@
 pub const HORIZONTAL_SIZE: usize = 16;
-pub const VERTICAL_SIZE: usize = 32;
+pub const VERTICAL_SIZE: usize = 16;
 
 pub const HORIZONTAL_BEGIN: i32 = -(HORIZONTAL_SIZE as i32) / 2;
 pub const HORIZONTAL_END: i32 = HORIZONTAL_BEGIN + HORIZONTAL_SIZE as i32;
