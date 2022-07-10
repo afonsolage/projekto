@@ -95,7 +95,7 @@ struct MeshGenerationMeta {
     batch_id: usize,
 }
 
-const MESH_BATCH_SIZE: usize = landscape::SIZE * landscape::SIZE;
+const MESH_BATCH_SIZE: usize = landscape::HORIZONTAL_SIZE * landscape::HORIZONTAL_SIZE;
 
 fn mesh_generation_system(
     mut commands: Commands,
