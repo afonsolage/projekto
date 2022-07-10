@@ -299,7 +299,7 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
     fn to_index(side: voxel::Side, pos: IVec3) -> usize {
         use voxel::Side;
 
-        assert!(match &side {
+        debug_assert!(match &side {
             Side::Right => pos.x == 0,
             Side::Left => pos.x == X_END as i32,
             Side::Up => pos.y == 0,
