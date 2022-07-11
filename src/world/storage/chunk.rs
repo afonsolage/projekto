@@ -471,15 +471,11 @@ mod tests {
 
         assert_eq!(
             IVec3::new(0, -1, -2),
-            super::to_local(Vec3::new(3.0, -0.8, -17.0))
+            super::to_local(Vec3::new(3.0, -0.8, -chunk::Y_END as f32 - 2.0))
         );
         assert_eq!(
             IVec3::new(0, -1, 0),
-            super::to_local(Vec3::new(3.0, -15.8, 0.0))
-        );
-        assert_eq!(
-            IVec3::new(-3, 0, 5),
-            super::to_local(Vec3::new(-32.1, chunk::Y_AXIS_SIZE as f32 - 0.1, 88.1))
+            super::to_local(Vec3::new(3.0, -chunk::Y_END as f32 - 0.8, 0.0))
         );
 
         const TEST_COUNT: usize = 1000;
@@ -556,18 +552,18 @@ mod tests {
     fn overlap_voxel() {
         assert_eq!(
             super::overlap_voxel((-1, 10, 5).into()),
-            ((-1, 0, 0).into(), (15, 10, 5).into())
+            ((-1, 0, 0).into(), (chunk::Y_END, 10, 5).into())
         );
         assert_eq!(
-            super::overlap_voxel((-1, 10, 16).into()),
-            ((-1, 0, 1).into(), (15, 10, 0).into())
+            super::overlap_voxel((-1, 10, chunk::Z_END + 1).into()),
+            ((-1, 0, 1).into(), (chunk::Y_END, 10, 0).into())
         );
         assert_eq!(
             super::overlap_voxel((0, 0, 0).into()),
             ((0, 0, 0).into(), (0, 0, 0).into())
         );
         assert_eq!(
-            super::overlap_voxel((17, 10, 5).into()),
+            super::overlap_voxel((chunk::Y_END + 2, 10, 5).into()),
             ((1, 0, 0).into(), (1, 10, 5).into())
         );
     }
