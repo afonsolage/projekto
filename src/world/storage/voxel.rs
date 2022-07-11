@@ -253,16 +253,16 @@ mod tests {
             super::to_local(Vec3::new(1.3, 0.0, 0.0))
         );
         assert_eq!(
-            IVec3::new(15, 0, 0),
+            IVec3::new(chunk::X_END, 0, 0),
             super::to_local(Vec3::new(-0.3, 0.0, 0.0))
         );
         assert_eq!(
-            IVec3::new(15, 1, 0),
+            IVec3::new(chunk::X_END, 1, 0),
             super::to_local(Vec3::new(-0.3, chunk::Y_AXIS_SIZE as f32 + 1.0, 0.0))
         );
         assert_eq!(
             IVec3::new(1, chunk::Y_END, 1),
-            super::to_local(Vec3::new(1.1, -0.3, 17.5))
+            super::to_local(Vec3::new(1.1, -0.3, chunk::Z_AXIS_SIZE as f32 + 1.5))
         );
 
         const TEST_COUNT: usize = 1000;
