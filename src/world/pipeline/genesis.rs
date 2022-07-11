@@ -284,7 +284,7 @@ This functions optimize the command list removing duplicated commands or command
 
 **This functions does preserves the insertion order**
 
-**Returns** an optmized command list
+**Returns** an optimized command list
 */
 fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd> {
     let mut map = HashMap::<IVec3, (u32, ChunkCmd)>::new();
@@ -307,7 +307,7 @@ fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd>
                         }
                         _ => {
                             panic!(
-                                "Undefined behaviour for {:?} and {:?} when chunk_exists = {:?}",
+                                "Undefined behavior for {:?} and {:?} when chunk_exists = {:?}",
                                 cmd, existing_cmd, chunk_exists
                             );
                         }
@@ -341,7 +341,7 @@ fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd>
                         }
                         _ => {
                             panic!(
-                                "Undefined behaviour for {:?} and {:?} when chunk_exists = {:?}",
+                                "Undefined behavior for {:?} and {:?} when chunk_exists = {:?}",
                                 cmd, existing_cmd, chunk_exists
                             );
                         }
@@ -367,7 +367,7 @@ fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd>
                         ChunkCmd::Update(_, _) => continue, // Rule 1. TODO: Maybe merge update data in the future?
                         ChunkCmd::Unload(_) => continue,    // Rule 9.
                         _ => {
-                            panic!("Undefined behaviour for {:?} and {:?}", cmd, existing_cmd);
+                            panic!("Undefined behavior for {:?} and {:?}", cmd, existing_cmd);
                         }
                     }
                 }
@@ -413,7 +413,7 @@ fn split_commands(
 }
 
 /**
-Process in batch a list of [`ChunkCmd`]. This funtion takes ownership of [`VoxWorld`] since it needs to do modification on world.
+Process in batch a list of [`ChunkCmd`]. This function takes ownership of [`VoxWorld`] since it needs to do modification on world.
 
 ***Returns*** the [`VoxWorld`] ownership and a list of [`ChunkCmdResult`]
  */
@@ -629,7 +629,7 @@ fn load_cache(path: &Path) -> ChunkCache {
             .unwrap_or_else(|_| panic!("Failed to read file {}", path.display()));
 
         let decompressed = lz4_flex::decompress_size_prepended(&compressed)
-            .unwrap_or_else(|_| panic!("Failed to decompresse cache {}", path.display()));
+            .unwrap_or_else(|_| panic!("Failed to decompress cache {}", path.display()));
 
         let cache = bincode::deserialize(&decompressed)
             .unwrap_or_else(|_| panic!("Failed to parse file {}", path.display()));
@@ -936,9 +936,9 @@ mod tests {
             .map(|i| ChunkCmd::Load((i, i, i).into()))
             .collect::<Vec<_>>();
 
-        let optmized = super::optimize_commands(&VoxWorld::default(), cmds.clone());
+        let optimized = super::optimize_commands(&VoxWorld::default(), cmds.clone());
 
-        assert_eq!(cmds, optmized);
+        assert_eq!(cmds, optimized);
     }
 
     #[test]
@@ -955,10 +955,10 @@ mod tests {
         ];
         let world = VoxWorld::default();
 
-        let optmized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds.clone());
 
         assert_eq!(
-            optmized,
+            optimized,
             vec![
                 ChunkCmd::Load((1, 1, 1).into()),
                 ChunkCmd::Load((1, 2, 1).into()),
@@ -976,9 +976,9 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((1, 1, 1).into(), Default::default());
 
-        let optmized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds.clone());
 
-        assert_eq!(optmized, vec![]);
+        assert_eq!(optimized, vec![]);
     }
 
     #[test]
@@ -989,9 +989,9 @@ mod tests {
         ];
         let world = VoxWorld::default();
 
-        let optmized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds.clone());
 
-        assert_eq!(optmized, vec![]);
+        assert_eq!(optimized, vec![]);
     }
 
     #[test]
@@ -999,9 +999,9 @@ mod tests {
         let cmds = vec![ChunkCmd::Unload((1, 1, 1).into())];
         let world = VoxWorld::default();
 
-        let optmized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds.clone());
 
-        assert_eq!(optmized, vec![]);
+        assert_eq!(optimized, vec![]);
     }
 
     #[test]
@@ -1010,9 +1010,9 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((1, 1, 1).into(), Default::default());
 
-        let optmized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds.clone());
 
-        assert_eq!(optmized, vec![]);
+        assert_eq!(optimized, vec![]);
     }
 
     #[test]
@@ -1020,9 +1020,9 @@ mod tests {
         let cmds = vec![ChunkCmd::Update((1, 1, 1).into(), vec![])];
         let world = VoxWorld::default();
 
-        let optmized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds.clone());
 
-        assert_eq!(optmized, vec![]);
+        assert_eq!(optimized, vec![]);
     }
 
     #[test]
@@ -1034,9 +1034,9 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((1, 1, 1).into(), Default::default());
 
-        let optmized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds.clone());
 
-        assert_eq!(optmized, vec![ChunkCmd::Unload((1, 1, 1).into())]);
+        assert_eq!(optimized, vec![ChunkCmd::Unload((1, 1, 1).into())]);
     }
 
     #[test]
@@ -1048,9 +1048,9 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((1, 1, 1).into(), Default::default());
 
-        let optmized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds.clone());
 
-        assert_eq!(optmized, vec![ChunkCmd::Unload((1, 1, 1).into())]);
+        assert_eq!(optimized, vec![ChunkCmd::Unload((1, 1, 1).into())]);
     }
 
     #[test]
@@ -1080,10 +1080,10 @@ mod tests {
         world.add((1, 5, 1).into(), Default::default());
         world.add((1, 6, 1).into(), Default::default());
 
-        let optmized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds.clone());
 
         assert_eq!(
-            optmized,
+            optimized,
             vec![
                 ChunkCmd::Load((0, 0, 0).into()),
                 ChunkCmd::Update((1, 1, 1).into(), vec![]),
