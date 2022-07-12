@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::world::pipeline::{BatchChunkCmdRes, MeshGenerationCounter};
+use crate::world::{terraformation::prelude::*, pipeline::MeshGenerationCounter};
 
 // use bevy_egui::{egui, EguiContext, EguiPlugin};
 

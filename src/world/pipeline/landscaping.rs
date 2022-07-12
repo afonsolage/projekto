@@ -7,18 +7,15 @@ use bevy::{
 use crate::{
     fly_by_camera::FlyByCamera,
     world::{
-        pipeline::{
-            genesis::{EvtChunkLoaded, EvtChunkUnloaded},
-            ChunkMaterial, ChunkMaterialHandle,
-        },
+        pipeline::{ChunkMaterial, ChunkMaterialHandle, EvtChunkLoaded, EvtChunkUnloaded},
         query,
         storage::{chunk, landscape},
     },
 };
 
 use super::{
-    genesis::{BatchChunkCmdRes, WorldRes},
-    ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated,
+    BatchChunkCmdRes, ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated,
+    WorldRes,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -180,13 +177,8 @@ fn update_chunks_system(
 #[cfg(test)]
 mod test {
     use bevy::{ecs::event::Events, prelude::*, utils::HashMap};
-
-    use crate::world::pipeline::{
-        genesis::EvtChunkUnloaded, ChunkBundle, ChunkLocal, ChunkMaterialHandle, EvtChunkMeshDirty,
-        EvtChunkUpdated,
-    };
-
-    use super::{ChunkEntityMap, EvtChunkLoaded};
+    
+    use super::*;
 
     #[test]
     fn spawn_chunks_system() {

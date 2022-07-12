@@ -31,11 +31,8 @@ impl Plugin for GenesisPlugin {
         app.add_event::<EvtChunkLoaded>()
             .add_event::<EvtChunkUnloaded>()
             .add_event::<EvtChunkUpdated>()
-            .add_startup_system_to_stage(super::PipelineStartup::Genesis, setup_resources)
-            .add_system_to_stage(
-                super::Pipeline::Genesis,
-                update_world_system.label("update"),
-            );
+            .add_startup_system(setup_resources)
+            .add_system(update_world_system);
     }
 }
 
@@ -442,7 +439,7 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
 /**
 Apply on the given [`VoxWorld`] the given voxel modification list [`VoxelUpdateList`]
 
-***Returns*** A list of chunks locals that are dirty due to voxel modifications. This is usually neighboring chunks where voxel was updated 
+***Returns*** A list of chunks locals that are dirty due to voxel modifications. This is usually neighboring chunks where voxel was updated
  */
 fn update_chunks(world: &mut VoxWorld, data: &[(IVec3, VoxelUpdateList)]) -> HashSet<IVec3> {
     let mut dirty_chunks = HashSet::default();

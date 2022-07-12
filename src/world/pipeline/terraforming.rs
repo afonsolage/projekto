@@ -5,7 +5,7 @@ use crate::world::{
     storage::{chunk::ChunkKind, voxel},
 };
 
-use super::{genesis::BatchChunkCmdRes, WorldRes};
+use super::{BatchChunkCmdRes, WorldRes};
 
 pub(super) struct TerraformingPlugin;
 

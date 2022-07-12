@@ -15,7 +15,7 @@ use crate::world::{
     },
 };
 
-use super::{genesis::WorldRes, ChunkEntityMap, ChunkFacesOcclusion, EvtChunkMeshDirty, Pipeline};
+use super::{WorldRes, ChunkEntityMap, ChunkFacesOcclusion, EvtChunkMeshDirty, Pipeline};
 
 pub struct RenderingPlugin;
 
