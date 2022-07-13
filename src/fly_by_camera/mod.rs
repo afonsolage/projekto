@@ -8,6 +8,8 @@ use bevy::{
 };
 use bevy_egui::EguiContext;
 
+use crate::world::terraformation::TerraformationCenter;
+
 pub struct FlyByCameraPlugin;
 
 impl Plugin for FlyByCameraPlugin {
@@ -50,7 +52,10 @@ fn setup_fly_by_camera(mut commands: Commands, q: Query<Entity, With<Camera>>) {
     match q.get_single() {
         Ok(e) => {
             warn!("Camera already exists, adding FlyByCamera to it");
-            commands.entity(e).insert(FlyByCamera::default());
+            commands
+                .entity(e)
+                .insert(FlyByCamera::default())
+                .insert(TerraformationCenter);
         }
         Err(QuerySingleError::MultipleEntities(_)) => {
             error!("Multiple camera already exists. Unable to setup FlyByCamera");
@@ -61,7 +66,8 @@ fn setup_fly_by_camera(mut commands: Commands, q: Query<Entity, With<Camera>>) {
                     transform: Transform::from_xyz(-10.0, 25.0, 20.0),
                     ..Default::default()
                 })
-                .insert(FlyByCamera::default());
+                .insert(FlyByCamera::default())
+                .insert(TerraformationCenter);
         }
     }
 }
@@ -138,7 +144,6 @@ fn fly_by_camera_grab_mouse_system(
         if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
             return;
         }
-        
     }
 
     if let Some(window) = windows.get_primary_mut() {

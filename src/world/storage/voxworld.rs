@@ -44,6 +44,10 @@ impl VoxWorld {
             chunk.neighborhood = neighborhood;
         }
     }
+
+    pub fn list_chunks(&self) -> Vec<IVec3> {
+        self.chunks.keys().cloned().collect()
+    }
 }
 
 #[cfg(test)]

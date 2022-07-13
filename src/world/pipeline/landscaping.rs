@@ -56,6 +56,7 @@ struct UpdateLandscapeMeta {
     next_sync: f32,
 }
 
+// CHANGE THIS TO RENDERING!!!
 fn update_landscape_system(
     time: Res<Time>,
     entity_map: ResMut<ChunkEntityMap>,
@@ -177,7 +178,7 @@ fn update_chunks_system(
 #[cfg(test)]
 mod test {
     use bevy::{ecs::event::Events, prelude::*, utils::HashMap};
-    
+
     use super::*;
 
     #[test]
