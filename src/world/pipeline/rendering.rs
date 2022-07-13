@@ -114,6 +114,10 @@ fn mesh_generation_system(
 ) {
     let mut _perf = perf_fn!();
 
+    if !vox_world.is_ready() {
+        return;
+    }
+
     let chunks = reader
         .iter()
         .filter_map(|evt| vox_world.get(evt.0).map(|c| (evt.0, c)))

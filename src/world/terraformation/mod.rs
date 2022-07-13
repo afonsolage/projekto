@@ -16,6 +16,7 @@ pub struct TerraformationPlugin;
 impl Plugin for TerraformationPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(genesis::GenesisPlugin)
+            .add_plugin(landscaping::LandscapingPlugin)
             .insert_resource(TerraformationConfig {
                 horizontal_radius: 10,
                 vertical_radius: 10,

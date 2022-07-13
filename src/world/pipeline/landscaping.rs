@@ -7,15 +7,14 @@ use bevy::{
 use crate::{
     fly_by_camera::FlyByCamera,
     world::{
-        pipeline::{ChunkMaterial, ChunkMaterialHandle, EvtChunkLoaded, EvtChunkUnloaded},
+        pipeline::{ChunkMaterial, ChunkMaterialHandle},
         query,
         storage::{chunk, landscape},
     },
 };
 
 use super::{
-    BatchChunkCmdRes, ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated,
-    WorldRes,
+    ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated, WorldRes,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -24,15 +23,9 @@ impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkMeshDirty>()
             .add_plugin(MaterialPlugin::<ChunkMaterial>::default())
-            .add_startup_system_to_stage(super::PipelineStartup::Landscaping, setup_resources)
-            .add_system_set_to_stage(
-                super::Pipeline::Landscaping,
-                SystemSet::new()
-                    .with_system(despawn_chunks_system.label("despawn"))
-                    .with_system(spawn_chunks_system.label("spawn").after("despawn"))
-                    .with_system(update_chunks_system.after("spawn"))
-                    .with_system(update_landscape_system.label("update")),
-            );
+            .add_startup_system(setup_resources)
+            .add_system(update_chunks_system)
+            .add_system(update_landscape_system);
     }
 }
 
@@ -58,13 +51,15 @@ struct UpdateLandscapeMeta {
 
 // CHANGE THIS TO RENDERING!!!
 fn update_landscape_system(
-    time: Res<Time>,
-    entity_map: ResMut<ChunkEntityMap>,
-    config: Res<LandscapeConfig>,
-    world_res: Res<WorldRes>,
+    mut commands: Commands,
+    mut entity_map: ResMut<ChunkEntityMap>,
+    material: Res<ChunkMaterialHandle>,
+    time: Res<Time>,              // TODO: Change this to a Run Criteria later on
+    config: Res<LandscapeConfig>, // TODO: Change this to a Run Criteria later on
+    world_res: Res<WorldRes>,     // TODO: Change this to a Run Criteria later on
     mut meta: Local<UpdateLandscapeMeta>,
-    mut batch: ResMut<BatchChunkCmdRes>,
-    q: Query<&Transform, With<FlyByCamera>>,
+    mut writer: EventWriter<EvtChunkMeshDirty>,
+    q: Query<&Transform, With<FlyByCamera>>, // TODO: Use a proper marker
 ) {
     let mut _perf = perf_fn!();
 
@@ -105,57 +100,45 @@ fn update_landscape_system(
         visible_locals
             .iter()
             .filter(|&i| !existing_locals.contains(i))
-            .for_each(|v| batch.load(*v));
+            .filter(|&&i| world_res.get(i).is_some())
+            .for_each(|&v| spawn_chunk(&mut commands, &mut entity_map, &material, &mut writer, v));
 
         existing_locals
             .iter()
             .filter(|&i| !visible_locals.contains(i))
-            .for_each(|v| batch.unload(*v));
+            .for_each(|&v| despawn_chunk(&mut commands, &mut entity_map, v));
     }
 }
 
-fn spawn_chunks_system(
-    mut commands: Commands,
-    mut entity_map: ResMut<ChunkEntityMap>,
-    chunk_pipeline: Res<ChunkMaterialHandle>,
-    mut reader: EventReader<EvtChunkLoaded>,
-    mut writer: EventWriter<EvtChunkMeshDirty>,
+fn spawn_chunk(
+    commands: &mut Commands,
+    entity_map: &mut ChunkEntityMap,
+    material: &ChunkMaterialHandle,
+    writer: &mut EventWriter<EvtChunkMeshDirty>,
+    local: IVec3,
 ) {
-    let mut _perf = perf_fn!();
-    for EvtChunkLoaded(local) in reader.iter() {
-        trace_system_run!(local);
-        perf_scope!(_perf);
+    perf_fn_scope!();
 
-        let entity = commands
-            .spawn_bundle(ChunkBundle {
-                local: ChunkLocal(*local),
-                mesh_bundle: MaterialMeshBundle {
-                    material: chunk_pipeline.0.clone(),
-                    transform: Transform::from_translation(chunk::to_world(*local)),
-                    ..Default::default()
-                },
-            })
-            .insert(NoFrustumCulling)
-            .id();
-        entity_map.0.insert(*local, entity);
-        writer.send(EvtChunkMeshDirty(*local));
-    }
+    let entity = commands
+        .spawn_bundle(ChunkBundle {
+            local: ChunkLocal(local),
+            mesh_bundle: MaterialMeshBundle {
+                material: material.0.clone(),
+                transform: Transform::from_translation(chunk::to_world(local)),
+                ..Default::default()
+            },
+        })
+        .insert(NoFrustumCulling)
+        .id();
+    entity_map.0.insert(local, entity);
+    writer.send(EvtChunkMeshDirty(local));
 }
 
-fn despawn_chunks_system(
-    mut commands: Commands,
-    mut entity_map: ResMut<ChunkEntityMap>,
-    mut reader: EventReader<EvtChunkUnloaded>,
-) {
-    let mut _perf = perf_fn!();
+fn despawn_chunk(commands: &mut Commands, entity_map: &mut ChunkEntityMap, local: IVec3) {
+    perf_fn_scope!();
 
-    for EvtChunkUnloaded(local) in reader.iter() {
-        trace_system_run!(local);
-        perf_scope!(_perf);
-
-        if let Some(entity) = entity_map.0.remove(local) {
-            commands.entity(entity).despawn_recursive();
-        }
+    if let Some(entity) = entity_map.0.remove(&local) {
+        commands.entity(entity).despawn_recursive();
     }
 }
 
@@ -180,72 +163,6 @@ mod test {
     use bevy::{ecs::event::Events, prelude::*, utils::HashMap};
 
     use super::*;
-
-    #[test]
-    fn spawn_chunks_system() {
-        // Arrange
-        let mut added_events = Events::<EvtChunkLoaded>::default();
-        added_events.send(EvtChunkLoaded(IVec3::ONE));
-
-        let mut world = World::default();
-        world.insert_resource(ChunkEntityMap(HashMap::default()));
-        world.insert_resource(added_events);
-        world.insert_resource(Events::<EvtChunkMeshDirty>::default());
-        world.insert_resource(ChunkMaterialHandle(Handle::default()));
-
-        let mut stage = SystemStage::parallel();
-        stage.add_system(super::spawn_chunks_system);
-
-        // Act
-        stage.run(&mut world);
-
-        // Assert
-        assert_eq!(
-            world
-                .get_resource::<Events<EvtChunkMeshDirty>>()
-                .unwrap()
-                .iter_current_update_events()
-                .next()
-                .unwrap()
-                .0,
-            IVec3::ONE
-        );
-
-        assert_eq!(world.query::<&ChunkLocal>().iter(&world).len(), 1);
-    }
-
-    #[test]
-    fn despawn_chunks_system() {
-        // Arrange
-        let mut added_events = Events::<EvtChunkUnloaded>::default();
-        added_events.send(EvtChunkUnloaded(IVec3::ONE));
-
-        let mut world = World::default();
-        world.insert_resource(added_events);
-        world.insert_resource(Events::<super::EvtChunkMeshDirty>::default());
-
-        let entity = world
-            .spawn()
-            .insert_bundle(ChunkBundle {
-                local: ChunkLocal(IVec3::ONE),
-                ..Default::default()
-            })
-            .id();
-
-        let mut entity_map = ChunkEntityMap(HashMap::default());
-        entity_map.0.insert(IVec3::ONE, entity);
-        world.insert_resource(entity_map);
-
-        let mut stage = SystemStage::parallel();
-        stage.add_system(super::despawn_chunks_system);
-
-        // Act
-        stage.run(&mut world);
-
-        // Assert
-        assert_eq!(world.query::<&ChunkLocal>().iter(&world).len(), 0);
-        assert!(world.get_resource::<ChunkEntityMap>().unwrap().0.is_empty());
-    }
 
     #[test]
     fn update_chunks_system() {
