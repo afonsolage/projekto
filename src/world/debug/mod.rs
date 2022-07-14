@@ -7,7 +7,7 @@ use bevy::{
 
 use crate::{
     fly_by_camera::FlyByCamera,
-    world::{mesh, pipeline::*, storage::*},
+    world::{mesh, rendering::*, storage::*},
 };
 
 use self::wireframe::WireframeMaterial;

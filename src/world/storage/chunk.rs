@@ -8,9 +8,9 @@ use crate::world::{math, query, storage::chunk};
 
 use super::voxel;
 
-pub const X_AXIS_SIZE: usize = 32;
-pub const Z_AXIS_SIZE: usize = 32;
-pub const Y_AXIS_SIZE: usize = 32;
+pub const X_AXIS_SIZE: usize = 16;
+pub const Z_AXIS_SIZE: usize = 16;
+pub const Y_AXIS_SIZE: usize = 256;
 
 pub const X_END: i32 = (X_AXIS_SIZE - 1) as i32;
 pub const Z_END: i32 = (Z_AXIS_SIZE - 1) as i32;
@@ -30,6 +30,19 @@ const Y_MASK: usize = Y_AXIS_SIZE - 1;
 #[cfg(feature = "mem_alloc")]
 pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
     once_cell::sync::Lazy::new(std::sync::atomic::AtomicUsize::default);
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct Chunk {
+    pub kinds: ChunkKind,
+    pub vertices: Vec<voxel::VoxelVertex>,
+}
+
+#[cfg(test)]
+impl PartialEq for Chunk {
+    fn eq(&self, other: &Self) -> bool {
+        self.kinds == other.kinds && self.vertices == other.vertices
+    }
+}
 
 #[derive(Default)]
 pub struct ChunkIter {
@@ -118,8 +131,8 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.main.iter()
     }
 
-    #[cfg(test)]
     pub fn is_default(&self) -> bool {
+        // TODO: Add a clever way to check if ChunkStorage wasn't initialized;
         self.is_all(T::default())
     }
 
@@ -151,13 +164,9 @@ impl<'de, T: ChunkStorageType> Deserialize<'de> for ChunkStorage<T> {
                     vec.push(element);
                 }
 
-                if !vec.is_empty() && vec.len() != chunk::BUFFER_SIZE {
-                    return Err(serde::de::Error::invalid_length(vec.len(), &self));
+                if vec.is_empty() {
+                    vec = vec![T::default(); chunk::BUFFER_SIZE];
                 }
-
-                // if vec.is_empty() {
-                //     vec.shrink_to(0);
-                // }
 
                 Ok(ChunkStorage::new(vec))
             }
@@ -172,13 +181,17 @@ impl<T: ChunkStorageType> Serialize for ChunkStorage<T> {
     where
         S: serde::Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(chunk::BUFFER_SIZE))?;
+        if self.is_default() {
+            serializer.serialize_seq(Some(0))?.end()
+        } else {
+            let mut seq = serializer.serialize_seq(Some(chunk::BUFFER_SIZE))?;
 
-        for elem in self.main.iter() {
-            seq.serialize_element(elem)?;
+            for elem in self.main.iter() {
+                seq.serialize_element(elem)?;
+            }
+
+            seq.end()
         }
-
-        seq.end()
     }
 }
 

@@ -105,7 +105,7 @@ fn handle_queries_system(world: Res<WorldRes>, mut queries_res: ResMut<ChunkQuer
 
         let result = chunks
             .iter()
-            .filter_map(|local| world.get(*local).map(|c| (*local, c.clone())))
+            .filter_map(|local| world.get(*local).map(|c| (*local, c.kinds.clone())))
             .collect();
 
         queries_res.results.insert(id, result);

@@ -11,12 +11,11 @@ use bevy::{
 };
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use futures_lite::future;
-use serde::{Deserialize, Serialize};
 
 use crate::world::{
     math,
     storage::{
-        chunk::{self, ChunkKind},
+        chunk::{self, Chunk, ChunkKind},
         voxel, VoxWorld,
     },
 };
@@ -33,19 +32,6 @@ impl Plugin for GenesisPlugin {
             .add_event::<EvtChunkUpdated>()
             .add_startup_system(setup_resources)
             .add_system(update_world_system);
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct ChunkCache {
-    local: IVec3,
-    kind: ChunkKind,
-}
-
-#[cfg(test)]
-impl PartialEq for ChunkCache {
-    fn eq(&self, other: &Self) -> bool {
-        self.local == other.local && self.kind == other.kind
     }
 }
 
@@ -448,7 +434,7 @@ fn update_chunks(world: &mut VoxWorld, data: &[(IVec3, VoxelUpdateList)]) -> Has
         trace!("Updating chunk {} values {:?}", local, voxels);
         if let Some(chunk) = world.get_mut(*local) {
             for (voxel, kind) in voxels {
-                chunk.set(*voxel, *kind);
+                chunk.kinds.set(*voxel, *kind);
 
                 if chunk::is_at_bounds(*voxel) {
                     let neighbor_dir = chunk::get_boundary_dir(*voxel);
@@ -502,13 +488,13 @@ fn load_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
     for &local in locals {
         let path = local_path(local);
 
-        let cache = if path.exists() {
-            load_cache(&path)
+        let chunk = if path.exists() {
+            load_chunk(&path)
         } else {
-            generate_cache(local)
+            generate_chunk(local)
         };
 
-        world.add(local, cache.kind);
+        world.add(local, chunk);
 
         dirty_chunks.extend(
             voxel::SIDES
@@ -534,6 +520,11 @@ fn refresh_chunks(world: &mut VoxWorld, locals: impl Iterator<Item = IVec3>) -> 
     for local in locals {
         if world.get(local).is_some() {
             world.update_neighborhood(local);
+
+            //Faces Occlusion
+            //Faces Merging
+            //Vertices Computation
+
             result.push(local);
         }
     }
@@ -541,7 +532,7 @@ fn refresh_chunks(world: &mut VoxWorld, locals: impl Iterator<Item = IVec3>) -> 
     result
 }
 
-fn generate_cache(local: IVec3) -> ChunkCache {
+fn generate_chunk(local: IVec3) -> Chunk {
     perf_fn_scope!();
 
     let mut noise = FastNoise::seeded(15);
@@ -575,13 +566,16 @@ fn generate_cache(local: IVec3) -> ChunkCache {
 
     assert!(!path.exists(), "Cache already exists!");
 
-    let chunk_cache = ChunkCache { local, kind: kinds };
-    save_cache(&path, &chunk_cache);
+    let chunk = Chunk {
+        kinds,
+        ..Default::default()
+    };
+    save_chunk(&path, &chunk);
 
-    chunk_cache
+    chunk
 }
 
-fn save_cache(path: &Path, cache: &ChunkCache) {
+fn save_chunk(path: &Path, chunk: &Chunk) {
     perf_fn_scope!();
 
     let mut file = std::fs::OpenOptions::new()
@@ -593,7 +587,7 @@ fn save_cache(path: &Path, cache: &ChunkCache) {
 
     #[cfg(not(feature = "serde_ron"))]
     {
-        let bincode = bincode::serialize(cache)
+        let bincode = bincode::serialize(chunk)
             .unwrap_or_else(|_| panic!("Failed to serialize cache {}", path.display()));
 
         let compressed = lz4_flex::compress_prepend_size(&bincode);
@@ -607,11 +601,11 @@ fn save_cache(path: &Path, cache: &ChunkCache) {
     }
 
     #[cfg(feature = "serde_ron")]
-    ron::ser::to_writer(file, cache)
+    ron::ser::to_writer(file, chunk)
         .unwrap_or_else(|_| panic!("Failed to serialize cache to file {}", path.display()));
 }
 
-fn load_cache(path: &Path) -> ChunkCache {
+fn load_chunk(path: &Path) -> Chunk {
     perf_fn_scope!();
 
     let mut file = std::fs::OpenOptions::new()
@@ -628,10 +622,10 @@ fn load_cache(path: &Path) -> ChunkCache {
         let decompressed = lz4_flex::decompress_size_prepended(&compressed)
             .unwrap_or_else(|_| panic!("Failed to decompress cache {}", path.display()));
 
-        let cache = bincode::deserialize(&decompressed)
+        let chunk = bincode::deserialize(&decompressed)
             .unwrap_or_else(|_| panic!("Failed to parse file {}", path.display()));
 
-        cache
+        chunk
     }
 
     #[cfg(feature = "serde_ron")]
@@ -670,7 +664,7 @@ mod tests {
     fn update_voxel() {
         let mut world = VoxWorld::default();
         let local = (0, 0, 0).into();
-        world.add(local, ChunkKind::default());
+        world.add(local, Default::default());
 
         let voxels = vec![
             ((0, 0, 0).into(), 1.into()),
@@ -680,11 +674,11 @@ mod tests {
 
         let dirty_chunks = super::update_chunks(&mut world, &vec![(local, voxels)]);
 
-        let chunk = world.get(local).unwrap();
+        let kinds = &world.get(local).unwrap().kinds;
 
-        assert_eq!(chunk.get((0, 0, 0).into()), 1.into());
-        assert_eq!(chunk.get((1, 1, 1).into()), 2.into());
-        assert_eq!(chunk.get((0, chunk::Y_END as i32, 5).into()), 3.into());
+        assert_eq!(kinds.get((0, 0, 0).into()), 1.into());
+        assert_eq!(kinds.get((1, 1, 1).into()), 2.into());
+        assert_eq!(kinds.get((0, chunk::Y_END as i32, 5).into()), 3.into());
 
         assert_eq!(
             dirty_chunks.len(),
@@ -699,7 +693,7 @@ mod tests {
         let local = (9111, -9222, 9333).into();
         let mut world = VoxWorld::default();
 
-        world.add(local, ChunkKind::default());
+        world.add(local, Default::default());
 
         let dirty_chunks = super::unload_chunks(&mut world, &vec![local]);
 
@@ -715,9 +709,15 @@ mod tests {
         // Load existing cache
         let local = (9943, 9943, 9999).into();
         let path = super::local_path(local);
-        let chunk = ChunkKind::default();
+        let kinds = ChunkKind::default();
 
-        create_cache(&path, &ChunkCache { local, kind: chunk });
+        create_chunk(
+            &path,
+            &Chunk {
+                kinds,
+                ..Default::default()
+            },
+        );
 
         let mut world = VoxWorld::default();
 
@@ -753,8 +753,8 @@ mod tests {
             "should return an empty list when chunk doesn't exists"
         );
 
-        world.add((0, 0, 0).into(), ChunkKind::default());
-        world.add((0, 1, 0).into(), ChunkKind::default());
+        world.add((0, 0, 0).into(), Default::default());
+        world.add((0, 1, 0).into(), Default::default());
 
         assert!(
             super::refresh_chunks(&mut world, [(0, 0, 0).into()].into_iter()).len() == 1,
@@ -764,6 +764,7 @@ mod tests {
         let chunk = world.get((0, 0, 0).into()).unwrap();
         assert!(
             chunk
+                .kinds
                 .neighborhood
                 .get(super::voxel::Side::Up, (0, 0, 0).into())
                 .is_some(),
@@ -772,16 +773,12 @@ mod tests {
     }
 
     #[test]
-    fn generate_cache() {
+    fn generate_chunk() {
         let local = (5432, 4321, 5555).into();
-        let cache = super::generate_cache(local);
+        let _ = super::generate_chunk(local);
         let path = local_path(local);
 
-        assert!(path.exists(), "Generate cache should save cache on disk");
-        assert_eq!(
-            cache.local, local,
-            "Generate cache should have the same local as the given one"
-        );
+        assert!(path.exists(), "Generate chunk should save cache on disk");
 
         remove_file(path).expect("File should exists");
     }
@@ -792,8 +789,8 @@ mod tests {
         let local = (9999, 9998, 9997).into();
         let _ = remove_file(local_path(local));
 
-        super::generate_cache(local);
-        super::generate_cache(local);
+        super::generate_chunk(local);
+        super::generate_chunk(local);
     }
 
     #[test]
@@ -825,12 +822,9 @@ mod tests {
         let mut temp_file = std::env::temp_dir();
         temp_file.push("test.tmp");
 
-        let cache = ChunkCache {
-            local: IVec3::ZERO,
-            kind: ChunkKind::default(),
-        };
+        let chunk = Default::default();
 
-        create_cache(&temp_file, &cache);
+        create_chunk(&temp_file, &chunk);
 
         let mut file = std::fs::OpenOptions::new()
             .read(true)
@@ -845,12 +839,12 @@ mod tests {
             let mut compressed = Vec::new();
             file.read_to_end(&mut compressed).unwrap();
             let uncompressed = lz4_flex::decompress_size_prepended(&compressed).unwrap();
-            let cache_loaded: ChunkCache = bincode::deserialize(&uncompressed).unwrap();
-            assert_eq!(cache, cache_loaded);
+            let loaded_chunk = bincode::deserialize::<Chunk>(&uncompressed).unwrap();
+            assert_eq!(chunk, loaded_chunk);
         }
     }
 
-    fn create_cache(path: &Path, cache: &ChunkCache) {
+    fn create_chunk(path: &Path, chunk: &Chunk) {
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -859,11 +853,11 @@ mod tests {
             .unwrap();
 
         #[cfg(feature = "serde_ron")]
-        ron::ser::to_writer(file, cache).unwrap();
+        ron::ser::to_writer(file, chunk).unwrap();
 
         #[cfg(not(feature = "serde_ron"))]
         {
-            let uncompressed = bincode::serialize(cache).unwrap();
+            let uncompressed = bincode::serialize(chunk).unwrap();
             let compressed = lz4_flex::compress_prepend_size(&uncompressed);
             file.write_all(&compressed).unwrap();
         }
@@ -887,17 +881,14 @@ mod tests {
     fn load_cache() {
         let local = (-9998, 0, 9998).into();
 
-        let cache = ChunkCache {
-            local,
-            kind: ChunkKind::default(),
-        };
+        let chunk = Default::default();
 
         let path = local_path(local);
-        create_cache(&path, &cache);
+        create_chunk(&path, &chunk);
 
-        let loaded_cache = super::load_cache(&path);
+        let loaded_chunk = super::load_chunk(&path);
 
-        assert_eq!(cache, loaded_cache);
+        assert_eq!(chunk, loaded_chunk);
 
         remove_file(path).unwrap();
     }
@@ -906,22 +897,19 @@ mod tests {
     fn save_cache() {
         let local = (-921, 0, 2319).into();
 
-        let cache = ChunkCache {
-            local,
-            kind: ChunkKind::default(),
-        };
+        let chunk = Default::default();
 
         let path = local_path(local);
 
         assert!(!path.exists());
 
-        super::save_cache(&path, &cache);
+        super::save_chunk(&path, &chunk);
 
         assert!(path.exists());
 
-        let loaded_cache = super::load_cache(&path);
+        let loaded_cache = super::load_chunk(&path);
 
-        assert_eq!(cache, loaded_cache);
+        assert_eq!(chunk, loaded_cache);
 
         remove_file(path).unwrap();
     }

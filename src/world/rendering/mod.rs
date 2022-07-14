@@ -12,18 +12,18 @@ use bevy::{
 };
 
 use self::{
-    landscaping::LandscapingPlugin, rendering::RenderingPlugin, terraforming::TerraformingPlugin,
+    landscaping::LandscapingPlugin, meshing::RenderingPlugin, terraforming::TerraformingPlugin,
 };
 
 use super::terraformation::prelude::*;
 use super::storage::{chunk::ChunkStorage, voxel};
 
-pub use rendering::MeshGenerationCounter;
+pub use meshing::MeshGenerationCounter;
 pub use landscaping::LandscapeConfig;
 pub use terraforming::{ChunkSystemQuery, ChunkSystemRaycast, CmdChunkUpdate, RaycastResult};
 
 mod landscaping;
-mod rendering;
+mod meshing;
 mod terraforming;
 
 #[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]

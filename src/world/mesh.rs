@@ -3,7 +3,7 @@ use bevy::math::IVec3;
 use crate::world::{query, storage::voxel};
 
 use super::{
-    pipeline::ChunkFacesOcclusion,
+    rendering::ChunkFacesOcclusion,
     storage::{
         chunk::{self, ChunkKind},
         voxel::VoxelFace,

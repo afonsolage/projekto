@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::world::{terraformation::prelude::*, pipeline::MeshGenerationCounter};
+use crate::world::{terraformation::prelude::*, rendering::MeshGenerationCounter};
 
 // use bevy_egui::{egui, EguiContext, EguiPlugin};
 

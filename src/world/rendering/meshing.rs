@@ -121,7 +121,7 @@ fn mesh_generation_system(
     let chunks = reader
         .iter()
         .filter_map(|evt| vox_world.get(evt.0).map(|c| (evt.0, c)))
-        .filter(|(_, c)| !c.is_empty())
+        .filter(|(_, c)| !c.kinds.is_empty())
         .collect::<Vec<_>>();
 
     for batch in chunks.chunks(MESH_BATCH_SIZE) {
@@ -130,7 +130,7 @@ fn mesh_generation_system(
 
         let owned_batch = batch
             .iter()
-            .map(|(local, c)| (*local, (*c).clone()))
+            .map(|(local, c)| (*local, c.kinds.clone()))
             .collect();
 
         let task = task_pool.spawn(async move { generate_vertices(owned_batch) });
@@ -224,7 +224,7 @@ fn generate_mesh(
 
 #[cfg(test)]
 mod test {
-    use crate::world::storage::VoxWorld;
+    use crate::world::storage::{VoxWorld, chunk::Chunk};
 
     use super::*;
 
@@ -294,15 +294,15 @@ mod test {
     fn faces_occlusion_neighborhood() {
         let mut world = VoxWorld::default();
 
-        let mut top = ChunkKind::default();
-        top.set_all(2.into());
+        let mut top = Chunk::default();
+        top.kinds.set_all(2.into());
 
-        let mut down = ChunkKind::default();
-        down.set_all(3.into());
+        let mut down = Chunk::default();
+        down.kinds.set_all(3.into());
 
-        let mut center = ChunkKind::default();
-        center.set((0, chunk::Y_END as i32, 0).into(), 1.into());
-        center.set((1, 0, 1).into(), 1.into());
+        let mut center = Chunk::default();
+        center.kinds.set((0, chunk::Y_END as i32, 0).into(), 1.into());
+        center.kinds.set((1, 0, 1).into(), 1.into());
 
         world.add((0, 1, 0).into(), top);
         world.add((0, 0, 0).into(), center);
@@ -311,7 +311,7 @@ mod test {
         world.update_neighborhood((0, 0, 0).into());
         let center = world.get((0, 0, 0).into()).unwrap();
 
-        let faces_occlusion = super::faces_occlusion(center);
+        let faces_occlusion = super::faces_occlusion(&center.kinds);
 
         let faces = faces_occlusion.get((0, chunk::Y_END as i32, 0).into());
         assert_eq!(faces, [false, false, true, false, false, false].into());

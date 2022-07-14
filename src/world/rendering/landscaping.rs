@@ -7,7 +7,7 @@ use bevy::{
 use crate::{
     fly_by_camera::FlyByCamera,
     world::{
-        pipeline::{ChunkMaterial, ChunkMaterialHandle},
+        rendering::{ChunkMaterial, ChunkMaterialHandle},
         query,
         storage::{chunk, landscape},
     },
