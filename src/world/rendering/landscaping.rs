@@ -10,6 +10,7 @@ use crate::{
         query,
         rendering::{ChunkMaterial, ChunkMaterialHandle},
         storage::{chunk, landscape},
+        terraformation::prelude::{EvtChunkLoaded, EvtChunkUnloaded},
     },
 };
 
@@ -24,7 +25,7 @@ impl Plugin for LandscapingPlugin {
         app.add_event::<EvtChunkMeshDirty>()
             .add_plugin(MaterialPlugin::<ChunkMaterial>::default())
             .add_startup_system(setup_resources)
-            .add_system(update_chunks_system)
+            .add_system(process_chunk_updated_events)
             .add_system(update_landscape_system);
     }
 }
@@ -137,10 +138,10 @@ fn despawn_chunk(commands: &mut Commands, entity_map: &mut ChunkEntityMap, local
     }
 }
 
-fn update_chunks_system(
+fn process_chunk_updated_events(
     mut reader: EventReader<EvtChunkUpdated>,
     mut writer: EventWriter<EvtChunkMeshDirty>,
-    entity_map: ResMut<ChunkEntityMap>,
+    entity_map: Res<ChunkEntityMap>,
 ) {
     let mut _perf = perf_fn!();
 
@@ -177,7 +178,7 @@ mod test {
         world.insert_resource(entity_map);
 
         let mut stage = SystemStage::parallel();
-        stage.add_system(super::update_chunks_system);
+        stage.add_system(super::process_chunk_updated_events);
 
         // Act
         stage.run(&mut world);

@@ -414,14 +414,15 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
 
     let updated = refresh_chunks(&mut world, dirty_chunks.into_iter());
 
-    let result = load
-        .into_iter()
-        .map(ChunkCmdResult::Loaded)
-        .chain(unload.into_iter().map(ChunkCmdResult::Unloaded))
-        .chain(updated.into_iter().map(ChunkCmdResult::Updated))
-        .collect();
+    // let result = load
+    //     .into_iter()
+    //     .map(ChunkCmdResult::Loaded)
+    //     .chain(unload.into_iter().map(ChunkCmdResult::Unloaded))
+    //     .chain(updated.into_iter().map(ChunkCmdResult::Updated))
+    //     .collect();
 
-    (world, result)
+    // (world, result)
+    (world, vec![])
 }
 
 /**
@@ -497,7 +498,6 @@ fn load_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
         };
 
         world.add(local, chunk);
-
         dirty_chunks.extend(
             voxel::SIDES
                 .iter()
