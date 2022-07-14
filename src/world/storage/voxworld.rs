@@ -1,9 +1,6 @@
 use bevy::{prelude::*, utils::HashMap};
 
-use super::{
-    chunk::{Chunk, ChunkNeighborhood},
-    voxel::{self},
-};
+use super::chunk::Chunk;
 
 #[derive(Default)]
 pub struct VoxWorld {
@@ -32,35 +29,18 @@ impl VoxWorld {
         self.chunks.get_mut(&local)
     }
 
-    pub fn update_neighborhood(&mut self, local: IVec3) {
-        let mut neighborhood = ChunkNeighborhood::default();
-        for side in voxel::SIDES {
-            let dir = side.dir();
-            let neighbor = local + dir;
-
-            if let Some(neighbor_chunk) = self.get(neighbor) {
-                neighborhood.set(side, &neighbor_chunk.kinds);
-            }
-        }
-
-        if let Some(chunk) = self.get_mut(local) {
-            chunk.kinds.neighborhood = neighborhood;
-        }
-    }
-
     pub fn list_chunks(&self) -> Vec<IVec3> {
         self.chunks.keys().cloned().collect()
+    }
+
+    pub fn exists(&self, local: IVec3) -> bool {
+        self.chunks.contains_key(&local)
     }
 }
 
 #[cfg(test)]
 mod test {
     use bevy::math::IVec3;
-
-    use crate::world::storage::{
-        chunk::{self},
-        voxel,
-    };
 
     use super::*;
 
@@ -93,109 +73,5 @@ mod test {
         let mut world = VoxWorld::default();
         assert!(world.remove(IVec3::ONE).is_none());
         assert!(world.get(IVec3::ONE).is_none());
-    }
-
-    #[test]
-    fn update_neighborhood() {
-        let mut world = VoxWorld::default();
-
-        let center = (1, 1, 1).into();
-        let mut chunk = Chunk::default();
-        chunk.kinds.set_all(10.into());
-        world.add(center, chunk);
-
-        for side in voxel::SIDES {
-            let dir = side.dir();
-            let pos = center + dir;
-            let mut chunk = Chunk::default();
-            chunk.kinds.set_all((side as u16).into());
-            world.add(pos, chunk);
-        }
-
-        world.update_neighborhood(center);
-        let chunk = world.get(center).unwrap();
-
-        for side in voxel::SIDES {
-            match side {
-                voxel::Side::Right => {
-                    for a in 0..chunk::Y_AXIS_SIZE {
-                        for b in 0..chunk::Z_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (0, a as i32, b as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Left => {
-                    for a in 0..chunk::Y_AXIS_SIZE {
-                        for b in 0..chunk::Z_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (chunk::X_END as i32, a as i32, b as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Up => {
-                    for a in 0..chunk::X_AXIS_SIZE {
-                        for b in 0..chunk::Z_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (a as i32, 0, b as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Down => {
-                    for a in 0..chunk::X_AXIS_SIZE {
-                        for b in 0..chunk::Z_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (a as i32, chunk::Y_END as i32, b as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Front => {
-                    for a in 0..chunk::X_AXIS_SIZE {
-                        for b in 0..chunk::Y_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (a as i32, b as i32, 0).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Back => {
-                    for a in 0..chunk::X_AXIS_SIZE {
-                        for b in 0..chunk::Y_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (a as i32, b as i32, chunk::Z_END as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-            }
-        }
     }
 }

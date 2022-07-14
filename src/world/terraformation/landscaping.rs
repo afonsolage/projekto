@@ -50,14 +50,14 @@ fn update_landscape(
 
         let radius = IVec3::new(
             config.horizontal_radius as i32,
-            config.vertical_radius as i32,
+            0,
             config.horizontal_radius as i32,
         );
 
         let begin = center - radius;
         let end = center + radius;
 
-        let visible_range = query::range(begin, end).collect::<HashSet<_>>();
+        let visible_range = query::range_inclusive(begin, end).collect::<HashSet<_>>();
         let existing_chunks = HashSet::from_iter(world_res.list_chunks().into_iter());
 
         visible_range

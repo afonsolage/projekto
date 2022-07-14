@@ -7,8 +7,8 @@ use bevy::{
 use crate::{
     fly_by_camera::FlyByCamera,
     world::{
-        rendering::{ChunkMaterial, ChunkMaterialHandle},
         query,
+        rendering::{ChunkMaterial, ChunkMaterialHandle},
         storage::{chunk, landscape},
     },
 };
@@ -81,20 +81,15 @@ fn update_landscape_system(
 
         debug!("Updating landscape to center {}", center);
 
-        let begin = center
-            + IVec3::new(
-                landscape::HORIZONTAL_BEGIN,
-                landscape::VERTICAL_BEGIN,
-                landscape::HORIZONTAL_BEGIN,
-            );
-        let end = center
-            + IVec3::new(
-                landscape::HORIZONTAL_END,
-                landscape::VERTICAL_END,
-                landscape::HORIZONTAL_END,
-            );
+        let radius = IVec3::new(
+            landscape::HORIZONTAL_RADIUS as i32,
+            0,
+            landscape::HORIZONTAL_RADIUS as i32,
+        );
+        let begin = center - radius;
+        let end = center + radius;
 
-        let visible_locals = query::range(begin, end).collect::<HashSet<_>>();
+        let visible_locals = query::range_inclusive(begin, end).collect::<HashSet<_>>();
         let existing_locals = entity_map.0.keys().copied().collect::<HashSet<_>>();
 
         visible_locals

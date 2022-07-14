@@ -15,10 +15,9 @@ use self::{
     landscaping::LandscapingPlugin, meshing::RenderingPlugin, terraforming::TerraformingPlugin,
 };
 
-use super::terraformation::prelude::*;
 use super::storage::{chunk::ChunkStorage, voxel};
+use super::terraformation::prelude::*;
 
-pub use meshing::MeshGenerationCounter;
 pub use landscaping::LandscapeConfig;
 pub use terraforming::{ChunkSystemQuery, ChunkSystemRaycast, CmdChunkUpdate, RaycastResult};
 
@@ -97,6 +96,12 @@ pub struct ChunkLocal(pub IVec3);
 pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
 
 pub type ChunkFacesOcclusion = ChunkStorage<voxel::FacesOcclusion>;
+
+impl ChunkFacesOcclusion {
+    pub fn is_fully_occluded(&self) -> bool {
+        self.iter().all(voxel::FacesOcclusion::is_fully_occluded)
+    }
+}
 
 #[derive(Bundle)]
 pub struct ChunkBundle {

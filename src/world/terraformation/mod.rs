@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use super::storage::landscape;
+
 mod genesis;
 mod landscaping;
 
@@ -18,8 +20,7 @@ impl Plugin for TerraformationPlugin {
         app.add_plugin(genesis::GenesisPlugin)
             .add_plugin(landscaping::LandscapingPlugin)
             .insert_resource(TerraformationConfig {
-                horizontal_radius: 10,
-                vertical_radius: 10,
+                horizontal_radius: (landscape::HORIZONTAL_RADIUS + 2) as u32,
             });
     }
 }
@@ -30,5 +31,4 @@ pub struct TerraformationCenter;
 #[derive(Default)]
 pub struct TerraformationConfig {
     pub horizontal_radius: u32,
-    pub vertical_radius: u32,
 }
