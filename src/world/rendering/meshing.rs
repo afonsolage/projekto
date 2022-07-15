@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::{
     prelude::*,
     render::mesh::{Indices, PrimitiveTopology},
@@ -15,32 +17,40 @@ impl Plugin for RenderingPlugin {
     }
 }
 
+#[derive(Default)]
+struct MeshGenerationMeta {
+    pending_chunks: VecDeque<IVec3>,
+}
+
 fn mesh_generation_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     vox_world: Res<WorldRes>,
     entity_map: Res<ChunkEntityMap>,
     mut reader: EventReader<ChunkMeshDirty>,
+    mut meta: Local<MeshGenerationMeta>,
 ) {
     let mut _perf = perf_fn!();
+
+    meta.pending_chunks.extend(reader.iter().map(|evt| evt.0));
 
     if !vox_world.is_ready() {
         return;
     }
 
-    let chunks = reader
-        .iter()
-        .filter_map(|evt| vox_world.get(evt.0).map(|c| (evt.0, &c.vertices)))
+    let limit = usize::min(meta.pending_chunks.len(), 1);
+
+    let chunks = meta
+        .pending_chunks
+        .drain(..limit)
+        .filter_map(|evt| vox_world.get(evt).map(|c| (evt, &c.vertices)))
         .collect::<Vec<_>>();
 
     for (local, vertices) in chunks {
         if let Some(&e) = entity_map.0.get(&local) {
             let mesh_handle = {
-                if vertices.is_empty() {
-                    Handle::default()
-                } else {
-                    meshes.add(generate_mesh(vertices))
-                }
+                debug_assert!(!vertices.is_empty());
+                meshes.add(generate_mesh(vertices))
             };
 
             commands.entity(e).insert(mesh_handle);
