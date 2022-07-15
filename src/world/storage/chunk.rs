@@ -261,10 +261,8 @@ pub fn to_local(world: Vec3) -> IVec3 {
     )
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct ChunkNeighborhood<T: ChunkStorageType>(
-    [Option<[T; Z_AXIS_SIZE * Y_AXIS_SIZE]>; voxel::SIDE_COUNT],
-);
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ChunkNeighborhood<T>([Option<Vec<T>>; voxel::SIDE_COUNT]);
 
 impl<T: ChunkStorageType> ChunkNeighborhood<T> {
     pub fn set(&mut self, side: voxel::Side, chunk: &ChunkStorage<T>) {
@@ -277,7 +275,7 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
             voxel::Side::Back => ((0, 0, Z_END).into(), (X_END, Y_END, Z_END).into()),
         };
 
-        let mut neighborhood_side = [T::default(); Z_AXIS_SIZE * Y_AXIS_SIZE];
+        let mut neighborhood_side = vec![T::default(); chunk::X_AXIS_SIZE * chunk::Y_AXIS_SIZE];
         for pos in query::range_inclusive(begin, end_inclusive) {
             let index = Self::to_index(side, pos);
             neighborhood_side[index] = chunk.get(pos)
@@ -287,10 +285,12 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
     }
 
     pub fn get(&self, side: voxel::Side, pos: IVec3) -> Option<T> {
-        self.0[side as usize].map(|ref neighborhood_side| {
+        if let Some(side_vec) = &self.0[side as usize] {
             let index = Self::to_index(side, pos);
-            neighborhood_side[index]
-        })
+            Some(side_vec[index])
+        } else {
+            None
+        }
     }
 
     fn to_index(side: voxel::Side, pos: IVec3) -> usize {
