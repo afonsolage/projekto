@@ -13,9 +13,7 @@ use crate::{
     },
 };
 
-use super::{
-    ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkMeshDirty, EvtChunkUpdated, WorldRes,
-};
+use super::{ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkMeshDirty, EvtChunkUpdated, WorldRes};
 
 pub(super) struct LandscapingPlugin;
 
@@ -79,8 +77,6 @@ fn update_landscape_system(
         meta.next_sync = 1.0;
         meta.last_pos = center;
 
-        debug!("Updating landscape to center {}", center);
-
         let radius = IVec3::new(
             landscape::HORIZONTAL_RADIUS as i32,
             0,
@@ -92,16 +88,38 @@ fn update_landscape_system(
         let visible_locals = query::range_inclusive(begin, end).collect::<HashSet<_>>();
         let existing_locals = entity_map.0.keys().copied().collect::<HashSet<_>>();
 
-        visible_locals
+        let spawn = visible_locals
             .iter()
             .filter(|&i| !existing_locals.contains(i))
-            .filter(|&&i| world_res.get(i).is_some())
-            .for_each(|&v| spawn_chunk(&mut commands, &mut entity_map, &material, &mut writer, v));
+            .filter(|&&i| world_res.exists(i))
+            .collect::<Vec<_>>();
 
-        existing_locals
+        if spawn.len() > 0 {
+            debug!("Spawning {} chunks", spawn.len());
+        }
+
+        for &local in spawn {
+            spawn_chunk(
+                &mut commands,
+                &mut entity_map,
+                &material,
+                &mut writer,
+                local,
+            )
+        }
+
+        let despawn = existing_locals
             .iter()
             .filter(|&i| !visible_locals.contains(i))
-            .for_each(|&v| despawn_chunk(&mut commands, &mut entity_map, v));
+            .collect::<Vec<_>>();
+
+        if despawn.len() > 0 {
+            debug!("Despawning {} chunks", despawn.len());
+        }
+
+        for &local in despawn {
+            despawn_chunk(&mut commands, &mut entity_map, local);
+        }
     }
 }
 
@@ -124,6 +142,7 @@ fn spawn_chunk(
             },
         })
         .insert(NoFrustumCulling)
+        .insert(Name::new(format!("Chunk {}", local)))
         .id();
     entity_map.0.insert(local, entity);
     writer.send(ChunkMeshDirty(local));

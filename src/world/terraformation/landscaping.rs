@@ -46,8 +46,6 @@ fn update_landscape(
         meta.next_sync = 1.0;
         meta.last_pos = center;
 
-        debug!("Updating landscape to center {}", center);
-
         let radius = IVec3::new(
             config.horizontal_radius as i32,
             0,

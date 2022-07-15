@@ -1,9 +1,11 @@
 //https://github.com/bevyengine/bevy/issues/4601
-#![allow(clippy::forget_non_drop)] 
-
+#![allow(clippy::forget_non_drop)]
 #![feature(int_log)]
 
 use bevy::prelude::*;
+
+#[cfg(feature = "dev")]
+use bevy_inspector_egui;
 
 #[macro_use]
 mod macros;
@@ -23,18 +25,23 @@ use ui::UiPlugin;
 fn main() {
     // env_logger::init();
 
-    App::new()
-        .insert_resource(WindowDescriptor {
-            ..Default::default()
-        })
-        .insert_resource(Msaa { samples: 4 })
-        .add_plugins(DefaultPlugins)
-        .add_plugin(DebugPlugin)
-        .add_plugin(FlyByCameraPlugin)
-        .add_plugin(WorldPlugin)
-        .add_plugin(UiPlugin)
-        .add_startup_system(setup)
-        .run();
+    let mut app = App::new();
+
+    app.insert_resource(WindowDescriptor {
+        ..Default::default()
+    })
+    .insert_resource(Msaa { samples: 4 })
+    .add_plugins(DefaultPlugins)
+    .add_plugin(DebugPlugin)
+    .add_plugin(FlyByCameraPlugin)
+    .add_plugin(WorldPlugin)
+    .add_plugin(UiPlugin)
+    .add_startup_system(setup);
+
+    #[cfg(feature = "dev")]
+    app.add_plugin(bevy_inspector_egui::WorldInspectorPlugin::new());
+
+    app.run();
 }
 
 fn setup(

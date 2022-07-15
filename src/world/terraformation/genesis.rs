@@ -512,21 +512,16 @@ fn recompute_chunks(world: &mut VoxWorld, locals: impl Iterator<Item = IVec3>) -
         update_neighborhood(world, local);
 
         if let Some(chunk) = world.get_mut(local) {
-            chunk.vertices = {
-                let occlusion = faces_occlusion(&chunk.kinds);
+            let occlusion = faces_occlusion(&chunk.kinds);
+            if !occlusion.is_fully_occluded() {
+                let faces = mesh::merge_faces(&occlusion, &chunk);
+                chunk.vertices = generate_vertices(faces);
 
-                if !occlusion.is_fully_occluded() {
-                    let faces = mesh::merge_faces(&occlusion, &chunk);
-                    generate_vertices(faces)
-                } else {
-                    vec![]
-                }
-            };
+                let path = local_path(local);
+                save_chunk(&path, chunk);
 
-            let path = local_path(local);
-            save_chunk(&path, chunk);
-
-            result.push(local);
+                result.push(local);
+            }
         }
     }
 
@@ -558,6 +553,7 @@ fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
         }
     }
 
+    debug_assert!(!vertices.is_empty());
     vertices
 }
 
@@ -852,22 +848,29 @@ mod tests {
             "should return an empty list when chunk doesn't exists"
         );
 
-        world.add((0, 0, 0).into(), Default::default());
-        world.add((0, 1, 0).into(), Default::default());
+        let mut chunk = Chunk::default();
+        chunk.kinds.set((0, 0, 0).into(), 1.into());
+        world.add((0, 0, 0).into(), chunk);
 
-        assert!(
-            super::recompute_chunks(&mut world, [(0, 0, 0).into()].into_iter()).len() == 1,
-            "should return true when chunk doesn't exists"
+        let mut chunk = Chunk::default();
+        chunk.kinds.set((0, 0, 0).into(), 2.into());
+        world.add((1, 0, 0).into(), chunk);
+
+        assert_eq!(
+            super::recompute_chunks(&mut world, [(0, 0, 0).into()].into_iter()).len(),
+            1,
+            "Should return one chunk recomputed"
         );
 
         let chunk = world.get((0, 0, 0).into()).unwrap();
-        assert!(
+        assert_eq!(
             chunk
                 .kinds
                 .neighborhood
-                .get(super::voxel::Side::Up, (0, 0, 0).into())
-                .is_some(),
-            "Neighborhood should be updated on update_chunk call"
+                .get(super::voxel::Side::Right, (0, 0, 0).into())
+                .unwrap(),
+            2.into(),
+            "Neighborhood should be updated on recompute_chunks call"
         );
     }
 
