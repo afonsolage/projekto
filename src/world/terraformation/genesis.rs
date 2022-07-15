@@ -150,9 +150,7 @@ enum ChunkCmd {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum ChunkCmdResult {
-    Loaded(IVec3),
-    Unloaded(IVec3),
+enum ChunkEvent {
     Updated(IVec3),
 }
 
@@ -190,7 +188,7 @@ impl Deref for WorldRes {
  */
 #[derive(Default)]
 struct ProcessBatchSystemMeta {
-    running_task: Option<Task<(VoxWorld, Vec<ChunkCmdResult>)>>,
+    running_task: Option<Task<(VoxWorld, Vec<ChunkEvent>)>>,
 }
 
 /**
@@ -206,8 +204,6 @@ fn update_world_system(
     mut batch_res: ResMut<BatchChunkCmdRes>,
     mut meta: Local<ProcessBatchSystemMeta>,
     mut world_res: ResMut<WorldRes>,
-    mut loaded_writer: EventWriter<EvtChunkLoaded>,
-    mut unloaded_writer: EventWriter<EvtChunkUnloaded>,
     mut updated_writer: EventWriter<EvtChunkUpdated>,
 ) {
     let mut _perf = perf_fn!();
@@ -220,11 +216,7 @@ fn update_world_system(
             // Dispatch all events generated from this batch
             for cmd in commands {
                 match cmd {
-                    ChunkCmdResult::Loaded(local) => loaded_writer.send(EvtChunkLoaded(local)),
-                    ChunkCmdResult::Unloaded(local) => {
-                        unloaded_writer.send(EvtChunkUnloaded(local))
-                    }
-                    ChunkCmdResult::Updated(local) => updated_writer.send(EvtChunkUpdated(local)),
+                    ChunkEvent::Updated(local) => updated_writer.send(EvtChunkUpdated(local)),
                 }
             }
 
@@ -400,29 +392,25 @@ fn split_commands(
 /**
 Process in batch a list of [`ChunkCmd`]. This function takes ownership of [`VoxWorld`] since it needs to do modification on world.
 
+This function triggers [`recompute_chunks`] whenever a new chunk is generated or is updated.
+
 ***Returns*** the [`VoxWorld`] ownership and a list of [`ChunkCmdResult`]
  */
-fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<ChunkCmdResult>) {
+fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<ChunkEvent>) {
     let mut _perf = perf_fn!();
 
     let commands = optimize_commands(&world, commands);
     let (load, unload, update) = split_commands(commands);
 
-    let mut dirty_chunks = unload_chunks(&mut world, &unload);
-    dirty_chunks.extend(load_chunks(&mut world, &load));
+    unload_chunks(&mut world, &unload);
+    let mut dirty_chunks = load_chunks(&mut world, &load);
     dirty_chunks.extend(update_chunks(&mut world, &update));
 
-    let updated = refresh_chunks(&mut world, dirty_chunks.into_iter());
+    let updated = recompute_chunks(&mut world, dirty_chunks.into_iter());
 
-    // let result = load
-    //     .into_iter()
-    //     .map(ChunkCmdResult::Loaded)
-    //     .chain(unload.into_iter().map(ChunkCmdResult::Unloaded))
-    //     .chain(updated.into_iter().map(ChunkCmdResult::Updated))
-    //     .collect();
+    let result = updated.into_iter().map(ChunkEvent::Updated).collect();
 
-    // (world, result)
-    (world, vec![])
+    (world, result)
 }
 
 /**
@@ -481,7 +469,7 @@ fn unload_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
 /**
 Load from cache into [`VoxWorld`] all chunks on the given list.
 
-***Returns*** A list of chunks locals that are dirty due to neighboring chunks loading.
+***Returns*** A list of chunks locals that are dirty due to a new chunk being generated.
  */
 fn load_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
     perf_fn_scope!();
@@ -494,16 +482,17 @@ fn load_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
         let chunk = if path.exists() {
             load_chunk(&path)
         } else {
+            dirty_chunks.extend(
+                voxel::SIDES
+                    .iter()
+                    .map(|s| s.dir() + local)
+                    .chain(std::iter::once(local)), // Include the generated chunk
+            );
+
             generate_chunk(local)
         };
 
         world.add(local, chunk);
-        dirty_chunks.extend(
-            voxel::SIDES
-                .iter()
-                .map(|s| s.dir() + local)
-                .chain(std::iter::once(local)),
-        );
     }
 
     dirty_chunks
@@ -514,7 +503,7 @@ Refresh chunks internal data due to change in the neighborhood. At moment this f
 
 ***Returns*** A list of chunks locals that was refreshed.
  */
-fn refresh_chunks(world: &mut VoxWorld, locals: impl Iterator<Item = IVec3>) -> Vec<IVec3> {
+fn recompute_chunks(world: &mut VoxWorld, locals: impl Iterator<Item = IVec3>) -> Vec<IVec3> {
     perf_fn_scope!();
 
     let mut result = vec![];
@@ -533,6 +522,9 @@ fn refresh_chunks(world: &mut VoxWorld, locals: impl Iterator<Item = IVec3>) -> 
                     vec![]
                 }
             };
+
+            let path = local_path(local);
+            save_chunk(&path, chunk);
 
             result.push(local);
         }
@@ -635,6 +627,9 @@ fn update_neighborhood(world: &mut VoxWorld, local: IVec3) {
     }
 }
 
+/**
+ Generates a new chunk filling it with [`ChunkKind`] randomly generated by seeded noise
+*/
 fn generate_chunk(local: IVec3) -> Chunk {
     perf_fn_scope!();
 
@@ -665,21 +660,20 @@ fn generate_chunk(local: IVec3) -> Chunk {
             }
         }
     }
-    let path = local_path(local);
 
-    assert!(!path.exists(), "Cache already exists!");
-
-    let chunk = Chunk {
+    Chunk {
         kinds,
         ..Default::default()
-    };
-    save_chunk(&path, &chunk);
-
-    chunk
+    }
 }
 
+/**
+ Saves the given [`Chunk`] on disk at [`Path`].
+*/
 fn save_chunk(path: &Path, chunk: &Chunk) {
     perf_fn_scope!();
+
+    // TODO: Change this to an async version?
 
     let mut file = std::fs::OpenOptions::new()
         .write(true)
@@ -826,33 +820,35 @@ mod tests {
 
         let dirty_chunks = super::load_chunks(&mut world, &vec![local]);
 
-        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT + 1);
-        assert!(dirty_chunks.contains(&local));
+        assert_eq!(
+            dirty_chunks.len(),
+            0,
+            "The chunk already exists, so no dirty chunks"
+        );
         assert!(world.exists(local), "Chunk should be added to world");
 
         let _ = remove_file(path);
 
         // Load non-existing cache
         let local = (9942, 9944, 9421).into();
-        let path = super::local_path(local);
-        let _ = remove_file(&path);
 
         let mut world = VoxWorld::default();
         let dirty_chunks = super::load_chunks(&mut world, &vec![local]);
 
-        assert_eq!(dirty_chunks.len(), super::voxel::SIDE_COUNT + 1);
+        assert_eq!(
+            dirty_chunks.len(),
+            super::voxel::SIDE_COUNT + 1,
+            "Chunk doesn't exists, so all neighbor and self should be dirt"
+        );
         assert!(dirty_chunks.contains(&local));
-        assert!(path.exists(), "Cache file should be created by load_chunk");
         assert!(world.exists(local), "Chunk should be added to world");
-
-        let _ = remove_file(path);
     }
 
     #[test]
     fn update_chunk() {
         let mut world = VoxWorld::default();
         assert!(
-            super::refresh_chunks(&mut world, [(0, 0, 0).into()].into_iter()).is_empty(),
+            super::recompute_chunks(&mut world, [(0, 0, 0).into()].into_iter()).is_empty(),
             "should return an empty list when chunk doesn't exists"
         );
 
@@ -860,7 +856,7 @@ mod tests {
         world.add((0, 1, 0).into(), Default::default());
 
         assert!(
-            super::refresh_chunks(&mut world, [(0, 0, 0).into()].into_iter()).len() == 1,
+            super::recompute_chunks(&mut world, [(0, 0, 0).into()].into_iter()).len() == 1,
             "should return true when chunk doesn't exists"
         );
 
@@ -877,23 +873,13 @@ mod tests {
 
     #[test]
     fn generate_chunk() {
-        let local = (5432, 4321, 5555).into();
-        let _ = super::generate_chunk(local);
-        let path = local_path(local);
+        let local = (5432, 0, 5555).into();
+        let chunk = super::generate_chunk(local);
 
-        assert!(path.exists(), "Generate chunk should save cache on disk");
-
-        remove_file(path).expect("File should exists");
-    }
-
-    #[test]
-    #[should_panic]
-    fn generate_cache_panic() {
-        let local = (9999, 9998, 9997).into();
-        let _ = remove_file(local_path(local));
-
-        super::generate_chunk(local);
-        super::generate_chunk(local);
+        assert!(
+            !chunk.kinds.is_default(),
+            "Generate chunk should should not be default"
+        );
     }
 
     #[test]

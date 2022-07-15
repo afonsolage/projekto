@@ -10,19 +10,18 @@ use crate::{
         query,
         rendering::{ChunkMaterial, ChunkMaterialHandle},
         storage::{chunk, landscape},
-        terraformation::prelude::{EvtChunkLoaded, EvtChunkUnloaded},
     },
 };
 
 use super::{
-    ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated, WorldRes,
+    ChunkBundle, ChunkEntityMap, ChunkLocal, ChunkMeshDirty, EvtChunkUpdated, WorldRes,
 };
 
 pub(super) struct LandscapingPlugin;
 
 impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EvtChunkMeshDirty>()
+        app.add_event::<ChunkMeshDirty>()
             .add_plugin(MaterialPlugin::<ChunkMaterial>::default())
             .add_startup_system(setup_resources)
             .add_system(process_chunk_updated_events)
@@ -59,7 +58,7 @@ fn update_landscape_system(
     config: Res<LandscapeConfig>, // TODO: Change this to a Run Criteria later on
     world_res: Res<WorldRes>,     // TODO: Change this to a Run Criteria later on
     mut meta: Local<UpdateLandscapeMeta>,
-    mut writer: EventWriter<EvtChunkMeshDirty>,
+    mut writer: EventWriter<ChunkMeshDirty>,
     q: Query<&Transform, With<FlyByCamera>>, // TODO: Use a proper marker
 ) {
     let mut _perf = perf_fn!();
@@ -110,7 +109,7 @@ fn spawn_chunk(
     commands: &mut Commands,
     entity_map: &mut ChunkEntityMap,
     material: &ChunkMaterialHandle,
-    writer: &mut EventWriter<EvtChunkMeshDirty>,
+    writer: &mut EventWriter<ChunkMeshDirty>,
     local: IVec3,
 ) {
     perf_fn_scope!();
@@ -127,7 +126,7 @@ fn spawn_chunk(
         .insert(NoFrustumCulling)
         .id();
     entity_map.0.insert(local, entity);
-    writer.send(EvtChunkMeshDirty(local));
+    writer.send(ChunkMeshDirty(local));
 }
 
 fn despawn_chunk(commands: &mut Commands, entity_map: &mut ChunkEntityMap, local: IVec3) {
@@ -140,7 +139,7 @@ fn despawn_chunk(commands: &mut Commands, entity_map: &mut ChunkEntityMap, local
 
 fn process_chunk_updated_events(
     mut reader: EventReader<EvtChunkUpdated>,
-    mut writer: EventWriter<EvtChunkMeshDirty>,
+    mut writer: EventWriter<ChunkMeshDirty>,
     entity_map: Res<ChunkEntityMap>,
 ) {
     let mut _perf = perf_fn!();
@@ -149,7 +148,7 @@ fn process_chunk_updated_events(
         if entity_map.0.get(chunk_local).is_some() {
             trace_system_run!(chunk_local);
             perf_scope!(_perf);
-            writer.send(EvtChunkMeshDirty(*chunk_local));
+            writer.send(ChunkMeshDirty(*chunk_local));
         }
     }
 }
@@ -168,7 +167,7 @@ mod test {
 
         let mut world = World::default();
         world.insert_resource(added_events);
-        world.insert_resource(Events::<super::EvtChunkMeshDirty>::default());
+        world.insert_resource(Events::<super::ChunkMeshDirty>::default());
 
         let mut entity_map = ChunkEntityMap(HashMap::default());
         entity_map.0.insert(
@@ -186,7 +185,7 @@ mod test {
         // Assert
         assert_eq!(
             world
-                .get_resource::<Events<EvtChunkMeshDirty>>()
+                .get_resource::<Events<ChunkMeshDirty>>()
                 .unwrap()
                 .iter_current_update_events()
                 .next()

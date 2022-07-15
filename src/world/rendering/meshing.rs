@@ -8,7 +8,7 @@ use crate::world::{
     storage::{landscape, voxel::VoxelVertex},
 };
 
-use super::{ChunkEntityMap, EvtChunkMeshDirty, Pipeline, WorldRes};
+use super::{ChunkEntityMap, ChunkMeshDirty, Pipeline, WorldRes};
 
 pub struct RenderingPlugin;
 
@@ -25,7 +25,7 @@ fn mesh_generation_system(
     mut meshes: ResMut<Assets<Mesh>>,
     vox_world: Res<WorldRes>,
     entity_map: Res<ChunkEntityMap>,
-    mut reader: EventReader<EvtChunkMeshDirty>,
+    mut reader: EventReader<ChunkMeshDirty>,
 ) {
     let mut _perf = perf_fn!();
 

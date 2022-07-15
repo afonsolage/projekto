@@ -87,7 +87,7 @@ impl Plugin for PipelinePlugin {
     }
 }
 
-pub struct EvtChunkMeshDirty(pub IVec3);
+pub struct ChunkMeshDirty(pub IVec3);
 
 #[derive(Component)]
 pub struct ChunkLocal(pub IVec3);
