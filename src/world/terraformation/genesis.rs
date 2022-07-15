@@ -517,11 +517,11 @@ fn recompute_chunks(world: &mut VoxWorld, locals: impl Iterator<Item = IVec3>) -
                 let faces = mesh::merge_faces(&occlusion, &chunk);
                 chunk.vertices = generate_vertices(faces);
 
-                let path = local_path(local);
-                save_chunk(&path, chunk);
-
                 result.push(local);
             }
+
+            let path = local_path(local);
+            save_chunk(&path, chunk);
         }
     }
 
