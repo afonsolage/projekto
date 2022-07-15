@@ -36,6 +36,7 @@ impl Iterator for RangeIterator {
     }
 }
 
+#[cfg(test)]
 pub fn range(begin: IVec3, end: IVec3) -> impl Iterator<Item = IVec3> {
     RangeIterator {
         begin,

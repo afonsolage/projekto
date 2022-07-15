@@ -1,8 +1,6 @@
-use std::marker::PhantomData;
-
 use bevy::prelude::*;
 
-use serde::{de::DeserializeOwned, ser::SerializeSeq, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::world::{math, query, storage::chunk};
 
@@ -66,8 +64,8 @@ pub trait ChunkStorageType: Copy + Default + DeserializeOwned + Serialize + Part
 
 impl ChunkStorageType for u8 {}
 
-#[derive(Debug)]
-pub struct ChunkStorage<T: ChunkStorageType> {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChunkStorage<T> {
     main: Vec<T>,
     pub neighborhood: ChunkNeighborhood<T>,
 }
@@ -121,67 +119,15 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.main.iter()
     }
 
+    #[cfg(test)]
     pub fn is_default(&self) -> bool {
         // TODO: Add a clever way to check if ChunkStorage wasn't initialized;
         self.is_all(T::default())
     }
 
+    #[cfg(test)]
     pub fn is_all(&self, value: T) -> bool {
         self.iter().all(|t| *t == value)
-    }
-}
-
-impl<'de, T: ChunkStorageType> Deserialize<'de> for ChunkStorage<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct ArrayVisitor<T>(PhantomData<T>);
-        impl<'de, T: ChunkStorageType> serde::de::Visitor<'de> for ArrayVisitor<T> {
-            type Value = ChunkStorage<T>;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_fmt(format_args!("an array of length {}", chunk::BUFFER_SIZE))
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: serde::de::SeqAccess<'de>,
-            {
-                let mut vec = vec![];
-
-                while let Some(element) = seq.next_element()? {
-                    vec.push(element);
-                }
-
-                if vec.is_empty() {
-                    vec = vec![T::default(); chunk::BUFFER_SIZE];
-                }
-
-                Ok(ChunkStorage::new(vec))
-            }
-        }
-
-        deserializer.deserialize_seq(ArrayVisitor(PhantomData))
-    }
-}
-
-impl<T: ChunkStorageType> Serialize for ChunkStorage<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        if self.is_default() {
-            serializer.serialize_seq(Some(0))?.end()
-        } else {
-            let mut seq = serializer.serialize_seq(Some(chunk::BUFFER_SIZE))?;
-
-            for elem in self.main.iter() {
-                seq.serialize_element(elem)?;
-            }
-
-            seq.end()
-        }
     }
 }
 

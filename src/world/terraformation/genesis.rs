@@ -802,15 +802,9 @@ mod tests {
         // Load existing cache
         let local = (9943, 9943, 9999).into();
         let path = super::local_path(local);
-        let kinds = ChunkKind::default();
+        let chunk = Chunk::default();
 
-        create_chunk(
-            &path,
-            &Chunk {
-                kinds,
-                ..Default::default()
-            },
-        );
+        create_chunk(&path, &chunk);
 
         let mut world = VoxWorld::default();
 
@@ -914,7 +908,14 @@ mod tests {
         let mut temp_file = std::env::temp_dir();
         temp_file.push("test.tmp");
 
-        let chunk = Default::default();
+        let mut chunk = Chunk::default();
+        let mut neighbor = Chunk::default();
+        neighbor.kinds.set_all(1.into());
+
+        chunk
+            .kinds
+            .neighborhood
+            .set(voxel::Side::Right, &neighbor.kinds);
 
         create_chunk(&temp_file, &chunk);
 
@@ -933,6 +934,14 @@ mod tests {
             let uncompressed = lz4_flex::decompress_size_prepended(&compressed).unwrap();
             let loaded_chunk = bincode::deserialize::<Chunk>(&uncompressed).unwrap();
             assert_eq!(chunk, loaded_chunk);
+
+            assert_eq!(
+                chunk
+                    .kinds
+                    .neighborhood
+                    .get(voxel::Side::Right, (0, 0, 0).into()),
+                Some(1.into())
+            );
         }
     }
 

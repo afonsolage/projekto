@@ -3,10 +3,7 @@ use bevy::{
     render::mesh::{Indices, PrimitiveTopology},
 };
 
-use crate::world::{
-    mesh,
-    storage::{landscape, voxel::VoxelVertex},
-};
+use crate::world::{mesh, storage::voxel::VoxelVertex};
 
 use super::{ChunkEntityMap, ChunkMeshDirty, Pipeline, WorldRes};
 
@@ -17,8 +14,6 @@ impl Plugin for RenderingPlugin {
         app.add_system_to_stage(Pipeline::Rendering, mesh_generation_system);
     }
 }
-
-const MESH_BATCH_SIZE: usize = landscape::HORIZONTAL_RADIUS;
 
 fn mesh_generation_system(
     mut commands: Commands,
@@ -35,7 +30,6 @@ fn mesh_generation_system(
 
     let chunks = reader
         .iter()
-        // .take(MESH_BATCH_SIZE)
         .filter_map(|evt| vox_world.get(evt.0).map(|c| (evt.0, &c.vertices)))
         .collect::<Vec<_>>();
 
