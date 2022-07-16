@@ -29,16 +29,12 @@ pub(super) struct GenesisPlugin;
 
 impl Plugin for GenesisPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EvtChunkLoaded>()
-            .add_event::<EvtChunkUnloaded>()
-            .add_event::<EvtChunkUpdated>()
+        app.add_event::<EvtChunkUpdated>()
             .add_startup_system(setup_resources)
             .add_system(update_world_system);
     }
 }
 
-pub struct EvtChunkLoaded(pub IVec3);
-pub struct EvtChunkUnloaded(pub IVec3);
 pub struct EvtChunkUpdated(pub IVec3);
 
 fn setup_resources(mut commands: Commands) {
@@ -149,11 +145,6 @@ enum ChunkCmd {
     Update(IVec3, Vec<(IVec3, voxel::Kind)>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
-enum ChunkEvent {
-    Updated(IVec3),
-}
-
 pub struct WorldRes(Option<VoxWorld>);
 
 impl WorldRes {
@@ -188,7 +179,7 @@ impl Deref for WorldRes {
  */
 #[derive(Default)]
 struct ProcessBatchSystemMeta {
-    running_task: Option<Task<(VoxWorld, Vec<ChunkEvent>)>>,
+    running_task: Option<Task<(VoxWorld, Vec<IVec3>)>>,
 }
 
 /**
@@ -212,13 +203,11 @@ fn update_world_system(
         perf_scope!(_perf);
 
         // Check if task has finished
-        if let Some((world, commands)) = future::block_on(future::poll_once(task)) {
+        if let Some((world, updated_list)) = future::block_on(future::poll_once(task)) {
             // Dispatch all events generated from this batch
-            for cmd in commands {
-                match cmd {
-                    ChunkEvent::Updated(local) => updated_writer.send(EvtChunkUpdated(local)),
-                }
-            }
+            updated_list
+                .into_iter()
+                .for_each(|local| updated_writer.send(EvtChunkUpdated(local)));
 
             // Give back the VoxWorld to WorldRes
             meta.running_task = None;
@@ -396,7 +385,7 @@ This function triggers [`recompute_chunks`] whenever a new chunk is generated or
 
 ***Returns*** the [`VoxWorld`] ownership and a list of [`ChunkCmdResult`]
  */
-fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<ChunkEvent>) {
+fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<IVec3>) {
     let mut _perf = perf_fn!();
 
     let commands = optimize_commands(&world, commands);
@@ -408,9 +397,7 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
 
     let updated = recompute_chunks(&mut world, dirty_chunks.into_iter());
 
-    let result = updated.into_iter().map(ChunkEvent::Updated).collect();
-
-    (world, result)
+    (world, updated)
 }
 
 /**

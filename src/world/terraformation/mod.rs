@@ -7,8 +7,6 @@ mod landscaping;
 
 pub mod prelude {
     pub use super::genesis::BatchChunkCmdRes;
-    pub use super::genesis::EvtChunkLoaded;
-    pub use super::genesis::EvtChunkUnloaded;
     pub use super::genesis::EvtChunkUpdated;
     pub use super::genesis::WorldRes;
 }
