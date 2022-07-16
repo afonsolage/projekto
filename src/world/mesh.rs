@@ -3,11 +3,11 @@ use bevy::math::IVec3;
 use crate::world::{query, storage::voxel};
 
 use super::{
-    rendering::ChunkFacesOcclusion,
     storage::{
-        chunk::{self, ChunkKind, Chunk},
+        chunk::{self, Chunk, ChunkKind},
         voxel::VoxelFace,
     },
+    terraformation::ChunkFacesOcclusion,
 };
 
 /*

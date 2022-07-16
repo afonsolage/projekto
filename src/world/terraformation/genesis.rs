@@ -14,12 +14,12 @@ use futures_lite::future;
 
 use crate::world::{
     math, mesh,
-    rendering::ChunkFacesOcclusion,
     storage::{
         chunk::{self, Chunk, ChunkKind, ChunkNeighborhood},
         voxel::{self, FacesOcclusion, VoxelFace, VoxelVertex},
         VoxWorld,
     },
+    terraformation::ChunkFacesOcclusion,
 };
 
 const CACHE_PATH: &str = "cache/chunks/";

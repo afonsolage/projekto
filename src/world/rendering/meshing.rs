@@ -7,7 +7,7 @@ use bevy::{
 
 use crate::world::{mesh, storage::voxel::VoxelVertex};
 
-use super::{ChunkEntityMap, ChunkMeshDirty, Pipeline, WorldRes};
+use super::{ChunkEntityMap, EvtChunkMeshDirty, Pipeline, WorldRes};
 
 pub struct RenderingPlugin;
 
@@ -27,7 +27,7 @@ fn mesh_generation_system(
     mut meshes: ResMut<Assets<Mesh>>,
     vox_world: Res<WorldRes>,
     entity_map: Res<ChunkEntityMap>,
-    mut reader: EventReader<ChunkMeshDirty>,
+    mut reader: EventReader<EvtChunkMeshDirty>,
     mut meta: Local<MeshGenerationMeta>,
 ) {
     let mut _perf = perf_fn!();

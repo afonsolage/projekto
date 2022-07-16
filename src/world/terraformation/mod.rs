@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use super::storage::landscape;
+use super::storage::{landscape, chunk::ChunkStorage, voxel};
 
 mod genesis;
 mod landscaping;
@@ -29,4 +29,12 @@ pub struct TerraformationCenter;
 #[derive(Default)]
 pub struct TerraformationConfig {
     pub horizontal_radius: u32,
+}
+
+pub type ChunkFacesOcclusion = ChunkStorage<voxel::FacesOcclusion>;
+
+impl ChunkFacesOcclusion {
+    pub fn is_fully_occluded(&self) -> bool {
+        self.iter().all(voxel::FacesOcclusion::is_fully_occluded)
+    }
 }

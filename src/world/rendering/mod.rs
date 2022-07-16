@@ -15,7 +15,6 @@ use self::{
     landscaping::LandscapingPlugin, meshing::RenderingPlugin, terraforming::TerraformingPlugin,
 };
 
-use super::storage::{chunk::ChunkStorage, voxel};
 use super::terraformation::prelude::*;
 
 pub use landscaping::LandscapeConfig;
@@ -87,21 +86,16 @@ impl Plugin for PipelinePlugin {
     }
 }
 
-pub struct ChunkMeshDirty(pub IVec3);
+/**
+ This event is raised whenever a chunk mesh needs to be redrawn
+*/
+pub struct EvtChunkMeshDirty(pub IVec3);
 
 #[derive(Component)]
 pub struct ChunkLocal(pub IVec3);
 
 #[derive(Component)]
 pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
-
-pub type ChunkFacesOcclusion = ChunkStorage<voxel::FacesOcclusion>;
-
-impl ChunkFacesOcclusion {
-    pub fn is_fully_occluded(&self) -> bool {
-        self.iter().all(voxel::FacesOcclusion::is_fully_occluded)
-    }
-}
 
 #[derive(Bundle)]
 pub struct ChunkBundle {
