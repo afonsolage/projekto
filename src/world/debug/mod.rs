@@ -12,6 +12,8 @@ use crate::{
 
 use self::wireframe::WireframeMaterial;
 
+use crate::world::terraformation::prelude::*;
+
 mod wireframe;
 
 pub struct WireframeDebugPlugin;

@@ -47,7 +47,6 @@ struct UpdateLandscapeMeta {
     next_sync: f32,
 }
 
-// CHANGE THIS TO RENDERING!!!
 fn update_landscape_system(
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
@@ -98,7 +97,7 @@ fn update_landscape_system(
             debug!("Spawning {} chunks", spawn.len());
         }
 
-        for &local in spawn {
+        for &local in spawn.into_iter() {
             spawn_chunk(
                 &mut commands,
                 &mut entity_map,
@@ -117,7 +116,7 @@ fn update_landscape_system(
             debug!("Despawning {} chunks", despawn.len());
         }
 
-        for &local in despawn {
+        for &local in despawn.into_iter() {
             despawn_chunk(&mut commands, &mut entity_map, local);
         }
     }

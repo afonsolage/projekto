@@ -9,9 +9,9 @@ use crate::world::{mesh, storage::voxel::VoxelVertex};
 
 use super::{ChunkEntityMap, EvtChunkMeshDirty, Pipeline, WorldRes};
 
-pub struct RenderingPlugin;
+pub struct MeshingPlugin;
 
-impl Plugin for RenderingPlugin {
+impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
         app.add_system_to_stage(Pipeline::Rendering, mesh_generation_system);
     }

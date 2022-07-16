@@ -4,11 +4,15 @@ use super::storage::{landscape, chunk::ChunkStorage, voxel};
 
 mod genesis;
 mod landscaping;
+mod terraforming;
 
 pub mod prelude {
     pub use super::genesis::BatchChunkCmdRes;
     pub use super::genesis::EvtChunkUpdated;
     pub use super::genesis::WorldRes;
+    pub use super::terraforming::CmdChunkUpdate;
+    pub use super::terraforming::ChunkSystemQuery;
+    pub use super::terraforming::ChunkSystemRaycast;
 }
 
 pub struct TerraformationPlugin;

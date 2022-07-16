@@ -11,18 +11,14 @@ use bevy::{
     utils::HashMap,
 };
 
-use self::{
-    landscaping::LandscapingPlugin, meshing::RenderingPlugin, terraforming::TerraformingPlugin,
-};
+use self::{landscaping::LandscapingPlugin, meshing::MeshingPlugin};
 
 use super::terraformation::prelude::*;
 
 pub use landscaping::LandscapeConfig;
-pub use terraforming::{ChunkSystemQuery, ChunkSystemRaycast, CmdChunkUpdate, RaycastResult};
 
 mod landscaping;
 mod meshing;
-mod terraforming;
 
 #[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]
 enum Pipeline {
@@ -80,9 +76,7 @@ impl Plugin for PipelinePlugin {
                 PipelineStartup::Rendering,
                 SystemStage::parallel(),
             );
-        app.add_plugin(TerraformingPlugin)
-            .add_plugin(LandscapingPlugin)
-            .add_plugin(RenderingPlugin);
+        app.add_plugin(LandscapingPlugin).add_plugin(MeshingPlugin);
     }
 }
 

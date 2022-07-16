@@ -5,20 +5,16 @@ use crate::world::{
     storage::{chunk::ChunkKind, voxel},
 };
 
-use super::{BatchChunkCmdRes, WorldRes};
+use super::prelude::*;
 
 pub(super) struct TerraformingPlugin;
 
 impl Plugin for TerraformingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<CmdChunkUpdate>()
-            .add_startup_system_to_stage(super::PipelineStartup::Terraforming, setup_resources)
-            .add_system_set_to_stage(
-                super::Pipeline::Terraforming,
-                SystemSet::new()
-                    .with_system(process_update_chunks_system)
-                    .with_system(handle_queries_system),
-            );
+            .add_startup_system(setup_resources)
+            .add_system(process_update_chunks)
+            .add_system(handle_queries);
     }
 }
 
@@ -29,7 +25,7 @@ fn setup_resources(mut commands: Commands) {
 #[derive(Clone)]
 pub struct CmdChunkUpdate(pub IVec3, pub Vec<(IVec3, voxel::Kind)>);
 
-fn process_update_chunks_system(
+fn process_update_chunks(
     mut reader: EventReader<CmdChunkUpdate>,
     mut batch: ResMut<BatchChunkCmdRes>,
 ) {
@@ -93,7 +89,7 @@ impl<'w, 's> ChunkSystemQuery<'w, 's> {
     }
 }
 
-fn handle_queries_system(world: Res<WorldRes>, mut queries_res: ResMut<ChunkQuery>) {
+fn handle_queries(world: Res<WorldRes>, mut queries_res: ResMut<ChunkQuery>) {
     if !world.is_ready() {
         return;
     }
