@@ -11,24 +11,14 @@ use bevy::{
     utils::HashMap,
 };
 
-use self::{
-    genesis::GenesisPlugin, landscaping::LandscapingPlugin, rendering::RenderingPlugin,
-    terraforming::TerraformingPlugin,
-};
+use self::{landscaping::LandscapingPlugin, meshing::MeshingPlugin};
 
-mod genesis;
-mod landscaping;
-mod rendering;
-mod terraforming;
+use super::terraformation::prelude::*;
 
-pub use rendering::MeshGenerationCounter;
-
-pub use genesis::BatchChunkCmdRes;
-pub use genesis::{EvtChunkLoaded, EvtChunkUnloaded, EvtChunkUpdated, WorldRes};
 pub use landscaping::LandscapeConfig;
-pub use terraforming::{ChunkSystemQuery, ChunkSystemRaycast, CmdChunkUpdate, RaycastResult};
 
-use super::storage::{chunk::ChunkStorage, voxel};
+mod landscaping;
+mod meshing;
 
 #[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]
 enum Pipeline {
@@ -86,13 +76,13 @@ impl Plugin for PipelinePlugin {
                 PipelineStartup::Rendering,
                 SystemStage::parallel(),
             );
-        app.add_plugin(GenesisPlugin)
-            .add_plugin(TerraformingPlugin)
-            .add_plugin(LandscapingPlugin)
-            .add_plugin(RenderingPlugin);
+        app.add_plugin(LandscapingPlugin).add_plugin(MeshingPlugin);
     }
 }
 
+/**
+ This event is raised whenever a chunk mesh needs to be redrawn
+*/
 pub struct EvtChunkMeshDirty(pub IVec3);
 
 #[derive(Component)]
@@ -100,8 +90,6 @@ pub struct ChunkLocal(pub IVec3);
 
 #[derive(Component)]
 pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
-
-pub type ChunkFacesOcclusion = ChunkStorage<voxel::FacesOcclusion>;
 
 #[derive(Bundle)]
 pub struct ChunkBundle {

@@ -3,11 +3,11 @@ use bevy::math::IVec3;
 use crate::world::{query, storage::voxel};
 
 use super::{
-    pipeline::ChunkFacesOcclusion,
     storage::{
-        chunk::{self, ChunkKind},
+        chunk::{self, Chunk, ChunkKind},
         voxel::VoxelFace,
     },
+    terraformation::ChunkFacesOcclusion,
 };
 
 /*
@@ -70,18 +70,18 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
     res
 }
 
-pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<VoxelFace> {
+pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
     #[inline]
     fn should_skip_voxel(
         merged: &Vec<usize>,
         voxel: IVec3,
         side: voxel::Side,
-        chunk: &ChunkKind,
+        kinds: &ChunkKind,
         occlusion: &ChunkFacesOcclusion,
     ) -> bool {
         // perf_fn_scope!();
         !chunk::is_within_bounds(voxel)
-            || chunk.get(voxel).is_empty()
+            || kinds.get(voxel).is_empty()
             || merged[chunk::to_index(voxel)] == 1
             || occlusion.get(voxel).is_occluded(side)
     }
@@ -92,13 +92,13 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
         step: IVec3,
         merged: &Vec<usize>,
         side: voxel::Side,
-        chunk: &ChunkKind,
+        kinds: &ChunkKind,
         occlusion: &ChunkFacesOcclusion,
     ) -> IVec3 {
         // perf_fn_scope!();
         let mut next_voxel = begin + step;
 
-        while !should_skip_voxel(merged, next_voxel, side, chunk, occlusion) {
+        while !should_skip_voxel(merged, next_voxel, side, kinds, occlusion) {
             next_voxel += step;
         }
         next_voxel -= step;
@@ -118,12 +118,14 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
         (IVec3::Y, IVec3::X),
     ];
 
+    let kinds = &chunk.kinds;
+
     for side in voxel::SIDES {
         let axis = side_axis[side as usize];
         let mut merged = vec![0; chunk::BUFFER_SIZE];
 
         for voxel in chunk::voxels() {
-            if should_skip_voxel(&merged, voxel, side, chunk, occlusion) {
+            if should_skip_voxel(&merged, voxel, side, kinds, occlusion) {
                 continue;
             }
 
@@ -131,13 +133,13 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &ChunkKind) -> Vec<Vo
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
-            let v2 = find_furthest_eq_voxel(voxel, axis.0, &merged, side, chunk, occlusion);
+            let v2 = find_furthest_eq_voxel(voxel, axis.0, &merged, side, kinds, occlusion);
 
             let step = axis.1;
             let mut v3 = v2 + step;
             let mut tmp = v1 + step;
-            while !should_skip_voxel(&merged, tmp, side, chunk, occlusion) {
-                let furthest = find_furthest_eq_voxel(tmp, axis.0, &merged, side, chunk, occlusion);
+            while !should_skip_voxel(&merged, tmp, side, kinds, occlusion) {
+                let furthest = find_furthest_eq_voxel(tmp, axis.0, &merged, side, kinds, occlusion);
 
                 if furthest == v3 {
                     v3 += step;

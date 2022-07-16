@@ -130,7 +130,7 @@ pub struct VoxelFace {
     //TODO: light and color
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct VoxelVertex {
     pub position: Vec3,
     pub normal: Vec3,

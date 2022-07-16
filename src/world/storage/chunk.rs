@@ -1,22 +1,19 @@
-use std::marker::PhantomData;
-
 use bevy::prelude::*;
 
-use serde::{de::DeserializeOwned, ser::SerializeSeq, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::world::{math, query, storage::chunk};
 
 use super::voxel;
 
-pub const X_AXIS_SIZE: usize = 32;
-pub const Z_AXIS_SIZE: usize = 32;
-pub const Y_AXIS_SIZE: usize = 32;
+pub const X_AXIS_SIZE: usize = 16;
+pub const Y_AXIS_SIZE: usize = 256;
+pub const Z_AXIS_SIZE: usize = 16;
 
 pub const X_END: i32 = (X_AXIS_SIZE - 1) as i32;
-pub const Z_END: i32 = (Z_AXIS_SIZE - 1) as i32;
 pub const Y_END: i32 = (Y_AXIS_SIZE - 1) as i32;
+pub const Z_END: i32 = (Z_AXIS_SIZE - 1) as i32;
 
-// const CHUNK_AXIS_OFFSET: usize = CHUNK_AXIS_SIZE / 2;
 pub const BUFFER_SIZE: usize = X_AXIS_SIZE * Z_AXIS_SIZE * Y_AXIS_SIZE;
 
 const X_SHIFT: usize = (Z_AXIS_SIZE.log2() + Z_SHIFT as u32) as usize;
@@ -30,6 +27,19 @@ const Y_MASK: usize = Y_AXIS_SIZE - 1;
 #[cfg(feature = "mem_alloc")]
 pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
     once_cell::sync::Lazy::new(std::sync::atomic::AtomicUsize::default);
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct Chunk {
+    pub kinds: ChunkKind,
+    pub vertices: Vec<voxel::VoxelVertex>,
+}
+
+#[cfg(test)]
+impl PartialEq for Chunk {
+    fn eq(&self, other: &Self) -> bool {
+        self.kinds == other.kinds && self.vertices == other.vertices
+    }
+}
 
 #[derive(Default)]
 pub struct ChunkIter {
@@ -54,8 +64,8 @@ pub trait ChunkStorageType: Copy + Default + DeserializeOwned + Serialize + Part
 
 impl ChunkStorageType for u8 {}
 
-#[derive(Debug)]
-pub struct ChunkStorage<T: ChunkStorageType> {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChunkStorage<T> {
     main: Vec<T>,
     pub neighborhood: ChunkNeighborhood<T>,
 }
@@ -93,19 +103,10 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
     }
 
     pub fn get(&self, local: IVec3) -> T {
-        // if self.main.is_empty() {
-        //     T::default()
-        // } else {
-
-        // }
         self.main[to_index(local)]
     }
 
     pub fn set(&mut self, local: IVec3, value: T) {
-        // if self.main.is_empty() {
-        //     self.main = vec![T::default(); BUFFER_SIZE];
-        // }
-
         self.main[to_index(local)] = value;
     }
 
@@ -120,65 +121,13 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
 
     #[cfg(test)]
     pub fn is_default(&self) -> bool {
+        // TODO: Add a clever way to check if ChunkStorage wasn't initialized;
         self.is_all(T::default())
     }
 
+    #[cfg(test)]
     pub fn is_all(&self, value: T) -> bool {
         self.iter().all(|t| *t == value)
-    }
-}
-
-impl<'de, T: ChunkStorageType> Deserialize<'de> for ChunkStorage<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct ArrayVisitor<T>(PhantomData<T>);
-        impl<'de, T: ChunkStorageType> serde::de::Visitor<'de> for ArrayVisitor<T> {
-            type Value = ChunkStorage<T>;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_fmt(format_args!("an array of length {}", chunk::BUFFER_SIZE))
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: serde::de::SeqAccess<'de>,
-            {
-                let mut vec = vec![];
-
-                while let Some(element) = seq.next_element()? {
-                    vec.push(element);
-                }
-
-                if !vec.is_empty() && vec.len() != chunk::BUFFER_SIZE {
-                    return Err(serde::de::Error::invalid_length(vec.len(), &self));
-                }
-
-                // if vec.is_empty() {
-                //     vec.shrink_to(0);
-                // }
-
-                Ok(ChunkStorage::new(vec))
-            }
-        }
-
-        deserializer.deserialize_seq(ArrayVisitor(PhantomData))
-    }
-}
-
-impl<T: ChunkStorageType> Serialize for ChunkStorage<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut seq = serializer.serialize_seq(Some(chunk::BUFFER_SIZE))?;
-
-        for elem in self.main.iter() {
-            seq.serialize_element(elem)?;
-        }
-
-        seq.end()
     }
 }
 
@@ -190,12 +139,6 @@ impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
 }
 
 pub type ChunkKind = ChunkStorage<voxel::Kind>;
-
-impl ChunkKind {
-    pub fn is_empty(&self) -> bool {
-        self.is_all(0u16.into())
-    }
-}
 
 pub fn to_index(local: IVec3) -> usize {
     (local.x << X_SHIFT | local.y << Y_SHIFT | local.z << Z_SHIFT) as usize
@@ -264,10 +207,8 @@ pub fn to_local(world: Vec3) -> IVec3 {
     )
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct ChunkNeighborhood<T: ChunkStorageType>(
-    [Option<[T; Z_AXIS_SIZE * Y_AXIS_SIZE]>; voxel::SIDE_COUNT],
-);
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ChunkNeighborhood<T>([Option<Vec<T>>; voxel::SIDE_COUNT]);
 
 impl<T: ChunkStorageType> ChunkNeighborhood<T> {
     pub fn set(&mut self, side: voxel::Side, chunk: &ChunkStorage<T>) {
@@ -280,7 +221,7 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
             voxel::Side::Back => ((0, 0, Z_END).into(), (X_END, Y_END, Z_END).into()),
         };
 
-        let mut neighborhood_side = [T::default(); Z_AXIS_SIZE * Y_AXIS_SIZE];
+        let mut neighborhood_side = vec![T::default(); chunk::X_AXIS_SIZE * chunk::Y_AXIS_SIZE];
         for pos in query::range_inclusive(begin, end_inclusive) {
             let index = Self::to_index(side, pos);
             neighborhood_side[index] = chunk.get(pos)
@@ -290,10 +231,12 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
     }
 
     pub fn get(&self, side: voxel::Side, pos: IVec3) -> Option<T> {
-        self.0[side as usize].map(|ref neighborhood_side| {
+        if let Some(side_vec) = &self.0[side as usize] {
             let index = Self::to_index(side, pos);
-            neighborhood_side[index]
-        })
+            Some(side_vec[index])
+        } else {
+            None
+        }
     }
 
     fn to_index(side: voxel::Side, pos: IVec3) -> usize {
@@ -471,7 +414,7 @@ mod tests {
 
         assert_eq!(
             IVec3::new(0, -1, -2),
-            super::to_local(Vec3::new(3.0, -0.8, -chunk::Y_END as f32 - 2.0))
+            super::to_local(Vec3::new(3.0, -0.8, -chunk::Z_END as f32 - 2.0))
         );
         assert_eq!(
             IVec3::new(0, -1, 0),
@@ -552,11 +495,11 @@ mod tests {
     fn overlap_voxel() {
         assert_eq!(
             super::overlap_voxel((-1, 10, 5).into()),
-            ((-1, 0, 0).into(), (chunk::Y_END, 10, 5).into())
+            ((-1, 0, 0).into(), (chunk::X_END, 10, 5).into())
         );
         assert_eq!(
             super::overlap_voxel((-1, 10, chunk::Z_END + 1).into()),
-            ((-1, 0, 1).into(), (chunk::Y_END, 10, 0).into())
+            ((-1, 0, 1).into(), (chunk::X_END, 10, 0).into())
         );
         assert_eq!(
             super::overlap_voxel((0, 0, 0).into()),

@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::world::pipeline::{BatchChunkCmdRes, MeshGenerationCounter};
+use crate::world::{terraformation::prelude::*};
 
 // use bevy_egui::{egui, EguiContext, EguiPlugin};
 
@@ -19,14 +19,14 @@ impl Plugin for UiPlugin {
             .add_plugin(FrameTimeDiagnosticsPlugin::default())
             .add_startup_system(setup_fps_text)
             .add_startup_system(setup_batch_cmd_text)
-            .add_startup_system(setup_meshing_text)
+            // .add_startup_system(setup_meshing_text)
             // .add_system(cmd_window)
             .add_system_set(
                 SystemSet::new()
                     .with_run_criteria(FixedTimestep::step(0.5))
                     .with_system(update_fps_text_system)
                     .with_system(update_batch_cmd_text_system)
-                    .with_system(update_meshing_text_system),
+                    // .with_system(update_meshing_text_system),
             );
 
         #[cfg(feature = "mem_alloc")]
@@ -104,47 +104,47 @@ fn update_fps_text_system(
     }
 }
 
-#[derive(Component)]
-struct MeshingCounterTag;
-fn setup_meshing_text(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+// #[derive(Component)]
+// struct MeshingCounterTag;
+// fn setup_meshing_text(mut commands: Commands, asset_server: Res<AssetServer>) {
+//     let font = asset_server.load("fonts/cFiraSans-Bold.ttf");
 
-    commands
-        .spawn_bundle(TextBundle {
-            style: Style {
-                align_self: AlignSelf::FlexEnd,
-                position_type: PositionType::Absolute,
-                position: Rect {
-                    top: Val::Px(30.0),
-                    right: Val::Px(15.0),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            text: Text::with_section(
-                "",
-                TextStyle {
-                    font,
-                    font_size: 25.0,
-                    color: Color::YELLOW_GREEN,
-                },
-                Default::default(),
-            ),
-            ..Default::default()
-        })
-        .insert(MeshingCounterTag);
-}
+//     commands
+//         .spawn_bundle(TextBundle {
+//             style: Style {
+//                 align_self: AlignSelf::FlexEnd,
+//                 position_type: PositionType::Absolute,
+//                 position: Rect {
+//                     top: Val::Px(30.0),
+//                     right: Val::Px(15.0),
+//                     ..Default::default()
+//                 },
+//                 ..Default::default()
+//             },
+//             text: Text::with_section(
+//                 "",
+//                 TextStyle {
+//                     font,
+//                     font_size: 25.0,
+//                     color: Color::YELLOW_GREEN,
+//                 },
+//                 Default::default(),
+//             ),
+//             ..Default::default()
+//         })
+//         .insert(MeshingCounterTag);
+// }
 
-fn update_meshing_text_system(
-    meshing_res: Option<Res<MeshGenerationCounter>>,
-    mut q: Query<&mut Text, With<MeshingCounterTag>>,
-) {
-    if let Ok(mut t) = q.get_single_mut() {
-        if let Some(meshing_counter) = meshing_res {
-            t.sections[0].value = format!("Meshing Tasks: {}", meshing_counter.task_counter);
-        }
-    }
-}
+// fn update_meshing_text_system(
+//     meshing_res: Option<Res<MeshGenerationCounter>>,
+//     mut q: Query<&mut Text, With<MeshingCounterTag>>,
+// ) {
+//     if let Ok(mut t) = q.get_single_mut() {
+//         if let Some(meshing_counter) = meshing_res {
+//             t.sections[0].value = format!("Meshing Tasks: {}", meshing_counter.task_counter);
+//         }
+//     }
+// }
 
 #[derive(Component)]
 struct BatchCmdCounterTag;
