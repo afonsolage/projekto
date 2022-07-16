@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use super::storage::{landscape, chunk::ChunkStorage, voxel};
+use super::storage::{chunk::ChunkStorage, landscape, voxel};
 
 mod genesis;
 mod landscaping;
@@ -10,9 +10,9 @@ pub mod prelude {
     pub use super::genesis::BatchChunkCmdRes;
     pub use super::genesis::EvtChunkUpdated;
     pub use super::genesis::WorldRes;
-    pub use super::terraforming::CmdChunkUpdate;
     pub use super::terraforming::ChunkSystemQuery;
     pub use super::terraforming::ChunkSystemRaycast;
+    pub use super::terraforming::CmdChunkUpdate;
 }
 
 pub struct TerraformationPlugin;
@@ -21,6 +21,7 @@ impl Plugin for TerraformationPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(genesis::GenesisPlugin)
             .add_plugin(landscaping::LandscapingPlugin)
+            .add_plugin(terraforming::TerraformingPlugin)
             .insert_resource(TerraformationConfig {
                 horizontal_radius: (landscape::HORIZONTAL_RADIUS + 2) as u32,
             });

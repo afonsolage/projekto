@@ -23,7 +23,7 @@ impl Plugin for LandscapingPlugin {
             .add_plugin(MaterialPlugin::<ChunkMaterial>::default())
             .add_startup_system(setup_resources)
             .add_system(process_chunk_updated_events)
-            .add_system(update_landscape_system);
+            .add_system(update_landscape);
     }
 }
 
@@ -47,7 +47,7 @@ struct UpdateLandscapeMeta {
     next_sync: f32,
 }
 
-fn update_landscape_system(
+fn update_landscape(
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
     material: Res<ChunkMaterialHandle>,
@@ -178,7 +178,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn update_chunks_system() {
+    fn update_chunks() {
         // Arrange
         let mut added_events = Events::<EvtChunkUpdated>::default();
         added_events.send(EvtChunkUpdated((1, 2, 3).into()));

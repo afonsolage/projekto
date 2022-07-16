@@ -9,7 +9,7 @@ use crate::world::{mesh, storage::voxel::VoxelVertex};
 
 use super::{ChunkEntityMap, EvtChunkMeshDirty, Pipeline, WorldRes};
 
-pub struct MeshingPlugin;
+pub(super) struct MeshingPlugin;
 
 impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
