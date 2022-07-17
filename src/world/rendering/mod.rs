@@ -20,62 +20,10 @@ pub use landscaping::LandscapeConfig;
 mod landscaping;
 mod meshing;
 
-#[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]
-enum Pipeline {
-    Genesis,
-    Terraforming,
-    Landscaping,
-    Rendering,
-}
-
-#[derive(Debug, StageLabel, PartialEq, Eq, Hash, Clone, Copy)]
-enum PipelineStartup {
-    Genesis,
-    Terraforming,
-    Landscaping,
-    Rendering,
-}
-
 pub struct PipelinePlugin;
 
 impl Plugin for PipelinePlugin {
     fn build(&self, app: &mut App) {
-        app.add_stage(Pipeline::Genesis, SystemStage::parallel())
-            .add_stage_after(
-                Pipeline::Genesis,
-                Pipeline::Terraforming,
-                SystemStage::parallel(),
-            )
-            .add_stage_after(
-                Pipeline::Terraforming,
-                Pipeline::Landscaping,
-                SystemStage::parallel(),
-            )
-            .add_stage_after(
-                Pipeline::Landscaping,
-                Pipeline::Rendering,
-                SystemStage::parallel(),
-            )
-            .add_startup_stage_after(
-                StartupStage::Startup,
-                PipelineStartup::Genesis,
-                SystemStage::parallel(),
-            )
-            .add_startup_stage_after(
-                PipelineStartup::Genesis,
-                PipelineStartup::Terraforming,
-                SystemStage::parallel(),
-            )
-            .add_startup_stage_after(
-                PipelineStartup::Terraforming,
-                PipelineStartup::Landscaping,
-                SystemStage::parallel(),
-            )
-            .add_startup_stage_after(
-                PipelineStartup::Landscaping,
-                PipelineStartup::Rendering,
-                SystemStage::parallel(),
-            );
         app.add_plugin(LandscapingPlugin).add_plugin(MeshingPlugin);
     }
 }

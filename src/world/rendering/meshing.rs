@@ -7,13 +7,13 @@ use bevy::{
 
 use crate::world::{mesh, storage::voxel::VoxelVertex};
 
-use super::{ChunkEntityMap, EvtChunkMeshDirty, Pipeline, WorldRes};
+use super::{ChunkEntityMap, EvtChunkMeshDirty, WorldRes};
 
 pub(super) struct MeshingPlugin;
 
 impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system_to_stage(Pipeline::Rendering, mesh_generation_system);
+        app.add_system(mesh_generation_system);
     }
 }
 
@@ -48,12 +48,10 @@ fn mesh_generation_system(
 
     for (local, vertices) in chunks {
         if let Some(&e) = entity_map.0.get(&local) {
-            let mesh_handle = {
-                debug_assert!(!vertices.is_empty());
-                meshes.add(generate_mesh(vertices))
-            };
+            debug_assert!(!vertices.is_empty());
 
-            commands.entity(e).insert(mesh_handle);
+            let mesh = generate_mesh(vertices);
+            commands.entity(e).insert(meshes.add(mesh));
         } else {
             warn!(
                 "Skipping mesh generation since chunk {} wasn't found on entity map",
