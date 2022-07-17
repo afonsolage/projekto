@@ -2,7 +2,7 @@
 #![allow(clippy::forget_non_drop)]
 #![feature(int_log)]
 
-use bevy::prelude::*;
+use bevy::{prelude::*, window::PresentMode};
 
 #[cfg(feature = "dev")]
 use bevy_inspector_egui;
@@ -28,6 +28,7 @@ fn main() {
     let mut app = App::new();
 
     app.insert_resource(WindowDescriptor {
+        present_mode: PresentMode::Immediate,
         ..Default::default()
     })
     .insert_resource(Msaa { samples: 4 })
