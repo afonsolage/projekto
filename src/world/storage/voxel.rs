@@ -9,11 +9,32 @@ use super::chunk::ChunkStorageType;
 
 pub const SIDE_COUNT: usize = 6;
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct KindSideTexture {
+    pub color: (f32, f32, f32, f32),
+    pub atlas_path: String,
+    pub atlas_offset: (u16, u16),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub enum KindSidesDescription {
+    None,
+    All(KindSideTexture),
+    Unique {
+        right: KindSideTexture,
+        left: KindSideTexture,
+        up: KindSideTexture,
+        down: KindSideTexture,
+        front: KindSideTexture,
+        back: KindSideTexture,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct KindDescription {
     pub name: String,
     pub id: u16,
-    pub color: (f32, f32, f32, f32),
+    pub sides: KindSidesDescription,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
@@ -291,9 +312,12 @@ mod tests {
 
             // Compute a valid world coordinates using the base voxel, the sign and the floating number
             let world = Vec3::new(
-                ((random::<f32>() * MAG * sign.x) as i32 * chunk::X_AXIS_SIZE as i32 + base.x) as f32,
-                ((random::<f32>() * MAG * sign.y) as i32 * chunk::Y_AXIS_SIZE as i32 + base.y) as f32,
-                ((random::<f32>() * MAG * sign.z) as i32 * chunk::X_AXIS_SIZE as i32 + base.z) as f32,
+                ((random::<f32>() * MAG * sign.x) as i32 * chunk::X_AXIS_SIZE as i32 + base.x)
+                    as f32,
+                ((random::<f32>() * MAG * sign.y) as i32 * chunk::Y_AXIS_SIZE as i32 + base.y)
+                    as f32,
+                ((random::<f32>() * MAG * sign.z) as i32 * chunk::X_AXIS_SIZE as i32 + base.z)
+                    as f32,
             );
 
             assert_eq!(
