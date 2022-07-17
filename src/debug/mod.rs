@@ -8,6 +8,7 @@ pub struct DebugPlugin;
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup_hold_est_to_exit)
+            // .add_system(slow_down_fps)
             .add_system(hold_esc_to_exit);
 
         #[cfg(feature = "perf_counter")]
@@ -39,3 +40,7 @@ fn hold_esc_to_exit(
         esc_holding.0 = 0.0;
     }
 }
+
+// fn slow_down_fps() {
+//     std::thread::sleep(std::time::Duration::from_millis(200));
+// }

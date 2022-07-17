@@ -28,7 +28,7 @@ fn main() {
     let mut app = App::new();
 
     app.insert_resource(WindowDescriptor {
-        present_mode: PresentMode::Immediate,
+        present_mode: PresentMode::Fifo,
         ..Default::default()
     })
     .insert_resource(Msaa { samples: 4 })
