@@ -55,7 +55,7 @@
     ),
     (
         name: "Rock",
-        id: 2,
+        id: 3,
         sides: All
         (
             (

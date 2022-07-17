@@ -37,6 +37,30 @@ pub struct KindDescription {
     pub sides: KindSidesDescription,
 }
 
+impl KindDescription {
+    pub fn list_atlas_paths(&self) -> Vec<String> {
+        match &self.sides {
+            KindSidesDescription::None => vec![],
+            KindSidesDescription::All(desc) => vec![desc.atlas_path.clone()],
+            KindSidesDescription::Unique {
+                right,
+                left,
+                up,
+                down,
+                front,
+                back,
+            } => vec![
+                right.atlas_path.clone(),
+                left.atlas_path.clone(),
+                up.atlas_path.clone(),
+                down.atlas_path.clone(),
+                front.atlas_path.clone(),
+                back.atlas_path.clone(),
+            ],
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
@@ -181,7 +205,6 @@ pub fn to_world(local: IVec3, chunk_local: IVec3) -> Vec3 {
 
 #[cfg(test)]
 mod tests {
-
     use bevy::math::{IVec3, Vec3};
     use rand::random;
     use ron::de::from_reader;
@@ -332,10 +355,7 @@ mod tests {
 
     #[test]
     fn load_kind_descriptions() {
-        let input_path = format!(
-            "{}/assets/voxels/kind_descriptions.ron",
-            env!("CARGO_MANIFEST_DIR")
-        );
+        let input_path = format!("{}/assets/voxels/kind.desc", env!("CARGO_MANIFEST_DIR"));
         let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
 
         let _: Vec<KindDescription> = from_reader(f).unwrap();

@@ -6,6 +6,7 @@ use std::{
 
 use bevy::{
     prelude::*,
+    reflect::TypeUuid,
     tasks::{AsyncComputeTaskPool, Task},
     utils::{HashMap, HashSet},
 };
@@ -16,7 +17,7 @@ use crate::world::{
     math, mesh,
     storage::{
         chunk::{self, Chunk, ChunkKind, ChunkNeighborhood},
-        voxel::{self, FacesOcclusion, VoxelFace, VoxelVertex},
+        voxel::{self, FacesOcclusion, KindDescription, VoxelFace, VoxelVertex},
         VoxWorld,
     },
     terraformation::ChunkFacesOcclusion,
@@ -35,16 +36,40 @@ impl Plugin for GenesisPlugin {
     }
 }
 
+#[derive(TypeUuid, Debug)]
+#[uuid = "e6edff2a-e204-497f-999c-bdebd1f92f62"]
+pub struct KindsDescriptionsRes {
+    desc: Vec<KindDescription>,
+    atlas: HashMap<String, Handle<Image>>,
+}
+
 pub struct EvtChunkUpdated(pub IVec3);
 
-fn setup_resources(mut commands: Commands) {
+fn setup_resources(mut commands: Commands, asset_server: Res<AssetServer>) {
     trace_system_run!();
 
     if !std::path::Path::new(CACHE_PATH).exists() {
         std::fs::create_dir_all(CACHE_PATH).unwrap();
     }
 
-    commands.insert_resource(WorldRes(Some(VoxWorld::default())));
+    let vox_world = VoxWorld::default();
+    commands.insert_resource(WorldRes(Some(vox_world)));
+
+    // TODO: Find a better way to load this
+    let input_path = format!("{}/assets/voxels/kind.desc", env!("CARGO_MANIFEST_DIR"));
+    let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
+    let desc: Vec<KindDescription> = ron::de::from_reader(f).unwrap();
+
+    let atlas = desc
+        .iter()
+        .flat_map(|desc| desc.list_atlas_paths())
+        .collect::<HashSet<_>>() // Remove duplicated strings
+        .into_iter()
+        .map(|path| (path.clone(), asset_server.load::<Image, _>(&path)))
+        .collect::<HashMap<_, _>>();
+
+    commands.insert_resource(dbg!(KindsDescriptionsRes { desc, atlas }));
+
     commands.insert_resource(BatchChunkCmdRes::default());
 }
 
@@ -85,7 +110,7 @@ impl BatchChunkCmdRes {
     Checks if there is pending commands to be processed
      */
     pub fn has_pending_commands(&self) -> bool {
-        self.pending.is_empty()
+        !self.pending.is_empty()
     }
 
     /**
@@ -192,6 +217,7 @@ struct ProcessBatchSystemMeta {
  */
 fn update_world_system(
     task_pool: Res<AsyncComputeTaskPool>,
+    kind_assets: Res<KindsDescriptionsRes>,
     mut batch_res: ResMut<BatchChunkCmdRes>,
     mut meta: Local<ProcessBatchSystemMeta>,
     mut world_res: ResMut<WorldRes>,
@@ -214,8 +240,9 @@ fn update_world_system(
             world_res.set(world);
             batch_res.finished();
         }
-    } else if !batch_res.has_pending_commands() {
+    } else if batch_res.has_pending_commands() {
         perf_scope!(_perf);
+
         let batch = batch_res.swap_and_clone();
         let world = world_res.take();
 
