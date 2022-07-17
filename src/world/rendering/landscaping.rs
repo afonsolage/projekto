@@ -1,6 +1,5 @@
 use bevy::{
     prelude::*,
-    render::view::NoFrustumCulling,
     utils::{HashMap, HashSet},
 };
 
