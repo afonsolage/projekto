@@ -12,7 +12,9 @@ use crate::{
     },
 };
 
-use super::{ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated, WorldRes};
+use super::{
+    ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated, WorldRes,
+};
 
 pub(super) struct LandscapingPlugin;
 
