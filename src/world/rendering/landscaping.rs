@@ -140,7 +140,6 @@ fn spawn_chunk(
                 ..Default::default()
             },
         })
-        .insert(NoFrustumCulling)
         .insert(Name::new(format!("Chunk {}", local)))
         .id();
     entity_map.0.insert(local, entity);
