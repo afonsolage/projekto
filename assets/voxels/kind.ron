@@ -1,5 +1,7 @@
 (
     atlas_path: "textures/terrain_sheet.png",
+    atlas_size: (320, 320),
+    atlas_tile_size: (32, 32),
     descriptions: 
     [
         (
@@ -14,7 +16,7 @@
             (
                 (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    atlas_offset: (0, 0),
+                    offset: (0, 0),
                 )
             ),
         ),
@@ -25,27 +27,27 @@
             (
                 right: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    atlas_offset: (1, 0),
+                    offset: (1, 0),
                 ),
                 left: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    atlas_offset: (1, 0),
+                    offset: (1, 0),
                 ),
                 up: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    atlas_offset: (0, 1),
+                    offset: (0, 1),
                 ),
                 down: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    atlas_offset: (0, 0),
+                    offset: (0, 0),
                 ),
                 front: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    atlas_offset: (1, 0),
+                    offset: (1, 0),
                 ),
                 back: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    atlas_offset: (1, 0),
+                    offset: (1, 0),
                 ),
             ),
         ),
@@ -56,7 +58,7 @@
             (
                 (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    atlas_offset: (0, 2),
+                    offset: (0, 2),
                 )
             ),
         ),

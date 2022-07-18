@@ -96,11 +96,16 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
         occlusion: &ChunkFacesOcclusion,
     ) -> IVec3 {
         // perf_fn_scope!();
+
+        let kind = kinds.get(begin);
         let mut next_voxel = begin + step;
 
-        while !should_skip_voxel(merged, next_voxel, side, kinds, occlusion) {
+        while !should_skip_voxel(merged, next_voxel, side, kinds, occlusion)
+            && kinds.get(next_voxel) == kind
+        {
             next_voxel += step;
         }
+
         next_voxel -= step;
 
         next_voxel
@@ -131,6 +136,8 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
 
             perf_scope!(_perf);
 
+            let kind = kinds.get(voxel);
+
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
             let v2 = find_furthest_eq_voxel(voxel, axis.0, &merged, side, kinds, occlusion);
@@ -159,6 +166,7 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
             faces_vertices.push(VoxelFace {
                 vertices: [v1, v2, v3, v4],
                 side,
+                kind,
             })
         }
     }

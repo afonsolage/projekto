@@ -12,7 +12,7 @@ pub const SIDE_COUNT: usize = 6;
 #[derive(Debug, Clone, Deserialize)]
 pub struct KindSideTexture {
     pub color: (f32, f32, f32, f32),
-    pub atlas_offset: (u16, u16),
+    pub offset: IVec2,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -39,15 +39,55 @@ pub struct KindDescItem {
 #[derive(Debug, Clone, Deserialize)]
 pub struct KindsDescs {
     pub atlas_path: String,
+    pub atlas_size: IVec2,
+    pub atlas_tile_size: IVec2,
     pub descriptions: Vec<KindDescItem>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
+impl KindsDescs {
+    pub fn get_kind_faces_tile(&self, kind: u16) -> [(IVec2, IVec2); SIDE_COUNT] {
+        let kind_desc = self
+            .descriptions
+            .iter()
+            .find(|k| k.id == kind)
+            .expect(format!("Kind id not found {}", kind).as_str());
+
+        match &kind_desc.sides {
+            KindSidesDesc::None => [(IVec2::ZERO, IVec2::ZERO); SIDE_COUNT],
+            KindSidesDesc::All(side) => {
+                [(side.offset, side.offset + self.atlas_tile_size); SIDE_COUNT]
+            }
+            KindSidesDesc::Unique {
+                right,
+                left,
+                up,
+                down,
+                front,
+                back,
+            } => [
+                (right.offset, right.offset + self.atlas_tile_size),
+                (left.offset, left.offset + self.atlas_tile_size),
+                (up.offset, up.offset + self.atlas_tile_size),
+                (down.offset, down.offset + self.atlas_tile_size),
+                (front.offset, front.offset + self.atlas_tile_size),
+                (back.offset, back.offset + self.atlas_tile_size),
+            ],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
 impl From<u16> for Kind {
     fn from(v: u16) -> Self {
         Self(v)
+    }
+}
+
+impl Into<u16> for Kind {
+    fn into(self) -> u16 {
+        self.0
     }
 }
 
@@ -153,13 +193,14 @@ impl ChunkStorageType for FacesOcclusion {}
 pub struct VoxelFace {
     pub vertices: [IVec3; 4],
     pub side: Side,
-    //TODO: light and color
+    pub kind: Kind, //TODO: light and color
 }
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct VoxelVertex {
     pub position: Vec3,
     pub normal: Vec3,
+    pub uv: Vec2,
     //TODO: light and color
 }
 
@@ -334,7 +375,7 @@ mod tests {
 
     #[test]
     fn load_kind_descriptions() {
-        let input_path = format!("{}/assets/voxels/kind.desc", env!("CARGO_MANIFEST_DIR"));
+        let input_path = format!("{}/assets/voxels/kind.ron", env!("CARGO_MANIFEST_DIR"));
         let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
 
         let _: KindsDescs = from_reader(f).unwrap();

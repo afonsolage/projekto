@@ -66,17 +66,19 @@ fn generate_mesh(vertices: &Vec<VoxelVertex>) -> Mesh {
 
     let mut positions: Vec<[f32; 3]> = vec![];
     let mut normals: Vec<[f32; 3]> = vec![];
+    let mut uvs: Vec<[f32; 2]> = vec![];
 
     let vertex_count = vertices.len();
 
     for vertex in vertices {
         positions.push(vertex.position.into());
         normals.push(vertex.normal.into());
+        uvs.push(vertex.uv.into());
     }
 
     mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0; vertex_count]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh
 }

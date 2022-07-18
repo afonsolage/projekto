@@ -4,6 +4,7 @@
 struct Vertex {
     [[location(0)]] position: vec3<f32>;
     [[location(1)]] normal: vec3<f32>;
+    [[location(2)]] uv: vec2<f32>;
 };
 
 struct VertexOutput {
@@ -30,7 +31,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     out.clip_position = view.view_proj * mesh.model * vec4<f32>(vertex.position, 1.0);
     out.light_intensity = max(dot(vertex.normal, sun_dir), 0.0) + ambient_intensity;
-    out.uv = vec2<f32>(0.0, 0.0);
+    out.uv = vertex.uv;
 
     return out;
 }
