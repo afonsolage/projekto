@@ -12,12 +12,11 @@ pub const SIDE_COUNT: usize = 6;
 #[derive(Debug, Clone, Deserialize)]
 pub struct KindSideTexture {
     pub color: (f32, f32, f32, f32),
-    pub atlas_path: String,
     pub atlas_offset: (u16, u16),
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub enum KindSidesDescription {
+pub enum KindSidesDesc {
     None,
     All(KindSideTexture),
     Unique {
@@ -31,34 +30,16 @@ pub enum KindSidesDescription {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct KindDescription {
+pub struct KindDescItem {
     pub name: String,
     pub id: u16,
-    pub sides: KindSidesDescription,
+    pub sides: KindSidesDesc,
 }
 
-impl KindDescription {
-    pub fn list_atlas_paths(&self) -> Vec<String> {
-        match &self.sides {
-            KindSidesDescription::None => vec![],
-            KindSidesDescription::All(desc) => vec![desc.atlas_path.clone()],
-            KindSidesDescription::Unique {
-                right,
-                left,
-                up,
-                down,
-                front,
-                back,
-            } => vec![
-                right.atlas_path.clone(),
-                left.atlas_path.clone(),
-                up.atlas_path.clone(),
-                down.atlas_path.clone(),
-                front.atlas_path.clone(),
-                back.atlas_path.clone(),
-            ],
-        }
-    }
+#[derive(Debug, Clone, Deserialize)]
+pub struct KindsDescs {
+    pub atlas_path: String,
+    pub descriptions: Vec<KindDescItem>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
@@ -209,9 +190,7 @@ mod tests {
     use rand::random;
     use ron::de::from_reader;
 
-    use crate::world::storage::voxel::KindDescription;
-
-    use super::{chunk, FacesOcclusion};
+    use super::*;
 
     #[test]
     fn faces_occlusion() {
@@ -358,6 +337,6 @@ mod tests {
         let input_path = format!("{}/assets/voxels/kind.desc", env!("CARGO_MANIFEST_DIR"));
         let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
 
-        let _: Vec<KindDescription> = from_reader(f).unwrap();
+        let _: KindsDescs = from_reader(f).unwrap();
     }
 }

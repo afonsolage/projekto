@@ -1,68 +1,64 @@
-[
-    (
-        name: "None",
-        id: 0,
-        sides: None,
-    ),
-    (
-        name: "Dirt",
-        id: 1,
-        sides: All
+(
+    atlas_path: "textures/terrain_sheet.png",
+    descriptions: 
+    [
         (
+            name: "None",
+            id: 0,
+            sides: None,
+        ),
+        (
+            name: "Dirt",
+            id: 1,
+            sides: All
             (
-                color: (1.0, 1.0, 1.0, 1.0),
-                atlas_path: "textures/terrain_sheet.png",
-                atlas_offset: (0, 0),
-            )
-        ),
-    ),
-    (
-        name: "Grass",
-        id: 2,
-        sides: Unique
-        (
-            right: (
-                color: (1.0, 1.0, 1.0, 1.0),
-                atlas_path: "textures/terrain_sheet.png",
-                atlas_offset: (1, 0),
-            ),
-            left: (
-                color: (1.0, 1.0, 1.0, 1.0),
-                atlas_path: "textures/terrain_sheet.png",
-                atlas_offset: (1, 0),
-            ),
-            up: (
-                color: (1.0, 1.0, 1.0, 1.0),
-                atlas_path: "textures/terrain_sheet.png",
-                atlas_offset: (0, 1),
-            ),
-            down: (
-                color: (1.0, 1.0, 1.0, 1.0),
-                atlas_path: "textures/terrain_sheet.png",
-                atlas_offset: (0, 0),
-            ),
-            front: (
-                color: (1.0, 1.0, 1.0, 1.0),
-                atlas_path: "textures/terrain_sheet.png",
-                atlas_offset: (1, 0),
-            ),
-            back: (
-                color: (1.0, 1.0, 1.0, 1.0),
-                atlas_path: "textures/terrain_sheet.png",
-                atlas_offset: (1, 0),
+                (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    atlas_offset: (0, 0),
+                )
             ),
         ),
-    ),
-    (
-        name: "Rock",
-        id: 3,
-        sides: All
         (
+            name: "Grass",
+            id: 2,
+            sides: Unique
             (
-                color: (1.0, 1.0, 1.0, 1.0),
-                atlas_path: "textures/terrain_sheet.png",
-                atlas_offset: (0, 2),
-            )
+                right: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    atlas_offset: (1, 0),
+                ),
+                left: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    atlas_offset: (1, 0),
+                ),
+                up: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    atlas_offset: (0, 1),
+                ),
+                down: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    atlas_offset: (0, 0),
+                ),
+                front: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    atlas_offset: (1, 0),
+                ),
+                back: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    atlas_offset: (1, 0),
+                ),
+            ),
         ),
-    ),
-]
+        (
+            name: "Rock",
+            id: 3,
+            sides: All
+            (
+                (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    atlas_offset: (0, 2),
+                )
+            ),
+        ),
+    ]
+)

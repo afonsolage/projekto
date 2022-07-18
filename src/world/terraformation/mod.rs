@@ -10,6 +10,7 @@ pub mod prelude {
     pub use super::genesis::BatchChunkCmdRes;
     pub use super::genesis::EvtChunkUpdated;
     pub use super::genesis::WorldRes;
+    pub use super::genesis::KindsDescsRes;
     pub use super::terraforming::ChunkSystemQuery;
     pub use super::terraforming::ChunkSystemRaycast;
     pub use super::terraforming::CmdChunkUpdate;

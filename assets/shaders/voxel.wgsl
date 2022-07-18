@@ -9,7 +9,14 @@ struct Vertex {
 struct VertexOutput {
     [[builtin(position)]] clip_position: vec4<f32>;
     [[location(0)]] light_intensity: vec3<f32>;
+    [[location(1)]] uv: vec2<f32>;
 };
+
+[[group(1), binding(0)]]
+var atlas_texture: texture_2d<f32>;
+
+[[group(1), binding(1)]]
+var atlas_sampler: sampler;
 
 [[group(2), binding(0)]]
 var<uniform> mesh: Mesh;
@@ -23,15 +30,18 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     out.clip_position = view.view_proj * mesh.model * vec4<f32>(vertex.position, 1.0);
     out.light_intensity = max(dot(vertex.normal, sun_dir), 0.0) + ambient_intensity;
+    out.uv = vec2<f32>(0.0, 0.0);
 
     return out;
 }
 
 struct FragmentInput {
     [[location(0)]] light_intensity: vec3<f32>;
+    [[location(1)]] uv: vec2<f32>;
 };
 
 [[stage(fragment)]]
 fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
-    return vec4<f32>(0.7, 0.3, 0.3, 1.0) * vec4<f32>(in.light_intensity, 1.0);
+    let color = textureSample(atlas_texture, atlas_sampler, in.uv);
+    return color * vec4<f32>(in.light_intensity, 1.0);
 }

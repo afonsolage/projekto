@@ -17,7 +17,7 @@ use crate::world::{
     math, mesh,
     storage::{
         chunk::{self, Chunk, ChunkKind, ChunkNeighborhood},
-        voxel::{self, FacesOcclusion, KindDescription, VoxelFace, VoxelVertex},
+        voxel::{self, FacesOcclusion, KindsDescs, VoxelFace, VoxelVertex},
         VoxWorld,
     },
     terraformation::ChunkFacesOcclusion,
@@ -31,16 +31,16 @@ pub(super) struct GenesisPlugin;
 impl Plugin for GenesisPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkUpdated>()
-            .add_startup_system(setup_resources)
+            .add_startup_system_to_stage(StartupStage::PreStartup, setup_resources)
             .add_system(update_world_system);
     }
 }
 
 #[derive(TypeUuid, Debug)]
 #[uuid = "e6edff2a-e204-497f-999c-bdebd1f92f62"]
-pub struct KindsDescriptionsRes {
-    desc: Vec<KindDescription>,
-    atlas: HashMap<String, Handle<Image>>,
+pub struct KindsDescsRes {
+    pub descs: KindsDescs,
+    pub atlas: Handle<Image>,
 }
 
 pub struct EvtChunkUpdated(pub IVec3);
@@ -58,17 +58,10 @@ fn setup_resources(mut commands: Commands, asset_server: Res<AssetServer>) {
     // TODO: Find a better way to load this
     let input_path = format!("{}/assets/voxels/kind.desc", env!("CARGO_MANIFEST_DIR"));
     let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
-    let desc: Vec<KindDescription> = ron::de::from_reader(f).unwrap();
+    let descs: KindsDescs = ron::de::from_reader(f).unwrap();
+    let atlas = asset_server.load(&descs.atlas_path);
 
-    let atlas = desc
-        .iter()
-        .flat_map(|desc| desc.list_atlas_paths())
-        .collect::<HashSet<_>>() // Remove duplicated strings
-        .into_iter()
-        .map(|path| (path.clone(), asset_server.load::<Image, _>(&path)))
-        .collect::<HashMap<_, _>>();
-
-    commands.insert_resource(dbg!(KindsDescriptionsRes { desc, atlas }));
+    commands.insert_resource(KindsDescsRes { descs, atlas });
 
     commands.insert_resource(BatchChunkCmdRes::default());
 }
@@ -217,7 +210,7 @@ struct ProcessBatchSystemMeta {
  */
 fn update_world_system(
     task_pool: Res<AsyncComputeTaskPool>,
-    kind_assets: Res<KindsDescriptionsRes>,
+    kind_assets: Res<KindsDescsRes>,
     mut batch_res: ResMut<BatchChunkCmdRes>,
     mut meta: Local<ProcessBatchSystemMeta>,
     mut world_res: ResMut<WorldRes>,
