@@ -27,15 +27,15 @@
             (
                 right: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    offset: (1, 0),
+                    offset: (0, 1),
                 ),
                 left: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    offset: (1, 0),
+                    offset: (0, 1),
                 ),
                 up: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    offset: (0, 1),
+                    offset: (1, 0),
                 ),
                 down: (
                     color: (1.0, 1.0, 1.0, 1.0),
@@ -43,11 +43,11 @@
                 ),
                 front: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    offset: (1, 0),
+                    offset: (0, 1),
                 ),
                 back: (
                     color: (1.0, 1.0, 1.0, 1.0),
-                    offset: (1, 0),
+                    offset: (0, 1),
                 ),
             ),
         ),

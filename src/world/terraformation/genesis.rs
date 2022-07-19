@@ -589,10 +589,10 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
         let y_tile = calc_tile_size(faces_vertices[0], faces_vertices[3]) * tile_texture_size;
 
         let tile_uv = [
-            (x_tile, 0.0).into(),
-            (0.0, 0.0).into(),
             (0.0, y_tile).into(),
             (x_tile, y_tile).into(),
+            (x_tile, 0.0).into(),
+            (0.0, 0.0).into(),
         ];
 
         for (i, v) in faces_vertices.into_iter().enumerate() {

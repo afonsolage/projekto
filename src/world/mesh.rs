@@ -40,12 +40,12 @@ pub const VERTICES: [[f32; 3]; 8] = [
 ];
 
 pub const VERTICES_INDICES: [[usize; 4]; 6] = [
-    [1, 2, 6, 5], //RIGHT
+    [5, 1, 2, 6], //RIGHT
     [0, 4, 7, 3], //LEFT
-    [3, 7, 6, 2], //UP
+    [7, 6, 2, 3], //UP
     [0, 1, 5, 4], //DOWN
     [4, 5, 6, 7], //FRONT
-    [0, 3, 2, 1], //BACK
+    [1, 0, 3, 2], //BACK
 ];
 
 pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
@@ -115,12 +115,12 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
     let mut faces_vertices = vec![];
 
     let side_axis = [
-        (IVec3::Y, IVec3::Z),
-        (IVec3::Z, IVec3::Y),
-        (IVec3::Z, IVec3::X),
-        (IVec3::X, IVec3::Z),
-        (IVec3::X, IVec3::Y),
-        (IVec3::Y, IVec3::X),
+        (-IVec3::Z, IVec3::Y), //RIGHT
+        (IVec3::Z, IVec3::Y),  //LEFT
+        (IVec3::X, -IVec3::Z),  //UP
+        (IVec3::X, IVec3::Z),  //DOWN
+        (IVec3::X, IVec3::Y),  //FRONT
+        (-IVec3::X, IVec3::Y),  //BACK
     ];
 
     let kinds = &chunk.kinds;
