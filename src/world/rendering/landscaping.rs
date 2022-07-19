@@ -41,6 +41,7 @@ fn setup_resources(
 ) {
     trace_system_run!();
     let material = materials.add(ChunkMaterial {
+        tile_texture_size: 1.0 / kinds_res.descs.count_tiles() as f32,
         texture: kinds_res.atlas.clone(),
     });
 

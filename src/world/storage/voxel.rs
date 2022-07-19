@@ -9,7 +9,7 @@ use super::chunk::ChunkStorageType;
 
 pub const SIDE_COUNT: usize = 6;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Deserialize)]
 pub struct KindSideTexture {
     pub color: (f32, f32, f32, f32),
     pub offset: IVec2,
@@ -39,24 +39,29 @@ pub struct KindDescItem {
 #[derive(Debug, Clone, Deserialize)]
 pub struct KindsDescs {
     pub atlas_path: String,
-    pub atlas_size: IVec2,
-    pub atlas_tile_size: IVec2,
+    pub atlas_size: u16,
+    pub atlas_tile_size: u16,
     pub descriptions: Vec<KindDescItem>,
 }
 
 impl KindsDescs {
-    pub fn get_kind_faces_tile(&self, kind: u16) -> [(IVec2, IVec2); SIDE_COUNT] {
+    pub fn count_tiles(&self) -> u16 {
+        self.atlas_size / self.atlas_tile_size
+    }
+}
+
+impl KindsDescs {
+    pub fn get_face_desc(&self, face: &VoxelFace) -> KindSideTexture {
         let kind_desc = self
             .descriptions
             .iter()
-            .find(|k| k.id == kind)
-            .expect(format!("Kind id not found {}", kind).as_str());
+            .find(|k| k.id == face.kind.0)
+            .map(|desc| desc)
+            .expect(format!("Unable to find kind description for face {:?}", face).as_str());
 
-        match &kind_desc.sides {
-            KindSidesDesc::None => [(IVec2::ZERO, IVec2::ZERO); SIDE_COUNT],
-            KindSidesDesc::All(side) => {
-                [(side.offset, side.offset + self.atlas_tile_size); SIDE_COUNT]
-            }
+        match kind_desc.sides {
+            KindSidesDesc::None => panic!("{} kind should not be rendered.", face.kind.0),
+            KindSidesDesc::All(desc) => desc,
             KindSidesDesc::Unique {
                 right,
                 left,
@@ -64,14 +69,14 @@ impl KindsDescs {
                 down,
                 front,
                 back,
-            } => [
-                (right.offset, right.offset + self.atlas_tile_size),
-                (left.offset, left.offset + self.atlas_tile_size),
-                (up.offset, up.offset + self.atlas_tile_size),
-                (down.offset, down.offset + self.atlas_tile_size),
-                (front.offset, front.offset + self.atlas_tile_size),
-                (back.offset, back.offset + self.atlas_tile_size),
-            ],
+            } => match face.side {
+                Side::Right => right,
+                Side::Left => left,
+                Side::Up => up,
+                Side::Down => down,
+                Side::Front => front,
+                Side::Back => back,
+            },
         }
     }
 }
@@ -201,6 +206,7 @@ pub struct VoxelVertex {
     pub position: Vec3,
     pub normal: Vec3,
     pub uv: Vec2,
+    pub tile_coord_start: Vec2,
     //TODO: light and color
 }
 

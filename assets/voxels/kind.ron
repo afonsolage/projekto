@@ -1,7 +1,7 @@
 (
     atlas_path: "textures/terrain_sheet.png",
-    atlas_size: (320, 320),
-    atlas_tile_size: (32, 32),
+    atlas_size: 320, // Atlas must be a perfect square
+    atlas_tile_size: 32, // Tile must also be a perfect square
     descriptions: 
     [
         (

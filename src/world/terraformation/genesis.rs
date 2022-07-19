@@ -8,7 +8,7 @@ use bevy::{
     prelude::*,
     reflect::TypeUuid,
     tasks::{AsyncComputeTaskPool, Task},
-    utils::{tracing::metadata::Kind, HashMap, HashSet},
+    utils::{HashMap, HashSet},
 };
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use futures_lite::future;
@@ -556,41 +556,52 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
     perf_fn_scope!();
 
     let mut vertices = vec![];
+    let tile_texture_size = 1.0 / kinds_descs.count_tiles() as f32;
 
     for face in faces {
         let normal = face.side.normal();
 
-        let kind_uv = kinds_descs
-            .get_kind_faces_tile(face.kind.into())
-            .into_iter()
-            .map(|(begin, end)| {
-                // Transform into UV coordinates ([0.0, 1.0])
-                (
-                    begin.as_vec2() / kinds_descs.atlas_size.as_vec2(),
-                    end.as_vec2() / kinds_descs.atlas_size.as_vec2(),
-                )
+        let face_desc = kinds_descs.get_face_desc(&face);
+        let tile_coord_start = face_desc.offset.as_vec2() * tile_texture_size;
+
+        let faces_vertices = face
+            .vertices
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let base_vertex_idx = mesh::VERTICES_INDICES[face.side as usize][i];
+                let base_vertex: Vec3 = mesh::VERTICES[base_vertex_idx].into();
+
+                base_vertex + v.as_vec3()
             })
             .collect::<Vec<_>>();
 
-        for (i, v) in face.vertices.iter().enumerate() {
-            let base_vertex_idx = mesh::VERTICES_INDICES[face.side as usize][i];
-            let base_vertex: Vec3 = mesh::VERTICES[base_vertex_idx].into();
+        debug_assert!(
+            faces_vertices.len() == 4,
+            "Each face should have 4 vertices"
+        );
 
-            let face_uv = kind_uv[face.side as usize];
+        fn calc_tile_size(min: Vec3, max: Vec3) -> f32 {
+            (min.x - max.x).abs() + (min.y - max.y).abs() + (min.z - max.z).abs()
+        }
 
-            let uv = match i {
-                0 => face_uv.0,                         // Bottom Left (v0)
-                1 => (face_uv.0.x, face_uv.1.y).into(), // Bottom right (v1)
-                2 => (face_uv.1.x, face_uv.0.y).into(), // Up right (v2)
-                3 => face_uv.1,                         // Up left (v3)
-                _ => unreachable!(),                    // There are only 4 vertices on VoxelFace
-            };
+        let x_tile = calc_tile_size(faces_vertices[0], faces_vertices[1]) * tile_texture_size;
+        let y_tile = calc_tile_size(faces_vertices[0], faces_vertices[3]) * tile_texture_size;
 
+        let tile_uv = [
+            (x_tile, 0.0).into(),
+            (0.0, 0.0).into(),
+            (0.0, y_tile).into(),
+            (x_tile, y_tile).into(),
+        ];
+
+        for (i, v) in faces_vertices.into_iter().enumerate() {
             vertices.push(VoxelVertex {
-                position: base_vertex + v.as_vec3(),
+                position: v,
                 normal,
-                uv,
-            })
+                uv: tile_uv[i],
+                tile_coord_start,
+            });
         }
     }
 
