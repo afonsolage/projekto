@@ -59,6 +59,7 @@ fn setup_resources(mut commands: Commands, asset_server: Res<AssetServer>) {
     let input_path = format!("{}/assets/voxels/kind.ron", env!("CARGO_MANIFEST_DIR"));
     let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
     let descs: KindsDescs = ron::de::from_reader(f).unwrap();
+    
     let atlas = asset_server.load(&descs.atlas_path);
 
     commands.insert_resource(KindsDescsRes { descs, atlas });
