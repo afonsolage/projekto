@@ -71,7 +71,9 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
 }
 
 pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
-    #[inline]
+    /**
+      Checks if voxel is out of bounds, or is empty or is already merged or is fully occluded.
+    */
     fn should_skip_voxel(
         merged: &Vec<usize>,
         voxel: IVec3,
@@ -86,7 +88,6 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
             || occlusion.get(voxel).is_occluded(side)
     }
 
-    #[inline]
     fn find_furthest_eq_voxel(
         begin: IVec3,
         step: IVec3,
@@ -145,7 +146,9 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
             let step = axis.1;
             let mut v3 = v2 + step;
             let mut tmp = v1 + step;
-            while !should_skip_voxel(&merged, tmp, side, kinds, occlusion) {
+
+            while !should_skip_voxel(&merged, tmp, side, kinds, occlusion) && kinds.get(tmp) == kind
+            {
                 let furthest = find_furthest_eq_voxel(tmp, axis.0, &merged, side, kinds, occlusion);
 
                 if furthest == v3 {
