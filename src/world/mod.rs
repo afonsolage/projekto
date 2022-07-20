@@ -2,7 +2,6 @@ use bevy::prelude::*;
 
 mod debug;
 mod math;
-mod mesh;
 pub mod rendering;
 
 pub mod terraformation;

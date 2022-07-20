@@ -5,7 +5,7 @@ use bevy::{
     render::mesh::{Indices, PrimitiveTopology},
 };
 
-use crate::world::{mesh, storage::voxel::VoxelVertex};
+use crate::world::{storage::voxel::VoxelVertex, terraformation::prelude::shaping};
 
 use super::{ChunkEntityMap, ChunkMaterial, EvtChunkMeshDirty, WorldRes};
 
@@ -78,7 +78,7 @@ fn generate_mesh(vertices: &Vec<VoxelVertex>) -> Mesh {
         tile_coord_start.push(vertex.tile_coord_start.into());
     }
 
-    mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
+    mesh.set_indices(Some(Indices::U32(shaping::compute_indices(vertex_count))));
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);

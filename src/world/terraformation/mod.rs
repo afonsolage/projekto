@@ -4,13 +4,15 @@ use super::storage::{chunk::ChunkStorage, landscape, voxel};
 
 mod genesis;
 mod landscaping;
+pub mod shaping;
 mod terraforming;
 
 pub mod prelude {
     pub use super::genesis::BatchChunkCmdRes;
     pub use super::genesis::EvtChunkUpdated;
-    pub use super::genesis::WorldRes;
     pub use super::genesis::KindsDescsRes;
+    pub use super::genesis::WorldRes;
+    pub use super::shaping;
     pub use super::terraforming::ChunkSystemQuery;
     pub use super::terraforming::ChunkSystemRaycast;
     pub use super::terraforming::CmdChunkUpdate;
