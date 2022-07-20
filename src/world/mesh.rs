@@ -117,10 +117,10 @@ pub fn merge_faces(occlusion: &ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
     let side_axis = [
         (-IVec3::Z, IVec3::Y), //RIGHT
         (IVec3::Z, IVec3::Y),  //LEFT
-        (IVec3::X, -IVec3::Z),  //UP
+        (IVec3::X, -IVec3::Z), //UP
         (IVec3::X, IVec3::Z),  //DOWN
         (IVec3::X, IVec3::Y),  //FRONT
-        (-IVec3::X, IVec3::Y),  //BACK
+        (-IVec3::X, IVec3::Y), //BACK
     ];
 
     let kinds = &chunk.kinds;
