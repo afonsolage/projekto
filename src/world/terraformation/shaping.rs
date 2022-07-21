@@ -623,4 +623,46 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn update_chunk() {
+        let mut descs = KindsDescs::default();
+        descs.atlas_size = 100;
+        descs.atlas_tile_size = 10; // Each tile is 0.1 wide 1.0/(100.0/10.0)
+        descs.descriptions = vec![KindDescItem {
+            id: 1,
+            sides: KindSidesDesc::All(KindSideTexture::default()),
+            ..Default::default()
+        }];
+
+        let mut world = VoxWorld::default();
+        assert!(
+            super::recompute_chunk(&mut world, &descs, (0, 0, 0).into()) == false,
+            "should return false when chunk doesn't exists"
+        );
+
+        let mut chunk = Chunk::default();
+        chunk.kinds.set((0, 0, 0).into(), 1.into());
+        world.add((0, 0, 0).into(), chunk);
+
+        let mut chunk = Chunk::default();
+        chunk.kinds.set((0, 0, 0).into(), 2.into());
+        world.add((1, 0, 0).into(), chunk);
+
+        assert!(
+            super::recompute_chunk(&mut world, &descs, (0, 0, 0).into()),
+            "Should return true when chunk was recomputed"
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+        assert_eq!(
+            chunk
+                .kinds
+                .neighborhood
+                .get(super::voxel::Side::Right, (0, 0, 0).into())
+                .unwrap(),
+            2.into(),
+            "Neighborhood should be updated on recompute_chunks call"
+        );
+    }
 }

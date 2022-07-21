@@ -758,39 +758,7 @@ mod tests {
         assert!(world.exists(local), "Chunk should be added to world");
     }
 
-    // #[test]
-    // fn update_chunk() {
-    //     let mut world = VoxWorld::default();
-    //     assert!(
-    //         super::recompute_chunks(&mut world, [(0, 0, 0).into()].into_iter()).is_empty(),
-    //         "should return an empty list when chunk doesn't exists"
-    //     );
-
-    //     let mut chunk = Chunk::default();
-    //     chunk.kinds.set((0, 0, 0).into(), 1.into());
-    //     world.add((0, 0, 0).into(), chunk);
-
-    //     let mut chunk = Chunk::default();
-    //     chunk.kinds.set((0, 0, 0).into(), 2.into());
-    //     world.add((1, 0, 0).into(), chunk);
-
-    //     assert_eq!(
-    //         super::recompute_chunks(&mut world, [(0, 0, 0).into()].into_iter()).len(),
-    //         1,
-    //         "Should return one chunk recomputed"
-    //     );
-
-    //     let chunk = world.get((0, 0, 0).into()).unwrap();
-    //     assert_eq!(
-    //         chunk
-    //             .kinds
-    //             .neighborhood
-    //             .get(super::voxel::Side::Right, (0, 0, 0).into())
-    //             .unwrap(),
-    //         2.into(),
-    //         "Neighborhood should be updated on recompute_chunks call"
-    //     );
-    // }
+ 
 
     #[test]
     fn generate_chunk() {
