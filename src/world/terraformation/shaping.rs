@@ -91,7 +91,7 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
  **Returns** true of the chunk was recomputed, false otherwise.
 */
 pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IVec3) -> bool {
-    let neighborhood = gather_kind_neighborhood(world, local);
+    let neighborhood = build_kind_neighborhood(world, local);
 
     if let Some(chunk) = world.get_mut(local) {
         chunk.kinds.neighborhood = neighborhood;
@@ -343,7 +343,7 @@ This function updates any neighborhood data needed by chunk.
 
 Currently it only updates kind neighborhood data, but in the future, it may update light and other relevant data.
 */
-fn gather_kind_neighborhood(world: &VoxWorld, local: IVec3) -> ChunkNeighborhood<voxel::Kind> {
+fn build_kind_neighborhood(world: &VoxWorld, local: IVec3) -> ChunkNeighborhood<voxel::Kind> {
     let mut neighborhood = ChunkNeighborhood::default();
     for side in voxel::SIDES {
         let dir = side.dir();
@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn update_neighborhood() {
+    fn build_kind_neighborhood() {
         let mut world = VoxWorld::default();
 
         let center = (1, 1, 1).into();
@@ -441,7 +441,7 @@ mod tests {
             world.add(pos, chunk);
         }
 
-        let neighborhood = super::gather_kind_neighborhood(&mut world, center);
+        let neighborhood = super::build_kind_neighborhood(&mut world, center);
         let chunk = world.get_mut(center).unwrap();
         chunk.kinds.neighborhood = neighborhood;
 
@@ -549,7 +549,7 @@ mod tests {
         world.add((0, 0, 0).into(), center);
         world.add((0, -1, 0).into(), down);
 
-        let neighborhood = super::gather_kind_neighborhood(&mut world, (0, 0, 0).into());
+        let neighborhood = super::build_kind_neighborhood(&mut world, (0, 0, 0).into());
         let center = world.get_mut((0, 0, 0).into()).unwrap();
         center.kinds.neighborhood = neighborhood;
 
@@ -625,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn update_chunk() {
+    fn recompute_chunk() {
         let mut descs = KindsDescs::default();
         descs.atlas_size = 100;
         descs.atlas_tile_size = 10; // Each tile is 0.1 wide 1.0/(100.0/10.0)
