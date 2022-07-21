@@ -94,6 +94,8 @@ pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IV
     let neighborhood = gather_kind_neighborhood(world, local);
 
     if let Some(chunk) = world.get_mut(local) {
+        chunk.kinds.neighborhood = neighborhood;
+
         let occlusion = faces_occlusion(&chunk.kinds);
         if occlusion.is_fully_occluded() {
             chunk.vertices = vec![]
@@ -101,8 +103,6 @@ pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IV
             let faces = merge_faces(occlusion, chunk);
             chunk.vertices = generate_vertices(faces, kinds_descs);
         }
-
-        chunk.kinds.neighborhood = neighborhood;
 
         true
     } else {
