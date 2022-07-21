@@ -277,6 +277,8 @@ This functions optimize the command list removing duplicated commands or command
 **Returns** an optimized command list
 */
 fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd> {
+    perf_fn_scope!();
+
     let mut map = HashMap::<IVec3, (u32, ChunkCmd)>::new();
 
     // Used to preserve command insertion order
@@ -387,6 +389,8 @@ Utility function that splits the given list of [`ChunkCmd`] into individual cmd 
 fn split_commands(
     commands: Vec<ChunkCmd>,
 ) -> (Vec<IVec3>, Vec<IVec3>, Vec<(IVec3, VoxelUpdateList)>) {
+    perf_fn_scope!();
+
     let mut load = vec![];
     let mut unload = vec![];
     let mut update = vec![];
@@ -434,6 +438,8 @@ Apply on the given [`VoxWorld`] the given voxel modification list [`VoxelUpdateL
 ***Returns*** A list of chunks locals that are dirty due to voxel modifications. This is usually neighboring chunks where voxel was updated
  */
 fn update_chunks(world: &mut VoxWorld, data: &[(IVec3, VoxelUpdateList)]) -> HashSet<IVec3> {
+    perf_fn_scope!();
+
     let mut dirty_chunks = HashSet::default();
 
     for (local, voxels) in data {
@@ -466,8 +472,6 @@ Remove from [`VoxWorld`] all chunks on the given list.
 ***Returns*** A list of chunks locals that are dirty due to neighboring chunks removal.
  */
 fn unload_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
-    perf_fn_scope!();
-
     let mut dirty_chunks = HashSet::default();
 
     for &local in locals {
@@ -487,8 +491,6 @@ Load from cache into [`VoxWorld`] all chunks on the given list.
 ***Returns*** A list of chunks locals that are dirty due to a new chunk being generated.
  */
 fn load_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
-    perf_fn_scope!();
-
     let mut dirty_chunks = HashSet::default();
 
     for &local in locals {

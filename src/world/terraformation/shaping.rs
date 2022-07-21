@@ -91,6 +91,8 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
  **Returns** true of the chunk was recomputed, false otherwise.
 */
 pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IVec3) -> bool {
+    perf_fn_scope!();
+
     let neighborhood = build_kind_neighborhood(world, local);
 
     if let Some(chunk) = world.get_mut(local) {
@@ -121,6 +123,8 @@ pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IV
  **Returns** a list of merged [`VoxelFace`]
 */
 fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
+    perf_fn_scope!();
+
     // TODO: I feel that it is still possible to reorganize this function to have better readability, but since this is a heavy function, I'll keep it as it is for now
 
     /**
@@ -130,12 +134,11 @@ fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> 
         merged: &Vec<usize>,
         voxel: IVec3,
         side: voxel::Side,
-        kinds: &ChunkKind,
+        kind: voxel::Kind,
         occlusion: &ChunkFacesOcclusion,
     ) -> bool {
         // perf_fn_scope!();
-        !chunk::is_within_bounds(voxel)
-            || kinds.get(voxel).is_empty()
+        kind.is_empty()
             || merged[chunk::to_index(voxel)] == 1
             || occlusion.get(voxel).is_occluded(side)
     }
@@ -153,10 +156,14 @@ fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> 
         let kind = kinds.get(begin);
         let mut next_voxel = begin + step;
 
-        while !should_skip_voxel(merged, next_voxel, side, kinds, occlusion)
-            && kinds.get(next_voxel) == kind
-        {
-            next_voxel += step;
+        while chunk::is_within_bounds(next_voxel) {
+            let next_kind = kinds.get(next_voxel);
+
+            if next_kind != kind || should_skip_voxel(merged, next_voxel, side, kind, occlusion) {
+                break;
+            } else {
+                next_voxel += step;
+            }
         }
 
         next_voxel -= step;
@@ -164,7 +171,6 @@ fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> 
         next_voxel
     }
 
-    let mut _perf = perf_fn!();
     let mut faces_vertices = vec![];
 
     // Which direction the algorithm will walk in order to merge faces.
@@ -185,13 +191,11 @@ fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> 
         let mut merged = vec![0; chunk::BUFFER_SIZE];
 
         for voxel in chunk::voxels() {
-            if should_skip_voxel(&merged, voxel, side, kinds, &occlusion) {
+            let kind = kinds.get(voxel);
+
+            if should_skip_voxel(&merged, voxel, side, kind, &occlusion) {
                 continue;
             }
-
-            perf_scope!(_perf);
-
-            let kind = kinds.get(voxel);
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
@@ -199,19 +203,31 @@ fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> 
 
             let step = walk_axis.1;
             let mut v3 = v2 + step;
-            let mut tmp = v1 + step;
+            let mut next_voxel = v1 + step;
 
-            while !should_skip_voxel(&merged, tmp, side, kinds, &occlusion)
-                && kinds.get(tmp) == kind
-            {
-                let furthest =
-                    find_furthest_eq_voxel(tmp, walk_axis.0, &merged, side, kinds, &occlusion);
+            while chunk::is_within_bounds(next_voxel) {
+                let next_kind = kinds.get(next_voxel);
 
-                if furthest == v3 {
-                    v3 += step;
-                    tmp += step;
-                } else {
+                if next_kind != kind
+                    || should_skip_voxel(&merged, next_voxel, side, next_kind, &occlusion)
+                {
                     break;
+                } else {
+                    let furthest = find_furthest_eq_voxel(
+                        next_voxel,
+                        walk_axis.0,
+                        &merged,
+                        side,
+                        kinds,
+                        &occlusion,
+                    );
+
+                    if furthest == v3 {
+                        v3 += step;
+                        next_voxel += step;
+                    } else {
+                        break;
+                    }
                 }
             }
 
@@ -229,7 +245,6 @@ fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> 
             })
         }
     }
-
     faces_vertices
 }
 
@@ -344,6 +359,8 @@ This function updates any neighborhood data needed by chunk.
 Currently it only updates kind neighborhood data, but in the future, it may update light and other relevant data.
 */
 fn build_kind_neighborhood(world: &VoxWorld, local: IVec3) -> ChunkNeighborhood<voxel::Kind> {
+    perf_fn_scope!();
+
     let mut neighborhood = ChunkNeighborhood::default();
     for side in voxel::SIDES {
         let dir = side.dir();
