@@ -56,7 +56,7 @@ pub const VERTICES_INDICES: [[usize; 4]; 6] = [
  Computes indices of a triangle list mesh.
 
  This function assumes 4 vertices per face, 3 indices per triangles and all vertices are placed in CCW order.
- 
+
  It generates indices in the following order: _*0 1 2 2 3 0*_ where 0 is the first vertice and 3 is the last one
 
  **Returns** a list of indices in the CCW order
@@ -84,12 +84,12 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
 }
 
 /**
-  Recompute chunk kind neighborhood and vertices.
+ Recompute chunk kind neighborhood and vertices.
 
-  This function should be called whenever the chunk has changed and needs to update it's internal state.
+ This function should be called whenever the chunk has changed and needs to update it's internal state.
 
-  **Returns** true of the chunk was recomputed, false otherwise.
- */
+ **Returns** true of the chunk was recomputed, false otherwise.
+*/
 pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IVec3) -> bool {
     let neighborhood = gather_kind_neighborhood(world, local);
 
@@ -111,15 +111,15 @@ pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IV
 }
 
 /**
-  Merge all faces which have the same voxel properties, like kind, lighting, AO and so on.
+ Merge all faces which have the same voxel properties, like kind, lighting, AO and so on.
 
-  The basic logic of function was based on [Greedy Mesh](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/).
-  It was heavy modified to use a less mathematical and more logic approach (Yeah I don't understood those aliens letters).
+ The basic logic of function was based on [Greedy Mesh](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/).
+ It was heavy modified to use a less mathematical and more logic approach (Yeah I don't understood those aliens letters).
 
-  This function is very CPU intense so it should be run in a separated thread to avoid FPS drops.
+ This function is very CPU intense so it should be run in a separated thread to avoid FPS drops.
 
-  **Returns** a list of merged [`VoxelFace`] 
- */
+ **Returns** a list of merged [`VoxelFace`]
+*/
 fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
     // TODO: I feel that it is still possible to reorganize this function to have better readability, but since this is a heavy function, I'll keep it as it is for now
 
@@ -358,6 +358,8 @@ fn gather_kind_neighborhood(world: &VoxWorld, local: IVec3) -> ChunkNeighborhood
 
 #[cfg(test)]
 mod tests {
+    use crate::world::storage::voxel::{KindDescItem, KindSideTexture, KindSidesDesc};
+
     use super::*;
 
     #[test]
@@ -558,5 +560,67 @@ mod tests {
 
         let faces = faces_occlusion.get((1, 0, 1).into());
         assert_eq!(faces, [false, false, false, true, false, false].into());
+    }
+
+    #[test]
+    fn generate_vertices() {
+        // Arrange
+        let side = voxel::Side::Up;
+
+        // This face is 2 voxels wide on the -Z axis (0,0) (0,-1)
+        let faces = vec![VoxelFace {
+            side,
+            vertices: [
+                (0, 0, 0).into(),
+                (0, 0, 0).into(),
+                (0, 0, -1).into(),
+                (0, 0, -1).into(),
+            ],
+            kind: 1.into(),
+        }];
+
+        let mut descs = KindsDescs::default();
+        descs.atlas_size = 100;
+        descs.atlas_tile_size = 10; // Each tile is 0.1 wide 1.0/(100.0/10.0)
+        descs.descriptions = vec![KindDescItem {
+            id: 1,
+            sides: KindSidesDesc::All(KindSideTexture::default()),
+            ..Default::default()
+        }];
+
+        // Act
+        let vertices = super::generate_vertices(faces, &descs);
+
+        // Assert
+        let normal = side.normal();
+        assert_eq!(
+            vertices,
+            vec![
+                VoxelVertex {
+                    normal,
+                    position: (0.0, 1.0, 1.0).into(),
+                    uv: (0.0, 0.2).into(),
+                    ..Default::default()
+                },
+                VoxelVertex {
+                    normal,
+                    position: (1.0, 1.0, 1.0).into(),
+                    uv: (0.1, 0.2).into(),
+                    ..Default::default()
+                },
+                VoxelVertex {
+                    normal,
+                    position: (1.0, 1.0, -1.0).into(),
+                    uv: (0.1, 0.0).into(),
+                    ..Default::default()
+                },
+                VoxelVertex {
+                    normal,
+                    position: (0.0, 1.0, -1.0).into(),
+                    uv: (0.0, 0.0).into(),
+                    ..Default::default()
+                },
+            ]
+        );
     }
 }

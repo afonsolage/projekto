@@ -1103,46 +1103,4 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn generate_vertices() {
-    //     // Arrange
-    //     let side = voxel::Side::Up;
-    //     let faces = vec![VoxelFace {
-    //         side,
-    //         vertices: [
-    //             (0, 0, 0).into(),
-    //             (0, 0, 1).into(),
-    //             (1, 0, 1).into(),
-    //             (1, 0, 0).into(),
-    //         ],
-    //         kind: 1.into(),
-    //     }];
-
-    //     // Act
-    //     let vertices = super::generate_vertices(faces);
-
-    //     // Assert
-    //     let normal = side.normal();
-    //     assert_eq!(
-    //         vertices,
-    //         vec![
-    //             VoxelVertex {
-    //                 normal,
-    //                 position: (0.0, 1.0, 0.0).into(),
-    //             },
-    //             VoxelVertex {
-    //                 normal,
-    //                 position: (0.0, 1.0, 2.0).into(),
-    //             },
-    //             VoxelVertex {
-    //                 normal,
-    //                 position: (2.0, 1.0, 2.0).into(),
-    //             },
-    //             VoxelVertex {
-    //                 normal,
-    //                 position: (2.0, 1.0, 0.0).into(),
-    //             },
-    //         ]
-    //     );
-    // }
 }

@@ -9,14 +9,15 @@ use super::chunk::ChunkStorageType;
 
 pub const SIDE_COUNT: usize = 6;
 
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, Deserialize, Default)]
 pub struct KindSideTexture {
     pub color: (f32, f32, f32, f32),
     pub offset: IVec2,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub enum KindSidesDesc {
+    #[default]
     None,
     All(KindSideTexture),
     Unique {
@@ -29,14 +30,14 @@ pub enum KindSidesDesc {
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct KindDescItem {
     pub name: String,
     pub id: u16,
     pub sides: KindSidesDesc,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct KindsDescs {
     pub atlas_path: String,
     pub atlas_size: u16,
