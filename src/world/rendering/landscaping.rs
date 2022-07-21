@@ -9,6 +9,7 @@ use crate::{
         query,
         rendering::{ChunkMaterial, ChunkMaterialHandle},
         storage::{chunk, landscape},
+        terraformation::prelude::KindsDescsRes,
     },
 };
 
@@ -33,9 +34,16 @@ pub struct LandscapeConfig {
     pub paused: bool,
 }
 
-fn setup_resources(mut commands: Commands, mut materials: ResMut<Assets<ChunkMaterial>>) {
+fn setup_resources(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<ChunkMaterial>>,
+    kinds_res: Res<KindsDescsRes>,
+) {
     trace_system_run!();
-    let material = materials.add(ChunkMaterial);
+    let material = materials.add(ChunkMaterial {
+        tile_texture_size: 1.0 / kinds_res.descs.count_tiles() as f32,
+        texture: kinds_res.atlas.clone(),
+    });
 
     commands.insert_resource(ChunkMaterialHandle(material));
     commands.insert_resource(ChunkEntityMap(HashMap::default()));

@@ -5,9 +5,9 @@ use bevy::{
     render::mesh::{Indices, PrimitiveTopology},
 };
 
-use crate::world::{mesh, storage::voxel::VoxelVertex};
+use crate::world::{storage::voxel::VoxelVertex, terraformation::prelude::shaping};
 
-use super::{ChunkEntityMap, EvtChunkMeshDirty, WorldRes};
+use super::{ChunkEntityMap, ChunkMaterial, EvtChunkMeshDirty, WorldRes};
 
 pub(super) struct MeshingPlugin;
 
@@ -66,17 +66,22 @@ fn generate_mesh(vertices: &Vec<VoxelVertex>) -> Mesh {
 
     let mut positions: Vec<[f32; 3]> = vec![];
     let mut normals: Vec<[f32; 3]> = vec![];
+    let mut uvs: Vec<[f32; 2]> = vec![];
+    let mut tile_coord_start: Vec<[f32; 2]> = vec![];
 
     let vertex_count = vertices.len();
 
     for vertex in vertices {
         positions.push(vertex.position.into());
         normals.push(vertex.normal.into());
+        uvs.push(vertex.uv.into());
+        tile_coord_start.push(vertex.tile_coord_start.into());
     }
 
-    mesh.set_indices(Some(Indices::U32(mesh::compute_indices(vertex_count))));
+    mesh.set_indices(Some(Indices::U32(shaping::compute_indices(vertex_count))));
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0; vertex_count]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(ChunkMaterial::ATTRIBUTE_TILE_COORD_START, tile_coord_start);
     mesh
 }

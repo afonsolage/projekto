@@ -9,19 +9,91 @@ use super::chunk::ChunkStorageType;
 
 pub const SIDE_COUNT: usize = 6;
 
-#[derive(Deserialize)]
-pub struct KindDescription {
-    pub name: String,
-    pub id: u16,
+#[derive(Debug, Copy, Clone, Deserialize, Default)]
+pub struct KindSideTexture {
     pub color: (f32, f32, f32, f32),
+    pub offset: IVec2,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
+pub enum KindSidesDesc {
+    #[default]
+    None,
+    All(KindSideTexture),
+    Unique {
+        right: KindSideTexture,
+        left: KindSideTexture,
+        up: KindSideTexture,
+        down: KindSideTexture,
+        front: KindSideTexture,
+        back: KindSideTexture,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct KindDescItem {
+    pub name: String,
+    pub id: u16,
+    pub sides: KindSidesDesc,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct KindsDescs {
+    pub atlas_path: String,
+    pub atlas_size: u16,
+    pub atlas_tile_size: u16,
+    pub descriptions: Vec<KindDescItem>,
+}
+
+impl KindsDescs {
+    pub fn count_tiles(&self) -> u16 {
+        self.atlas_size / self.atlas_tile_size
+    }
+}
+
+impl KindsDescs {
+    pub fn get_face_desc(&self, face: &VoxelFace) -> KindSideTexture {
+        let kind_desc = self
+            .descriptions
+            .iter()
+            .find(|k| k.id == face.kind.0)
+            .map(|desc| desc)
+            .expect(format!("Unable to find kind description for face {:?}", face).as_str());
+
+        match kind_desc.sides {
+            KindSidesDesc::None => panic!("{} kind should not be rendered.", face.kind.0),
+            KindSidesDesc::All(desc) => desc,
+            KindSidesDesc::Unique {
+                right,
+                left,
+                up,
+                down,
+                front,
+                back,
+            } => match face.side {
+                Side::Right => right,
+                Side::Left => left,
+                Side::Up => up,
+                Side::Down => down,
+                Side::Front => front,
+                Side::Back => back,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
 impl From<u16> for Kind {
     fn from(v: u16) -> Self {
         Self(v)
+    }
+}
+
+impl Into<u16> for Kind {
+    fn into(self) -> u16 {
+        self.0
     }
 }
 
@@ -127,13 +199,15 @@ impl ChunkStorageType for FacesOcclusion {}
 pub struct VoxelFace {
     pub vertices: [IVec3; 4],
     pub side: Side,
-    //TODO: light and color
+    pub kind: Kind, //TODO: light and color
 }
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct VoxelVertex {
     pub position: Vec3,
     pub normal: Vec3,
+    pub uv: Vec2,
+    pub tile_coord_start: Vec2,
     //TODO: light and color
 }
 
@@ -160,14 +234,11 @@ pub fn to_world(local: IVec3, chunk_local: IVec3) -> Vec3 {
 
 #[cfg(test)]
 mod tests {
-
     use bevy::math::{IVec3, Vec3};
     use rand::random;
     use ron::de::from_reader;
 
-    use crate::world::storage::voxel::KindDescription;
-
-    use super::{chunk, FacesOcclusion};
+    use super::*;
 
     #[test]
     fn faces_occlusion() {
@@ -291,9 +362,12 @@ mod tests {
 
             // Compute a valid world coordinates using the base voxel, the sign and the floating number
             let world = Vec3::new(
-                ((random::<f32>() * MAG * sign.x) as i32 * chunk::X_AXIS_SIZE as i32 + base.x) as f32,
-                ((random::<f32>() * MAG * sign.y) as i32 * chunk::Y_AXIS_SIZE as i32 + base.y) as f32,
-                ((random::<f32>() * MAG * sign.z) as i32 * chunk::X_AXIS_SIZE as i32 + base.z) as f32,
+                ((random::<f32>() * MAG * sign.x) as i32 * chunk::X_AXIS_SIZE as i32 + base.x)
+                    as f32,
+                ((random::<f32>() * MAG * sign.y) as i32 * chunk::Y_AXIS_SIZE as i32 + base.y)
+                    as f32,
+                ((random::<f32>() * MAG * sign.z) as i32 * chunk::X_AXIS_SIZE as i32 + base.z)
+                    as f32,
             );
 
             assert_eq!(
@@ -308,12 +382,9 @@ mod tests {
 
     #[test]
     fn load_kind_descriptions() {
-        let input_path = format!(
-            "{}/assets/voxels/kind_descriptions.ron",
-            env!("CARGO_MANIFEST_DIR")
-        );
+        let input_path = format!("{}/assets/voxels/kind.ron", env!("CARGO_MANIFEST_DIR"));
         let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
 
-        let _: Vec<KindDescription> = from_reader(f).unwrap();
+        let _: KindsDescs = from_reader(f).unwrap();
     }
 }

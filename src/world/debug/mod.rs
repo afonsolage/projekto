@@ -7,7 +7,7 @@ use bevy::{
 
 use crate::{
     fly_by_camera::FlyByCamera,
-    world::{mesh, rendering::*, storage::*},
+    world::{rendering::*, storage::*},
 };
 
 use self::wireframe::WireframeMaterial;
@@ -329,8 +329,8 @@ fn generate_voxel_edges_mesh(voxels: &[IVec3]) -> (Vec<[f32; 3]>, Vec<u32>) {
         for side in voxel::SIDES {
             let side_idx = side as usize;
 
-            for idx in mesh::VERTICES_INDICES[side_idx] {
-                let v = &mesh::VERTICES[idx];
+            for idx in shaping::VERTICES_INDICES[side_idx] {
+                let v = &shaping::VERTICES[idx];
 
                 vertices.push([
                     v[0] + voxel.x as f32,

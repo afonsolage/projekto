@@ -6,6 +6,7 @@ use std::{
 
 use bevy::{
     prelude::*,
+    reflect::TypeUuid,
     tasks::{AsyncComputeTaskPool, Task},
     utils::{HashMap, HashSet},
 };
@@ -13,14 +14,15 @@ use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use futures_lite::future;
 
 use crate::world::{
-    math, mesh,
+    math,
     storage::{
-        chunk::{self, Chunk, ChunkKind, ChunkNeighborhood},
-        voxel::{self, FacesOcclusion, VoxelFace, VoxelVertex},
+        chunk::{self, Chunk, ChunkKind},
+        voxel::{self, KindsDescs},
         VoxWorld,
     },
-    terraformation::ChunkFacesOcclusion,
 };
+
+use super::shaping;
 
 const CACHE_PATH: &str = "cache/chunks/";
 const CACHE_EXT: &str = "bin";
@@ -30,21 +32,39 @@ pub(super) struct GenesisPlugin;
 impl Plugin for GenesisPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkUpdated>()
-            .add_startup_system(setup_resources)
+            .add_startup_system_to_stage(StartupStage::PreStartup, setup_resources)
             .add_system(update_world_system);
     }
 }
 
+#[derive(TypeUuid, Debug)]
+#[uuid = "e6edff2a-e204-497f-999c-bdebd1f92f62"]
+pub struct KindsDescsRes {
+    pub descs: KindsDescs,
+    pub atlas: Handle<Image>,
+}
+
 pub struct EvtChunkUpdated(pub IVec3);
 
-fn setup_resources(mut commands: Commands) {
+fn setup_resources(mut commands: Commands, asset_server: Res<AssetServer>) {
     trace_system_run!();
 
     if !std::path::Path::new(CACHE_PATH).exists() {
         std::fs::create_dir_all(CACHE_PATH).unwrap();
     }
 
-    commands.insert_resource(WorldRes(Some(VoxWorld::default())));
+    let vox_world = VoxWorld::default();
+    commands.insert_resource(WorldRes(Some(vox_world)));
+
+    // TODO: Find a better way to load this
+    let input_path = format!("{}/assets/voxels/kind.ron", env!("CARGO_MANIFEST_DIR"));
+    let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
+    let descs: KindsDescs = ron::de::from_reader(f).unwrap();
+
+    let atlas = asset_server.load(&descs.atlas_path);
+
+    commands.insert_resource(KindsDescsRes { descs, atlas });
+
     commands.insert_resource(BatchChunkCmdRes::default());
 }
 
@@ -85,7 +105,7 @@ impl BatchChunkCmdRes {
     Checks if there is pending commands to be processed
      */
     pub fn has_pending_commands(&self) -> bool {
-        self.pending.is_empty()
+        !self.pending.is_empty()
     }
 
     /**
@@ -192,6 +212,7 @@ struct ProcessBatchSystemMeta {
  */
 fn update_world_system(
     task_pool: Res<AsyncComputeTaskPool>,
+    kind_assets: Res<KindsDescsRes>,
     mut batch_res: ResMut<BatchChunkCmdRes>,
     mut meta: Local<ProcessBatchSystemMeta>,
     mut world_res: ResMut<WorldRes>,
@@ -214,12 +235,15 @@ fn update_world_system(
             world_res.set(world);
             batch_res.finished();
         }
-    } else if !batch_res.has_pending_commands() {
+    } else if batch_res.has_pending_commands() {
         perf_scope!(_perf);
-        let batch = batch_res.swap_and_clone();
-        let world = world_res.take();
 
-        meta.running_task = Some(task_pool.spawn(async move { process_batch(world, batch) }));
+        let world = world_res.take();
+        let kinds_descs = kind_assets.descs.clone();
+        let batch = batch_res.swap_and_clone();
+
+        meta.running_task =
+            Some(task_pool.spawn(async move { process_batch(world, kinds_descs, batch) }));
     }
 
     assert_ne!(
@@ -385,7 +409,11 @@ This function triggers [`recompute_chunks`] whenever a new chunk is generated or
 
 ***Returns*** the [`VoxWorld`] ownership and a list of [`ChunkCmdResult`]
  */
-fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<IVec3>) {
+fn process_batch(
+    mut world: VoxWorld,
+    kinds_descs: KindsDescs,
+    commands: Vec<ChunkCmd>,
+) -> (VoxWorld, Vec<IVec3>) {
     let mut _perf = perf_fn!();
 
     let commands = optimize_commands(&world, commands);
@@ -395,7 +423,7 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
     let mut dirty_chunks = load_chunks(&mut world, &load);
     dirty_chunks.extend(update_chunks(&mut world, &update));
 
-    let updated = recompute_chunks(&mut world, dirty_chunks.into_iter());
+    let updated = recompute_chunks(&mut world, kinds_descs, dirty_chunks.into_iter());
 
     (world, updated)
 }
@@ -490,124 +518,26 @@ Refresh chunks internal data due to change in the neighborhood. At moment this f
 
 ***Returns*** A list of chunks locals that was refreshed.
  */
-fn recompute_chunks(world: &mut VoxWorld, locals: impl Iterator<Item = IVec3>) -> Vec<IVec3> {
+fn recompute_chunks(
+    world: &mut VoxWorld,
+    kinds_descs: KindsDescs,
+    locals: impl Iterator<Item = IVec3>,
+) -> Vec<IVec3> {
     perf_fn_scope!();
 
     let mut result = vec![];
 
     for local in locals {
-        update_neighborhood(world, local);
+        if shaping::recompute_chunk(world, &kinds_descs, local) {
+            result.push(local);
 
-        if let Some(chunk) = world.get_mut(local) {
-            let occlusion = faces_occlusion(&chunk.kinds);
-            if !occlusion.is_fully_occluded() {
-                let faces = mesh::merge_faces(&occlusion, &chunk);
-                chunk.vertices = generate_vertices(faces);
-
-                result.push(local);
-            }
-
+            // TODO: Maybe save all chunks at the end of the batch will be better?
             let path = local_path(local);
-            save_chunk(&path, chunk);
+            save_chunk(&path, world.get(local).unwrap());
         }
     }
 
     result
-}
-
-/**
-Generates vertices data from a given [`VoxelFace`] list.
-
-All generated indices will be relative to a triangle list.
-
-**Returns** a list of generated [`VoxelVertex`].
-*/
-fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
-    perf_fn_scope!();
-
-    let mut vertices = vec![];
-
-    for face in faces {
-        let normal = face.side.normal();
-
-        for (i, v) in face.vertices.iter().enumerate() {
-            let base_vertex_idx = mesh::VERTICES_INDICES[face.side as usize][i];
-            let base_vertex: Vec3 = mesh::VERTICES[base_vertex_idx].into();
-            vertices.push(VoxelVertex {
-                position: base_vertex + v.as_vec3(),
-                normal,
-            })
-        }
-    }
-
-    debug_assert!(!vertices.is_empty());
-    vertices
-}
-
-/**
-Computes the faces occlusion data of the given [`ChunkKind`]
-
-**Returns** computed [`ChunkFacesOcclusion`]
-*/
-fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
-    perf_fn_scope!();
-
-    let mut occlusion = ChunkFacesOcclusion::default();
-    for voxel in chunk::voxels() {
-        let mut voxel_faces = FacesOcclusion::default();
-
-        if chunk.get(voxel).is_empty() {
-            voxel_faces.set_all(true);
-        } else {
-            for side in voxel::SIDES {
-                let dir = side.dir();
-                let neighbor_pos = voxel + dir;
-
-                let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
-                    let (_, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
-
-                    match chunk.neighborhood.get(side, next_chunk_voxel) {
-                        Some(k) => k,
-                        None => continue,
-                    }
-                } else {
-                    chunk.get(neighbor_pos)
-                };
-
-                voxel_faces.set(side, !neighbor_kind.is_empty());
-            }
-        }
-
-        occlusion.set(voxel, voxel_faces);
-    }
-
-    occlusion
-}
-
-/**
-Updates the [`ChunkNeighborhood`] of a given chunk local.
-This function updates any neighborhood data needed by chunk.
-
-Currently it only updates kind neighborhood data, but in the future, it may update light and other relevant data.
-*/
-fn update_neighborhood(world: &mut VoxWorld, local: IVec3) {
-    if !world.exists(local) {
-        return;
-    }
-
-    let mut neighborhood = ChunkNeighborhood::default();
-    for side in voxel::SIDES {
-        let dir = side.dir();
-        let neighbor = local + dir;
-
-        if let Some(neighbor_chunk) = world.get(neighbor) {
-            neighborhood.set(side, &neighbor_chunk.kinds);
-        }
-    }
-
-    if let Some(chunk) = world.get_mut(local) {
-        chunk.kinds.neighborhood = neighborhood;
-    }
 }
 
 /**
@@ -639,7 +569,14 @@ fn generate_chunk(local: IVec3) -> Chunk {
             let end = usize::min(height_local as usize, chunk::Y_AXIS_SIZE);
 
             for y in 0..end {
-                kinds.set((x as i32, y as i32, z as i32).into(), 1.into());
+                // TODO: Check this following biome settings
+                let kind = match y {
+                    y if y == end - 1 => 2.into(),
+                    y if y < end - 3 => 3.into(),
+                    _ => 1.into(),
+                };
+
+                kinds.set((x as i32, y as i32, z as i32).into(), kind);
             }
         }
     }
@@ -821,39 +758,7 @@ mod tests {
         assert!(world.exists(local), "Chunk should be added to world");
     }
 
-    #[test]
-    fn update_chunk() {
-        let mut world = VoxWorld::default();
-        assert!(
-            super::recompute_chunks(&mut world, [(0, 0, 0).into()].into_iter()).is_empty(),
-            "should return an empty list when chunk doesn't exists"
-        );
-
-        let mut chunk = Chunk::default();
-        chunk.kinds.set((0, 0, 0).into(), 1.into());
-        world.add((0, 0, 0).into(), chunk);
-
-        let mut chunk = Chunk::default();
-        chunk.kinds.set((0, 0, 0).into(), 2.into());
-        world.add((1, 0, 0).into(), chunk);
-
-        assert_eq!(
-            super::recompute_chunks(&mut world, [(0, 0, 0).into()].into_iter()).len(),
-            1,
-            "Should return one chunk recomputed"
-        );
-
-        let chunk = world.get((0, 0, 0).into()).unwrap();
-        assert_eq!(
-            chunk
-                .kinds
-                .neighborhood
-                .get(super::voxel::Side::Right, (0, 0, 0).into())
-                .unwrap(),
-            2.into(),
-            "Neighborhood should be updated on recompute_chunks call"
-        );
-    }
+ 
 
     #[test]
     fn generate_chunk() {
@@ -1166,243 +1071,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn update_neighborhood() {
-        let mut world = VoxWorld::default();
-
-        let center = (1, 1, 1).into();
-        let mut chunk = Chunk::default();
-        chunk.kinds.set_all(10.into());
-        world.add(center, chunk);
-
-        for side in voxel::SIDES {
-            let dir = side.dir();
-            let pos = center + dir;
-            let mut chunk = Chunk::default();
-            chunk.kinds.set_all((side as u16).into());
-            world.add(pos, chunk);
-        }
-
-        super::update_neighborhood(&mut world, center);
-        let chunk = world.get(center).unwrap();
-
-        for side in voxel::SIDES {
-            match side {
-                voxel::Side::Right => {
-                    for a in 0..chunk::Y_AXIS_SIZE {
-                        for b in 0..chunk::Z_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (0, a as i32, b as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Left => {
-                    for a in 0..chunk::Y_AXIS_SIZE {
-                        for b in 0..chunk::Z_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (chunk::X_END as i32, a as i32, b as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Up => {
-                    for a in 0..chunk::X_AXIS_SIZE {
-                        for b in 0..chunk::Z_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (a as i32, 0, b as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Down => {
-                    for a in 0..chunk::X_AXIS_SIZE {
-                        for b in 0..chunk::Z_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (a as i32, chunk::Y_END as i32, b as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Front => {
-                    for a in 0..chunk::X_AXIS_SIZE {
-                        for b in 0..chunk::Y_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (a as i32, b as i32, 0).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-                voxel::Side::Back => {
-                    for a in 0..chunk::X_AXIS_SIZE {
-                        for b in 0..chunk::Y_AXIS_SIZE {
-                            assert_eq!(
-                                chunk
-                                    .kinds
-                                    .neighborhood
-                                    .get(side, (a as i32, b as i32, chunk::Z_END as i32).into()),
-                                Some((side as u16).into())
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn faces_occlusion_occlude_empty_chunk() {
-        // Arrange
-        let chunk = ChunkKind::default();
-
-        // Act
-        let occlusions = super::faces_occlusion(&chunk);
-
-        // Assert
-        assert!(
-            occlusions.iter().all(|a| a.is_fully_occluded()),
-            "A chunk full of empty-kind voxels should be fully occluded"
-        );
-    }
-
-    #[test]
-    fn faces_occlusion() {
-        // Arrange
-        let mut chunk = ChunkKind::default();
-
-        // Top-Bottom occlusion
-        chunk.set((1, 1, 1).into(), 1.into());
-        chunk.set((1, 2, 1).into(), 1.into());
-
-        // Full occluded voxel at (10, 10, 10)
-        chunk.set((10, 10, 10).into(), 1.into());
-        chunk.set((9, 10, 10).into(), 1.into());
-        chunk.set((11, 10, 10).into(), 1.into());
-        chunk.set((10, 9, 10).into(), 1.into());
-        chunk.set((10, 11, 10).into(), 1.into());
-        chunk.set((10, 10, 9).into(), 1.into());
-        chunk.set((10, 10, 11).into(), 1.into());
-
-        // Act
-        let faces_occlusion = super::faces_occlusion(&chunk);
-
-        // Assert
-        let faces = faces_occlusion.get((1, 2, 1).into());
-
-        assert_eq!(
-            faces,
-            [false, false, false, true, false, false].into(),
-            "Only down face should be occluded by the bottom voxel"
-        );
-
-        let faces = faces_occlusion.get((1, 1, 1).into());
-
-        assert_eq!(
-            faces,
-            [false, false, true, false, false, false].into(),
-            "Only down face should be occluded by the bottom voxel"
-        );
-
-        let faces = faces_occlusion.get((10, 10, 10).into());
-
-        assert_eq!(
-            faces,
-            [true; voxel::SIDE_COUNT].into(),
-            "Voxel fully surrounded by another non-empty voxels should be fully occluded"
-        );
-    }
-
-    #[test]
-    fn faces_occlusion_neighborhood() {
-        let mut world = VoxWorld::default();
-
-        let mut top = Chunk::default();
-        top.kinds.set_all(2.into());
-
-        let mut down = Chunk::default();
-        down.kinds.set_all(3.into());
-
-        let mut center = Chunk::default();
-        center
-            .kinds
-            .set((0, chunk::Y_END as i32, 0).into(), 1.into());
-        center.kinds.set((1, 0, 1).into(), 1.into());
-
-        world.add((0, 1, 0).into(), top);
-        world.add((0, 0, 0).into(), center);
-        world.add((0, -1, 0).into(), down);
-
-        super::update_neighborhood(&mut world, (0, 0, 0).into());
-        let center = world.get((0, 0, 0).into()).unwrap();
-
-        let faces_occlusion = super::faces_occlusion(&center.kinds);
-
-        let faces = faces_occlusion.get((0, chunk::Y_END as i32, 0).into());
-        assert_eq!(faces, [false, false, true, false, false, false].into());
-
-        let faces = faces_occlusion.get((1, 0, 1).into());
-        assert_eq!(faces, [false, false, false, true, false, false].into());
-    }
-
-    #[test]
-    fn generate_vertices() {
-        // Arrange
-        let side = voxel::Side::Up;
-        let faces = vec![VoxelFace {
-            side,
-            vertices: [
-                (0, 0, 0).into(),
-                (0, 0, 1).into(),
-                (1, 0, 1).into(),
-                (1, 0, 0).into(),
-            ],
-        }];
-
-        // Act
-        let vertices = super::generate_vertices(faces);
-
-        // Assert
-        let normal = side.normal();
-        assert_eq!(
-            vertices,
-            vec![
-                VoxelVertex {
-                    normal,
-                    position: (0.0, 1.0, 0.0).into(),
-                },
-                VoxelVertex {
-                    normal,
-                    position: (0.0, 1.0, 2.0).into(),
-                },
-                VoxelVertex {
-                    normal,
-                    position: (2.0, 1.0, 2.0).into(),
-                },
-                VoxelVertex {
-                    normal,
-                    position: (2.0, 1.0, 0.0).into(),
-                },
-            ]
-        );
-    }
 }
