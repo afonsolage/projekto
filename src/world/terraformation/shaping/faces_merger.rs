@@ -32,6 +32,8 @@ fn find_furthest_eq_voxel(
     occlusion: &ChunkFacesOcclusion,
     until: Option<IVec3>,
 ) -> IVec3 {
+    perf_fn_scope!();
+
     let kind = kinds.get(begin);
     let mut next_voxel = begin + step;
 
@@ -106,6 +108,8 @@ fn calc_walked_voxels(
     perpendicular_axis: IVec3,
     current_axis: IVec3,
 ) -> Vec<IVec3> {
+    perf_fn_scope!();
+
     let mut walked_voxels = vec![];
 
     let mut begin = v1;
@@ -264,7 +268,7 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, kinds: &ChunkKind) -> Vec<Vo
                 merged[chunk::to_index(voxel)] = 1;
             }
 
-            // v4 can be infered com v1, v2 and v3
+            // v4 can be inferred com v1, v2 and v3
             let v4 = v1 + (v3 - v2);
 
             faces_vertices.push(VoxelFace {
@@ -279,7 +283,61 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, kinds: &ChunkKind) -> Vec<Vo
 
 #[cfg(test)]
 mod tests {
+    extern crate test;
+
     use super::*;
+    use rand::prelude::*;
+    use test::Bencher;
+
+    #[bench]
+    fn merge_faces_empty_chunk(b: &mut Bencher) {
+        b.iter(|| {
+            super::merge(ChunkFacesOcclusion::default(), &ChunkKind::default());
+        });
+    }
+
+    #[bench]
+    fn merge_faces_half_empty_chunk(b: &mut Bencher) {
+        let mut kinds = ChunkKind::default();
+
+        let mut rng = StdRng::seed_from_u64(53230);
+
+        for i in 0..chunk::BUFFER_SIZE / 2 {
+            kinds[i] = rng.gen_range(1u16..100).into();
+        }
+
+        b.iter(|| {
+            super::merge(ChunkFacesOcclusion::default(), &kinds);
+        });
+    }
+
+    #[bench]
+    fn merge_faces_half_full_chunk(b: &mut Bencher) {
+        let mut kinds = ChunkKind::default();
+
+        let mut rng = StdRng::seed_from_u64(53230);
+
+        for i in 0..chunk::BUFFER_SIZE {
+            kinds[i] = rng.gen_range(1u16..100).into();
+        }
+
+        b.iter(|| {
+            super::merge(ChunkFacesOcclusion::default(), &kinds);
+        });
+    }
+
+    #[bench]
+    fn merge_faces_worst_case(b: &mut Bencher) {
+        let mut kinds = ChunkKind::default();
+
+        for i in 0..chunk::BUFFER_SIZE {
+            kinds[i] = ((i % u16::MAX as usize) as u16).into();
+        }
+
+        b.iter(|| {
+            super::merge(ChunkFacesOcclusion::default(), &kinds);
+        });
+    }
 
     #[test]
     fn merge_right_faces() {
