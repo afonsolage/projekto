@@ -1,9 +1,6 @@
 use bevy::math::{IVec3, Vec3};
 
-use crate::world::{
-    query,
-    storage::voxel::{self, FacesOcclusion},
-};
+use crate::world::storage::voxel::{self, FacesOcclusion};
 
 use crate::world::{
     storage::{
@@ -13,6 +10,8 @@ use crate::world::{
     },
     terraformation::ChunkFacesOcclusion,
 };
+
+mod faces_merger;
 
 /*
      v3               v2
@@ -123,129 +122,8 @@ pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IV
  **Returns** a list of merged [`VoxelFace`]
 */
 fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
-    perf_fn_scope!();
-
-    // TODO: I feel that it is still possible to reorganize this function to have better readability, but since this is a heavy function, I'll keep it as it is for now
-
-    /**
-      Checks if voxel is out of bounds, or is empty or is already merged or is fully occluded.
-    */
-    fn should_skip_voxel(
-        merged: &Vec<usize>,
-        voxel: IVec3,
-        side: voxel::Side,
-        kind: voxel::Kind,
-        occlusion: &ChunkFacesOcclusion,
-    ) -> bool {
-        // perf_fn_scope!();
-        kind.is_empty()
-            || merged[chunk::to_index(voxel)] == 1
-            || occlusion.get(voxel).is_occluded(side)
-    }
-
-    fn find_furthest_eq_voxel(
-        begin: IVec3,
-        step: IVec3,
-        merged: &Vec<usize>,
-        side: voxel::Side,
-        kinds: &ChunkKind,
-        occlusion: &ChunkFacesOcclusion,
-    ) -> IVec3 {
-        // perf_fn_scope!();
-
-        let kind = kinds.get(begin);
-        let mut next_voxel = begin + step;
-
-        while chunk::is_within_bounds(next_voxel) {
-            let next_kind = kinds.get(next_voxel);
-
-            if next_kind != kind || should_skip_voxel(merged, next_voxel, side, kind, occlusion) {
-                break;
-            } else {
-                next_voxel += step;
-            }
-        }
-
-        next_voxel -= step;
-
-        next_voxel
-    }
-
-    let mut faces_vertices = vec![];
-
-    // Which direction the algorithm will walk in order to merge faces.
-    // Pretty sure it's possible to calculate this using some dot and normal dark magic, but I'm too dumb to figure it out.
-    let side_walk_axis = [
-        (-IVec3::Z, IVec3::Y), //RIGHT
-        (IVec3::Z, IVec3::Y),  //LEFT
-        (IVec3::X, -IVec3::Z), //UP
-        (IVec3::X, IVec3::Z),  //DOWN
-        (IVec3::X, IVec3::Y),  //FRONT
-        (-IVec3::X, IVec3::Y), //BACK
-    ];
-
-    let kinds = &chunk.kinds;
-
-    for side in voxel::SIDES {
-        let walk_axis = side_walk_axis[side as usize];
-        let mut merged = vec![0; chunk::BUFFER_SIZE];
-
-        for voxel in chunk::voxels() {
-            let kind = kinds.get(voxel);
-
-            if should_skip_voxel(&merged, voxel, side, kind, &occlusion) {
-                continue;
-            }
-
-            // Finds the furthest equal voxel on current axis
-            let v1 = voxel;
-            let v2 = find_furthest_eq_voxel(voxel, walk_axis.0, &merged, side, kinds, &occlusion);
-
-            let step = walk_axis.1;
-            let mut v3 = v2 + step;
-            let mut next_voxel = v1 + step;
-
-            while chunk::is_within_bounds(next_voxel) {
-                let next_kind = kinds.get(next_voxel);
-
-                if next_kind != kind
-                    || should_skip_voxel(&merged, next_voxel, side, next_kind, &occlusion)
-                {
-                    break;
-                } else {
-                    let furthest = find_furthest_eq_voxel(
-                        next_voxel,
-                        walk_axis.0,
-                        &merged,
-                        side,
-                        kinds,
-                        &occlusion,
-                    );
-
-                    if furthest == v3 {
-                        v3 += step;
-                        next_voxel += step;
-                    } else {
-                        break;
-                    }
-                }
-            }
-
-            v3 -= step;
-            let v4 = v1 + (v3 - v2);
-
-            for voxel in query::range_inclusive(v1, v3) {
-                merged[chunk::to_index(voxel)] = 1;
-            }
-
-            faces_vertices.push(VoxelFace {
-                vertices: [v1, v2, v3, v4],
-                side,
-                kind,
-            })
-        }
-    }
-    faces_vertices
+    // Moved to it's own file, since this function is very complex.
+    faces_merger::merge(occlusion, &chunk.kinds)
 }
 
 /**

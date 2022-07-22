@@ -131,6 +131,24 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
     }
 }
 
+#[cfg(test)]
+impl<T: ChunkStorageType> std::ops::Index<usize> for ChunkStorage<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        debug_assert!(index < BUFFER_SIZE);
+        &self.main[index]
+    }
+}
+
+#[cfg(test)]
+impl<T: ChunkStorageType> std::ops::IndexMut<usize> for ChunkStorage<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        debug_assert!(index < BUFFER_SIZE);
+        &mut self.main[index]
+    }
+}
+
 #[cfg(feature = "mem_alloc")]
 impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
     fn drop(&mut self) {
