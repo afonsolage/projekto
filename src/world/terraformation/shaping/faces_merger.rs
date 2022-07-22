@@ -72,20 +72,56 @@ fn get_side_walk_axis(side: voxel::Side) -> (IVec3, IVec3, IVec3) {
     }
 }
 
+const fn build_inclusive_range_axis<const N: usize>(from: i32, to: i32) -> [i32; N] {
+    assert!(from != to);
+
+    let inc = (to - from).signum();
+    let mut range = [0; N];
+
+    let mut idx = 0;
+    let mut val = from;
+
+    loop {
+        range[idx as usize] = val;
+
+        val += inc;
+        idx += 1;
+
+        if val == to + inc {
+            break;
+        }
+    }
+
+    range
+}
+
+const X_POS_AXIS_RANGE: [i32; chunk::X_AXIS_SIZE] = build_inclusive_range_axis(0, chunk::X_END);
+const X_NEG_AXIS_RANGE: [i32; chunk::X_AXIS_SIZE] = build_inclusive_range_axis(chunk::X_END, 0);
+const Y_POS_AXIS_RANGE: [i32; chunk::Y_AXIS_SIZE] = build_inclusive_range_axis(0, chunk::Y_END);
+const Y_NEG_AXIS_RANGE: [i32; chunk::Y_AXIS_SIZE] = build_inclusive_range_axis(chunk::Y_END, 0);
+const Z_POS_AXIS_RANGE: [i32; chunk::Z_AXIS_SIZE] = build_inclusive_range_axis(0, chunk::Z_END);
+const Z_NEG_AXIS_RANGE: [i32; chunk::Z_AXIS_SIZE] = build_inclusive_range_axis(chunk::Z_END, 0);
+
 /**
   This function returns a [`Box`] dyn iterator since it can return either [`Range`] or [`Rev<Iterator>`]
 
   **Returns** a boxed iterator to iterate over a given axis.
 */
-fn get_axis_range(axis: IVec3) -> Box<dyn Iterator<Item = i32>> {
-    match axis {
-        _ if axis == IVec3::X => Box::new(0..chunk::X_AXIS_SIZE as i32),
-        _ if axis == -IVec3::X => Box::new((0..=chunk::X_END).rev()),
-        _ if axis == IVec3::Y => Box::new(0..chunk::Y_AXIS_SIZE as i32),
-        _ if axis == -IVec3::Y => Box::new((0..=chunk::Y_END).rev()),
-        _ if axis == IVec3::Z => Box::new(0..chunk::Z_AXIS_SIZE as i32),
-        _ if axis == -IVec3::Z => Box::new((0..=chunk::Z_END).rev()),
-        _ => unreachable!(),
+fn get_axis_range(axis: IVec3) -> &'static [i32] {
+    if axis == IVec3::X {
+        &X_POS_AXIS_RANGE
+    } else if axis == -IVec3::X {
+        &X_NEG_AXIS_RANGE
+    } else if axis == IVec3::Y {
+        &Y_POS_AXIS_RANGE
+    } else if axis == -IVec3::Y {
+        &Y_NEG_AXIS_RANGE
+    } else if axis == IVec3::Z {
+        &Z_POS_AXIS_RANGE
+    } else if axis == -IVec3::Z {
+        &Z_NEG_AXIS_RANGE
+    } else {
+        unreachable!()
     }
 }
 
@@ -134,9 +170,9 @@ fn calc_walked_voxels(
 
 struct MergerIterator {
     walk_axis: (IVec3, IVec3, IVec3),
-    a_range: Box<dyn Iterator<Item = i32>>,
-    b_range: Box<dyn Iterator<Item = i32>>,
-    c_range: Box<dyn Iterator<Item = i32>>,
+    a_range: core::slice::Iter<'static, i32>,
+    b_range: core::slice::Iter<'static, i32>,
+    c_range: core::slice::Iter<'static, i32>,
 
     a: i32,
     b: i32,
@@ -145,9 +181,9 @@ struct MergerIterator {
 impl MergerIterator {
     fn new(side: voxel::Side) -> MergerIterator {
         let walk_axis = get_side_walk_axis(side);
-        let a_range = get_axis_range(walk_axis.0);
-        let b_range = get_axis_range(walk_axis.1);
-        let c_range = get_axis_range(walk_axis.2);
+        let a_range = get_axis_range(walk_axis.0).iter();
+        let b_range = get_axis_range(walk_axis.1).iter();
+        let c_range = get_axis_range(walk_axis.2).iter();
 
         MergerIterator {
             walk_axis,
@@ -166,25 +202,25 @@ impl Iterator for MergerIterator {
     fn next(&mut self) -> Option<Self::Item> {
         // When a is -1, next range value
         if self.a == -1 {
-            self.a = self.a_range.next()?;
+            self.a = *self.a_range.next()?;
         }
 
         // When b is -1, invalidate a and reset b range
         if self.b == -1 {
             if let Some(b) = self.b_range.next() {
-                self.b = b;
+                self.b = *b;
             } else {
                 self.a = -1;
-                self.b_range = get_axis_range(self.walk_axis.1);
+                self.b_range = get_axis_range(self.walk_axis.1).iter();
                 return self.next();
             }
         }
 
-        if let Some(c) = self.c_range.next() {
+        if let Some(&c) = self.c_range.next() {
             Some(unswizzle(self.walk_axis, self.a, self.b, c))
         } else {
             self.b = -1;
-            self.c_range = get_axis_range(self.walk_axis.2);
+            self.c_range = get_axis_range(self.walk_axis.2).iter();
 
             self.next()
         }
@@ -336,6 +372,26 @@ mod tests {
 
         b.iter(|| {
             super::merge(ChunkFacesOcclusion::default(), &kinds);
+        });
+    }
+
+    #[test]
+    fn build_inclusive_range_axis() {
+        let positive = (0..=chunk::X_END as i32).into_iter().collect::<Vec<_>>();
+
+        assert_eq!(positive.len(), X_POS_AXIS_RANGE.len());
+        positive.into_iter().enumerate().for_each(|(i, v)| {
+            assert_eq!(v, X_POS_AXIS_RANGE[i], "Failed at index {}", i);
+        });
+
+        let negative = (0..=chunk::X_END as i32)
+            .rev()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        assert_eq!(negative.len(), X_NEG_AXIS_RANGE.len());
+        negative.into_iter().enumerate().for_each(|(i, v)| {
+            assert_eq!(v, X_NEG_AXIS_RANGE[i], "Failed at index {}", i);
         });
     }
 
