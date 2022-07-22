@@ -96,6 +96,9 @@ fn unswizzle(walk_axis: (IVec3, IVec3, IVec3), a: i32, b: i32, c: i32) -> IVec3 
     walk_axis.0.abs() * a + walk_axis.1.abs() * b + walk_axis.2.abs() * c
 }
 
+/**
+ Generates a list of voxels, based on v1, v2 and v3 inclusive, which was walked.
+*/
 fn calc_walked_voxels(
     v1: IVec3,
     v2: IVec3,
@@ -187,8 +190,8 @@ impl Iterator for MergerIterator {
 /**
  Merge all faces which have the same voxel properties, like kind, lighting, AO and so on.
 
- The basic logic of function was based on [Greedy Mesh](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/).
- It was heavy modified to use a less mathematical and more logic approach (Yeah I don't understood those aliens letters).
+ The basic logic of function was inspired from [Greedy Mesh](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/).
+ It was heavy modified to use a less mathematical and more logic approach.
 
  This function is very CPU intense so it should be run in a separated thread to avoid FPS drops.
 
@@ -223,6 +226,8 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, kinds: &ChunkKind) -> Vec<Vo
             let perpendicular_step = perpendicular_axis;
             let mut v3 = v2 + perpendicular_step;
 
+            // The loop walks all the way up on current_axis and than stepping one unit at time on perpendicular_axis.
+            // This walk it'll be possible to find the next vertex (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
             while chunk::is_within_bounds(next_begin_voxel) {
                 let next_kind = kinds.get(next_begin_voxel);
@@ -251,12 +256,16 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, kinds: &ChunkKind) -> Vec<Vo
                 }
             }
 
+            // At this point, v3 is out-of-bounds or points to a voxel which can't be merged, so step-back one unit
             v3 -= perpendicular_step;
-            let v4 = v1 + (v3 - v2);
 
+            // Flag walked voxels, making a perfect square from v1, v2 and v3, on the given axis.
             for voxel in calc_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis) {
                 merged[chunk::to_index(voxel)] = 1;
             }
+
+            // v4 can be infered com v1, v2 and v3
+            let v4 = v1 + (v3 - v2);
 
             faces_vertices.push(VoxelFace {
                 vertices: [v1, v2, v3, v4],
