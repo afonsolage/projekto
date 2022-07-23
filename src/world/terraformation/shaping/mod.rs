@@ -222,6 +222,7 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
                 normal,
                 uv: tile_uv[i],
                 tile_coord_start,
+                light: (0.0, 0.0, 0.0).into()
             });
         }
     }

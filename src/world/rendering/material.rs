@@ -31,6 +31,9 @@ pub struct ChunkMaterial {
 impl ChunkMaterial {
     pub const ATTRIBUTE_TILE_COORD_START: MeshVertexAttribute =
         MeshVertexAttribute::new("TileCoordStart", 66438, VertexFormat::Float32x2);
+
+    pub const ATTRIBUTE_LIGHT: MeshVertexAttribute =
+        MeshVertexAttribute::new("Light", 66439, VertexFormat::Float32x3);
 }
 
 #[derive(Clone)]
@@ -100,6 +103,7 @@ impl Material for ChunkMaterial {
             Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
             Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
             ChunkMaterial::ATTRIBUTE_TILE_COORD_START.at_shader_location(3),
+            ChunkMaterial::ATTRIBUTE_LIGHT.at_shader_location(4),
         ])?;
         descriptor.vertex.buffers = vec![vertex_layout];
         Ok(())

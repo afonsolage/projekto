@@ -208,6 +208,7 @@ pub struct VoxelVertex {
     pub normal: Vec3,
     pub uv: Vec2,
     pub tile_coord_start: Vec2,
+    pub light: Vec3,
     //TODO: light and color
 }
 

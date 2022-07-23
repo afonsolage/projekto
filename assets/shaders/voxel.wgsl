@@ -6,6 +6,7 @@ struct Vertex {
     [[location(1)]] normal: vec3<f32>;
     [[location(2)]] uv: vec2<f32>;
     [[location(3)]] tile_coord_start: vec2<f32>;
+    [[location(4)]] light: vec3<f32>;
 };
 
 struct VertexOutput {
@@ -32,14 +33,14 @@ var<uniform> material_data: MaterialData;
 var<uniform> mesh: Mesh;
 
 let sun_dir = vec3<f32>(0.5, 0.8, 0.3);
-let ambient_intensity = vec3<f32>(0.25, 0.25, 0.25);
+let ambient_intensity = vec3<f32>(0.001, 0.001, 0.001);
 
 [[stage(vertex)]]
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
     out.clip_position = view.view_proj * mesh.model * vec4<f32>(vertex.position, 1.0);
-    out.light_intensity = max(dot(vertex.normal, sun_dir), 0.0) + ambient_intensity;
+    out.light_intensity = max(dot(vertex.normal, sun_dir), 0.0) * vertex.light + ambient_intensity;
     out.uv = vertex.uv;
     out.tile_coord_start = vertex.tile_coord_start;
 
@@ -55,7 +56,7 @@ struct FragmentInput {
 [[stage(fragment)]]
 fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     let tiled_coord = in.uv % material_data.tile_texture_size;
-    let color =  textureSample(atlas_texture, atlas_sampler, in.tile_coord_start + tiled_coord);
-    
+    let color = textureSample(atlas_texture, atlas_sampler, in.tile_coord_start + tiled_coord);
+
     return color * vec4<f32>(in.light_intensity, 1.0);
 }
