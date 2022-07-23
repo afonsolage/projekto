@@ -105,9 +105,57 @@ impl Kind {
 
 impl ChunkStorageType for Kind {}
 
+pub enum LightTy {
+    Natural,
+    Artificial,
+}
+
+impl LightTy {
+    const fn offset(&self) -> u8 {
+        match self {
+            LightTy::Natural => 0xF,
+            LightTy::Artificial => 0xF0,
+        }
+    }
+
+    const fn shift(&self) -> usize {
+        match self {
+            LightTy::Natural => 0,
+            LightTy::Artificial => 4,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Light(u8);
 
+impl Light {
+    pub fn set(&mut self, ty: LightTy, intensity: u8) {
+        self.0 = (self.0 & !ty.offset()) | (intensity << ty.shift());
+    }
+
+    pub fn get(&self, ty: LightTy) -> u8 {
+        (self.0 & ty.offset()) >> ty.shift()
+    }
+
+    pub fn get_greater_intensity(&self) -> u8 {
+        std::cmp::max(self.get(LightTy::Artificial), self.get(LightTy::Natural))
+    }
+}
+
+impl From<u8> for Light {
+    fn from(v: u8) -> Self {
+        Self(v)
+    }
+}
+
+impl Into<u8> for Light {
+    fn into(self) -> u8 {
+        self.0
+    }
+}
+
+impl ChunkStorageType for Light {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Side {
@@ -240,10 +288,32 @@ pub fn to_world(local: IVec3, chunk_local: IVec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use bevy::math::{IVec3, Vec3};
-    use rand::random;
+    use rand::{random, Rng};
     use ron::de::from_reader;
 
     use super::*;
+
+    #[test]
+    fn light() {
+        let mut light = Light::default();
+
+        let intensity = rand::thread_rng().gen_range(0..=15);
+
+        light.set(LightTy::Artificial, intensity);
+
+        assert_eq!(intensity, light.get(LightTy::Artificial));
+
+        let intensity = rand::thread_rng().gen_range(0..=15);
+        light.set(LightTy::Natural, intensity);
+
+        assert_eq!(intensity, light.get(LightTy::Natural));
+
+        let mut light = Light::default();
+        light.set(LightTy::Natural, 3);
+        light.set(LightTy::Artificial, 4);
+
+        assert_eq!(light.get_greater_intensity(), 4);
+    }
 
     #[test]
     fn faces_occlusion() {

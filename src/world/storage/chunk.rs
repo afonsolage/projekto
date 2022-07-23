@@ -31,6 +31,7 @@ pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Chunk {
     pub kinds: ChunkKind,
+    pub lights: ChunkLight,
     pub vertices: Vec<voxel::VoxelVertex>,
 }
 
@@ -168,6 +169,7 @@ impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
 }
 
 pub type ChunkKind = ChunkStorage<voxel::Kind>;
+pub type ChunkLight = ChunkStorage<voxel::Light>;
 
 pub fn to_index(local: IVec3) -> usize {
     (local.x << X_SHIFT | local.y << Y_SHIFT | local.z << Z_SHIFT) as usize

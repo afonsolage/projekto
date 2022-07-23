@@ -123,7 +123,7 @@ pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IV
 */
 fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
     // Moved to it's own file, since this function is very complex.
-    faces_merger::merge(occlusion, &chunk.kinds)
+    faces_merger::merge(occlusion, &chunk)
 }
 
 /**
@@ -222,7 +222,7 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
                 normal,
                 uv: tile_uv[i],
                 tile_coord_start,
-                light: (0.0, 0.0, 0.0).into()
+                light: (0.0, 0.0, 0.0).into(),
             });
         }
     }
