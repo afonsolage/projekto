@@ -7,70 +7,47 @@ Projekto is a voxel game made with [Bevy Engine](https://github.com/bevyengine/b
 
 This is a general overview of the aspects of the game. Some of these aspects may not be implemented yet or may change on the future.
 
-### World Architecture
+## Terminlogy ###
+- **Voxel** - A volume pixel, represents a point or a cube in a 3D Space. 
+- **Local** - Local position of voxel or chunk. If used in a voxel context it means the local position of the voxel inside the Chunk. If used in a chunk context, it means the local position of the chunk inside the VoxWorld.
+- **Kind** - Indicates what kind of voxel it is (Air, Grass, Dirt, etc)
+- **Side** - Points to a direction, doesn't contain any data.
+- **Face** - Refers to a face of a cubic voxel. Each voxel has 6 faces, one for each side
 
-- **World** -- Holds all logic and data related to the physical world
-  - **Storage** - Methods and data related to storage
-    - **Voxel** - Represents a single voxel. Usually it's opaque and has no data, only functions
-    - **Chunk** - A 3d grid containing voxels backed by a single dimension array
-    - **Landscape** - Contains all visible chunks
-    - **World** - Logical world data storage which holds all voxel persistent data
-      - **ChunkKind** - Contains the kind of chunk
-      - *ChunkLight* - Contains the light of chunk
-  - **Query** -- Methods and utilities to query world state
-    - **Raycast** -- Projects a ray and check for intersection
-  - **Pipeline** -- Systems and components that together composes a pipeline
-    - **Genesis** - Generate and load chunk data from some IO
-    - **Terraforming** - Add, remove or update chunks. Also process propagation (light, water, fire, etc)
-    - **Landscaping** - Manages the chunks and entities relations which are currently visible
-    - **Rendering** - Runs systems that produces the final mesh to be rendered 
-  - **Debug** - Contains functions which helps while developing
+## World Data Structure
+Those are the main data structures used by world. There are others data structures but they are not bedrock like these:
 
-  <!-- - **Manipulation** - Commands to manipulate the world 
-    - **Set Voxel** - Set a voxel value in a given point on the world
-    - **Spawn Chunk**  - Spawns a chunk in a given position
-    - **Despawn Chunk** - Despawn chunk in a given position -->
-  <!--- **Propagation** - Any computation task that needs propagate some value over the world
-    - **Light** - Propagates sun and artificial light over the world
-    - **Water** - Propagates water over the world
-    - **Fire** - Propagates fire over the world
-    - **Physics** - Propagate physics behavior, like structures collapse, over the world -->
-  <!-- - **Rendering** - Steps to render the final visible chunk
-    - **Faces Occlusion** - Hides chunks and voxels that doesn't needs to be rendered
-    - **Ambient Occlusion** - Computes the AO of each face
-    - **Faces Merge** - Merge faces with the same properties to reduce the number of vertices
-    - **Vertex Computation** - Computes the vertices for all visible and merges faces 
-    - **Mesh Generation** - Generates the final mesh using the computed vertices -->
+- **[VoxWorld](https://github.com/afonsolage/projekto/blob/main/src/world/storage/voxworld.rs)** - Holds all chunks inside a map indexed by chunk local position.
+- **[Chunk](https://github.com/afonsolage/projekto/blob/main/src/world/storage/chunk.rs)** - Group voxels together to batch the data transformation. Due to cache friendliness, each voxel data is stored in it's own storage, since usually transformations uses individually those storages.
+- **[ChunkStorage](https://github.com/afonsolage/projekto/blob/main/src/world/storage/chunk.rs)** - A general purpose data structure which stores data in a one dimensional array but can be accessed using voxel locals.
+- **[ChunkNeighborhood](https://github.com/afonsolage/projekto/blob/main/src/world/storage/chunk.rs)** - Used by *ChunkStorage* to cache neighborhood data, to avoid querying for neighbor chunks.
+- **[ChunkStorageType](https://github.com/afonsolage/projekto/blob/main/src/world/storage/chunk.rs)** - A trait that must be implemented by any value stored inside *ChunkStorage*.
+- **[ChunkKind](https://github.com/afonsolage/projekto/blob/main/src/world/storage/chunk.rs)** - A *ChunkStorage* which contains voxel *Kind*.
+- **[ChunkLight](https://github.com/afonsolage/projekto/blob/main/src/world/storage/chunk.rs)** - A *ChunkStorage* which contains voxel *Light*.
 
-## Current Pipeline Stages
+## Terraformation
 
-1. *Genesis*
-    - *Load Chunks* - Process *CmdChunkLoad* and load chunk data from cached assets. If cache doesn't exists, fires an *CmdChunkGen* cmd.
-    - *Generate Chunks* - Process *CmdChunkGen*, generate a chunk data listed bellow, save it on cache and fires an *CmdChunkLoad*.
-        * [ ] Terrain - base terrain height and voxel kinds
-        * [ ] Light - Light sources in general, like sun, moon or magma
-        * [ ] Water - Natural water sources like oceans and lakes
-        * [ ] Flora - Trees and plants
-        * [ ] Fauna - Animals, monsters and NPCs
-        * [ ] Biomes - Forest, mountain, deserts, etc
-2. **Terraforming**
-    - **Add Chunks** - Process *CmdChunkAdd*, add new chunk to world and raises an *EvtChunkAdded*
-    - **Remove Chunks** - Process *CmdChunkRemove*, remove chunk from world and raises an *EvtChunkRemoved*
-    - **Update Chunks** - Process *CmdChunkUpdate*, update chunk and raises and *EvtChunkUpdated*
-3. **Landscaping**
-    - **Despawn chunks** - Watches for *EvtChunkRemoved* event and completely despawn a chunk entity
-    - **Spawn chunks** - Watches for *EvtChunkAdded* event and spawn new chunk entities and raises a *ChunkDirty* to the pipeline
-    - **Update chunks** - Watches for *EvtChunkUpdated* event and raises a *ChunkDirty* event to the pipeline
-4. **Rendering**
-    1. **Faces Occlusion** - Process *EvtChunkDirty* and updates the `ChunkFacesOcclusion` component
-    2. *Ambient Occlusion* - Process *EvtChunkDirty* and updates the `ChunkAmbientOcclusion` component
-    3. **Faces Merging** - Process *EvtChunkDirty* and updates the `ChunkFaces` component
-    4. **Vertex Computation** - Process *EvtChunkDirty* events and updates the `ChunkVertices`component
-    5. **Mesh Generation** - Process *EvtChunkDirty* events and generates updates the `Handle<Mesh>` component
-    6. **Clean up** - Process *EvtChunkDirty* events and remove `ChunkBuildingBundle` components
-5. *PosRender*
-    - *Frustum Culling* - Updates the chunks visibility based on current facing direction
+Terraformation is performed in a separated thread in order to avoid FPS dropping.
 
+1. *[Genesis](https://github.com/afonsolage/projekto/blob/main/src/world/terraformation/genesis.rs)*
+ - Manages chunk loading/saving/generation and reprocessing.
+ - Run in batches, only one at a time, using the following logic flow:
+    1. `optimize_commands` removing duplicated commands or invalidated commands, like load and unload the same chunk.
+    2. `unload_chunks` from world.
+    3. `load_chunks` from persistent cache.
+       1. If cache doesn't exists `generate_chunk`
+    4. `update_chunks` by placing or removing voxels.
+    5. `recompute_chunks` internal state, like light, occlusion, vertices and so on.
+       1. `build_kind_neighborhood` of all chunks in a single pass, since this is required by other steps.
+       2. `propagate_light` on all chunks using a BFS flood-fill algorithm.
+       3. `build_light_neighborhood` after all light was propagated.
+       4. `faces_occlusion` of chunks.
+       5. `merge_faces` of chunks which aren't `is_fully_occluded`.
+       6. `generate_vertices` using the merged faces.
+       7. `save_chunk` on persistent cache if the chunk was updated.
+
+2. *[Landscaping](https://github.com/afonsolage/projekto/blob/main/src/world/terraformation/landscaping.rs)* - Manages which chunks should be loaded/unloaded into/from the world.
+3. *[Terraforming](https://github.com/afonsolage/projekto/blob/main/src/world/terraformation/terraforming.rs)* - Handles queries and voxel update commands.
 
 # License
 [MIT](https://choosealicense.com/licenses/mit/)
