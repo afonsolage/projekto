@@ -69,6 +69,7 @@ fn should_merge(
             occlusion,
         )
         && chunk.kinds.get(voxel) == chunk.kinds.get(next_voxel)
+        && chunk.lights.get(voxel).get_greater_intensity() == chunk.lights.get(next_voxel).get_greater_intensity()
 }
 
 /**
@@ -235,10 +236,12 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
             let perpendicular_axis = walk_axis.1;
 
             let kind = chunk.kinds.get(voxel);
-
+            
             if should_skip_voxel(&merged, voxel, side, kind, &occlusion) {
                 continue;
             }
+
+            let light_intensity = chunk.lights.get(voxel).get_greater_intensity();
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
@@ -286,6 +289,7 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
                 vertices: [v1, v2, v3, v4],
                 side,
                 kind,
+                light_intensity,
             })
         }
     }
@@ -400,6 +404,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -410,6 +415,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -420,6 +426,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -430,6 +437,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -440,6 +448,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -500,6 +509,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -510,6 +520,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -520,6 +531,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -530,6 +542,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -540,6 +553,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -600,6 +614,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -610,6 +625,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -620,6 +636,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -630,6 +647,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -640,6 +658,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -697,6 +716,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -707,6 +727,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -717,6 +738,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -727,6 +749,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
         ];
 
@@ -787,6 +810,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -797,6 +821,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -807,6 +832,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -817,6 +843,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -827,6 +854,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -887,6 +915,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -897,6 +926,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -907,6 +937,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -917,6 +948,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -927,6 +959,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -987,6 +1020,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -997,6 +1031,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -1007,6 +1042,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -1017,6 +1053,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -1027,6 +1064,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 

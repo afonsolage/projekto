@@ -111,6 +111,8 @@ pub enum LightTy {
 }
 
 impl LightTy {
+    pub const MAX_NATURAL_INTENSITY: u8 = 15;
+
     const fn offset(&self) -> u8 {
         match self {
             LightTy::Natural => 0xF,
@@ -130,6 +132,12 @@ impl LightTy {
 pub struct Light(u8);
 
 impl Light {
+    pub fn natural(intensity: u8) -> Self {
+        let mut light = Light::default();
+        light.set(LightTy::Natural, intensity);
+        light
+    }
+
     pub fn set(&mut self, ty: LightTy, intensity: u8) {
         self.0 = (self.0 & !ty.offset()) | (intensity << ty.shift());
     }
@@ -157,8 +165,9 @@ impl Into<u8> for Light {
 
 impl ChunkStorageType for Light {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum Side {
+    #[default]
     Right = 0,
     Left = 1,
     Up = 2,
@@ -247,11 +256,13 @@ impl From<[bool; 6]> for FacesOcclusion {
 
 impl ChunkStorageType for FacesOcclusion {}
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct VoxelFace {
     pub vertices: [IVec3; 4],
     pub side: Side,
-    pub kind: Kind, //TODO: light and color
+    pub kind: Kind,
+    pub light_intensity: u8,
+    //TODO: color
 }
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -261,7 +272,7 @@ pub struct VoxelVertex {
     pub uv: Vec2,
     pub tile_coord_start: Vec2,
     pub light: Vec3,
-    //TODO: light and color
+    //TODO: color
 }
 
 pub fn to_local(world: Vec3) -> IVec3 {

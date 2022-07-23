@@ -92,15 +92,16 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
 pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IVec3) -> bool {
     perf_fn_scope!();
 
-    let neighborhood = build_kind_neighborhood(world, local);
+    let kind_neighborhood = build_kind_neighborhood(world, local);
 
     if let Some(chunk) = world.get_mut(local) {
-        chunk.kinds.neighborhood = neighborhood;
+        chunk.kinds.neighborhood = kind_neighborhood;
 
         let occlusion = faces_occlusion(&chunk.kinds);
         if occlusion.is_fully_occluded() {
             chunk.vertices = vec![]
         } else {
+            // TODO: Propagate light?
             let faces = merge_faces(occlusion, chunk);
             chunk.vertices = generate_vertices(faces, kinds_descs);
         }
@@ -216,13 +217,15 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
             (0.0, 0.0).into(),
         ];
 
+        let light = Vec3::splat(1.0 / face.light_intensity as f32);
+
         for (i, v) in faces_vertices.into_iter().enumerate() {
             vertices.push(VoxelVertex {
                 position: v,
                 normal,
                 uv: tile_uv[i],
                 tile_coord_start,
-                light: (0.0, 0.0, 0.0).into(),
+                light,
             });
         }
     }
@@ -473,6 +476,7 @@ mod tests {
                 (0, 0, -1).into(),
             ],
             kind: 1.into(),
+            ..Default::default()
         }];
 
         let mut descs = KindsDescs::default();

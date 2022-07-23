@@ -16,7 +16,7 @@ use futures_lite::future;
 use crate::world::{
     math,
     storage::{
-        chunk::{self, Chunk, ChunkKind},
+        chunk::{self, Chunk, ChunkKind, ChunkLight},
         voxel::{self, KindsDescs},
         VoxWorld,
     },
@@ -556,9 +556,18 @@ fn generate_chunk(local: IVec3) -> Chunk {
     noise.set_fractal_gain(0.9);
     noise.set_fractal_lacunarity(0.5);
     let world = chunk::to_world(local);
+
     let mut kinds = ChunkKind::default();
+    let mut lights = ChunkLight::default();
+
     for x in 0..chunk::X_AXIS_SIZE {
         for z in 0..chunk::Z_AXIS_SIZE {
+            
+            lights.set(
+                (x as i32, chunk::Y_END, z as i32).into(),
+                voxel::Light::natural(voxel::LightTy::MAX_NATURAL_INTENSITY),
+            );
+
             let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
             let world_height = ((h + 1.0) / 2.0) * (chunk::X_AXIS_SIZE * 2) as f32;
 
@@ -585,6 +594,7 @@ fn generate_chunk(local: IVec3) -> Chunk {
 
     Chunk {
         kinds,
+        lights,
         ..Default::default()
     }
 }
@@ -759,8 +769,6 @@ mod tests {
         assert!(dirty_chunks.contains(&local));
         assert!(world.exists(local), "Chunk should be added to world");
     }
-
- 
 
     #[test]
     fn generate_chunk() {
@@ -1072,5 +1080,4 @@ mod tests {
             ]
         );
     }
-
 }
