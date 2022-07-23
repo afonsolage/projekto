@@ -60,7 +60,18 @@ impl Iterator for ChunkIter {
     }
 }
 
-pub trait ChunkStorageType: Copy + Default + DeserializeOwned + Serialize + PartialEq {}
+pub trait ChunkStorageType:
+    Clone
+    + Copy
+    + core::fmt::Debug
+    + Default
+    + DeserializeOwned
+    + Serialize
+    + PartialEq
+    + Eq
+    + PartialOrd
+{
+}
 
 impl ChunkStorageType for u8 {}
 

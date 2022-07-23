@@ -105,6 +105,10 @@ impl Kind {
 
 impl ChunkStorageType for Kind {}
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
+pub struct Light(u8);
+
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Side {
     Right = 0,
@@ -148,7 +152,7 @@ impl Side {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Deserialize, Serialize)]
 pub struct FacesOcclusion(u8);
 
 const FULL_OCCLUDED_MASK: u8 = 0b0011_1111;
