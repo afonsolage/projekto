@@ -39,9 +39,9 @@ Terraformation is performed in a separated thread in order to avoid FPS dropping
     4. `update_chunks` by placing or removing voxels.
     5. `recompute_chunks` internal state, like light, occlusion, vertices and so on.
        1. `build_kind_neighborhood` of all chunks in a single pass, since this is required by other steps.
-       2. `propagate_light` on all chunks using a BFS flood-fill algorithm.
+       2. `propagate_light` on all chunks using a [BFS flood-fill algorithm](https://en.wikipedia.org/wiki/Flood_fill).
        3. `build_light_neighborhood` after all light was propagated.
-       4. `faces_occlusion` of chunks.
+       4. compute `faces_occlusion` of chunks.
        5. `merge_faces` of chunks which aren't `is_fully_occluded`.
        6. `generate_vertices` using the merged faces.
        7. `save_chunk` on persistent cache if the chunk was updated.
