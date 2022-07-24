@@ -12,6 +12,7 @@ use crate::world::{
 };
 
 mod faces_merger;
+mod light_propagator;
 
 /*
      v3               v2
@@ -104,6 +105,8 @@ pub fn recompute_chunks(
 
     update_kind_neighborhoods(world, &locals);
 
+    light_propagator::propagate(world, &locals);
+
     let occlusions = locals
         .iter()
         .map(|&l| (l, world.get(l).unwrap()))
@@ -115,27 +118,12 @@ pub fn recompute_chunks(
         if occlusion.is_fully_occluded() {
             chunk.vertices = vec![];
         } else {
-            let faces = merge_faces(occlusion, chunk);
+            let faces = faces_merger::merge(occlusion, chunk);
             chunk.vertices = generate_vertices(faces, kinds_descs);
         }
     }
 
     locals
-}
-
-/**
- Merge all faces which have the same voxel properties, like kind, lighting, AO and so on.
-
- The basic logic of function was based on [Greedy Mesh](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/).
- It was heavy modified to use a less mathematical and more logic approach (Yeah I don't understood those aliens letters).
-
- This function is very CPU intense so it should be run in a separated thread to avoid FPS drops.
-
- **Returns** a list of merged [`VoxelFace`]
-*/
-fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
-    // Moved to it's own file, since this function is very complex.
-    faces_merger::merge(occlusion, &chunk.kinds)
 }
 
 /**
@@ -536,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn recompute_chunk() {
+    fn recompute_chunks() {
         let mut descs = KindsDescs::default();
         descs.atlas_size = 100;
         descs.atlas_tile_size = 10; // Each tile is 0.1 wide 1.0/(100.0/10.0)

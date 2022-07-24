@@ -1,6 +1,6 @@
 use crate::world::{
     storage::{
-        chunk::{self, ChunkKind},
+        chunk::{self, ChunkKind, Chunk},
         voxel::{self, VoxelFace},
     },
     terraformation::ChunkFacesOcclusion,
@@ -201,10 +201,12 @@ impl Iterator for MergerIterator {
 
  **Returns** a list of merged [`VoxelFace`]
 */
-pub(super) fn merge(occlusion: ChunkFacesOcclusion, kinds: &ChunkKind) -> Vec<VoxelFace> {
+pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
     perf_fn_scope!();
 
     let mut faces_vertices = vec![];
+
+    let kinds = &chunk.kinds;
 
     for side in voxel::SIDES {
         let walk_axis = get_side_walk_axis(side);
@@ -292,13 +294,14 @@ mod tests {
     #[bench]
     fn merge_faces_empty_chunk(b: &mut Bencher) {
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &ChunkKind::default());
+            super::merge(ChunkFacesOcclusion::default(), &Chunk::default());
         });
     }
 
     #[bench]
     fn merge_faces_half_empty_chunk(b: &mut Bencher) {
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
 
         let mut rng = StdRng::seed_from_u64(53230);
 
@@ -307,13 +310,14 @@ mod tests {
         }
 
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &kinds);
+            super::merge(ChunkFacesOcclusion::default(), &chunk);
         });
     }
 
     #[bench]
     fn merge_faces_half_full_chunk(b: &mut Bencher) {
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
 
         let mut rng = StdRng::seed_from_u64(53230);
 
@@ -322,20 +326,21 @@ mod tests {
         }
 
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &kinds);
+            super::merge(ChunkFacesOcclusion::default(), &chunk);
         });
     }
 
     #[bench]
     fn merge_faces_worst_case(b: &mut Bencher) {
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
 
         for i in 0..chunk::BUFFER_SIZE {
             kinds[i] = ((i % u16::MAX as usize) as u16).into();
         }
 
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &kinds);
+            super::merge(ChunkFacesOcclusion::default(), &chunk);
         });
     }
 
@@ -359,7 +364,9 @@ mod tests {
                        Merge direction (-Z, Y)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((0, 0, 0).into(), 1.into());
         kinds.set((0, 0, 2).into(), 1.into());
         kinds.set((0, 0, 3).into(), 1.into());
@@ -374,7 +381,7 @@ mod tests {
         kinds.set((0, 4, 1).into(), 2.into());
         kinds.set((0, 4, 2).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Right) //We care only for right faces here
             .collect::<Vec<_>>();
@@ -459,7 +466,9 @@ mod tests {
                        Merge direction (Z, Y)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((0, 0, 1).into(), 1.into());
         kinds.set((0, 0, 2).into(), 1.into());
         kinds.set((0, 0, 4).into(), 1.into());
@@ -474,7 +483,7 @@ mod tests {
         kinds.set((0, 4, 2).into(), 2.into());
         kinds.set((0, 4, 3).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Left) //We care only for left faces here
             .collect::<Vec<_>>();
@@ -559,7 +568,9 @@ mod tests {
                        Merge direction (X, -Z)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((1, 0, 4).into(), 1.into());
         kinds.set((2, 0, 4).into(), 1.into());
         kinds.set((4, 0, 4).into(), 1.into());
@@ -574,7 +585,7 @@ mod tests {
         kinds.set((2, 0, 0).into(), 2.into());
         kinds.set((3, 0, 0).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Up) //We care only for Up faces here
             .collect::<Vec<_>>();
@@ -659,7 +670,9 @@ mod tests {
                        Merge direction (X, -Z)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((1, 0, 4).into(), 1.into());
         kinds.set((2, 0, 4).into(), 1.into());
         kinds.set((1, 0, 3).into(), 1.into());
@@ -671,7 +684,7 @@ mod tests {
         kinds.set((1, 0, 0).into(), 1.into());
         kinds.set((2, 0, 0).into(), 1.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Up) //We care only for Up faces here
             .collect::<Vec<_>>();
@@ -746,7 +759,9 @@ mod tests {
                        Merge direction (X, Z)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((1, 0, 0).into(), 1.into());
         kinds.set((2, 0, 0).into(), 1.into());
         kinds.set((4, 0, 0).into(), 1.into());
@@ -761,7 +776,7 @@ mod tests {
         kinds.set((2, 0, 4).into(), 2.into());
         kinds.set((3, 0, 4).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Down) //We care only for Down faces here
             .collect::<Vec<_>>();
@@ -846,7 +861,9 @@ mod tests {
                        Merge direction (X, Y)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((1, 0, 0).into(), 1.into());
         kinds.set((2, 0, 0).into(), 1.into());
         kinds.set((4, 0, 0).into(), 1.into());
@@ -861,7 +878,7 @@ mod tests {
         kinds.set((2, 4, 0).into(), 2.into());
         kinds.set((3, 4, 0).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Front) //We care only for Front faces here
             .collect::<Vec<_>>();
@@ -946,7 +963,9 @@ mod tests {
                        Merge direction (-X, Y)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((3, 0, 0).into(), 1.into());
         kinds.set((2, 0, 0).into(), 1.into());
         kinds.set((0, 0, 0).into(), 1.into());
@@ -961,7 +980,7 @@ mod tests {
         kinds.set((2, 4, 0).into(), 2.into());
         kinds.set((1, 4, 0).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Back) //We care only for Back faces here
             .collect::<Vec<_>>();
