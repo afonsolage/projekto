@@ -69,7 +69,8 @@ fn should_merge(
             occlusion,
         )
         && chunk.kinds.get(voxel) == chunk.kinds.get(next_voxel)
-        && chunk.lights.get(voxel).get_greater_intensity() == chunk.lights.get(next_voxel).get_greater_intensity()
+        && chunk.lights.get(voxel).get_greater_intensity()
+            == chunk.lights.get(next_voxel).get_greater_intensity()
 }
 
 /**
@@ -236,12 +237,16 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
             let perpendicular_axis = walk_axis.1;
 
             let kind = chunk.kinds.get(voxel);
-            
+
             if should_skip_voxel(&merged, voxel, side, kind, &occlusion) {
                 continue;
             }
 
-            let light_intensity = chunk.lights.get(voxel).get_greater_intensity();
+            let light_intensity = chunk
+                .lights
+                .get_absolute(voxel + side.dir())
+                .unwrap_or_default()
+                .get_greater_intensity();
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;

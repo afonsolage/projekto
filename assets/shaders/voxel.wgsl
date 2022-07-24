@@ -32,15 +32,12 @@ var<uniform> material_data: MaterialData;
 [[group(2), binding(0)]]
 var<uniform> mesh: Mesh;
 
-let sun_dir = vec3<f32>(0.5, 0.8, 0.3);
-let ambient_intensity = vec3<f32>(0.001, 0.001, 0.001);
-
 [[stage(vertex)]]
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
     out.clip_position = view.view_proj * mesh.model * vec4<f32>(vertex.position, 1.0);
-    out.light_intensity = max(dot(vertex.normal, sun_dir), 0.0) * vertex.light + ambient_intensity;
+    out.light_intensity = vertex.light;
     out.uv = vertex.uv;
     out.tile_coord_start = vertex.tile_coord_start;
 

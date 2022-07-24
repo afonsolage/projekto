@@ -210,7 +210,9 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
         ];
 
         let light = if face.light_intensity > 0 {
-            Vec3::splat(1.0 / face.light_intensity as f32)
+            Vec3::splat(
+                (1.0 / voxel::Light::MAX_NATURAL_INTENSITY as f32) * face.light_intensity as f32,
+            )
         } else {
             Vec3::ZERO
         };

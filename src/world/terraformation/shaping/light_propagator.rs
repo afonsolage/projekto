@@ -166,25 +166,25 @@ mod tests {
         super::propagate_chunk_natural_light(&mut chunk, &top_voxels().collect::<Vec<_>>());
 
         assert_eq!(
-            chunk.lights.get((2, 3, 0).into()).get_greater_intensity(),
+            chunk.lights.get((2, 3, 0).into()).calc_final_light(),
             0,
             "There should be no light on solid blocks"
         );
 
         assert_eq!(
-            chunk.lights.get((2, 2, 0).into()).get_greater_intensity(),
+            chunk.lights.get((2, 2, 0).into()).calc_final_light(),
             Light::MAX_NATURAL_INTENSITY - 1,
             "There should be no light on solid blocks"
         );
 
         assert_eq!(
-            chunk.lights.get((2, 1, 0).into()).get_greater_intensity(),
+            chunk.lights.get((2, 1, 0).into()).calc_final_light(),
             Light::MAX_NATURAL_INTENSITY - 1,
             "There should be no light on solid blocks"
         );
 
         assert_eq!(
-            chunk.lights.get((2, 0, 0).into()).get_greater_intensity(),
+            chunk.lights.get((2, 0, 0).into()).calc_final_light(),
             Light::MAX_NATURAL_INTENSITY - 1,
             "There should be no light on solid blocks"
         );
@@ -318,7 +318,7 @@ mod tests {
 
         for (local, intensity) in expected {
             assert_eq!(
-                chunk.lights.get(local).get_greater_intensity(),
+                chunk.lights.get(local).calc_final_light(),
                 intensity,
                 "Failed at local {:?}",
                 local
@@ -425,7 +425,7 @@ mod tests {
 
         for (local, intensity) in expected {
             assert_eq!(
-                chunk.lights.get(local).get_greater_intensity(),
+                chunk.lights.get(local).calc_final_light(),
                 intensity,
                 "Failed at local {:?}",
                 local
