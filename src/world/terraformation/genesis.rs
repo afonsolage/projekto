@@ -427,7 +427,8 @@ fn process_batch(
     let mut dirty_chunks = load_chunks(&mut world, &load);
     dirty_chunks.extend(update_chunks(&mut world, &update));
 
-    let updated = recompute_chunks(&mut world, kinds_descs, dirty_chunks.into_iter());
+    let dirty_chunks = dirty_chunks.into_iter().collect::<Vec<_>>();
+    let updated = recompute_chunks(&mut world, kinds_descs, dirty_chunks);
 
     (world, updated)
 }
@@ -448,6 +449,7 @@ fn update_chunks(world: &mut VoxWorld, data: &[(IVec3, VoxelUpdateList)]) -> Has
             for (voxel, kind) in voxels {
                 chunk.kinds.set(*voxel, *kind);
 
+                // If this updates happens at the edge of chunk, mark neighbor chunk as dirty, since this will likely affect him
                 if chunk::is_at_bounds(*voxel) {
                     let neighbor_dir = chunk::get_boundary_dir(*voxel);
                     for unit_dir in math::to_unit_dir(neighbor_dir) {
@@ -499,11 +501,12 @@ fn load_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
         let chunk = if path.exists() {
             load_chunk(&path)
         } else {
+            // Marks all surrounding chunks a dirty and the generated one
             dirty_chunks.extend(
                 voxel::SIDES
                     .iter()
                     .map(|s| s.dir() + local)
-                    .chain(std::iter::once(local)), // Include the generated chunk
+                    .chain(std::iter::once(local)),
             );
 
             generate_chunk(local)
@@ -523,23 +526,19 @@ Refresh chunks internal data due to change in the neighborhood. At moment this f
 fn recompute_chunks(
     world: &mut VoxWorld,
     kinds_descs: KindsDescs,
-    locals: impl Iterator<Item = IVec3>,
+    locals: Vec<IVec3>,
 ) -> Vec<IVec3> {
     perf_fn_scope!();
 
-    let mut result = vec![];
+    let locals = shaping::recompute_chunks(world, &kinds_descs, locals);
 
-    for local in locals {
-        if shaping::recompute_chunk(world, &kinds_descs, local) {
-            result.push(local);
-
-            // TODO: Maybe save all chunks at the end of the batch will be better?
-            let path = local_path(local);
-            save_chunk(&path, world.get(local).unwrap());
-        }
+    // TODO: Find a way to only saving chunks which was really updated.
+    for &local in locals.iter() {
+        let path = local_path(local);
+        save_chunk(&path, world.get(local).unwrap());
     }
 
-    result
+    locals
 }
 
 /**

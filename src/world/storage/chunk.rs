@@ -290,6 +290,12 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
     }
 }
 
+impl<T: ChunkStorageType> PartialEq for ChunkNeighborhood<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
 pub fn overlap_voxel(pos: IVec3) -> (IVec3, IVec3) {
     let overlapping_voxel = math::euclid_rem(
         pos,

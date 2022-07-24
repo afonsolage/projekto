@@ -4,7 +4,7 @@ use crate::world::storage::voxel::{self, FacesOcclusion};
 
 use crate::world::{
     storage::{
-        chunk::{self, Chunk, ChunkKind, ChunkNeighborhood},
+        chunk::{self, Chunk, ChunkNeighborhood},
         voxel::{KindsDescs, VoxelFace, VoxelVertex},
         VoxWorld,
     },
@@ -12,6 +12,7 @@ use crate::world::{
 };
 
 mod faces_merger;
+mod light_propagator;
 
 /*
      v3               v2
@@ -87,44 +88,42 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
 
  This function should be called whenever the chunk has changed and needs to update it's internal state.
 
- **Returns** true of the chunk was recomputed, false otherwise.
+ **Returns** a list of chunks which chunk was recomputed.
 */
-pub fn recompute_chunk(world: &mut VoxWorld, kinds_descs: &KindsDescs, local: IVec3) -> bool {
+pub fn recompute_chunks(
+    world: &mut VoxWorld,
+    kinds_descs: &KindsDescs,
+    locals: Vec<IVec3>,
+) -> Vec<IVec3> {
     perf_fn_scope!();
 
-    let kind_neighborhood = build_kind_neighborhood(world, local);
+    // Keeps only existing chunks
+    let locals = locals
+        .into_iter()
+        .filter(|&l| world.exists(l))
+        .collect::<Vec<_>>();
 
-    if let Some(chunk) = world.get_mut(local) {
-        chunk.kinds.neighborhood = kind_neighborhood;
+    update_kind_neighborhoods(world, &locals);
 
-        let occlusion = faces_occlusion(&chunk.kinds);
+    light_propagator::propagate(world, &locals);
+
+    let occlusions = locals
+        .iter()
+        .map(|&l| (l, world.get(l).unwrap()))
+        .map(|(l, chunk)| (l, faces_occlusion(chunk)))
+        .collect::<Vec<_>>();
+
+    for (local, occlusion) in occlusions {
+        let chunk = world.get_mut(local).unwrap();
         if occlusion.is_fully_occluded() {
-            chunk.vertices = vec![]
+            chunk.vertices = vec![];
         } else {
-            // TODO: Propagate light?
-            let faces = merge_faces(occlusion, chunk);
+            let faces = faces_merger::merge(occlusion, chunk);
             chunk.vertices = generate_vertices(faces, kinds_descs);
         }
-
-        true
-    } else {
-        false
     }
-}
 
-/**
- Merge all faces which have the same voxel properties, like kind, lighting, AO and so on.
-
- The basic logic of function was based on [Greedy Mesh](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/).
- It was heavy modified to use a less mathematical and more logic approach (Yeah I don't understood those aliens letters).
-
- This function is very CPU intense so it should be run in a separated thread to avoid FPS drops.
-
- **Returns** a list of merged [`VoxelFace`]
-*/
-fn merge_faces(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
-    // Moved to it's own file, since this function is very complex.
-    faces_merger::merge(occlusion, &chunk)
+    locals
 }
 
 /**
@@ -132,14 +131,16 @@ Computes the faces occlusion data of the given [`ChunkKind`]
 
 **Returns** computed [`ChunkFacesOcclusion`]
 */
-fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
+fn faces_occlusion(chunk: &Chunk) -> ChunkFacesOcclusion {
     perf_fn_scope!();
+
+    let kinds = &chunk.kinds;
 
     let mut occlusion = ChunkFacesOcclusion::default();
     for voxel in chunk::voxels() {
         let mut voxel_faces = FacesOcclusion::default();
 
-        if chunk.get(voxel).is_empty() {
+        if kinds.get(voxel).is_empty() {
             voxel_faces.set_all(true);
         } else {
             for side in voxel::SIDES {
@@ -149,12 +150,12 @@ fn faces_occlusion(chunk: &ChunkKind) -> ChunkFacesOcclusion {
                 let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
                     let (_, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
 
-                    match chunk.neighborhood.get(side, next_chunk_voxel) {
+                    match kinds.neighborhood.get(side, next_chunk_voxel) {
                         Some(k) => k,
                         None => continue,
                     }
                 } else {
-                    chunk.get(neighbor_pos)
+                    kinds.get(neighbor_pos)
                 };
 
                 voxel_faces.set(side, !neighbor_kind.is_empty());
@@ -235,24 +236,28 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
 }
 
 /**
-Updates the [`ChunkNeighborhood`] of a given chunk local.
-This function updates any neighborhood data needed by chunk.
+Updates the [`ChunkNeighborhood`] of a given locals given.
+This function assumes all given chunks exists into the world and updates any neighborhood data needed by chunk.
 
-Currently it only updates kind neighborhood data, but in the future, it may update light and other relevant data.
+**Panics** if a given chunk local doesn't exists
 */
-fn build_kind_neighborhood(world: &VoxWorld, local: IVec3) -> ChunkNeighborhood<voxel::Kind> {
+fn update_kind_neighborhoods(world: &mut VoxWorld, locals: &[IVec3]) {
     perf_fn_scope!();
 
-    let mut neighborhood = ChunkNeighborhood::default();
-    for side in voxel::SIDES {
-        let dir = side.dir();
-        let neighbor = local + dir;
+    for &local in locals {
+        let mut neighborhood = ChunkNeighborhood::default();
+        for side in voxel::SIDES {
+            let dir = side.dir();
+            let neighbor = local + dir;
 
-        if let Some(neighbor_chunk) = world.get(neighbor) {
-            neighborhood.set(side, &neighbor_chunk.kinds);
+            if let Some(neighbor_chunk) = world.get(neighbor) {
+                neighborhood.set(side, &neighbor_chunk.kinds);
+            }
         }
+
+        let chunk = world.get_mut(local).unwrap();
+        chunk.kinds.neighborhood = neighborhood;
     }
-    neighborhood
 }
 
 #[cfg(test)]
@@ -264,7 +269,7 @@ mod tests {
     #[test]
     fn faces_occlusion_occlude_empty_chunk() {
         // Arrange
-        let chunk = ChunkKind::default();
+        let chunk = Chunk::default();
 
         // Act
         let occlusions = super::faces_occlusion(&chunk);
@@ -279,20 +284,20 @@ mod tests {
     #[test]
     fn faces_occlusion() {
         // Arrange
-        let mut chunk = ChunkKind::default();
+        let mut chunk = Chunk::default();
 
         // Top-Bottom occlusion
-        chunk.set((1, 1, 1).into(), 1.into());
-        chunk.set((1, 2, 1).into(), 1.into());
+        chunk.kinds.set((1, 1, 1).into(), 1.into());
+        chunk.kinds.set((1, 2, 1).into(), 1.into());
 
         // Full occluded voxel at (10, 10, 10)
-        chunk.set((10, 10, 10).into(), 1.into());
-        chunk.set((9, 10, 10).into(), 1.into());
-        chunk.set((11, 10, 10).into(), 1.into());
-        chunk.set((10, 9, 10).into(), 1.into());
-        chunk.set((10, 11, 10).into(), 1.into());
-        chunk.set((10, 10, 9).into(), 1.into());
-        chunk.set((10, 10, 11).into(), 1.into());
+        chunk.kinds.set((10, 10, 10).into(), 1.into());
+        chunk.kinds.set((9, 10, 10).into(), 1.into());
+        chunk.kinds.set((11, 10, 10).into(), 1.into());
+        chunk.kinds.set((10, 9, 10).into(), 1.into());
+        chunk.kinds.set((10, 11, 10).into(), 1.into());
+        chunk.kinds.set((10, 10, 9).into(), 1.into());
+        chunk.kinds.set((10, 10, 11).into(), 1.into());
 
         // Act
         let faces_occlusion = super::faces_occlusion(&chunk);
@@ -324,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn build_kind_neighborhood() {
+    fn build_kind_neighborhoods() {
         let mut world = VoxWorld::default();
 
         let center = (1, 1, 1).into();
@@ -340,9 +345,8 @@ mod tests {
             world.add(pos, chunk);
         }
 
-        let neighborhood = super::build_kind_neighborhood(&mut world, center);
+        super::update_kind_neighborhoods(&mut world, &vec![(1, 1, 1).into()]);
         let chunk = world.get_mut(center).unwrap();
-        chunk.kinds.neighborhood = neighborhood;
 
         for side in voxel::SIDES {
             match side {
@@ -448,11 +452,10 @@ mod tests {
         world.add((0, 0, 0).into(), center);
         world.add((0, -1, 0).into(), down);
 
-        let neighborhood = super::build_kind_neighborhood(&mut world, (0, 0, 0).into());
-        let center = world.get_mut((0, 0, 0).into()).unwrap();
-        center.kinds.neighborhood = neighborhood;
+        super::update_kind_neighborhoods(&mut world, &vec![(0, 0, 0).into()]);
 
-        let faces_occlusion = super::faces_occlusion(&center.kinds);
+        let center = world.get((0, 0, 0).into()).unwrap();
+        let faces_occlusion = super::faces_occlusion(&center);
 
         let faces = faces_occlusion.get((0, chunk::Y_END as i32, 0).into());
         assert_eq!(faces, [false, false, true, false, false, false].into());
@@ -525,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn recompute_chunk() {
+    fn recompute_chunks() {
         let mut descs = KindsDescs::default();
         descs.atlas_size = 100;
         descs.atlas_tile_size = 10; // Each tile is 0.1 wide 1.0/(100.0/10.0)
@@ -537,8 +540,8 @@ mod tests {
 
         let mut world = VoxWorld::default();
         assert!(
-            super::recompute_chunk(&mut world, &descs, (0, 0, 0).into()) == false,
-            "should return false when chunk doesn't exists"
+            super::recompute_chunks(&mut world, &descs, vec![(0, 0, 0).into()]).is_empty(),
+            "should return empty list when chunk doesn't exists"
         );
 
         let mut chunk = Chunk::default();
@@ -549,9 +552,11 @@ mod tests {
         chunk.kinds.set((0, 0, 0).into(), 2.into());
         world.add((1, 0, 0).into(), chunk);
 
-        assert!(
-            super::recompute_chunk(&mut world, &descs, (0, 0, 0).into()),
-            "Should return true when chunk was recomputed"
+        assert_eq!(
+            super::recompute_chunks(&mut world, &descs, vec![(0, 0, 0).into(), (9, 9, 9).into()])
+                .len(),
+            1,
+            "Should return only existing and recomputed chunks"
         );
 
         let chunk = world.get((0, 0, 0).into()).unwrap();

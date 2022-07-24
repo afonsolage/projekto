@@ -375,19 +375,21 @@ mod tests {
         */
 
         let mut chunk = Chunk::default();
-        chunk.kinds.set((0, 0, 0).into(), 1.into());
-        chunk.kinds.set((0, 0, 2).into(), 1.into());
-        chunk.kinds.set((0, 0, 3).into(), 1.into());
-        chunk.kinds.set((0, 1, 1).into(), 1.into());
-        chunk.kinds.set((0, 1, 2).into(), 1.into());
-        chunk.kinds.set((0, 1, 3).into(), 1.into());
-        chunk.kinds.set((0, 2, 1).into(), 2.into());
-        chunk.kinds.set((0, 2, 2).into(), 1.into());
-        chunk.kinds.set((0, 2, 3).into(), 1.into());
-        chunk.kinds.set((0, 3, 1).into(), 2.into());
-        chunk.kinds.set((0, 3, 2).into(), 2.into());
-        chunk.kinds.set((0, 4, 1).into(), 2.into());
-        chunk.kinds.set((0, 4, 2).into(), 2.into());
+        let kinds = &mut chunk.kinds;
+
+        kinds.set((0, 0, 0).into(), 1.into());
+        kinds.set((0, 0, 2).into(), 1.into());
+        kinds.set((0, 0, 3).into(), 1.into());
+        kinds.set((0, 1, 1).into(), 1.into());
+        kinds.set((0, 1, 2).into(), 1.into());
+        kinds.set((0, 1, 3).into(), 1.into());
+        kinds.set((0, 2, 1).into(), 2.into());
+        kinds.set((0, 2, 2).into(), 1.into());
+        kinds.set((0, 2, 3).into(), 1.into());
+        kinds.set((0, 3, 1).into(), 2.into());
+        kinds.set((0, 3, 2).into(), 2.into());
+        kinds.set((0, 4, 1).into(), 2.into());
+        kinds.set((0, 4, 2).into(), 2.into());
 
         let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
@@ -480,19 +482,21 @@ mod tests {
         */
 
         let mut chunk = Chunk::default();
-        chunk.kinds.set((0, 0, 1).into(), 1.into());
-        chunk.kinds.set((0, 0, 2).into(), 1.into());
-        chunk.kinds.set((0, 0, 4).into(), 1.into());
-        chunk.kinds.set((0, 1, 1).into(), 1.into());
-        chunk.kinds.set((0, 1, 2).into(), 1.into());
-        chunk.kinds.set((0, 1, 3).into(), 1.into());
-        chunk.kinds.set((0, 2, 1).into(), 1.into());
-        chunk.kinds.set((0, 2, 2).into(), 1.into());
-        chunk.kinds.set((0, 2, 3).into(), 2.into());
-        chunk.kinds.set((0, 3, 2).into(), 2.into());
-        chunk.kinds.set((0, 3, 3).into(), 2.into());
-        chunk.kinds.set((0, 4, 2).into(), 2.into());
-        chunk.kinds.set((0, 4, 3).into(), 2.into());
+        let kinds = &mut chunk.kinds;
+
+        kinds.set((0, 0, 1).into(), 1.into());
+        kinds.set((0, 0, 2).into(), 1.into());
+        kinds.set((0, 0, 4).into(), 1.into());
+        kinds.set((0, 1, 1).into(), 1.into());
+        kinds.set((0, 1, 2).into(), 1.into());
+        kinds.set((0, 1, 3).into(), 1.into());
+        kinds.set((0, 2, 1).into(), 1.into());
+        kinds.set((0, 2, 2).into(), 1.into());
+        kinds.set((0, 2, 3).into(), 2.into());
+        kinds.set((0, 3, 2).into(), 2.into());
+        kinds.set((0, 3, 3).into(), 2.into());
+        kinds.set((0, 4, 2).into(), 2.into());
+        kinds.set((0, 4, 3).into(), 2.into());
 
         let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
@@ -585,19 +589,21 @@ mod tests {
         */
 
         let mut chunk = Chunk::default();
-        chunk.kinds.set((1, 0, 4).into(), 1.into());
-        chunk.kinds.set((2, 0, 4).into(), 1.into());
-        chunk.kinds.set((4, 0, 4).into(), 1.into());
-        chunk.kinds.set((1, 0, 3).into(), 1.into());
-        chunk.kinds.set((2, 0, 3).into(), 1.into());
-        chunk.kinds.set((3, 0, 3).into(), 1.into());
-        chunk.kinds.set((1, 0, 2).into(), 1.into());
-        chunk.kinds.set((2, 0, 2).into(), 1.into());
-        chunk.kinds.set((3, 0, 2).into(), 2.into());
-        chunk.kinds.set((2, 0, 1).into(), 2.into());
-        chunk.kinds.set((3, 0, 1).into(), 2.into());
-        chunk.kinds.set((2, 0, 0).into(), 2.into());
-        chunk.kinds.set((3, 0, 0).into(), 2.into());
+        let kinds = &mut chunk.kinds;
+
+        kinds.set((1, 0, 4).into(), 1.into());
+        kinds.set((2, 0, 4).into(), 1.into());
+        kinds.set((4, 0, 4).into(), 1.into());
+        kinds.set((1, 0, 3).into(), 1.into());
+        kinds.set((2, 0, 3).into(), 1.into());
+        kinds.set((3, 0, 3).into(), 1.into());
+        kinds.set((1, 0, 2).into(), 1.into());
+        kinds.set((2, 0, 2).into(), 1.into());
+        kinds.set((3, 0, 2).into(), 2.into());
+        kinds.set((2, 0, 1).into(), 2.into());
+        kinds.set((3, 0, 1).into(), 2.into());
+        kinds.set((2, 0, 0).into(), 2.into());
+        kinds.set((3, 0, 0).into(), 2.into());
 
         let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
@@ -690,16 +696,18 @@ mod tests {
         */
 
         let mut chunk = Chunk::default();
-        chunk.kinds.set((1, 0, 4).into(), 1.into());
-        chunk.kinds.set((2, 0, 4).into(), 1.into());
-        chunk.kinds.set((1, 0, 3).into(), 1.into());
-        chunk.kinds.set((2, 0, 3).into(), 1.into());
-        chunk.kinds.set((1, 0, 2).into(), 1.into());
-        chunk.kinds.set((2, 0, 2).into(), 2.into());
-        chunk.kinds.set((1, 0, 1).into(), 1.into());
-        chunk.kinds.set((2, 0, 1).into(), 1.into());
-        chunk.kinds.set((1, 0, 0).into(), 1.into());
-        chunk.kinds.set((2, 0, 0).into(), 1.into());
+        let kinds = &mut chunk.kinds;
+
+        kinds.set((1, 0, 4).into(), 1.into());
+        kinds.set((2, 0, 4).into(), 1.into());
+        kinds.set((1, 0, 3).into(), 1.into());
+        kinds.set((2, 0, 3).into(), 1.into());
+        kinds.set((1, 0, 2).into(), 1.into());
+        kinds.set((2, 0, 2).into(), 2.into());
+        kinds.set((1, 0, 1).into(), 1.into());
+        kinds.set((2, 0, 1).into(), 1.into());
+        kinds.set((1, 0, 0).into(), 1.into());
+        kinds.set((2, 0, 0).into(), 1.into());
 
         let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
@@ -781,19 +789,21 @@ mod tests {
         */
 
         let mut chunk = Chunk::default();
-        chunk.kinds.set((1, 0, 0).into(), 1.into());
-        chunk.kinds.set((2, 0, 0).into(), 1.into());
-        chunk.kinds.set((4, 0, 0).into(), 1.into());
-        chunk.kinds.set((1, 0, 1).into(), 1.into());
-        chunk.kinds.set((2, 0, 1).into(), 1.into());
-        chunk.kinds.set((3, 0, 1).into(), 1.into());
-        chunk.kinds.set((1, 0, 2).into(), 1.into());
-        chunk.kinds.set((2, 0, 2).into(), 1.into());
-        chunk.kinds.set((3, 0, 2).into(), 2.into());
-        chunk.kinds.set((2, 0, 3).into(), 2.into());
-        chunk.kinds.set((3, 0, 3).into(), 2.into());
-        chunk.kinds.set((2, 0, 4).into(), 2.into());
-        chunk.kinds.set((3, 0, 4).into(), 2.into());
+        let kinds = &mut chunk.kinds;
+
+        kinds.set((1, 0, 0).into(), 1.into());
+        kinds.set((2, 0, 0).into(), 1.into());
+        kinds.set((4, 0, 0).into(), 1.into());
+        kinds.set((1, 0, 1).into(), 1.into());
+        kinds.set((2, 0, 1).into(), 1.into());
+        kinds.set((3, 0, 1).into(), 1.into());
+        kinds.set((1, 0, 2).into(), 1.into());
+        kinds.set((2, 0, 2).into(), 1.into());
+        kinds.set((3, 0, 2).into(), 2.into());
+        kinds.set((2, 0, 3).into(), 2.into());
+        kinds.set((3, 0, 3).into(), 2.into());
+        kinds.set((2, 0, 4).into(), 2.into());
+        kinds.set((3, 0, 4).into(), 2.into());
 
         let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
@@ -886,19 +896,21 @@ mod tests {
         */
 
         let mut chunk = Chunk::default();
-        chunk.kinds.set((1, 0, 0).into(), 1.into());
-        chunk.kinds.set((2, 0, 0).into(), 1.into());
-        chunk.kinds.set((4, 0, 0).into(), 1.into());
-        chunk.kinds.set((1, 1, 0).into(), 1.into());
-        chunk.kinds.set((2, 1, 0).into(), 1.into());
-        chunk.kinds.set((3, 1, 0).into(), 1.into());
-        chunk.kinds.set((1, 2, 0).into(), 1.into());
-        chunk.kinds.set((2, 2, 0).into(), 1.into());
-        chunk.kinds.set((3, 2, 0).into(), 2.into());
-        chunk.kinds.set((2, 3, 0).into(), 2.into());
-        chunk.kinds.set((3, 3, 0).into(), 2.into());
-        chunk.kinds.set((2, 4, 0).into(), 2.into());
-        chunk.kinds.set((3, 4, 0).into(), 2.into());
+        let kinds = &mut chunk.kinds;
+
+        kinds.set((1, 0, 0).into(), 1.into());
+        kinds.set((2, 0, 0).into(), 1.into());
+        kinds.set((4, 0, 0).into(), 1.into());
+        kinds.set((1, 1, 0).into(), 1.into());
+        kinds.set((2, 1, 0).into(), 1.into());
+        kinds.set((3, 1, 0).into(), 1.into());
+        kinds.set((1, 2, 0).into(), 1.into());
+        kinds.set((2, 2, 0).into(), 1.into());
+        kinds.set((3, 2, 0).into(), 2.into());
+        kinds.set((2, 3, 0).into(), 2.into());
+        kinds.set((3, 3, 0).into(), 2.into());
+        kinds.set((2, 4, 0).into(), 2.into());
+        kinds.set((3, 4, 0).into(), 2.into());
 
         let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
@@ -991,19 +1003,21 @@ mod tests {
         */
 
         let mut chunk = Chunk::default();
-        chunk.kinds.set((3, 0, 0).into(), 1.into());
-        chunk.kinds.set((2, 0, 0).into(), 1.into());
-        chunk.kinds.set((0, 0, 0).into(), 1.into());
-        chunk.kinds.set((3, 1, 0).into(), 1.into());
-        chunk.kinds.set((2, 1, 0).into(), 1.into());
-        chunk.kinds.set((1, 1, 0).into(), 1.into());
-        chunk.kinds.set((3, 2, 0).into(), 1.into());
-        chunk.kinds.set((2, 2, 0).into(), 1.into());
-        chunk.kinds.set((1, 2, 0).into(), 2.into());
-        chunk.kinds.set((2, 3, 0).into(), 2.into());
-        chunk.kinds.set((1, 3, 0).into(), 2.into());
-        chunk.kinds.set((2, 4, 0).into(), 2.into());
-        chunk.kinds.set((1, 4, 0).into(), 2.into());
+        let kinds = &mut chunk.kinds;
+
+        kinds.set((3, 0, 0).into(), 1.into());
+        kinds.set((2, 0, 0).into(), 1.into());
+        kinds.set((0, 0, 0).into(), 1.into());
+        kinds.set((3, 1, 0).into(), 1.into());
+        kinds.set((2, 1, 0).into(), 1.into());
+        kinds.set((1, 1, 0).into(), 1.into());
+        kinds.set((3, 2, 0).into(), 1.into());
+        kinds.set((2, 2, 0).into(), 1.into());
+        kinds.set((1, 2, 0).into(), 2.into());
+        kinds.set((2, 3, 0).into(), 2.into());
+        kinds.set((1, 3, 0).into(), 2.into());
+        kinds.set((2, 4, 0).into(), 2.into());
+        kinds.set((1, 4, 0).into(), 2.into());
 
         let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
