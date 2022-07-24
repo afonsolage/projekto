@@ -147,18 +147,9 @@ fn faces_occlusion(chunk: &Chunk) -> ChunkFacesOcclusion {
                 let dir = side.dir();
                 let neighbor_pos = voxel + dir;
 
-                let neighbor_kind = if !chunk::is_within_bounds(neighbor_pos) {
-                    let (_, next_chunk_voxel) = chunk::overlap_voxel(neighbor_pos);
-
-                    match kinds.neighborhood.get(side, next_chunk_voxel) {
-                        Some(k) => k,
-                        None => continue,
-                    }
-                } else {
-                    kinds.get(neighbor_pos)
-                };
-
-                voxel_faces.set(side, !neighbor_kind.is_empty());
+                if let Some(neighbor_kind) = kinds.get_absolute(neighbor_pos) {
+                    voxel_faces.set(side, !neighbor_kind.is_empty());
+                }
             }
         }
 
@@ -218,7 +209,11 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
             (0.0, 0.0).into(),
         ];
 
-        let light = Vec3::splat(1.0 / face.light_intensity as f32);
+        let light = if face.light_intensity > 0 {
+            Vec3::splat(1.0 / face.light_intensity as f32)
+        } else {
+            Vec3::ZERO
+        };
 
         for (i, v) in faces_vertices.into_iter().enumerate() {
             vertices.push(VoxelVertex {
@@ -329,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn build_kind_neighborhoods() {
+    fn update_kind_neighborhoods() {
         let mut world = VoxWorld::default();
 
         let center = (1, 1, 1).into();

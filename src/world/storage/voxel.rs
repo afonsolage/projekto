@@ -111,8 +111,6 @@ pub enum LightTy {
 }
 
 impl LightTy {
-    pub const MAX_NATURAL_INTENSITY: u8 = 15;
-
     const fn offset(&self) -> u8 {
         match self {
             LightTy::Natural => 0xF,
@@ -132,6 +130,8 @@ impl LightTy {
 pub struct Light(u8);
 
 impl Light {
+    pub const MAX_NATURAL_INTENSITY: u8 = 15;
+
     pub fn natural(intensity: u8) -> Self {
         let mut light = Light::default();
         light.set(LightTy::Natural, intensity);
@@ -188,12 +188,12 @@ pub const SIDES: [Side; SIDE_COUNT] = [
 impl Side {
     pub fn normal(&self) -> Vec3 {
         match self {
-            Side::Right => Vec3::new(1.0, 0.0, 0.0),
-            Side::Left => Vec3::new(-1.0, 0.0, 0.0),
-            Side::Up => Vec3::new(0.0, 1.0, 0.0),
-            Side::Down => Vec3::new(0.0, -1.0, 0.0),
-            Side::Front => Vec3::new(0.0, 0.0, 1.0),
-            Side::Back => Vec3::new(0.0, 0.0, -1.0),
+            Side::Right => Vec3::X,
+            Side::Left => -Vec3::X,
+            Side::Up => Vec3::Y,
+            Side::Down => -Vec3::Y,
+            Side::Front => Vec3::Z,
+            Side::Back => -Vec3::Z,
         }
     }
 
@@ -205,6 +205,24 @@ impl Side {
             Side::Down => -IVec3::Y,
             Side::Front => IVec3::Z,
             Side::Back => -IVec3::Z,
+        }
+    }
+
+    pub fn from_dir(dir: IVec3) -> Side {
+        if dir == IVec3::X {
+            Side::Right
+        } else if dir == -IVec3::X {
+            Side::Left
+        } else if dir == IVec3::Y {
+            Side::Up
+        } else if dir == -IVec3::Y {
+            Side::Down
+        } else if dir == IVec3::Z {
+            Side::Front
+        } else if dir == -IVec3::Z {
+            Side::Back
+        } else {
+            panic!("Invalid direction received: {:?}", dir)
         }
     }
 }

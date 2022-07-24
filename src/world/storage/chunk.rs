@@ -122,6 +122,18 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.main[to_index(local)] = value;
     }
 
+    pub fn get_absolute(&self, local: IVec3) -> Option<T> {
+        if !chunk::is_within_bounds(local) {
+            let (dir, next_chunk_voxel) = chunk::overlap_voxel(local);
+
+            let side = voxel::Side::from_dir(dir);
+
+            self.neighborhood.get(side, next_chunk_voxel)
+        } else {
+            Some(self.get(local))
+        }
+    }
+
     #[cfg(test)]
     pub fn set_all(&mut self, value: T) {
         self.main.fill(value);

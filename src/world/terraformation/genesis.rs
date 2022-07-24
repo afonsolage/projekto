@@ -561,10 +561,9 @@ fn generate_chunk(local: IVec3) -> Chunk {
 
     for x in 0..chunk::X_AXIS_SIZE {
         for z in 0..chunk::Z_AXIS_SIZE {
-            
             lights.set(
                 (x as i32, chunk::Y_END, z as i32).into(),
-                voxel::Light::natural(voxel::LightTy::MAX_NATURAL_INTENSITY),
+                voxel::Light::natural(voxel::Light::MAX_NATURAL_INTENSITY),
             );
 
             let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
