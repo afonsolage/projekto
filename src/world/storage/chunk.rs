@@ -183,6 +183,14 @@ impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
 pub type ChunkKind = ChunkStorage<voxel::Kind>;
 pub type ChunkLight = ChunkStorage<voxel::Light>;
 
+impl ChunkLight {
+    pub fn set_natural(&mut self, local: IVec3, intensity: u8) {
+        let mut light = self.get(local);
+        light.set(voxel::LightTy::Natural, intensity);
+        self.set(local, light);
+    }
+}
+
 pub fn to_index(local: IVec3) -> usize {
     (local.x << X_SHIFT | local.y << Y_SHIFT | local.z << Z_SHIFT) as usize
 }
@@ -254,20 +262,34 @@ pub fn to_local(world: Vec3) -> IVec3 {
 pub struct ChunkNeighborhood<T>([Option<Vec<T>>; voxel::SIDE_COUNT]);
 
 impl<T: ChunkStorageType> ChunkNeighborhood<T> {
-    pub fn set(&mut self, side: voxel::Side, chunk: &ChunkStorage<T>) {
-        let (begin, end_inclusive) = match side {
+    fn get_side_range(side: voxel::Side) -> (IVec3, IVec3) {
+        match side {
             voxel::Side::Right => ((0, 0, 0).into(), (0, Y_END, Z_END).into()),
             voxel::Side::Left => ((X_END, 0, 0).into(), (X_END, Y_END, Z_END).into()),
             voxel::Side::Up => ((0, 0, 0).into(), (X_END, 0, Z_END).into()),
             voxel::Side::Down => ((0, Y_END, 0).into(), (X_END, Y_END, Z_END).into()),
             voxel::Side::Front => ((0, 0, 0).into(), (X_END, Y_END, 0).into()),
             voxel::Side::Back => ((0, 0, Z_END).into(), (X_END, Y_END, Z_END).into()),
-        };
+        }
+    }
 
-        let mut neighborhood_side = vec![T::default(); chunk::X_AXIS_SIZE * chunk::Y_AXIS_SIZE];
-        for pos in query::range_inclusive(begin, end_inclusive) {
-            let index = Self::to_index(side, pos);
-            neighborhood_side[index] = chunk.get(pos)
+    pub fn side_iterator(side: voxel::Side) -> impl Iterator<Item = IVec3> {
+        let (begin, end_inclusive) = Self::get_side_range(side);
+
+        query::range_inclusive(begin, end_inclusive)
+    }
+
+    pub fn set(&mut self, side: voxel::Side, chunk: &ChunkStorage<T>) {
+        let index_n_locals = Self::side_iterator(side)
+            .map(|v| (Self::to_index(side, v), v))
+            .collect::<Vec<_>>();
+
+        let capacity = index_n_locals.iter().map(|(idx, _)| *idx).max().unwrap() + 1;
+
+        let mut neighborhood_side = vec![T::default(); capacity];
+
+        for (index, pos) in index_n_locals {
+            neighborhood_side[index] = chunk.get(pos);
         }
 
         self.0[side as usize] = Some(neighborhood_side);

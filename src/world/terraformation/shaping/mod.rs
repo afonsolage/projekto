@@ -106,6 +106,7 @@ pub fn recompute_chunks(
     update_kind_neighborhoods(world, &locals);
 
     light_propagator::propagate(world, &locals);
+    
 
     let occlusions = locals
         .iter()

@@ -1,21 +1,116 @@
 use std::collections::VecDeque;
 
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
 
 use crate::world::storage::{
-    chunk::{self, Chunk},
+    chunk::{self, Chunk, ChunkNeighborhood},
     voxel, VoxWorld,
 };
 
 pub fn propagate(world: &mut VoxWorld, locals: &[IVec3]) {
     propagate_natural_light(world, locals);
+    update_light_neighborhood(world, locals);
+    propagate_neighbors_natural_light(world, locals);
+}
+
+fn propagate_neighbors_natural_light(world: &mut VoxWorld, locals: &[IVec3]) -> Vec<IVec3> {
+    // Add all neighbors of the given locals list to the queue
+    let mut queue = locals
+        .iter()
+        .map(|&local| {
+            (
+                local,
+                voxel::SIDES
+                    .iter()
+                    .flat_map(|&side| ChunkNeighborhood::<voxel::Light>::side_iterator(side))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<VecDeque<_>>();
+
+    let mut touched = HashSet::new();
+
+    while let Some((chunk_local, locals)) = queue.pop_front() {
+        if let Some(chunk) = world.get_mut(chunk_local) {
+            touched.insert(chunk_local);
+            queue.extend(propagate_chunk_neighbor_natural_light(chunk, &locals))
+        }
+    }
+
+    touched.into_iter().collect()
+}
+
+fn propagate_chunk_neighbor_natural_light(
+    chunk: &mut Chunk,
+    locals: &[IVec3],
+) -> HashMap<IVec3, Vec<IVec3>> {
+    let mut touched_neighbors = HashMap::new();
+
+    for &local in locals {
+        if !chunk.kinds.get(local).is_empty() {
+            // Nothing to propagate here.
+            continue;
+        }
+
+        let light = chunk.lights.get(local).get(voxel::LightTy::Natural);
+
+        for side in voxel::SIDES {
+            match chunk.kinds.get_absolute(local) {
+                None => continue,
+                Some(kind) if !kind.is_empty() => continue,
+                _ => (),
+            }
+
+            let neighbor_local = side.dir() + local;
+            let neighbor_light = chunk
+                .lights
+                .get_absolute(neighbor_local)
+                .unwrap_or_default()
+                .get(voxel::LightTy::Natural);
+
+            if light > neighbor_light {
+                let (_, neighbor_chunk_voxel) = chunk::overlap_voxel(neighbor_local);
+                let neighbor_chunk_local = local + side.dir();
+
+                touched_neighbors
+                    .entry(neighbor_chunk_local)
+                    .or_insert(vec![])
+                    .push(neighbor_chunk_voxel);
+
+                chunk.lights.set_natural(neighbor_chunk_voxel, light);
+            } else if neighbor_light > light {
+                chunk.lights.set_natural(local, neighbor_light);
+            }
+        }
+    }
+
+    touched_neighbors
+}
+
+fn update_light_neighborhood(world: &mut VoxWorld, locals: &[IVec3]) {
+    for &local in locals {
+        let mut neighborhood = ChunkNeighborhood::default();
+        for side in voxel::SIDES {
+            let dir = side.dir();
+            let neighbor = local + dir;
+
+            if let Some(neighbor_chunk) = world.get(neighbor) {
+                neighborhood.set(side, &neighbor_chunk.lights);
+            }
+        }
+
+        let chunk = world.get_mut(local).unwrap();
+        chunk.lights.neighborhood = neighborhood;
+    }
 }
 
 fn propagate_natural_light(world: &mut VoxWorld, locals: &[IVec3]) {
     for &local in locals {
         let chunk = world.get_mut(local).unwrap();
 
-        // TODO: Find a way to identify which voxels needs to be "repropagated"
         let top_voxels = (0..=chunk::X_END)
             .flat_map(|x| (0..=chunk::Z_END).map(move |z| (x, chunk::Y_END, z).into()))
             .collect::<Vec<_>>();
@@ -103,7 +198,10 @@ mod tests {
         let mut chunk = Chunk::default();
 
         set_natural_light_on_top_voxels(&mut chunk);
-        super::propagate_chunk_natural_light(&mut chunk, &top_voxels().collect::<Vec<_>>());
+        super::propagate_chunk_neighbor_natural_light(
+            &mut chunk,
+            &top_voxels().collect::<Vec<_>>(),
+        );
 
         // Test the test function
         assert_eq!(
@@ -127,7 +225,10 @@ mod tests {
 
         chunk.kinds.set((1, 1, 0).into(), 1.into());
 
-        super::propagate_chunk_natural_light(&mut chunk, &top_voxels().collect::<Vec<_>>());
+        super::propagate_chunk_neighbor_natural_light(
+            &mut chunk,
+            &top_voxels().collect::<Vec<_>>(),
+        );
 
         assert_eq!(
             chunk
@@ -163,7 +264,10 @@ mod tests {
 
         chunk.kinds.set((2, 3, 0).into(), 1.into());
 
-        super::propagate_chunk_natural_light(&mut chunk, &top_voxels().collect::<Vec<_>>());
+        super::propagate_chunk_natural_light(
+            &mut chunk,
+            &top_voxels().collect::<Vec<_>>(),
+        );
 
         assert_eq!(
             chunk.lights.get((2, 3, 0).into()).get_greater_intensity(),
@@ -174,19 +278,16 @@ mod tests {
         assert_eq!(
             chunk.lights.get((2, 2, 0).into()).get_greater_intensity(),
             Light::MAX_NATURAL_INTENSITY - 1,
-            "There should be no light on solid blocks"
         );
 
         assert_eq!(
             chunk.lights.get((2, 1, 0).into()).get_greater_intensity(),
             Light::MAX_NATURAL_INTENSITY - 1,
-            "There should be no light on solid blocks"
         );
 
         assert_eq!(
             chunk.lights.get((2, 0, 0).into()).get_greater_intensity(),
             Light::MAX_NATURAL_INTENSITY - 1,
-            "There should be no light on solid blocks"
         );
     }
 
@@ -247,7 +348,10 @@ mod tests {
         chunk.kinds.set((7, 4, 0).into(), 1.into());
         chunk.kinds.set((7, 5, 0).into(), 1.into());
 
-        super::propagate_chunk_natural_light(&mut chunk, &top_voxels().collect::<Vec<_>>());
+        super::propagate_chunk_natural_light(
+            &mut chunk,
+            &top_voxels().collect::<Vec<_>>(),
+        );
 
         let expected = [
             ((0, 0, 0).into(), 0),
