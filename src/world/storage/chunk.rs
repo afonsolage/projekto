@@ -190,7 +190,7 @@ impl ChunkLight {
         self.set(local, light);
     }
 
-    pub fn get_natural(&mut self, local: IVec3) -> u8 {
+    pub fn get_natural(&self, local: IVec3) -> u8 {
         self.get(local).get(voxel::LightTy::Natural)
     }
 }
