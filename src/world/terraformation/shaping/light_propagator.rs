@@ -7,17 +7,24 @@ use bevy::{
 
 use crate::world::storage::{
     chunk::{self, Chunk, ChunkNeighborhood},
-    voxel, VoxWorld,
+    voxel::{self, LightTy},
+    VoxWorld,
 };
 
 pub fn propagate(world: &mut VoxWorld, locals: &[IVec3]) {
-    propagate_natural_light(world, locals);
-    update_light_neighborhood(world, locals);
-    propagate_neighbors_natural_light(world, locals);
+    // TODO: Separate genesis light propagation from update voxel modification
+
+    // Propagate initial top-down natural light across all given chunks.
+    // This function propagate the natural light from the top-most voxels downwards.
+    // This function only propagate internally, does not spread the light to neighbors.
+    propagate_natural_light_top_down(world, locals);
+
+    // Propagates natural light from/into the neighborhood
+    // This function must be called after natural internal propagation, since it will check neighbors only
+    propagate_natural_light_neighborhood(world, locals);
 }
 
-fn propagate_neighbors_natural_light(world: &mut VoxWorld, locals: &[IVec3]) -> Vec<IVec3> {
-    // Add all neighbors of the given locals list to the queue
+fn propagate_natural_light_neighborhood(world: &mut VoxWorld, locals: &[IVec3]) -> Vec<IVec3> {
     let mut queue = locals
         .iter()
         .map(|&local| {
@@ -33,21 +40,35 @@ fn propagate_neighbors_natural_light(world: &mut VoxWorld, locals: &[IVec3]) -> 
 
     let mut touched = HashSet::new();
 
-    while let Some((chunk_local, locals)) = queue.pop_front() {
-        if let Some(chunk) = world.get_mut(chunk_local) {
-            touched.insert(chunk_local);
-            queue.extend(propagate_chunk_neighbor_natural_light(chunk, &locals))
+    while let Some((chunk_local, voxels)) = queue.pop_front() {
+        if !world.exists(chunk_local) {
+            continue;
         }
+
+        // TODO: Check if it's possible to optimize this later on
+        update_chunk_light_neighborhood(world, chunk_local);
+
+        let chunk = world.get_mut(chunk_local).unwrap();
+
+        queue.extend(
+            // This function returns which neighbor (dir) needs to be updated.
+            propagate_chunk_natural_light(chunk, &voxels, true)
+                .into_iter()
+                .map(|(dir, voxels)| (dir + chunk_local, voxels)), // Convert the dir to local
+        );
+
+        touched.insert(chunk_local);
     }
 
     touched.into_iter().collect()
 }
 
-fn propagate_chunk_neighbor_natural_light(
+/*
+fn propagate_chunk_natural_light_neighborhood(
     chunk: &mut Chunk,
     locals: &[IVec3],
 ) -> HashMap<IVec3, Vec<IVec3>> {
-    let mut touched_neighbors = HashMap::new();
+    let mut pending_propagation = HashMap::new();
 
     for &local in locals {
         if !chunk.kinds.get(local).is_empty() {
@@ -71,43 +92,43 @@ fn propagate_chunk_neighbor_natural_light(
                 .unwrap_or_default()
                 .get(voxel::LightTy::Natural);
 
-            if light > neighbor_light {
+            if light > 1 && light > neighbor_light {
                 let (_, neighbor_chunk_voxel) = chunk::overlap_voxel(neighbor_local);
-                let neighbor_chunk_local = local + side.dir();
 
-                touched_neighbors
-                    .entry(neighbor_chunk_local)
+                pending_propagation
+                    .entry(side.dir())
                     .or_insert(vec![])
                     .push(neighbor_chunk_voxel);
-
-                chunk.lights.set_natural(neighbor_chunk_voxel, light);
-            } else if neighbor_light > light {
+            } else if neighbor_light > 1 && neighbor_light > light {
+                pending_propagation
+                    .entry(IVec3::ZERO)
+                    .or_insert(vec![])
+                    .push(local);
                 chunk.lights.set_natural(local, neighbor_light);
             }
         }
     }
 
-    touched_neighbors
+    pending_propagation
 }
+*/
 
-fn update_light_neighborhood(world: &mut VoxWorld, locals: &[IVec3]) {
-    for &local in locals {
-        let mut neighborhood = ChunkNeighborhood::default();
-        for side in voxel::SIDES {
-            let dir = side.dir();
-            let neighbor = local + dir;
+fn update_chunk_light_neighborhood(world: &mut VoxWorld, local: IVec3) {
+    let mut neighborhood = ChunkNeighborhood::default();
+    for side in voxel::SIDES {
+        let dir = side.dir();
+        let neighbor = local + dir;
 
-            if let Some(neighbor_chunk) = world.get(neighbor) {
-                neighborhood.set(side, &neighbor_chunk.lights);
-            }
+        if let Some(neighbor_chunk) = world.get(neighbor) {
+            neighborhood.set(side, &neighbor_chunk.lights);
         }
-
-        let chunk = world.get_mut(local).unwrap();
-        chunk.lights.neighborhood = neighborhood;
     }
+
+    let chunk = world.get_mut(local).unwrap();
+    chunk.lights.neighborhood = neighborhood;
 }
 
-fn propagate_natural_light(world: &mut VoxWorld, locals: &[IVec3]) {
+fn propagate_natural_light_top_down(world: &mut VoxWorld, locals: &[IVec3]) {
     for &local in locals {
         let chunk = world.get_mut(local).unwrap();
 
@@ -115,55 +136,107 @@ fn propagate_natural_light(world: &mut VoxWorld, locals: &[IVec3]) {
             .flat_map(|x| (0..=chunk::Z_END).map(move |z| (x, chunk::Y_END, z).into()))
             .collect::<Vec<_>>();
 
-        propagate_chunk_natural_light(chunk, &top_voxels);
+        propagate_chunk_natural_light(chunk, &top_voxels, false);
     }
 }
 
-fn propagate_chunk_natural_light(chunk: &mut Chunk, locals: &[IVec3]) {
+fn propagate_chunk_natural_light(
+    chunk: &mut Chunk,
+    locals: &[IVec3],
+    propagate_to_neighbors: bool,
+) -> HashMap<IVec3, Vec<IVec3>> {
     // Create a queue with top-most voxels, to start propagation from there
     let mut queue = locals.iter().cloned().collect::<VecDeque<_>>();
 
-    while let Some(local) = queue.pop_front() {
-        let light = chunk.lights.get(local);
-        let light_intensity = light.get(voxel::LightTy::Natural);
+    let mut touched_neighbors = HashMap::new();
 
-        if light_intensity <= 1 {
+    while let Some(voxel) = queue.pop_front() {
+        if !chunk.kinds.get(voxel).is_empty() {
             continue;
+        }
+
+        let light = chunk.lights.get(voxel);
+        let current_intensity = light.get(voxel::LightTy::Natural);
+
+        if voxel == (15, 10, 0).into() {
+            dbg!("Here");
         }
 
         for side in voxel::SIDES {
             let dir = side.dir();
-            let neighbor_local = local + dir;
+            let side_voxel = voxel + dir;
 
-            // Skip neighborhood for now
-            if chunk::is_within_bounds(neighbor_local) {
-                // TODO: Check if kind is transparent or opaque
-                if !chunk.kinds.get(neighbor_local).is_empty() {
-                    continue;
+            // If side voxel isn't empty, there nothing to do here.
+            match chunk.kinds.get_absolute(side_voxel) {
+                Some(k) if !k.is_empty() => continue,
+                None => continue,
+                _ => (),
+            }
+
+            let current_propagated_intensity = if side == voxel::Side::Down
+                && current_intensity == voxel::Light::MAX_NATURAL_INTENSITY
+            {
+                current_intensity
+            } else if current_intensity > 0 {
+                current_intensity - 1
+            } else {
+                0
+            };
+
+            if chunk::is_within_bounds(side_voxel) {
+                // Propagate inside the chunk
+                if current_propagated_intensity > chunk.lights.get_natural(side_voxel) {
+                    chunk
+                        .lights
+                        .set_natural(side_voxel, current_propagated_intensity);
+
+                    if current_propagated_intensity > 1 {
+                        queue.push_back(side_voxel);
+                    }
                 }
+            } else if propagate_to_neighbors {
+                // Propagate outside the chunk
 
-                let propagated_intensity = if side == voxel::Side::Down
-                    && light_intensity == voxel::Light::MAX_NATURAL_INTENSITY
-                {
-                    light_intensity
-                } else {
-                    light_intensity - 1
+                let (_, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
+
+                let neighbor_intensity = match chunk.lights.neighborhood.get(side, neighbor_voxel) {
+                    Some(l) => l.get(LightTy::Natural),
+                    None => continue,
                 };
 
-                let mut neighbor_light = chunk.lights.get(neighbor_local);
+                let neighbor_propagated_intensity = if side == voxel::Side::Down
+                    && neighbor_intensity == voxel::Light::MAX_NATURAL_INTENSITY
+                {
+                    neighbor_intensity
+                } else if neighbor_intensity > 1 {
+                    neighbor_intensity - 1
+                } else {
+                    0
+                };
 
-                if propagated_intensity > neighbor_light.get(voxel::LightTy::Natural) {
-                    neighbor_light.set(voxel::LightTy::Natural, propagated_intensity);
+                if neighbor_propagated_intensity > current_intensity {
+                    // Propagate neighbor light to current voxel
+                    chunk
+                        .lights
+                        .set_natural(voxel, neighbor_propagated_intensity);
 
-                    chunk.lights.set(neighbor_local, neighbor_light);
-
-                    if propagated_intensity > 1 {
-                        queue.push_back(neighbor_local);
+                    // Queue back for propagation
+                    if neighbor_propagated_intensity > 1 {
+                        queue.push_back(voxel);
                     }
+                } else if current_propagated_intensity > neighbor_intensity {
+                    // Flag neighbor to propagate light on verified voxel
+
+                    touched_neighbors
+                        .entry(side.dir())
+                        .or_insert(vec![])
+                        .push(neighbor_voxel);
                 }
             }
         }
     }
+
+    touched_neighbors
 }
 
 #[cfg(test)]
@@ -198,10 +271,7 @@ mod tests {
         let mut chunk = Chunk::default();
 
         set_natural_light_on_top_voxels(&mut chunk);
-        super::propagate_chunk_neighbor_natural_light(
-            &mut chunk,
-            &top_voxels().collect::<Vec<_>>(),
-        );
+        super::propagate_chunk_natural_light(&mut chunk, &top_voxels().collect::<Vec<_>>(), false);
 
         // Test the test function
         assert_eq!(
@@ -209,35 +279,12 @@ mod tests {
             chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE
         );
 
-        for local in top_voxels() {
+        for local in chunk::voxels() {
             assert_eq!(
                 chunk.lights.get(local).get(voxel::LightTy::Natural),
                 Light::MAX_NATURAL_INTENSITY
             );
         }
-    }
-
-    #[test]
-    fn propagate_chunk_natural_light_non_empty() {
-        let mut chunk = Chunk::default();
-
-        set_natural_light_on_top_voxels(&mut chunk);
-
-        chunk.kinds.set((1, 1, 0).into(), 1.into());
-
-        super::propagate_chunk_neighbor_natural_light(
-            &mut chunk,
-            &top_voxels().collect::<Vec<_>>(),
-        );
-
-        assert_eq!(
-            chunk
-                .lights
-                .get((1, 1, 0).into())
-                .get(voxel::LightTy::Natural),
-            0,
-            "There should be no light on solid blocks"
-        );
     }
 
     #[test]
@@ -264,10 +311,7 @@ mod tests {
 
         chunk.kinds.set((2, 3, 0).into(), 1.into());
 
-        super::propagate_chunk_natural_light(
-            &mut chunk,
-            &top_voxels().collect::<Vec<_>>(),
-        );
+        super::propagate_chunk_natural_light(&mut chunk, &top_voxels().collect::<Vec<_>>(), false);
 
         assert_eq!(
             chunk.lights.get((2, 3, 0).into()).get_greater_intensity(),
@@ -348,10 +392,7 @@ mod tests {
         chunk.kinds.set((7, 4, 0).into(), 1.into());
         chunk.kinds.set((7, 5, 0).into(), 1.into());
 
-        super::propagate_chunk_natural_light(
-            &mut chunk,
-            &top_voxels().collect::<Vec<_>>(),
-        );
+        super::propagate_chunk_natural_light(&mut chunk, &top_voxels().collect::<Vec<_>>(), false);
 
         let expected = [
             ((0, 0, 0).into(), 0),
@@ -452,13 +493,13 @@ mod tests {
         */
 
         // Allow light to enter on (7, 5)
-        chunk.kinds.set((7, 5, 0).into(), 1.into());
+        chunk.kinds.set((7, 5, 0).into(), 0.into());
         chunk.lights.set(
             (7, 5, 0).into(),
             Light::natural(Light::MAX_NATURAL_INTENSITY),
         );
 
-        super::propagate_chunk_natural_light(&mut chunk, &[(7, 5, 0).into()]);
+        super::propagate_chunk_natural_light(&mut chunk, &[(7, 5, 0).into()], false);
 
         let expected = [
             ((0, 0, 0).into(), 0),
@@ -532,6 +573,135 @@ mod tests {
                 chunk.lights.get(local).get_greater_intensity(),
                 intensity,
                 "Failed at local {:?}",
+                local
+            );
+        }
+    }
+
+
+    #[test]
+    fn propagate_natural_light_two_neighborhood() {
+        /*
+                           Chunk             Neighbor
+                        +----+----+        +----+----+
+                     11 | -- | 15 |        | -- | -- |
+                        +----+----+        +----+----+
+                     10 | -- | 15 |        | 14 | -- |
+                        +----+----+        +----+----+
+                     9  | -- | -- |        | 13 | -- |
+                        +----+----+        +----+----+
+                     8  | -- | 11 |        | 12 | -- |
+                        +----+----+        +----+----+
+                     7  | -- | 10 |        | -- | -- |
+                        +----+----+        +----+----+
+                     6  | -- | 9  |        | 8  | -- |
+                        +----+----+        +----+----+
+                     5  | -- | -- |        | 7  | -- |
+                        +----+----+        +----+----+
+                     4  | -- | 5  |        | 6  | -- |
+                        +----+----+        +----+----+
+                     3  | -- | 4  |        | -- | -- |
+                        +----+----+        +----+----+
+        Y            2  | -- | 3  |        | 2  | -- |
+        |               +----+----+        +----+----+
+        |            1  | -- | -- |        | 1  | -- |
+        + ---- X        +----+----+        +----+----+
+                     0  | -- | 0  |        | 0  | -- |
+                        +----+----+        +----+----+
+
+                     +    14   15            0    1
+        */
+
+        let mut world = VoxWorld::default();
+
+        let mut chunk = Chunk::default();
+        chunk.kinds.set_all(1.into()); // Make solid
+
+        let mut neighbor = Chunk::default();
+        neighbor.kinds.set_all(1.into()); // Make solid
+
+        // Make holes to light propagate through
+        for y in (11..=chunk::Y_END).rev() {
+            chunk.kinds.set((15, y, 0).into(), 0.into());
+        }
+
+        chunk.kinds.set((15, 11, 0).into(), 0.into());
+        chunk.kinds.set((15, 10, 0).into(), 0.into());
+        chunk.kinds.set((15, 8, 0).into(), 0.into());
+        chunk.kinds.set((15, 7, 0).into(), 0.into());
+        chunk.kinds.set((15, 6, 0).into(), 0.into());
+        chunk.kinds.set((15, 4, 0).into(), 0.into());
+        chunk.kinds.set((15, 3, 0).into(), 0.into());
+        chunk.kinds.set((15, 2, 0).into(), 0.into());
+        chunk.kinds.set((15, 0, 0).into(), 0.into());
+
+        neighbor.kinds.set((0, 10, 0).into(), 0.into());
+        neighbor.kinds.set((0, 9, 0).into(), 0.into());
+        neighbor.kinds.set((0, 8, 0).into(), 0.into());
+        neighbor.kinds.set((0, 6, 0).into(), 0.into());
+        neighbor.kinds.set((0, 5, 0).into(), 0.into());
+        neighbor.kinds.set((0, 4, 0).into(), 0.into());
+        neighbor.kinds.set((0, 2, 0).into(), 0.into());
+        neighbor.kinds.set((0, 1, 0).into(), 0.into());
+        neighbor.kinds.set((0, 0, 0).into(), 0.into());
+
+        // Set light only on chunk, so it can propagate all the way down.
+        chunk.lights.set(
+            (15, chunk::Y_END, 0).into(),
+            Light::natural(Light::MAX_NATURAL_INTENSITY),
+        );
+
+        world.add((0, 0, 0).into(), chunk);
+        world.add((1, 0, 0).into(), neighbor);
+
+        super::super::update_kind_neighborhoods(
+            &mut world,
+            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
+        );
+        super::propagate(&mut world, &vec![(0, 0, 0).into(), (1, 0, 0).into()]);
+
+        let chunk_expected = [
+            ((15, 11, 0).into(), 15),
+            ((15, 10, 0).into(), 15),
+            ((15, 8, 0).into(), 11),
+            ((15, 7, 0).into(), 10),
+            ((15, 6, 0).into(), 9),
+            ((15, 4, 0).into(), 5),
+            ((15, 3, 0).into(), 4),
+            ((15, 2, 0).into(), 3),
+            ((15, 0, 0).into(), 0),
+        ];
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+
+        for (local, intensity) in chunk_expected {
+            assert_eq!(
+                chunk.lights.get(local).get(voxel::LightTy::Natural),
+                intensity,
+                "Failed at {:?}",
+                local
+            );
+        }
+
+        let neighbor_expected = [
+            ((0, 10, 0).into(), 14),
+            ((0, 9, 0).into(), 13),
+            ((0, 8, 0).into(), 12),
+            ((0, 6, 0).into(), 8),
+            ((0, 5, 0).into(), 7),
+            ((0, 4, 0).into(), 6),
+            ((0, 2, 0).into(), 2),
+            ((0, 1, 0).into(), 1),
+            ((0, 0, 0).into(), 0),
+        ];
+
+        let neighbor = world.get((1, 0, 0).into()).unwrap();
+
+        for (local, intensity) in neighbor_expected {
+            assert_eq!(
+                neighbor.lights.get(local).get(voxel::LightTy::Natural),
+                intensity,
+                "Failed at {:?}",
                 local
             );
         }

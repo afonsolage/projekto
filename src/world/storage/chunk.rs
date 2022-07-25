@@ -189,6 +189,10 @@ impl ChunkLight {
         light.set(voxel::LightTy::Natural, intensity);
         self.set(local, light);
     }
+
+    pub fn get_natural(&mut self, local: IVec3) -> u8 {
+        self.get(local).get(voxel::LightTy::Natural)
+    }
 }
 
 pub fn to_index(local: IVec3) -> usize {
