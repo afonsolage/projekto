@@ -387,6 +387,153 @@ mod tests {
     }
 
     #[test]
+    fn remove_chunk_natural_light_neighborhood() {
+        /*
+                           Chunk               Neighbor                    Chunk               Neighbor
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     11 | -- | 15 |        | -- | -- | 15 |          11 | -- | 15 |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     10 | -- | 15 |        | 14 | -- | 15 |          10 | -- | 15 |        | 14 | -- | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     9  | -- | -- |        | 13 | -- | 15 |          9  | -- | -- |        | --*| -- | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     8  | -- | 11 |        | 12 | -- | 15 |          8  | -- | 0  |        | 0  | -- | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     7  | -- | 10 |        | -- | -- | 15 |          7  | -- | 0  |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     6  | -- | 9  |        | 8  | -- | 15 |    ->    6  | -- | 0  |        | 0  | -- | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     5  | -- | -- |        | 7  | -- | 15 |          5  | -- | -- |        | 0  | -- | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     4  | -- | 8  |        | 7  | -- | 15 |          4  | -- | 0  |        | 0  | -- | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     3  | -- | 9  |        | -- | -- | 15 |          3  | -- | 0  |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+        Y            2  | -- | 10 |        | 11 | -- | 15 |          2  | -- | 0  |        | --*| -- | 15 |
+        |               +----+----+        +----+----+----+             +----+----+        +----+----+----+
+        |            1  | -- | -- |        | 12 | -- | 15 |          1  | -- | -- |        | 12 | -- | 15 |
+        + ---- X        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+                     0  | -- | 12 |        | 13 | 14 | 15 |          0  | -- | 12 |        | 13 | 14 | 15 |
+                        +----+----+        +----+----+----+             +----+----+        +----+----+----+
+
+                     +    14   15            0    1    2             +    14   15            0    1    2
+        */
+
+        let mut world = VoxWorld::default();
+
+        let mut chunk = Chunk::default();
+        chunk.kinds.set_all(1.into()); // Make solid
+
+        // Make holes to light propagate through
+        for y in (11..=chunk::Y_END).rev() {
+            chunk.kinds.set((15, y, 0).into(), 0.into());
+        }
+
+        let mut neighbor = Chunk::default();
+        neighbor.kinds.set_all(1.into()); // Make solid
+
+        // Make holes to light propagate through
+        for y in (0..=chunk::Y_END).rev() {
+            neighbor.kinds.set((2, y, 0).into(), 0.into());
+        }
+
+        chunk.kinds.set((15, 11, 0).into(), 0.into());
+        chunk.kinds.set((15, 10, 0).into(), 0.into());
+        chunk.kinds.set((15, 8, 0).into(), 0.into());
+        chunk.kinds.set((15, 7, 0).into(), 0.into());
+        chunk.kinds.set((15, 6, 0).into(), 0.into());
+        chunk.kinds.set((15, 4, 0).into(), 0.into());
+        chunk.kinds.set((15, 3, 0).into(), 0.into());
+        chunk.kinds.set((15, 2, 0).into(), 0.into());
+        chunk.kinds.set((15, 0, 0).into(), 0.into());
+
+        neighbor.kinds.set((0, 10, 0).into(), 0.into());
+        neighbor.kinds.set((0, 9, 0).into(), 0.into());
+        neighbor.kinds.set((0, 8, 0).into(), 0.into());
+        neighbor.kinds.set((0, 6, 0).into(), 0.into());
+        neighbor.kinds.set((0, 5, 0).into(), 0.into());
+        neighbor.kinds.set((0, 4, 0).into(), 0.into());
+        neighbor.kinds.set((0, 2, 0).into(), 0.into());
+        neighbor.kinds.set((0, 1, 0).into(), 0.into());
+        neighbor.kinds.set((0, 0, 0).into(), 0.into());
+        neighbor.kinds.set((1, 0, 0).into(), 0.into());
+
+        set_natural_light_on_top_voxels(&mut neighbor);
+        set_natural_light_on_top_voxels(&mut chunk);
+
+        world.add((0, 0, 0).into(), chunk);
+        world.add((1, 0, 0).into(), neighbor);
+
+        super::super::update_kind_neighborhoods(
+            &mut world,
+            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
+        );
+        super::propagate(&mut world, &vec![(0, 0, 0).into(), (1, 0, 0).into()]);
+
+        assert_eq!(
+            world
+                .get((1, 0, 0).into())
+                .unwrap()
+                .lights
+                .get_natural((0, 0, 0).into()),
+            13,
+            "Light propagation failed. This is handled in another test"
+        );
+
+        let neighbor = world.get_mut((1, 0, 0).into()).unwrap();
+
+        neighbor.kinds.set((0, 9, 0).into(), 1.into());
+        neighbor.kinds.set((0, 2, 0).into(), 1.into());
+
+        let mut voxels = HashMap::new();
+        voxels.insert((1, 0, 0).into(), vec![(0, 9, 0).into(), (0, 2, 0).into()]);
+
+        drop(neighbor);
+
+        //Act
+        super::remove_natural_light(&mut world, voxels);
+
+        // Check neighbor
+        let neighbor = world.get((1, 0, 0).into()).unwrap();
+        let expected_neighbor = [
+            ((0, 0, 0).into(), 13),
+            ((0, 1, 0).into(), 12),
+            ((0, 4, 0).into(), 0),
+            ((0, 5, 0).into(), 0),
+            ((0, 6, 0).into(), 0),
+            ((0, 8, 0).into(), 0),
+        ];
+
+        for (voxel, intensity) in expected_neighbor {
+            assert_eq!(
+                neighbor.lights.get_natural(voxel),
+                intensity,
+                "Failed at {voxel}"
+            );
+        }
+
+        // Check chunk
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+        let expected_chunk = [
+            ((15, 0, 0).into(), 12),
+            ((15, 2, 0).into(), 0),
+            ((15, 3, 0).into(), 0),
+            ((15, 4, 0).into(), 0),
+            ((15, 6, 0).into(), 0),
+            ((15, 7, 0).into(), 0),
+            ((15, 8, 0).into(), 0),
+        ];
+
+        for (voxel, intensity) in expected_chunk {
+            assert_eq!(
+                chunk.lights.get_natural(voxel),
+                intensity,
+                "Failed at {voxel}"
+            );
+        }
+    }
+
+    #[test]
     fn remove_chunk_natural_light_simple() {
         /*
                         +------------------------+      +-----------------------------+
