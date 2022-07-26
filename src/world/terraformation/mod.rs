@@ -46,3 +46,5 @@ impl ChunkFacesOcclusion {
         self.iter().all(voxel::FacesOcclusion::is_fully_occluded)
     }
 }
+
+type VoxelUpdateList = Vec<(IVec3, voxel::Kind)>;

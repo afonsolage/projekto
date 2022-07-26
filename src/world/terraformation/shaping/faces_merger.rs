@@ -1,6 +1,6 @@
 use crate::world::{
     storage::{
-        chunk::{self, ChunkKind},
+        chunk::{self, Chunk},
         voxel::{self, VoxelFace},
     },
     terraformation::ChunkFacesOcclusion,
@@ -10,45 +10,40 @@ use bevy::prelude::*;
 /**
   Checks if voxel is out of bounds, or is empty or is already merged or is fully occluded.
 */
+#[inline]
 fn should_skip_voxel(
-    merged: &Vec<usize>,
+    merged: &[bool],
     voxel: IVec3,
     side: voxel::Side,
     kind: voxel::Kind,
     occlusion: &ChunkFacesOcclusion,
 ) -> bool {
-    kind.is_empty() || merged[chunk::to_index(voxel)] == 1 || occlusion.get(voxel).is_occluded(side)
+    kind.is_empty() || merged[chunk::to_index(voxel)] || occlusion.get(voxel).is_occluded(side)
 }
 
 /**
  Finds the furthest equal voxel from the given begin point, into the step direction.
 */
+#[inline]
 fn find_furthest_eq_voxel(
     begin: IVec3,
     step: IVec3,
-    merged: &Vec<usize>,
+    merged: &[bool],
     side: voxel::Side,
-    kinds: &ChunkKind,
+    chunk: &Chunk,
     occlusion: &ChunkFacesOcclusion,
     until: Option<IVec3>,
 ) -> IVec3 {
     perf_fn_scope!();
 
-    let kind = kinds.get(begin);
     let mut next_voxel = begin + step;
 
-    while chunk::is_within_bounds(next_voxel) {
-        let next_kind = kinds.get(next_voxel);
-
-        if next_kind != kind || should_skip_voxel(merged, next_voxel, side, kind, occlusion) {
-            break;
-        } else {
-            if let Some(target) = until && target == next_voxel {
+    while should_merge(begin, next_voxel, chunk, merged, side, occlusion) {
+        if let Some(target) = until && target == next_voxel {
                 return next_voxel;
             } else {
                 next_voxel += step;
             }
-        }
     }
 
     next_voxel -= step;
@@ -56,11 +51,34 @@ fn find_furthest_eq_voxel(
     next_voxel
 }
 
+#[inline]
+fn should_merge(
+    voxel: IVec3,
+    next_voxel: IVec3,
+    chunk: &Chunk,
+    merged: &[bool],
+    side: voxel::Side,
+    occlusion: &ChunkFacesOcclusion,
+) -> bool {
+    chunk::is_within_bounds(next_voxel)
+        && !should_skip_voxel(
+            merged,
+            next_voxel,
+            side,
+            chunk.kinds.get(next_voxel),
+            occlusion,
+        )
+        && chunk.kinds.get(voxel) == chunk.kinds.get(next_voxel)
+        && chunk.lights.get(voxel).get_greater_intensity()
+            == chunk.lights.get(next_voxel).get_greater_intensity()
+}
+
 /**
   The first tuple item is the outer most loop and the third item is the inner most.
 
   **Returns** a tuple indicating which direction the algorithm will walk in order to merge faces.
 */
+#[inline]
 fn get_side_walk_axis(side: voxel::Side) -> (IVec3, IVec3, IVec3) {
     match side {
         voxel::Side::Right => (IVec3::X, IVec3::Y, -IVec3::Z),
@@ -77,6 +95,7 @@ fn get_side_walk_axis(side: voxel::Side) -> (IVec3, IVec3, IVec3) {
 
   **Returns** a boxed iterator to iterate over a given axis.
 */
+#[inline]
 fn get_axis_range(axis: IVec3) -> Box<dyn Iterator<Item = i32>> {
     match axis {
         _ if axis == IVec3::X => Box::new(0..chunk::X_AXIS_SIZE as i32),
@@ -94,6 +113,7 @@ fn get_axis_range(axis: IVec3) -> Box<dyn Iterator<Item = i32>> {
 
  **Returns** a [`IVec3`] with X, Y and Z elements in order.
 */
+#[inline]
 fn unswizzle(walk_axis: (IVec3, IVec3, IVec3), a: i32, b: i32, c: i32) -> IVec3 {
     walk_axis.0.abs() * a + walk_axis.1.abs() * b + walk_axis.2.abs() * c
 }
@@ -101,6 +121,7 @@ fn unswizzle(walk_axis: (IVec3, IVec3, IVec3), a: i32, b: i32, c: i32) -> IVec3 
 /**
  Generates a list of voxels, based on v1, v2 and v3 inclusive, which was walked.
 */
+#[inline]
 fn calc_walked_voxels(
     v1: IVec3,
     v2: IVec3,
@@ -201,30 +222,36 @@ impl Iterator for MergerIterator {
 
  **Returns** a list of merged [`VoxelFace`]
 */
-pub(super) fn merge(occlusion: ChunkFacesOcclusion, kinds: &ChunkKind) -> Vec<VoxelFace> {
+pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
     perf_fn_scope!();
 
     let mut faces_vertices = vec![];
 
     for side in voxel::SIDES {
         let walk_axis = get_side_walk_axis(side);
-        let mut merged = vec![0; chunk::BUFFER_SIZE];
+        let mut merged = vec![false; chunk::BUFFER_SIZE];
 
         for voxel in MergerIterator::new(side) {
             // Due to cache friendliness, the current axis is always the deepest on nested loop
             let current_axis = walk_axis.2;
             let perpendicular_axis = walk_axis.1;
 
-            let kind = kinds.get(voxel);
+            let kind = chunk.kinds.get(voxel);
 
             if should_skip_voxel(&merged, voxel, side, kind, &occlusion) {
                 continue;
             }
 
+            let light_intensity = chunk
+                .lights
+                .get_absolute(voxel + side.dir())
+                .unwrap_or_default()
+                .get_greater_intensity();
+
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
             let v2 =
-                find_furthest_eq_voxel(voxel, current_axis, &merged, side, kinds, &occlusion, None);
+                find_furthest_eq_voxel(voxel, current_axis, &merged, side, chunk, &occlusion, None);
 
             // Finds the furthest equal voxel on perpendicular axis
             let perpendicular_step = perpendicular_axis;
@@ -233,30 +260,22 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, kinds: &ChunkKind) -> Vec<Vo
             // The loop walks all the way up on current_axis and than stepping one unit at time on perpendicular_axis.
             // This walk it'll be possible to find the next vertex (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
-            while chunk::is_within_bounds(next_begin_voxel) {
-                let next_kind = kinds.get(next_begin_voxel);
+            while should_merge(voxel, next_begin_voxel, chunk, &merged, side, &occlusion) {
+                let furthest = find_furthest_eq_voxel(
+                    next_begin_voxel,
+                    current_axis,
+                    &merged,
+                    side,
+                    chunk,
+                    &occlusion,
+                    Some(v3),
+                );
 
-                if next_kind != kind
-                    || should_skip_voxel(&merged, next_begin_voxel, side, next_kind, &occlusion)
-                {
-                    break;
+                if furthest == v3 {
+                    v3 += perpendicular_step;
+                    next_begin_voxel += perpendicular_step;
                 } else {
-                    let furthest = find_furthest_eq_voxel(
-                        next_begin_voxel,
-                        current_axis,
-                        &merged,
-                        side,
-                        kinds,
-                        &occlusion,
-                        Some(v3),
-                    );
-
-                    if furthest == v3 {
-                        v3 += perpendicular_step;
-                        next_begin_voxel += perpendicular_step;
-                    } else {
-                        break;
-                    }
+                    break;
                 }
             }
 
@@ -265,7 +284,7 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, kinds: &ChunkKind) -> Vec<Vo
 
             // Flag walked voxels, making a perfect square from v1, v2 and v3, on the given axis.
             for voxel in calc_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis) {
-                merged[chunk::to_index(voxel)] = 1;
+                merged[chunk::to_index(voxel)] = true;
             }
 
             // v4 can be inferred com v1, v2 and v3
@@ -275,6 +294,7 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, kinds: &ChunkKind) -> Vec<Vo
                 vertices: [v1, v2, v3, v4],
                 side,
                 kind,
+                light_intensity,
             })
         }
     }
@@ -292,50 +312,50 @@ mod tests {
     #[bench]
     fn merge_faces_empty_chunk(b: &mut Bencher) {
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &ChunkKind::default());
+            super::merge(ChunkFacesOcclusion::default(), &Chunk::default());
         });
     }
 
     #[bench]
     fn merge_faces_half_empty_chunk(b: &mut Bencher) {
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
 
         let mut rng = StdRng::seed_from_u64(53230);
 
         for i in 0..chunk::BUFFER_SIZE / 2 {
-            kinds[i] = rng.gen_range(1u16..100).into();
+            chunk.kinds[i] = rng.gen_range(1u16..100).into();
         }
 
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &kinds);
+            super::merge(ChunkFacesOcclusion::default(), &chunk);
         });
     }
 
     #[bench]
     fn merge_faces_half_full_chunk(b: &mut Bencher) {
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
 
         let mut rng = StdRng::seed_from_u64(53230);
 
         for i in 0..chunk::BUFFER_SIZE {
-            kinds[i] = rng.gen_range(1u16..100).into();
+            chunk.kinds[i] = rng.gen_range(1u16..100).into();
         }
 
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &kinds);
+            super::merge(ChunkFacesOcclusion::default(), &chunk);
         });
     }
 
     #[bench]
     fn merge_faces_worst_case(b: &mut Bencher) {
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
 
         for i in 0..chunk::BUFFER_SIZE {
-            kinds[i] = ((i % u16::MAX as usize) as u16).into();
+            chunk.kinds[i] = ((i % u16::MAX as usize) as u16).into();
         }
 
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &kinds);
+            super::merge(ChunkFacesOcclusion::default(), &chunk);
         });
     }
 
@@ -359,7 +379,9 @@ mod tests {
                        Merge direction (-Z, Y)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((0, 0, 0).into(), 1.into());
         kinds.set((0, 0, 2).into(), 1.into());
         kinds.set((0, 0, 3).into(), 1.into());
@@ -374,7 +396,7 @@ mod tests {
         kinds.set((0, 4, 1).into(), 2.into());
         kinds.set((0, 4, 2).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Right) //We care only for right faces here
             .collect::<Vec<_>>();
@@ -389,6 +411,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -399,6 +422,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -409,6 +433,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -419,6 +444,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -429,6 +455,7 @@ mod tests {
                 ],
                 side: voxel::Side::Right,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -459,7 +486,9 @@ mod tests {
                        Merge direction (Z, Y)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((0, 0, 1).into(), 1.into());
         kinds.set((0, 0, 2).into(), 1.into());
         kinds.set((0, 0, 4).into(), 1.into());
@@ -474,7 +503,7 @@ mod tests {
         kinds.set((0, 4, 2).into(), 2.into());
         kinds.set((0, 4, 3).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Left) //We care only for left faces here
             .collect::<Vec<_>>();
@@ -489,6 +518,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -499,6 +529,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -509,6 +540,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -519,6 +551,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -529,6 +562,7 @@ mod tests {
                 ],
                 side: voxel::Side::Left,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -559,7 +593,9 @@ mod tests {
                        Merge direction (X, -Z)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((1, 0, 4).into(), 1.into());
         kinds.set((2, 0, 4).into(), 1.into());
         kinds.set((4, 0, 4).into(), 1.into());
@@ -574,7 +610,7 @@ mod tests {
         kinds.set((2, 0, 0).into(), 2.into());
         kinds.set((3, 0, 0).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Up) //We care only for Up faces here
             .collect::<Vec<_>>();
@@ -589,6 +625,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -599,6 +636,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -609,6 +647,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -619,6 +658,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -629,6 +669,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -659,7 +700,9 @@ mod tests {
                        Merge direction (X, -Z)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((1, 0, 4).into(), 1.into());
         kinds.set((2, 0, 4).into(), 1.into());
         kinds.set((1, 0, 3).into(), 1.into());
@@ -671,7 +714,7 @@ mod tests {
         kinds.set((1, 0, 0).into(), 1.into());
         kinds.set((2, 0, 0).into(), 1.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Up) //We care only for Up faces here
             .collect::<Vec<_>>();
@@ -686,6 +729,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -696,6 +740,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -706,6 +751,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -716,6 +762,7 @@ mod tests {
                 ],
                 side: voxel::Side::Up,
                 kind: 1.into(),
+                ..Default::default()
             },
         ];
 
@@ -746,7 +793,9 @@ mod tests {
                        Merge direction (X, Z)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((1, 0, 0).into(), 1.into());
         kinds.set((2, 0, 0).into(), 1.into());
         kinds.set((4, 0, 0).into(), 1.into());
@@ -761,7 +810,7 @@ mod tests {
         kinds.set((2, 0, 4).into(), 2.into());
         kinds.set((3, 0, 4).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Down) //We care only for Down faces here
             .collect::<Vec<_>>();
@@ -776,6 +825,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -786,6 +836,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -796,6 +847,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -806,6 +858,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -816,6 +869,7 @@ mod tests {
                 ],
                 side: voxel::Side::Down,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -846,7 +900,9 @@ mod tests {
                        Merge direction (X, Y)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((1, 0, 0).into(), 1.into());
         kinds.set((2, 0, 0).into(), 1.into());
         kinds.set((4, 0, 0).into(), 1.into());
@@ -861,7 +917,7 @@ mod tests {
         kinds.set((2, 4, 0).into(), 2.into());
         kinds.set((3, 4, 0).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Front) //We care only for Front faces here
             .collect::<Vec<_>>();
@@ -876,6 +932,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -886,6 +943,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -896,6 +954,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -906,6 +965,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -916,6 +976,7 @@ mod tests {
                 ],
                 side: voxel::Side::Front,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
@@ -946,7 +1007,9 @@ mod tests {
                        Merge direction (-X, Y)[->, ^]
         */
 
-        let mut kinds = ChunkKind::default();
+        let mut chunk = Chunk::default();
+        let kinds = &mut chunk.kinds;
+
         kinds.set((3, 0, 0).into(), 1.into());
         kinds.set((2, 0, 0).into(), 1.into());
         kinds.set((0, 0, 0).into(), 1.into());
@@ -961,7 +1024,7 @@ mod tests {
         kinds.set((2, 4, 0).into(), 2.into());
         kinds.set((1, 4, 0).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &kinds)
+        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Back) //We care only for Back faces here
             .collect::<Vec<_>>();
@@ -976,6 +1039,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -986,6 +1050,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -996,6 +1061,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 1.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -1006,6 +1072,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 2.into(),
+                ..Default::default()
             },
             voxel::VoxelFace {
                 vertices: [
@@ -1016,6 +1083,7 @@ mod tests {
                 ],
                 side: voxel::Side::Back,
                 kind: 2.into(),
+                ..Default::default()
             },
         ];
 
