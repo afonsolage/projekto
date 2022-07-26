@@ -101,6 +101,10 @@ impl Kind {
     pub fn is_empty(&self) -> bool {
         self.0 == 0
     }
+
+    pub fn get_light_emission(&self) -> u8 {
+        todo!()
+    }
 }
 
 impl ChunkStorageType for Kind {}
