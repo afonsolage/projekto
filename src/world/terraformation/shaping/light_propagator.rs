@@ -469,7 +469,7 @@ mod tests {
 
         super::super::update_kind_neighborhoods(
             &mut world,
-            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
+            vec![(0, 0, 0).into(), (1, 0, 0).into()].iter(),
         );
         super::propagate_natural_light_on_new_chunks(
             &mut world,
@@ -1024,7 +1024,7 @@ mod tests {
 
         super::super::update_kind_neighborhoods(
             &mut world,
-            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
+            vec![(0, 0, 0).into(), (1, 0, 0).into()].iter(),
         );
         super::propagate_natural_light_on_new_chunks(
             &mut world,

@@ -1,4 +1,5 @@
 use bevy::math::{IVec3, Vec3};
+use bevy::utils::HashSet;
 
 use crate::world::storage::voxel::{self, FacesOcclusion};
 
@@ -105,10 +106,10 @@ pub fn compute_chunks_internals(
         .filter(|&l| world.exists(l))
         .collect::<Vec<_>>();
 
-    update_kind_neighborhoods(world, &locals);
+    update_kind_neighborhoods(world, locals.iter());
     light_propagator::propagate_natural_light_on_new_chunks(world, &locals);
 
-    generate_internals(world, kinds_descs, &locals);
+    generate_internals(world, kinds_descs, locals.iter());
 
     locals
 }
@@ -135,19 +136,22 @@ pub fn recompute_chunks_internals(
         .collect::<Vec<_>>();
 
     // Extract a list with only the chunk locals
-    let locals = locals.iter().map(|(l, _)| *l).collect::<Vec<_>>();
-    update_kind_neighborhoods(world, &locals);
+    let mut locals = locals.iter().map(|(l, _)| *l).collect::<HashSet<_>>();
+    update_kind_neighborhoods(world, locals.iter());
 
-    let updated_locals = light_propagator::update_light(world, &update);
+    locals.extend(light_propagator::update_light(world, &update));
 
-    generate_internals(world, kinds_descs, &updated_locals);
+    generate_internals(world, kinds_descs, locals.iter());
 
-    updated_locals
+    locals.into_iter().collect()
 }
 
-fn generate_internals(world: &mut VoxWorld, kinds_descs: &KindsDescs, locals: &[IVec3]) {
+fn generate_internals<'a>(
+    world: &mut VoxWorld,
+    kinds_descs: &KindsDescs,
+    locals: impl Iterator<Item = &'a IVec3>,
+) {
     let occlusions = locals
-        .iter()
         .map(|&l| (l, world.get(l).unwrap()))
         .map(|(l, chunk)| (l, faces_occlusion(chunk)))
         .collect::<Vec<_>>();
@@ -275,7 +279,7 @@ This function assumes all given chunks exists into the world and updates any nei
 
 **Panics** if a given chunk local doesn't exists
 */
-fn update_kind_neighborhoods(world: &mut VoxWorld, locals: &[IVec3]) {
+fn update_kind_neighborhoods<'a>(world: &mut VoxWorld, locals: impl Iterator<Item = &'a IVec3>) {
     perf_fn_scope!();
 
     for &local in locals {
@@ -379,7 +383,7 @@ mod tests {
             world.add(pos, chunk);
         }
 
-        super::update_kind_neighborhoods(&mut world, &vec![(1, 1, 1).into()]);
+        super::update_kind_neighborhoods(&mut world, vec![(1, 1, 1).into()].iter());
         let chunk = world.get_mut(center).unwrap();
 
         for side in voxel::SIDES {
@@ -486,7 +490,7 @@ mod tests {
         world.add((0, 0, 0).into(), center);
         world.add((0, -1, 0).into(), down);
 
-        super::update_kind_neighborhoods(&mut world, &vec![(0, 0, 0).into()]);
+        super::update_kind_neighborhoods(&mut world, vec![(0, 0, 0).into()].iter());
 
         let center = world.get((0, 0, 0).into()).unwrap();
         let faces_occlusion = super::faces_occlusion(&center);

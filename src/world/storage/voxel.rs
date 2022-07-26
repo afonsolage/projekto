@@ -103,7 +103,8 @@ impl Kind {
     }
 
     pub fn get_light_emission(&self) -> u8 {
-        todo!()
+        // TODO: Implement light emission based on kind descs
+        0
     }
 }
 

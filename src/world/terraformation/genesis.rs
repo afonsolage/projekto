@@ -732,35 +732,48 @@ fn format_local(local: IVec3) -> String {
 mod tests {
     use std::fs::remove_file;
 
+    use crate::world::storage::voxel::KindDescItem;
+
     use super::*;
 
-    // #[test]
-    // fn update_voxel() {
-    //     let mut world = VoxWorld::default();
-    //     let local = (0, 0, 0).into();
-    //     world.add(local, Default::default());
+    fn create_kinds_descs() -> KindsDescs {
+        KindsDescs {
+            atlas_path: "".into(),
+            atlas_size: 320,
+            atlas_tile_size: 32,
+            descriptions: (0..100u16)
+                .map(|i| KindDescItem {
+                    name: format!("Kind {i}"),
+                    id: i,
+                    sides: voxel::KindSidesDesc::All(Default::default()),
+                })
+                .collect::<Vec<_>>(),
+        }
+    }
 
-    //     let voxels = vec![
-    //         ((0, 0, 0).into(), 1.into()),
-    //         ((1, 1, 1).into(), 2.into()),
-    //         ((0, chunk::Y_END as i32, 5).into(), 3.into()),
-    //     ];
+    #[test]
+    fn update_voxel() {
+        let mut world = VoxWorld::default();
+        let local = (0, 0, 0).into();
+        world.add(local, Default::default());
 
-    //     let dirty_chunks = super::update_chunks(&mut world, &vec![(local, voxels)]);
+        let voxels = vec![
+            ((0, 0, 0).into(), 1.into()),
+            ((1, 1, 1).into(), 2.into()),
+            ((0, chunk::Y_END as i32, 5).into(), 3.into()),
+        ];
 
-    //     let kinds = &world.get(local).unwrap().kinds;
+        let dirty_chunks =
+            super::update_chunks(&mut world, &vec![(local, voxels)], &create_kinds_descs());
 
-    //     assert_eq!(kinds.get((0, 0, 0).into()), 1.into());
-    //     assert_eq!(kinds.get((1, 1, 1).into()), 2.into());
-    //     assert_eq!(kinds.get((0, chunk::Y_END as i32, 5).into()), 3.into());
+        let kinds = &world.get(local).unwrap().kinds;
 
-    //     assert_eq!(
-    //         dirty_chunks.len(),
-    //         5,
-    //         "Should have 5 dirty chunks = central, left, down, back and up chunk. Currently {:?}",
-    //         dirty_chunks
-    //     );
-    // }
+        assert_eq!(kinds.get((0, 0, 0).into()), 1.into());
+        assert_eq!(kinds.get((1, 1, 1).into()), 2.into());
+        assert_eq!(kinds.get((0, chunk::Y_END as i32, 5).into()), 3.into());
+
+        assert_eq!(dirty_chunks.len(), 1, "Should have 1 dirty chunks",);
+    }
 
     #[test]
     fn unload_chunk() {
