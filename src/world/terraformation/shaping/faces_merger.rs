@@ -69,8 +69,8 @@ fn should_merge(
             occlusion,
         )
         && chunk.kinds.get(voxel) == chunk.kinds.get(next_voxel)
-        && chunk.lights.get(voxel).get_greater_intensity()
-            == chunk.lights.get(next_voxel).get_greater_intensity()
+        && chunk.lights.get_face_reflected_intensity(voxel, side)
+            == chunk.lights.get_face_reflected_intensity(next_voxel, side)
 }
 
 /**
@@ -242,11 +242,7 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
                 continue;
             }
 
-            let light_intensity = chunk
-                .lights
-                .get_absolute(voxel + side.dir())
-                .unwrap_or_default()
-                .get_greater_intensity();
+            let light_intensity = chunk.lights.get_face_reflected_intensity(voxel, side);
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;

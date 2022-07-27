@@ -193,6 +193,12 @@ impl ChunkLight {
     pub fn get_natural(&self, local: IVec3) -> u8 {
         self.get(local).get(voxel::LightTy::Natural)
     }
+
+    pub fn get_face_reflected_intensity(&self, voxel: IVec3, side: voxel::Side) -> u8 {
+        self.get_absolute(voxel + side.dir())
+            .unwrap_or_default()
+            .get_greater_intensity()
+    }
 }
 
 pub fn to_index(local: IVec3) -> usize {
