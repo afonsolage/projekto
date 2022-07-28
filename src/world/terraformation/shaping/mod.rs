@@ -119,7 +119,7 @@ pub fn compute_chunks_internals(
 
  This function should be called whenever the chunk has changed and needs to update it's internal state.
 
- **Returns** a list of chunks which chunk was recomputed.
+ **Returns** a list of chunks which was recomputed.
 */
 pub fn recompute_chunks_internals(
     world: &mut VoxWorld,
@@ -129,17 +129,17 @@ pub fn recompute_chunks_internals(
     perf_fn_scope!();
 
     // Keeps only existing chunks
-    let locals = update
+    let valid_update = update
         .iter()
         .cloned()
         .filter(|(l, _)| world.exists(*l))
         .collect::<Vec<_>>();
 
     // Extract a list with only the chunk locals
-    let mut locals = locals.iter().map(|(l, _)| *l).collect::<HashSet<_>>();
+    let mut locals = valid_update.iter().map(|(l, _)| *l).collect::<HashSet<_>>();
     update_kind_neighborhoods(world, locals.iter());
 
-    locals.extend(light_propagator::update_light(world, &update));
+    locals.extend(light_propagator::update_light(world, &valid_update));
 
     generate_internals(world, kinds_descs, locals.iter());
 

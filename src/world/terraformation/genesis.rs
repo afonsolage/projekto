@@ -461,7 +461,7 @@ fn update_chunks(
             for (voxel, kind) in voxels {
                 chunk.kinds.set(*voxel, *kind);
 
-                // If this updates happens at the edge of chunk, mark neighbor chunk as dirty, since this will likely affect him
+                // If this updates happens at the edge of chunk, mark neighbors chunk as dirty, since this will likely affect'em
                 if chunk::is_at_bounds(*voxel) {
                     let neighbor_dir = chunk::get_boundary_dir(*voxel);
                     for unit_dir in math::to_unit_dir(neighbor_dir) {
@@ -732,7 +732,7 @@ fn format_local(local: IVec3) -> String {
 mod tests {
     use std::fs::remove_file;
 
-    use crate::world::storage::voxel::KindDescItem;
+    use crate::world::storage::voxel::{KindDescItem, Light};
 
     use super::*;
 
@@ -751,8 +751,158 @@ mod tests {
         }
     }
 
+    fn top_voxels() -> impl Iterator<Item = IVec3> {
+        (0..=chunk::X_END)
+            .flat_map(|x| (0..=chunk::Z_END).map(move |z| (x, chunk::Y_END, z).into()))
+    }
+
+    fn set_natural_light_on_top_voxels(chunk: &mut Chunk) {
+        let light = Light::natural(Light::MAX_NATURAL_INTENSITY);
+
+        for local in top_voxels() {
+            chunk.lights.set(local, light);
+        }
+    }
+
+    fn create_test_world() -> VoxWorld {
+        /*
+                           Chunk               Neighbor
+                        +----+----+        +----+----+----+
+                     11 | -- | 15 |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+
+                     10 | -- | -- |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+
+                     9  | -- | -- |        | 0  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     8  | -- | 2  |        | 1  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     7  | -- | 3  |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+
+                     6  | -- | 4  |        | 5  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     5  | -- | -- |        | 6  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     4  | -- | 8  |        | 7  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     3  | -- | 9  |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+
+        Y            2  | -- | 10 |        | 11 | -- | 15 |
+        |               +----+----+        +----+----+----+
+        |            1  | -- | -- |        | 12 | -- | 15 |
+        + ---- X        +----+----+        +----+----+----+
+                     0  | -- | 12 |        | 13 | 14 | 15 |
+                        +----+----+        +----+----+----+
+
+                     +    14   15            0    1    2
+        */
+
+        let mut world = VoxWorld::default();
+
+        let mut chunk = Chunk::default();
+        chunk.kinds.set_all(1.into()); // Make solid
+
+        // Make holes to light propagate through
+        for y in (11..=chunk::Y_END).rev() {
+            chunk.kinds.set((15, y, 0).into(), 0.into());
+        }
+
+        let mut neighbor = Chunk::default();
+        neighbor.kinds.set_all(1.into()); // Make solid
+
+        // Make holes to light propagate through
+        for y in (0..=chunk::Y_END).rev() {
+            neighbor.kinds.set((2, y, 0).into(), 0.into());
+        }
+
+        chunk.kinds.set((15, 11, 0).into(), 0.into());
+        chunk.kinds.set((15, 8, 0).into(), 0.into());
+        chunk.kinds.set((15, 7, 0).into(), 0.into());
+        chunk.kinds.set((15, 6, 0).into(), 0.into());
+        chunk.kinds.set((15, 4, 0).into(), 0.into());
+        chunk.kinds.set((15, 3, 0).into(), 0.into());
+        chunk.kinds.set((15, 2, 0).into(), 0.into());
+        chunk.kinds.set((15, 0, 0).into(), 0.into());
+
+        neighbor.kinds.set((0, 8, 0).into(), 0.into());
+        neighbor.kinds.set((0, 9, 0).into(), 0.into());
+        neighbor.kinds.set((0, 6, 0).into(), 0.into());
+        neighbor.kinds.set((0, 5, 0).into(), 0.into());
+        neighbor.kinds.set((0, 4, 0).into(), 0.into());
+        neighbor.kinds.set((0, 2, 0).into(), 0.into());
+        neighbor.kinds.set((0, 1, 0).into(), 0.into());
+        neighbor.kinds.set((0, 0, 0).into(), 0.into());
+        neighbor.kinds.set((1, 0, 0).into(), 0.into());
+        neighbor.kinds.set((2, 0, 0).into(), 0.into());
+
+        set_natural_light_on_top_voxels(&mut neighbor);
+        set_natural_light_on_top_voxels(&mut chunk);
+
+        world.add((0, 0, 0).into(), chunk);
+        world.add((1, 0, 0).into(), neighbor);
+
+        let _ = super::shaping::compute_chunks_internals(
+            &mut world,
+            &create_kinds_descs(),
+            vec![(0, 0, 0).into(), (1, 0, 0).into()],
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+        assert_eq!(chunk.lights.get_natural((15, 6, 0).into()), 4, "Failed to compute chunk internals. This is likely a bug handled by others tests. Ignore this and fix others.");
+
+        let neighbor = world.get((1, 0, 0).into()).unwrap();
+        assert_eq!(neighbor.lights.get_natural((0, 6, 0).into()), 5, "Failed to compute chunk internals. This is likely a bug handled by others tests. Ignore this and fix others.");
+
+        world
+    }
+
     #[test]
-    fn update_voxel() {
+    fn update_chunks_neighbor_side_light() {
+        let mut world = create_test_world();
+
+        let update_list = [((0, 0, 0).into(), vec![((15, 10, 0).into(), 0.into())])];
+
+        let descs = create_kinds_descs();
+        let updated = super::update_chunks(&mut world, &update_list, &descs);
+
+        assert_eq!(
+            updated.len(),
+            2,
+            "A voxel was updated on the chunk edge, so there should be 2 updated chunks."
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+
+        assert_eq!(
+            chunk.kinds.get((15, 10, 0).into()),
+            0.into(),
+            "Voxel should be updated to new kind"
+        );
+
+        assert_eq!(
+            chunk.lights.get_natural((15, 10, 0).into()),
+            Light::MAX_NATURAL_INTENSITY,
+            "Voxel should have a natural light propagated to it"
+        );
+
+        let neighbor = world.get((1, 0, 0).into()).unwrap();
+
+        // Get the vertices facing the updated voxel on the neighbor
+        let updated_voxel_side_vertex = neighbor
+            .vertices
+            .iter()
+            .find(|&v| v.normal == -Vec3::X && v.position == (0.0, 10.0, 0.0).into());
+
+        assert!(
+            updated_voxel_side_vertex.is_some(),
+            "There should be a vertex for left side on updated voxel"
+        );
+
+        let updated_voxel_side_vertex = updated_voxel_side_vertex.unwrap();
+        assert_eq!(updated_voxel_side_vertex.light, Vec3::ONE);
+    }
+
+    #[test]
+    fn update_chunks_simple() {
         let mut world = VoxWorld::default();
         let local = (0, 0, 0).into();
         world.add(local, Default::default());

@@ -102,9 +102,9 @@ impl Kind {
         self.0 == 0
     }
 
-    pub fn get_light_emission(&self) -> u8 {
+    pub fn is_opaque(&self) -> bool {
         // TODO: Implement light emission based on kind descs
-        0
+        self.0 > 0
     }
 }
 
