@@ -1,4 +1,5 @@
 use bevy::math::{IVec3, Vec3};
+use bevy::prelude::trace;
 use bevy::utils::HashSet;
 
 use crate::world::storage::voxel::{self, FacesOcclusion};
@@ -106,6 +107,8 @@ pub fn compute_chunks_internals(
         .filter(|&l| world.exists(l))
         .collect::<Vec<_>>();
 
+    trace!("Computing {} chunks internals", locals.len());
+
     update_kind_neighborhoods(world, locals.iter());
     light_propagator::propagate_natural_light_on_new_chunks(world, &locals);
 
@@ -151,10 +154,14 @@ fn generate_internals<'a>(
     kinds_descs: &KindsDescs,
     locals: impl Iterator<Item = &'a IVec3>,
 ) {
+    trace!("Generating internals",);
+
     let occlusions = locals
         .map(|&l| (l, world.get(l).unwrap()))
         .map(|(l, chunk)| (l, faces_occlusion(chunk)))
         .collect::<Vec<_>>();
+
+    trace!("Faces occlusion completed on {} chunks", occlusions.len());
 
     for (local, occlusion) in occlusions {
         let chunk = world.get_mut(local).unwrap();

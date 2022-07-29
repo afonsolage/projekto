@@ -23,7 +23,7 @@ pub(super) fn print_perf_counter(input_keys: Res<Input<KeyCode>>, time: Res<Time
         } else {
             let mut output = String::default();
             let mut counters = guard.0.values().collect::<Vec<_>>();
-            counters.sort_by(|a, b| (b.elapsed / b.counter).cmp(&(a.elapsed / a.counter)));
+            counters.sort_by(|&a, &b| b.elapsed.cmp(&a.elapsed));
             for p in counters {
                 output += format!("{}\n", p).as_str();
             }
@@ -107,8 +107,9 @@ impl Default for PerfCounter {
 impl std::fmt::Display for PerfCounter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
-            "{: <30} avg: {: >5}μs, samples: {: >5}, min: {: >5}μs, max: {: >5}μs, meta: {: >5}μs",
+            "{: <40} total: {: >20}μs, avg: {: >10}μs, samples: {: >5}, min: {: >5}μs, max: {: >5}μs, meta: {: >5}μs",
             self.name,
+            self.elapsed,
             (self.elapsed as f64 / self.counter as f64) as u64,
             self.counter,
             self.min,

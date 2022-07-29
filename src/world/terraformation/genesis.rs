@@ -426,6 +426,8 @@ fn process_batch(
         .into_iter()
         .collect::<HashSet<_>>();
 
+    trace!("Generation completed! {} chunks updated.", updated.len());
+
     updated.extend(update_chunks(&mut world, &update, &kinds_descs));
 
     // let dirty_chunks = dirty_chunks.into_iter().collect::<Vec<_>>();
@@ -551,6 +553,8 @@ fn compute_chunks_internals(
 
     let locals = shaping::compute_chunks_internals(world, &kinds_descs, locals);
 
+    trace!("Saving {} chunks on disk!", locals.len());
+
     // TODO: Find a way to only saving chunks which was really updated.
     for &local in locals.iter() {
         let path = local_path(local);
@@ -565,6 +569,8 @@ fn generate_chunks(
     locals: Vec<IVec3>,
     kinds_descs: &KindsDescs,
 ) -> Vec<IVec3> {
+    trace!("Generating {} chunks.", locals.len());
+
     // Before doing anything else, all generated chunks have to be added to world.
     locals.iter().for_each(|&local| {
         world.add(local, generate_chunk(local));
@@ -579,7 +585,9 @@ fn generate_chunks(
                 .map(move |s| s.dir() + local)
                 .chain(std::iter::once(local))
         })
-        .collect::<Vec<_>>();
+        .collect::<HashSet<_>>() // Remove duplicated chunks
+        .into_iter()
+        .collect();
 
     compute_chunks_internals(world, kinds_descs, dirty_chunks)
 }

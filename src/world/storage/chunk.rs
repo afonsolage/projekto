@@ -28,7 +28,7 @@ const Y_MASK: usize = Y_AXIS_SIZE - 1;
 pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
     once_cell::sync::Lazy::new(std::sync::atomic::AtomicUsize::default);
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Chunk {
     pub kinds: ChunkKind,
     pub lights: ChunkLight,

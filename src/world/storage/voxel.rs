@@ -288,7 +288,7 @@ pub struct VoxelFace {
     //TODO: color
 }
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct VoxelVertex {
     pub position: Vec3,
     pub normal: Vec3,
