@@ -1,6 +1,7 @@
 use bevy::math::{IVec3, Vec3};
 use bevy::prelude::trace;
 use bevy::utils::HashSet;
+use itertools::Itertools;
 
 use crate::world::storage::voxel::{self, FacesOcclusion};
 
@@ -105,7 +106,7 @@ pub fn compute_chunks_internals(
     let locals = locals
         .into_iter()
         .filter(|&l| world.exists(l))
-        .collect::<Vec<_>>();
+        .collect_vec();
 
     trace!("Computing {} chunks internals", locals.len());
 

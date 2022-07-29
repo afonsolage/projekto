@@ -114,6 +114,7 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         }
     }
 
+    #[inline]
     pub fn get(&self, local: IVec3) -> T {
         self.main[to_index(local)]
     }
@@ -122,6 +123,7 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.main[to_index(local)] = value;
     }
 
+    #[inline]
     pub fn get_absolute(&self, local: IVec3) -> Option<T> {
         if !chunk::is_within_bounds(local) {
             let (dir, next_chunk_voxel) = chunk::overlap_voxel(local);
@@ -201,6 +203,7 @@ impl ChunkLight {
     }
 }
 
+#[inline]
 pub fn to_index(local: IVec3) -> usize {
     (local.x << X_SHIFT | local.y << Y_SHIFT | local.z << Z_SHIFT) as usize
 }
@@ -217,6 +220,7 @@ pub fn voxels() -> impl Iterator<Item = IVec3> {
     ChunkIter::default()
 }
 
+#[inline]
 pub fn is_within_bounds(local: IVec3) -> bool {
     local.x >= 0
         && local.x < X_AXIS_SIZE as i32
@@ -226,7 +230,7 @@ pub fn is_within_bounds(local: IVec3) -> bool {
         && local.y < Y_AXIS_SIZE as i32
 }
 
-#[cfg(test)]
+#[inline]
 pub fn is_at_bounds(local: IVec3) -> bool {
     local.x == 0
         || local.y == 0
@@ -236,6 +240,7 @@ pub fn is_at_bounds(local: IVec3) -> bool {
         || local.z == (Z_AXIS_SIZE - 1) as i32
 }
 
+#[inline]
 pub fn neighboring(local: IVec3, voxel: IVec3) -> Vec<IVec3> {
     math::to_unit_dir(chunk::get_boundary_dir(voxel))
         .into_iter()
@@ -313,6 +318,7 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
         self.0[side as usize] = Some(neighborhood_side);
     }
 
+    #[inline]
     pub fn get(&self, side: voxel::Side, pos: IVec3) -> Option<T> {
         if let Some(side_vec) = &self.0[side as usize] {
             let index = Self::to_index(side, pos);
@@ -322,6 +328,7 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
         }
     }
 
+    #[inline]
     fn to_index(side: voxel::Side, pos: IVec3) -> usize {
         use voxel::Side;
 
@@ -352,6 +359,7 @@ impl<T: ChunkStorageType> PartialEq for ChunkNeighborhood<T> {
     }
 }
 
+#[inline]
 pub fn overlap_voxel(pos: IVec3) -> (IVec3, IVec3) {
     let overlapping_voxel = math::euclid_rem(
         pos,

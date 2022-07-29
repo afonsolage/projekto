@@ -102,6 +102,7 @@ impl Kind {
         self.0 == 0
     }
 
+    #[inline]
     pub fn is_opaque(&self) -> bool {
         // TODO: Implement light emission based on kind descs
         self.0 > 0
@@ -147,6 +148,7 @@ impl Light {
         self.0 = (self.0 & !ty.offset()) | (intensity << ty.shift());
     }
 
+    #[inline]
     pub fn get(&self, ty: LightTy) -> u8 {
         (self.0 & ty.offset()) >> ty.shift()
     }
@@ -213,6 +215,7 @@ impl Side {
         }
     }
 
+    #[inline]
     pub fn from_dir(dir: IVec3) -> Side {
         if dir == IVec3::X {
             Side::Right

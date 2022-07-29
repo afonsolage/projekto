@@ -321,6 +321,7 @@ fn remove_chunk_natural_light(
     RemoveChunkNaturalLightResult { propagate, remove }
 }
 
+#[inline]
 fn calc_propagated_intensity(side: voxel::Side, intensity: u8) -> u8 {
     match side {
         voxel::Side::Down if intensity == voxel::Light::MAX_NATURAL_INTENSITY => intensity,
@@ -371,8 +372,10 @@ fn propagate_chunk_natural_light(
 
                     // TODO: Find a better way to distinguish between dirty chunks and propagation chunks
                     // If current side_voxel is on the edge, flag all neighbors as dirty, so they can be updated.
-                    for dir in chunk::neighboring((0, 0, 0).into(), side_voxel) {
-                        let _ = neighbors_propagation.entry(dir).or_insert(vec![]);
+                    if chunk::is_at_bounds(side_voxel) {
+                        for dir in chunk::neighboring((0, 0, 0).into(), side_voxel) {
+                            let _ = neighbors_propagation.entry(dir).or_insert(vec![]);
+                        }
                     }
 
                     if propagated_intensity > 1 {

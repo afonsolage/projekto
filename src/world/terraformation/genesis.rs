@@ -12,6 +12,7 @@ use bevy::{
 };
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use futures_lite::future;
+use itertools::Itertools;
 
 use crate::world::storage::{
     chunk::{self, Chunk, ChunkKind, ChunkLight},
@@ -585,8 +586,7 @@ fn generate_chunks(
                 .map(move |s| s.dir() + local)
                 .chain(std::iter::once(local))
         })
-        .collect::<HashSet<_>>() // Remove duplicated chunks
-        .into_iter()
+        .unique()
         .collect();
 
     compute_chunks_internals(world, kinds_descs, dirty_chunks)
