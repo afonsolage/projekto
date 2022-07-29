@@ -226,6 +226,7 @@ pub fn is_within_bounds(local: IVec3) -> bool {
         && local.y < Y_AXIS_SIZE as i32
 }
 
+#[cfg(test)]
 pub fn is_at_bounds(local: IVec3) -> bool {
     local.x == 0
         || local.y == 0
@@ -233,6 +234,13 @@ pub fn is_at_bounds(local: IVec3) -> bool {
         || local.x == (X_AXIS_SIZE - 1) as i32
         || local.y == (Y_AXIS_SIZE - 1) as i32
         || local.z == (Z_AXIS_SIZE - 1) as i32
+}
+
+pub fn neighboring(local: IVec3, voxel: IVec3) -> Vec<IVec3> {
+    math::to_unit_dir(chunk::get_boundary_dir(voxel))
+        .into_iter()
+        .map(|dir| dir + local)
+        .collect()
 }
 
 pub fn get_boundary_dir(local: IVec3) -> IVec3 {
@@ -708,5 +716,30 @@ mod tests {
 
         let local = (X_END as i32, Y_END as i32, Z_END as i32).into();
         assert_eq!(super::get_boundary_dir(local), (1, 1, 1).into());
+    }
+
+    #[test]
+    fn neighboring() {
+        let local = (0, 0, 0).into();
+        let voxel = (0, 0, 0).into();
+        let neighbors = super::neighboring(local, voxel);
+
+        assert_eq!(
+            neighbors,
+            vec![(-1, 0, 0).into(), (0, -1, 0).into(), (0, 0, -1).into()],
+            "Voxel on the edge should return 3 neighbors"
+        );
+    }
+
+    #[test]
+    fn neighboring_empty() {
+        let local = (0, 0, 0).into();
+        let voxel = (1, 1, 1).into();
+        let neighbors = super::neighboring(local, voxel);
+
+        assert!(
+            neighbors.is_empty(),
+            "Voxel isn't on the edge, so no neighbor should be returned"
+        );
     }
 }

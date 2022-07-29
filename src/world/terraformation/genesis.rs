@@ -13,13 +13,10 @@ use bevy::{
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use futures_lite::future;
 
-use crate::world::{
-    math,
-    storage::{
-        chunk::{self, Chunk, ChunkKind, ChunkLight},
-        voxel::{self, KindsDescs},
-        VoxWorld,
-    },
+use crate::world::storage::{
+    chunk::{self, Chunk, ChunkKind, ChunkLight},
+    voxel::{self, KindsDescs},
+    VoxWorld,
 };
 
 use super::{shaping, VoxelUpdateList};
@@ -458,17 +455,16 @@ fn update_chunks(
 
             trace!("Updating chunk {} values {:?}", local, voxels);
 
-            for (voxel, kind) in voxels {
-                chunk.kinds.set(*voxel, *kind);
+            for &(voxel, kind) in voxels {
+                chunk.kinds.set(voxel, kind);
 
                 // If this updates happens at the edge of chunk, mark neighbors chunk as dirty, since this will likely affect'em
-                if chunk::is_at_bounds(*voxel) {
-                    let neighbor_dir = chunk::get_boundary_dir(*voxel);
-                    for unit_dir in math::to_unit_dir(neighbor_dir) {
+                recompute_map.extend(
+                    chunk::neighboring(*local, voxel)
+                        .into_iter()
                         // There is no voxel to update, just recompute neighbor internals
-                        recompute_map.insert(unit_dir + *local, vec![]);
-                    }
-                }
+                        .map(|neighbor_local| (neighbor_local, vec![])),
+                );
             }
         } else {
             warn!("Failed to set voxel. Chunk {} wasn't found.", local);

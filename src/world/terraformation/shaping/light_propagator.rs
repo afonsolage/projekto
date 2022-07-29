@@ -134,13 +134,19 @@ pub fn update_light(world: &mut VoxWorld, updated: &[(IVec3, VoxelUpdateList)]) 
         propagation.into_iter().collect(),
     ));
 
+    for &local in touched.iter() {
+        if world.exists(local) {
+            update_chunk_light_neighborhood(world, local);
+        }
+    }
+
     touched
 }
 
 pub type ChunkVoxelMap = HashMap<IVec3, Vec<IVec3>>;
 
 fn propagate_natural_light(world: &mut VoxWorld, voxels: ChunkVoxelMap) -> Vec<IVec3> {
-    let mut updated_chunks = HashSet::new();
+    let mut dirty_chunks = HashSet::new();
 
     let mut propagate_queue = voxels.into_iter().collect::<VecDeque<_>>();
 
@@ -156,13 +162,13 @@ fn propagate_natural_light(world: &mut VoxWorld, voxels: ChunkVoxelMap) -> Vec<I
         let neighbor_propagation =
             propagate_chunk_natural_light(world.get_mut(local).unwrap(), &voxels, true);
 
-        // Flag current chunk and all propagated neighbors as updated.
-        updated_chunks.insert(local);
+        // Flag current chunk and all propagated neighbors as dirty.
+        dirty_chunks.insert(local);
 
         for (neighbor_dir, neighbor_lights) in neighbor_propagation {
             let neighbor_local = neighbor_dir + local;
             if let Some(neighbor_chunk) = world.get_mut(neighbor_local) {
-                updated_chunks.insert(neighbor_local);
+                dirty_chunks.insert(neighbor_local);
 
                 let mut propagation_list = vec![];
 
@@ -170,6 +176,8 @@ fn propagate_natural_light(world: &mut VoxWorld, voxels: ChunkVoxelMap) -> Vec<I
                     neighbor_chunk
                         .lights
                         .set_natural(neighbor_voxel, new_intensity);
+
+                    dirty_chunks.extend(chunk::neighboring(neighbor_local, neighbor_voxel));
 
                     if new_intensity > 1 {
                         propagation_list.push(neighbor_voxel);
@@ -183,7 +191,7 @@ fn propagate_natural_light(world: &mut VoxWorld, voxels: ChunkVoxelMap) -> Vec<I
         }
     }
 
-    updated_chunks.into_iter().collect()
+    dirty_chunks.into_iter().collect()
 }
 
 fn remove_natural_light(world: &mut VoxWorld, voxels: ChunkVoxelMap) -> Vec<IVec3> {
@@ -333,7 +341,12 @@ fn propagate_chunk_natural_light(
                 if propagated_intensity > side_intensity {
                     chunk.lights.set_natural(side_voxel, propagated_intensity);
 
-                    // Queue for propagation with there is enough intensity left
+                    // TODO: Find a better way to distinguish between dirty chunks and propagation chunks
+                    // If current side_voxel is on the edge, flag all neighbors as dirty, so they can be updated.
+                    for dir in chunk::neighboring((0, 0, 0).into(), side_voxel) {
+                        let _ = neighbors_propagation.entry(dir).or_insert(vec![]);
+                    }
+
                     if propagated_intensity > 1 {
                         queue.push_back(side_voxel);
                     }
