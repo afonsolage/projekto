@@ -1,11 +1,13 @@
 use std::f32::consts::PI;
 
 use bevy::{
-    ecs::{schedule::ShouldRun, system::QuerySingleError},
+    ecs::{schedule::ShouldRun, query::QuerySingleError},
     input::mouse::MouseMotion,
     prelude::*,
     render::camera::Camera,
 };
+
+#[cfg(feature = "inspector")]
 use bevy_egui::EguiContext;
 
 use crate::world::terraformation::TerraformationCenter;
@@ -62,7 +64,7 @@ fn setup_fly_by_camera(mut commands: Commands, q: Query<Entity, With<Camera>>) {
         }
         Err(QuerySingleError::NoEntities(_)) => {
             commands
-                .spawn_bundle(PerspectiveCameraBundle {
+                .spawn_bundle(Camera3dBundle {
                     transform: Transform::from_xyz(-10.0, 25.0, 20.0),
                     ..Default::default()
                 })
@@ -136,9 +138,10 @@ fn fly_by_camera_grab_mouse_system(
     mut windows: ResMut<Windows>,
     mouse_btn: Res<Input<MouseButton>>,
     key_btn: Res<Input<KeyCode>>,
-    egui_context: Option<ResMut<EguiContext>>,
     mut q: Query<&mut FlyByCamera>,
+    #[cfg(feature = "inspector")] egui_context: Option<ResMut<EguiContext>>,
 ) {
+    #[cfg(feature = "inspector")]
     if let Some(mut context) = egui_context {
         let ctx = context.ctx_mut();
         if ctx.is_pointer_over_area() || ctx.is_using_pointer() {

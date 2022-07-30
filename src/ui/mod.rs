@@ -1,10 +1,10 @@
 use bevy::{
-    core::FixedTimestep,
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
+    time::FixedTimestep,
 };
 
-use crate::world::{terraformation::prelude::*};
+use crate::world::terraformation::prelude::*;
 
 // use bevy_egui::{egui, EguiContext, EguiPlugin};
 
@@ -25,8 +25,7 @@ impl Plugin for UiPlugin {
                 SystemSet::new()
                     .with_run_criteria(FixedTimestep::step(0.5))
                     .with_system(update_fps_text_system)
-                    .with_system(update_batch_cmd_text_system)
-                    // .with_system(update_meshing_text_system),
+                    .with_system(update_batch_cmd_text_system), // .with_system(update_meshing_text_system),
             );
 
         #[cfg(feature = "mem_alloc")]
@@ -64,27 +63,25 @@ struct FpsCounterTag;
 fn setup_fps_text(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/FiraSans-Bold.ttf");
 
-    commands.spawn_bundle(UiCameraBundle::default());
     commands
         .spawn_bundle(TextBundle {
             style: Style {
                 align_self: AlignSelf::FlexEnd,
                 position_type: PositionType::Absolute,
-                position: Rect {
+                position: UiRect {
                     top: Val::Px(5.0),
                     left: Val::Px(15.0),
                     ..Default::default()
                 },
                 ..Default::default()
             },
-            text: Text::with_section(
+            text: Text::from_section(
                 "0",
                 TextStyle {
                     font,
                     font_size: 25.0,
                     color: Color::YELLOW,
                 },
-                Default::default(),
             ),
             ..Default::default()
         })
@@ -156,21 +153,20 @@ fn setup_batch_cmd_text(mut commands: Commands, asset_server: Res<AssetServer>) 
             style: Style {
                 align_self: AlignSelf::FlexEnd,
                 position_type: PositionType::Absolute,
-                position: Rect {
+                position: UiRect {
                     top: Val::Px(5.0),
                     right: Val::Px(15.0),
                     ..Default::default()
                 },
                 ..Default::default()
             },
-            text: Text::with_section(
+            text: Text::from_section(
                 "",
                 TextStyle {
                     font,
                     font_size: 25.0,
                     color: Color::YELLOW_GREEN,
                 },
-                Default::default(),
             ),
             ..Default::default()
         })

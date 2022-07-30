@@ -1,25 +1,25 @@
-#import bevy_pbr::mesh_view_bind_group
-#import bevy_pbr::mesh_struct
+#import bevy_pbr::mesh_view_bindings
+#import bevy_pbr::mesh_types
 
 struct Vertex {
-    [[location(0)]] position: vec3<f32>;
+    @location(0) position: vec3<f32>,
 };
 
 struct VertexOutput {
-    [[builtin(position)]] clip_position: vec4<f32>;
+    @builtin(position) clip_position: vec4<f32>,
 };
 
 struct WireframeMaterial {
-    color: vec4<f32>;
+    color: vec4<f32>,
 };
 
-[[group(1), binding(0)]]
+@group(1) @binding(0)
 var<uniform> material: WireframeMaterial;
 
-[[group(2), binding(0)]]
+@group(2) @binding(0)
 var<uniform> mesh: Mesh;
 
-[[stage(vertex)]]
+@vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
@@ -28,7 +28,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     return out;
 }
 
-[[stage(fragment)]]
-fn fragment() -> [[location(0)]] vec4<f32> {
+@fragment
+fn fragment() -> @location(0) vec4<f32> {
     return material.color;
 }
