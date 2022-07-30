@@ -49,5 +49,10 @@ Terraformation is performed in a separated thread in order to avoid FPS dropping
 2. *[Landscaping](https://github.com/afonsolage/projekto/blob/main/src/world/terraformation/landscaping.rs)* - Manages which chunks should be loaded/unloaded into/from the world.
 3. *[Terraforming](https://github.com/afonsolage/projekto/blob/main/src/world/terraformation/terraforming.rs)* - Handles queries and voxel update commands.
 
+## Demo
+
+[projekto_220730.webm](https://user-images.githubusercontent.com/1176452/181909251-cec6fe30-8a55-4107-8884-57cdc341919d.webm)
+
+
 # License
 [MIT](https://choosealicense.com/licenses/mit/)
