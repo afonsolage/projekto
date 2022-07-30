@@ -209,7 +209,6 @@ struct ProcessBatchSystemMeta {
  * This can take several frames.
  */
 fn update_world_system(
-    task_pool: Res<AsyncComputeTaskPool>,
     kind_assets: Res<KindsDescsRes>,
     mut batch_res: ResMut<BatchChunkCmdRes>,
     mut meta: Local<ProcessBatchSystemMeta>,
@@ -240,6 +239,7 @@ fn update_world_system(
         let kinds_descs = kind_assets.descs.clone();
         let batch = batch_res.swap_and_clone();
 
+        let task_pool = AsyncComputeTaskPool::get();
         meta.running_task =
             Some(task_pool.spawn(async move { process_batch(world, kinds_descs, batch) }));
     }
