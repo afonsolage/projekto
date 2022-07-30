@@ -3,7 +3,7 @@
 #![feature(int_log)]
 #![feature(test)]
 
-use bevy::{prelude::*, window::PresentMode};
+use bevy::{prelude::*, window::PresentMode, render::texture::ImageSettings};
 
 #[cfg(feature = "inspector")]
 use bevy_inspector_egui;
@@ -33,6 +33,8 @@ fn main() {
         ..Default::default()
     })
     .insert_resource(Msaa { samples: 4 })
+    // This may cause problems later on. Ideally this setup should be done per image
+    .insert_resource(ImageSettings::default_nearest())
     .add_plugins(DefaultPlugins)
     .add_plugin(DebugPlugin)
     .add_plugin(FlyByCameraPlugin)
