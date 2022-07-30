@@ -231,8 +231,12 @@ fn toggle_mesh_wireframe_system(
                 wireframe_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices.clone());
 
                 //Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
-                wireframe_mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![0f32; vertices.len()]);
-                wireframe_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0f32; vertices.len()]);
+                wireframe_mesh.insert_attribute(
+                    Mesh::ATTRIBUTE_NORMAL,
+                    vec![[0.0, 0.0, 0.0]; vertices.len()],
+                );
+                wireframe_mesh
+                    .insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; vertices.len()]);
 
                 let wireframe_mesh_handle = meshes.add(wireframe_mesh);
                 let wireframe_draw = WireframeDraw {
