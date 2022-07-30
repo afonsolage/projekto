@@ -90,20 +90,25 @@ fn get_side_walk_axis(side: voxel::Side) -> (IVec3, IVec3, IVec3) {
     }
 }
 
+type AxisRange =
+    itertools::Either<std::ops::RangeInclusive<i32>, std::iter::Rev<std::ops::RangeInclusive<i32>>>;
+
 /**
   This function returns a [`Box`] dyn iterator since it can return either [`Range`] or [`Rev<Iterator>`]
 
   **Returns** a boxed iterator to iterate over a given axis.
 */
 #[inline]
-fn get_axis_range(axis: IVec3) -> Box<dyn Iterator<Item = i32>> {
+fn get_axis_range(axis: IVec3) -> AxisRange {
+    use itertools::Either::*;
+
     match axis {
-        _ if axis == IVec3::X => Box::new(0..chunk::X_AXIS_SIZE as i32),
-        _ if axis == -IVec3::X => Box::new((0..=chunk::X_END).rev()),
-        _ if axis == IVec3::Y => Box::new(0..chunk::Y_AXIS_SIZE as i32),
-        _ if axis == -IVec3::Y => Box::new((0..=chunk::Y_END).rev()),
-        _ if axis == IVec3::Z => Box::new(0..chunk::Z_AXIS_SIZE as i32),
-        _ if axis == -IVec3::Z => Box::new((0..=chunk::Z_END).rev()),
+        _ if axis == IVec3::X => Left(0..=chunk::X_END),
+        _ if axis == -IVec3::X => Right((0..=chunk::X_END).rev()),
+        _ if axis == IVec3::Y => Left(0..=chunk::Y_END),
+        _ if axis == -IVec3::Y => Right((0..=chunk::Y_END).rev()),
+        _ if axis == IVec3::Z => Left(0..=chunk::Z_END),
+        _ if axis == -IVec3::Z => Right((0..=chunk::Z_END).rev()),
         _ => unreachable!(),
     }
 }
@@ -155,9 +160,9 @@ fn calc_walked_voxels(
 
 struct MergerIterator {
     walk_axis: (IVec3, IVec3, IVec3),
-    a_range: Box<dyn Iterator<Item = i32>>,
-    b_range: Box<dyn Iterator<Item = i32>>,
-    c_range: Box<dyn Iterator<Item = i32>>,
+    a_range: AxisRange,
+    b_range: AxisRange,
+    c_range: AxisRange,
 
     a: i32,
     b: i32,
