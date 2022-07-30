@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use bevy::{
-    ecs::{schedule::ShouldRun, system::QuerySingleError},
+    ecs::{schedule::ShouldRun, query::QuerySingleError},
     input::mouse::MouseMotion,
     prelude::*,
     render::camera::Camera,
@@ -64,7 +64,7 @@ fn setup_fly_by_camera(mut commands: Commands, q: Query<Entity, With<Camera>>) {
         }
         Err(QuerySingleError::NoEntities(_)) => {
             commands
-                .spawn_bundle(PerspectiveCameraBundle {
+                .spawn_bundle(Camera3dBundle {
                     transform: Transform::from_xyz(-10.0, 25.0, 20.0),
                     ..Default::default()
                 })

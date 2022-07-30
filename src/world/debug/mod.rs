@@ -153,7 +153,7 @@ fn toggle_chunk_voxels_wireframe_system(
         if !wireframe_state.show_voxel {
             for (e, parent) in q_draws.iter() {
                 // Remove only entities with DrawVoxels and with a Chunk as a parent
-                if q_chunks.iter().any(|(c_e, _)| c_e.eq(&parent.0)) {
+                if q_chunks.iter().any(|(c_e, _)| c_e.eq(&parent.get())) {
                     commands.entity(e).despawn();
                 }
             }
