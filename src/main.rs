@@ -2,7 +2,6 @@
 #![allow(clippy::forget_non_drop)]
 #![feature(int_log)]
 #![feature(test)]
-#![feature(let_chains)]
 
 use bevy::{prelude::*, window::PresentMode};
 

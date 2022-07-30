@@ -111,7 +111,7 @@ pub fn compute_chunks_internals(
     trace!("Computing {} chunks internals", locals.len());
 
     update_kind_neighborhoods(world, locals.iter());
-    light_propagator::propagate_natural_light_on_new_chunks(world, &locals);
+    light_propagator::update_light_on_new_chunk(world, &locals);
 
     generate_internals(world, kinds_descs, locals.iter());
 
