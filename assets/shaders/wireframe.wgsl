@@ -2,15 +2,15 @@
 #import bevy_pbr::mesh_types
 
 struct Vertex {
-    @location(0) position: vec3<f32>;
+    @location(0) position: vec3<f32>,
 };
 
 struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>;
+    @builtin(position) clip_position: vec4<f32>,
 };
 
 struct WireframeMaterial {
-    color: vec4<f32>;
+    color: vec4<f32>,
 };
 
 @group(1) @binding(0)
