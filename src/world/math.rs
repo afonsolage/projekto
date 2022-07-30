@@ -8,6 +8,7 @@ pub fn floor(vec: Vec3) -> IVec3 {
     )
 }
 
+#[inline]
 pub fn euclid_rem(vec: IVec3, div: IVec3) -> IVec3 {
     IVec3::new(
         vec.x.rem_euclid(div.x),
@@ -35,6 +36,7 @@ pub fn abs_min_element(vec: Vec3) -> Vec3Element {
     }
 }
 
+#[inline]
 pub fn to_unit_dir(dir: IVec3) -> Vec<IVec3> {
     let mut result = vec![];
 

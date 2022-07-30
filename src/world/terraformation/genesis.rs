@@ -12,17 +12,15 @@ use bevy::{
 };
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use futures_lite::future;
+use itertools::Itertools;
 
-use crate::world::{
-    math,
-    storage::{
-        chunk::{self, Chunk, ChunkKind},
-        voxel::{self, KindsDescs},
-        VoxWorld,
-    },
+use crate::world::storage::{
+    chunk::{self, Chunk, ChunkKind, ChunkLight},
+    voxel::{self, KindsDescs},
+    VoxWorld,
 };
 
-use super::shaping;
+use super::{shaping, VoxelUpdateList};
 
 const CACHE_PATH: &str = "cache/chunks/";
 const CACHE_EXT: &str = "bin";
@@ -379,8 +377,6 @@ fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd>
     values.into_iter().map(|(_, cmd)| cmd.clone()).collect()
 }
 
-type VoxelUpdateList = Vec<(IVec3, voxel::Kind)>;
-
 /**
 Utility function that splits the given list of [`ChunkCmd`] into individual cmd lists
 
@@ -407,11 +403,11 @@ fn split_commands(
 }
 
 /**
-Process in batch a list of [`ChunkCmd`]. This function takes ownership of [`VoxWorld`] since it needs to do modification on world.
+Process a batch a list of [`ChunkCmd`]. This function takes ownership of [`VoxWorld`] since it needs to do modification on world.
 
 This function triggers [`recompute_chunks`] whenever a new chunk is generated or is updated.
 
-***Returns*** the [`VoxWorld`] ownership and a list of [`ChunkCmdResult`]
+***Returns*** the [`VoxWorld`] ownership and a list of updated chunks.
  */
 fn process_batch(
     mut world: VoxWorld,
@@ -424,46 +420,62 @@ fn process_batch(
     let (load, unload, update) = split_commands(commands);
 
     unload_chunks(&mut world, &unload);
-    let mut dirty_chunks = load_chunks(&mut world, &load);
-    dirty_chunks.extend(update_chunks(&mut world, &update));
 
-    let updated = recompute_chunks(&mut world, kinds_descs, dirty_chunks.into_iter());
+    let not_found = load_chunks(&mut world, &load);
 
-    (world, updated)
+    let mut updated = generate_chunks(&mut world, not_found, &kinds_descs)
+        .into_iter()
+        .collect::<HashSet<_>>();
+
+    trace!("Generation completed! {} chunks updated.", updated.len());
+
+    updated.extend(update_chunks(&mut world, &update, &kinds_descs));
+
+    // let dirty_chunks = dirty_chunks.into_iter().collect::<Vec<_>>();
+    // let updated = recompute_chunks(&mut world, kinds_descs, dirty_chunks);
+
+    (world, updated.into_iter().collect())
 }
 
 /**
-Apply on the given [`VoxWorld`] the given voxel modification list [`VoxelUpdateList`]
+Applies on the given [`VoxWorld`] a voxel modification list [`VoxelUpdateList`]
 
 ***Returns*** A list of chunks locals that are dirty due to voxel modifications. This is usually neighboring chunks where voxel was updated
  */
-fn update_chunks(world: &mut VoxWorld, data: &[(IVec3, VoxelUpdateList)]) -> HashSet<IVec3> {
+fn update_chunks(
+    world: &mut VoxWorld,
+    update_list: &[(IVec3, VoxelUpdateList)],
+    kinds_descs: &KindsDescs,
+) -> Vec<IVec3> {
     perf_fn_scope!();
 
-    let mut dirty_chunks = HashSet::default();
+    let mut recompute_map = HashMap::default();
 
-    for (local, voxels) in data {
-        trace!("Updating chunk {} values {:?}", local, voxels);
+    // Apply modifications and keep track of what chunks needs to be recomputed
+    for (local, voxels) in update_list {
         if let Some(chunk) = world.get_mut(*local) {
-            for (voxel, kind) in voxels {
-                chunk.kinds.set(*voxel, *kind);
+            recompute_map.insert(*local, voxels.iter().cloned().collect());
 
-                if chunk::is_at_bounds(*voxel) {
-                    let neighbor_dir = chunk::get_boundary_dir(*voxel);
-                    for unit_dir in math::to_unit_dir(neighbor_dir) {
-                        let neighbor = unit_dir + *local;
-                        dirty_chunks.insert(neighbor);
-                    }
-                }
+            trace!("Updating chunk {} values {:?}", local, voxels);
+
+            for &(voxel, kind) in voxels {
+                chunk.kinds.set(voxel, kind);
+
+                // If this updates happens at the edge of chunk, mark neighbors chunk as dirty, since this will likely affect'em
+                recompute_map.extend(
+                    chunk::neighboring(*local, voxel)
+                        .into_iter()
+                        // There is no voxel to update, just recompute neighbor internals
+                        .map(|neighbor_local| (neighbor_local, vec![])),
+                );
             }
-
-            dirty_chunks.insert(*local);
         } else {
             warn!("Failed to set voxel. Chunk {} wasn't found.", local);
         }
     }
 
-    dirty_chunks
+    let updated_chunks = recompute_map.into_iter().collect::<Vec<_>>();
+    recompute_chunks_internals(world, kinds_descs, &updated_chunks)
 }
 
 /**
@@ -488,31 +500,44 @@ fn unload_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
 /**
 Load from cache into [`VoxWorld`] all chunks on the given list.
 
-***Returns*** A list of chunks locals that are dirty due to a new chunk being generated.
+***Returns*** A list of chunks locals which doesn't exists on cache.
  */
-fn load_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
-    let mut dirty_chunks = HashSet::default();
+fn load_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> Vec<IVec3> {
+    locals
+        .iter()
+        .filter_map(|local| {
+            let path = local_path(*local);
+            if path.exists() {
+                world.add(*local, load_chunk(&path));
+                None
+            } else {
+                Some(*local)
+            }
+        })
+        .collect()
+}
 
-    for &local in locals {
+/**
+Refresh chunks internal data due to change in the chunk itself or neighborhood.
+
+***Returns*** A list of chunks locals that was refreshed.
+ */
+fn recompute_chunks_internals(
+    world: &mut VoxWorld,
+    kinds_descs: &KindsDescs,
+    update: &[(IVec3, VoxelUpdateList)],
+) -> Vec<IVec3> {
+    perf_fn_scope!();
+
+    let locals = shaping::recompute_chunks_internals(world, &kinds_descs, update);
+
+    // TODO: Find a way to only saving chunks which was really updated.
+    for &local in locals.iter() {
         let path = local_path(local);
-
-        let chunk = if path.exists() {
-            load_chunk(&path)
-        } else {
-            dirty_chunks.extend(
-                voxel::SIDES
-                    .iter()
-                    .map(|s| s.dir() + local)
-                    .chain(std::iter::once(local)), // Include the generated chunk
-            );
-
-            generate_chunk(local)
-        };
-
-        world.add(local, chunk);
+        save_chunk(&path, world.get(local).unwrap());
     }
 
-    dirty_chunks
+    locals
 }
 
 /**
@@ -520,26 +545,51 @@ Refresh chunks internal data due to change in the neighborhood. At moment this f
 
 ***Returns*** A list of chunks locals that was refreshed.
  */
-fn recompute_chunks(
+fn compute_chunks_internals(
     world: &mut VoxWorld,
-    kinds_descs: KindsDescs,
-    locals: impl Iterator<Item = IVec3>,
+    kinds_descs: &KindsDescs,
+    locals: Vec<IVec3>,
 ) -> Vec<IVec3> {
     perf_fn_scope!();
 
-    let mut result = vec![];
+    let locals = shaping::compute_chunks_internals(world, &kinds_descs, locals);
 
-    for local in locals {
-        if shaping::recompute_chunk(world, &kinds_descs, local) {
-            result.push(local);
+    trace!("Saving {} chunks on disk!", locals.len());
 
-            // TODO: Maybe save all chunks at the end of the batch will be better?
-            let path = local_path(local);
-            save_chunk(&path, world.get(local).unwrap());
-        }
+    // TODO: Find a way to only saving chunks which was really updated.
+    for &local in locals.iter() {
+        let path = local_path(local);
+        save_chunk(&path, world.get(local).unwrap());
     }
 
-    result
+    locals
+}
+
+fn generate_chunks(
+    world: &mut VoxWorld,
+    locals: Vec<IVec3>,
+    kinds_descs: &KindsDescs,
+) -> Vec<IVec3> {
+    trace!("Generating {} chunks.", locals.len());
+
+    // Before doing anything else, all generated chunks have to be added to world.
+    locals.iter().for_each(|&local| {
+        world.add(local, generate_chunk(local));
+    });
+
+    // Mark all generated chunks and it's surround as dirty
+    let dirty_chunks = locals
+        .iter()
+        .flat_map(|&local| {
+            voxel::SIDES
+                .iter()
+                .map(move |s| s.dir() + local)
+                .chain(std::iter::once(local))
+        })
+        .unique()
+        .collect();
+
+    compute_chunks_internals(world, kinds_descs, dirty_chunks)
 }
 
 /**
@@ -556,9 +606,17 @@ fn generate_chunk(local: IVec3) -> Chunk {
     noise.set_fractal_gain(0.9);
     noise.set_fractal_lacunarity(0.5);
     let world = chunk::to_world(local);
+
     let mut kinds = ChunkKind::default();
+    let mut lights = ChunkLight::default();
+
     for x in 0..chunk::X_AXIS_SIZE {
         for z in 0..chunk::Z_AXIS_SIZE {
+            lights.set(
+                (x as i32, chunk::Y_END, z as i32).into(),
+                voxel::Light::natural(voxel::Light::MAX_NATURAL_INTENSITY),
+            );
+
             let h = noise.get_noise(world.x + x as f32, world.z + z as f32);
             let world_height = ((h + 1.0) / 2.0) * (chunk::X_AXIS_SIZE * 2) as f32;
 
@@ -585,6 +643,7 @@ fn generate_chunk(local: IVec3) -> Chunk {
 
     Chunk {
         kinds,
+        lights,
         ..Default::default()
     }
 }
@@ -677,10 +736,177 @@ fn format_local(local: IVec3) -> String {
 mod tests {
     use std::fs::remove_file;
 
+    use crate::world::storage::voxel::{KindDescItem, Light};
+
     use super::*;
 
+    fn create_kinds_descs() -> KindsDescs {
+        KindsDescs {
+            atlas_path: "".into(),
+            atlas_size: 320,
+            atlas_tile_size: 32,
+            descriptions: (0..100u16)
+                .map(|i| KindDescItem {
+                    name: format!("Kind {i}"),
+                    id: i,
+                    sides: voxel::KindSidesDesc::All(Default::default()),
+                })
+                .collect::<Vec<_>>(),
+        }
+    }
+
+    fn top_voxels() -> impl Iterator<Item = IVec3> {
+        (0..=chunk::X_END)
+            .flat_map(|x| (0..=chunk::Z_END).map(move |z| (x, chunk::Y_END, z).into()))
+    }
+
+    fn set_natural_light_on_top_voxels(chunk: &mut Chunk) {
+        let light = Light::natural(Light::MAX_NATURAL_INTENSITY);
+
+        for local in top_voxels() {
+            chunk.lights.set(local, light);
+        }
+    }
+
+    fn create_test_world() -> VoxWorld {
+        /*
+                           Chunk               Neighbor
+                        +----+----+        +----+----+----+
+                     11 | -- | 15 |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+
+                     10 | -- | -- |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+
+                     9  | -- | -- |        | 0  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     8  | -- | 2  |        | 1  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     7  | -- | 3  |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+
+                     6  | -- | 4  |        | 5  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     5  | -- | -- |        | 6  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     4  | -- | 8  |        | 7  | -- | 15 |
+                        +----+----+        +----+----+----+
+                     3  | -- | 9  |        | -- | -- | 15 |
+                        +----+----+        +----+----+----+
+        Y            2  | -- | 10 |        | 11 | -- | 15 |
+        |               +----+----+        +----+----+----+
+        |            1  | -- | -- |        | 12 | -- | 15 |
+        + ---- X        +----+----+        +----+----+----+
+                     0  | -- | 12 |        | 13 | 14 | 15 |
+                        +----+----+        +----+----+----+
+
+                     +    14   15            0    1    2
+        */
+
+        let mut world = VoxWorld::default();
+
+        let mut chunk = Chunk::default();
+        chunk.kinds.set_all(1.into()); // Make solid
+
+        // Make holes to light propagate through
+        for y in (11..=chunk::Y_END).rev() {
+            chunk.kinds.set((15, y, 0).into(), 0.into());
+        }
+
+        let mut neighbor = Chunk::default();
+        neighbor.kinds.set_all(1.into()); // Make solid
+
+        // Make holes to light propagate through
+        for y in (0..=chunk::Y_END).rev() {
+            neighbor.kinds.set((2, y, 0).into(), 0.into());
+        }
+
+        chunk.kinds.set((15, 11, 0).into(), 0.into());
+        chunk.kinds.set((15, 8, 0).into(), 0.into());
+        chunk.kinds.set((15, 7, 0).into(), 0.into());
+        chunk.kinds.set((15, 6, 0).into(), 0.into());
+        chunk.kinds.set((15, 4, 0).into(), 0.into());
+        chunk.kinds.set((15, 3, 0).into(), 0.into());
+        chunk.kinds.set((15, 2, 0).into(), 0.into());
+        chunk.kinds.set((15, 0, 0).into(), 0.into());
+
+        neighbor.kinds.set((0, 8, 0).into(), 0.into());
+        neighbor.kinds.set((0, 9, 0).into(), 0.into());
+        neighbor.kinds.set((0, 6, 0).into(), 0.into());
+        neighbor.kinds.set((0, 5, 0).into(), 0.into());
+        neighbor.kinds.set((0, 4, 0).into(), 0.into());
+        neighbor.kinds.set((0, 2, 0).into(), 0.into());
+        neighbor.kinds.set((0, 1, 0).into(), 0.into());
+        neighbor.kinds.set((0, 0, 0).into(), 0.into());
+        neighbor.kinds.set((1, 0, 0).into(), 0.into());
+        neighbor.kinds.set((2, 0, 0).into(), 0.into());
+
+        set_natural_light_on_top_voxels(&mut neighbor);
+        set_natural_light_on_top_voxels(&mut chunk);
+
+        world.add((0, 0, 0).into(), chunk);
+        world.add((1, 0, 0).into(), neighbor);
+
+        let _ = super::shaping::compute_chunks_internals(
+            &mut world,
+            &create_kinds_descs(),
+            vec![(0, 0, 0).into(), (1, 0, 0).into()],
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+        assert_eq!(chunk.lights.get_natural((15, 6, 0).into()), 4, "Failed to compute chunk internals. This is likely a bug handled by others tests. Ignore this and fix others.");
+
+        let neighbor = world.get((1, 0, 0).into()).unwrap();
+        assert_eq!(neighbor.lights.get_natural((0, 6, 0).into()), 5, "Failed to compute chunk internals. This is likely a bug handled by others tests. Ignore this and fix others.");
+
+        world
+    }
+
     #[test]
-    fn update_voxel() {
+    fn update_chunks_neighbor_side_light() {
+        let mut world = create_test_world();
+
+        let update_list = [((0, 0, 0).into(), vec![((15, 10, 0).into(), 0.into())])];
+
+        let descs = create_kinds_descs();
+        let updated = super::update_chunks(&mut world, &update_list, &descs);
+
+        assert_eq!(
+            updated.len(),
+            2,
+            "A voxel was updated on the chunk edge, so there should be 2 updated chunks."
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+
+        assert_eq!(
+            chunk.kinds.get((15, 10, 0).into()),
+            0.into(),
+            "Voxel should be updated to new kind"
+        );
+
+        assert_eq!(
+            chunk.lights.get_natural((15, 10, 0).into()),
+            Light::MAX_NATURAL_INTENSITY,
+            "Voxel should have a natural light propagated to it"
+        );
+
+        let neighbor = world.get((1, 0, 0).into()).unwrap();
+
+        // Get the vertices facing the updated voxel on the neighbor
+        let updated_voxel_side_vertex = neighbor
+            .vertices
+            .iter()
+            .find(|&v| v.normal == -Vec3::X && v.position == (0.0, 10.0, 0.0).into());
+
+        assert!(
+            updated_voxel_side_vertex.is_some(),
+            "There should be a vertex for left side on updated voxel"
+        );
+
+        let updated_voxel_side_vertex = updated_voxel_side_vertex.unwrap();
+        assert_eq!(updated_voxel_side_vertex.light, Vec3::ONE);
+    }
+
+    #[test]
+    fn update_chunks_simple() {
         let mut world = VoxWorld::default();
         let local = (0, 0, 0).into();
         world.add(local, Default::default());
@@ -691,7 +917,8 @@ mod tests {
             ((0, chunk::Y_END as i32, 5).into(), 3.into()),
         ];
 
-        let dirty_chunks = super::update_chunks(&mut world, &vec![(local, voxels)]);
+        let dirty_chunks =
+            super::update_chunks(&mut world, &vec![(local, voxels)], &create_kinds_descs());
 
         let kinds = &world.get(local).unwrap().kinds;
 
@@ -699,12 +926,7 @@ mod tests {
         assert_eq!(kinds.get((1, 1, 1).into()), 2.into());
         assert_eq!(kinds.get((0, chunk::Y_END as i32, 5).into()), 3.into());
 
-        assert_eq!(
-            dirty_chunks.len(),
-            5,
-            "Should have 5 dirty chunks = central, left, down, back and up chunk. Currently {:?}",
-            dirty_chunks
-        );
+        assert_eq!(dirty_chunks.len(), 1, "Should have 1 dirty chunks",);
     }
 
     #[test]
@@ -724,7 +946,7 @@ mod tests {
     }
 
     #[test]
-    fn load_chunk() {
+    fn load_chunks() {
         // Load existing cache
         let local = (9943, 9943, 9999).into();
         let path = super::local_path(local);
@@ -749,18 +971,16 @@ mod tests {
         let local = (9942, 9944, 9421).into();
 
         let mut world = VoxWorld::default();
-        let dirty_chunks = super::load_chunks(&mut world, &vec![local]);
+        let not_loaded = super::load_chunks(&mut world, &vec![local]);
 
         assert_eq!(
-            dirty_chunks.len(),
-            super::voxel::SIDE_COUNT + 1,
-            "Chunk doesn't exists, so all neighbor and self should be dirt"
+            not_loaded.len(),
+            1,
+            "Chunk doesn't exists, so it must be reported as not loaded"
         );
-        assert!(dirty_chunks.contains(&local));
-        assert!(world.exists(local), "Chunk should be added to world");
+        assert!(not_loaded.contains(&local));
+        assert!(!world.exists(local), "Chunk should not be added to world");
     }
-
- 
 
     #[test]
     fn generate_chunk() {
@@ -1072,5 +1292,4 @@ mod tests {
             ]
         );
     }
-
 }

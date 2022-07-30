@@ -101,12 +101,80 @@ impl Kind {
     pub fn is_empty(&self) -> bool {
         self.0 == 0
     }
+
+    #[inline]
+    pub fn is_opaque(&self) -> bool {
+        // TODO: Implement light emission based on kind descs
+        self.0 > 0
+    }
 }
 
 impl ChunkStorageType for Kind {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LightTy {
+    Natural,
+    Artificial,
+}
+
+impl LightTy {
+    const fn offset(&self) -> u8 {
+        match self {
+            LightTy::Natural => 0xF,
+            LightTy::Artificial => 0xF0,
+        }
+    }
+
+    const fn shift(&self) -> usize {
+        match self {
+            LightTy::Natural => 0,
+            LightTy::Artificial => 4,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
+pub struct Light(u8);
+
+impl Light {
+    pub const MAX_NATURAL_INTENSITY: u8 = 15;
+
+    pub fn natural(intensity: u8) -> Self {
+        let mut light = Light::default();
+        light.set(LightTy::Natural, intensity);
+        light
+    }
+
+    pub fn set(&mut self, ty: LightTy, intensity: u8) {
+        self.0 = (self.0 & !ty.offset()) | (intensity << ty.shift());
+    }
+
+    #[inline]
+    pub fn get(&self, ty: LightTy) -> u8 {
+        (self.0 & ty.offset()) >> ty.shift()
+    }
+
+    pub fn get_greater_intensity(&self) -> u8 {
+        std::cmp::max(self.get(LightTy::Artificial), self.get(LightTy::Natural))
+    }
+}
+
+impl From<u8> for Light {
+    fn from(v: u8) -> Self {
+        Self(v)
+    }
+}
+
+impl Into<u8> for Light {
+    fn into(self) -> u8 {
+        self.0
+    }
+}
+
+impl ChunkStorageType for Light {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum Side {
+    #[default]
     Right = 0,
     Left = 1,
     Up = 2,
@@ -127,12 +195,12 @@ pub const SIDES: [Side; SIDE_COUNT] = [
 impl Side {
     pub fn normal(&self) -> Vec3 {
         match self {
-            Side::Right => Vec3::new(1.0, 0.0, 0.0),
-            Side::Left => Vec3::new(-1.0, 0.0, 0.0),
-            Side::Up => Vec3::new(0.0, 1.0, 0.0),
-            Side::Down => Vec3::new(0.0, -1.0, 0.0),
-            Side::Front => Vec3::new(0.0, 0.0, 1.0),
-            Side::Back => Vec3::new(0.0, 0.0, -1.0),
+            Side::Right => Vec3::X,
+            Side::Left => -Vec3::X,
+            Side::Up => Vec3::Y,
+            Side::Down => -Vec3::Y,
+            Side::Front => Vec3::Z,
+            Side::Back => -Vec3::Z,
         }
     }
 
@@ -146,9 +214,28 @@ impl Side {
             Side::Back => -IVec3::Z,
         }
     }
+
+    #[inline]
+    pub fn from_dir(dir: IVec3) -> Side {
+        if dir == IVec3::X {
+            Side::Right
+        } else if dir == -IVec3::X {
+            Side::Left
+        } else if dir == IVec3::Y {
+            Side::Up
+        } else if dir == -IVec3::Y {
+            Side::Down
+        } else if dir == IVec3::Z {
+            Side::Front
+        } else if dir == -IVec3::Z {
+            Side::Back
+        } else {
+            panic!("Invalid direction received: {:?}", dir)
+        }
+    }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Deserialize, Serialize)]
 pub struct FacesOcclusion(u8);
 
 const FULL_OCCLUDED_MASK: u8 = 0b0011_1111;
@@ -195,20 +282,23 @@ impl From<[bool; 6]> for FacesOcclusion {
 
 impl ChunkStorageType for FacesOcclusion {}
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct VoxelFace {
     pub vertices: [IVec3; 4],
     pub side: Side,
-    pub kind: Kind, //TODO: light and color
+    pub kind: Kind,
+    pub light_intensity: u8,
+    //TODO: color
 }
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct VoxelVertex {
     pub position: Vec3,
     pub normal: Vec3,
     pub uv: Vec2,
     pub tile_coord_start: Vec2,
-    //TODO: light and color
+    pub light: Vec3,
+    //TODO: color
 }
 
 pub fn to_local(world: Vec3) -> IVec3 {
@@ -235,10 +325,32 @@ pub fn to_world(local: IVec3, chunk_local: IVec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use bevy::math::{IVec3, Vec3};
-    use rand::random;
+    use rand::{random, Rng};
     use ron::de::from_reader;
 
     use super::*;
+
+    #[test]
+    fn light() {
+        let mut light = Light::default();
+
+        let intensity = rand::thread_rng().gen_range(0..=15);
+
+        light.set(LightTy::Artificial, intensity);
+
+        assert_eq!(intensity, light.get(LightTy::Artificial));
+
+        let intensity = rand::thread_rng().gen_range(0..=15);
+        light.set(LightTy::Natural, intensity);
+
+        assert_eq!(intensity, light.get(LightTy::Natural));
+
+        let mut light = Light::default();
+        light.set(LightTy::Natural, 3);
+        light.set(LightTy::Artificial, 4);
+
+        assert_eq!(light.get_greater_intensity(), 4);
+    }
 
     #[test]
     fn faces_occlusion() {

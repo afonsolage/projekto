@@ -2,7 +2,7 @@ use bevy::{prelude::*, utils::HashMap};
 
 use super::chunk::Chunk;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct VoxWorld {
     chunks: HashMap<IVec3, Chunk>,
     //Vertices

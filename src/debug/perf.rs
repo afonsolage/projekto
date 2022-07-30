@@ -3,7 +3,7 @@ use once_cell::sync::Lazy;
 use super::*;
 use std::{collections::HashMap, sync::Mutex, time::Instant};
 
-static PERF_MAP: Lazy<Mutex<PerfCounterMap>> = Lazy::new(Mutex::default);
+pub static PERF_MAP: Lazy<Mutex<PerfCounterMap>> = Lazy::new(Mutex::default);
 
 pub(super) struct PerfCounterPlugin;
 
@@ -13,23 +13,31 @@ impl Plugin for PerfCounterPlugin {
     }
 }
 
+pub fn clear_perf_counter() {
+    PERF_MAP.lock().unwrap().0.clear();
+    info!("Performance Counter cleared");
+}
+
+pub fn output_perf_counter() {
+    let mut output = String::default();
+    let guard = PERF_MAP.lock().unwrap();
+    let mut counters = guard.0.values().collect::<Vec<_>>();
+    counters.sort_by(|&a, &b| b.elapsed.cmp(&a.elapsed));
+    for p in counters {
+        output += format!("{}\n", p).as_str();
+    }
+
+    info!("Performance Counter: \n{}", output);
+}
+
 pub(super) fn print_perf_counter(input_keys: Res<Input<KeyCode>>, time: Res<Time>) {
     let ctrl = input_keys.any_pressed([KeyCode::LControl, KeyCode::RControl]);
     if input_keys.just_pressed(KeyCode::F12) {
-        let mut guard = PERF_MAP.lock().unwrap();
         if ctrl {
-            guard.0.clear();
-            info!("Performance Counter cleared");
+            clear_perf_counter();
         } else {
-            let mut output = String::default();
-            let mut counters = guard.0.values().collect::<Vec<_>>();
-            counters.sort_by(|a, b| (b.elapsed / b.counter).cmp(&(a.elapsed / a.counter)));
-            for p in counters {
-                output += format!("{}\n", p).as_str();
-            }
-
+            output_perf_counter();
             info!("Time since startup: \n{}", time.seconds_since_startup());
-            info!("Performance Counter: \n{}", output);
         }
     }
 }
@@ -107,8 +115,9 @@ impl Default for PerfCounter {
 impl std::fmt::Display for PerfCounter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
-            "{: <30} avg: {: >5}μs, samples: {: >5}, min: {: >5}μs, max: {: >5}μs, meta: {: >5}μs",
+            "{: <40} total: {: >20}μs, avg: {: >10}μs, samples: {: >5}, min: {: >5}μs, max: {: >5}μs, meta: {: >5}μs",
             self.name,
+            self.elapsed,
             (self.elapsed as f64 / self.counter as f64) as u64,
             self.counter,
             self.min,
