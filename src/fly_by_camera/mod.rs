@@ -6,6 +6,8 @@ use bevy::{
     prelude::*,
     render::camera::Camera,
 };
+
+#[cfg(feature = "inspector")]
 use bevy_egui::EguiContext;
 
 use crate::world::terraformation::TerraformationCenter;
@@ -136,9 +138,10 @@ fn fly_by_camera_grab_mouse_system(
     mut windows: ResMut<Windows>,
     mouse_btn: Res<Input<MouseButton>>,
     key_btn: Res<Input<KeyCode>>,
-    egui_context: Option<ResMut<EguiContext>>,
     mut q: Query<&mut FlyByCamera>,
+    #[cfg(feature = "inspector")] egui_context: Option<ResMut<EguiContext>>,
 ) {
+    #[cfg(feature = "inspector")]
     if let Some(mut context) = egui_context {
         let ctx = context.ctx_mut();
         if ctx.is_pointer_over_area() || ctx.is_using_pointer() {

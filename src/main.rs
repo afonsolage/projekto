@@ -5,7 +5,7 @@
 
 use bevy::{prelude::*, window::PresentMode};
 
-#[cfg(feature = "dev")]
+#[cfg(feature = "inspector")]
 use bevy_inspector_egui;
 
 #[macro_use]
@@ -40,7 +40,7 @@ fn main() {
     .add_plugin(UiPlugin)
     .add_startup_system(setup);
 
-    #[cfg(feature = "dev")]
+    #[cfg(feature = "inspector")]
     app.add_plugin(bevy_inspector_egui::WorldInspectorPlugin::new());
 
     app.run();
