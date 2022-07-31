@@ -554,7 +554,7 @@ fn add_voxel(
                         (neighbor_local, neighbor_voxel)
                     };
 
-                    set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, 1.into())]));
+                    set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, 4.into())]));
 
                     return;
                 }
