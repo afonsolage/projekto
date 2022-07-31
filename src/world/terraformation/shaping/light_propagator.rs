@@ -181,28 +181,38 @@ impl<'a> Propagator<'a> {
 
         // Split updated list in removal and propagation
         for (local, voxels_update) in updated {
-            for (voxel, new_kind) in voxels_update {
-                if new_kind.is_opaque() {
-                    removal.entry(*local).or_insert(vec![]).push(*voxel);
-                }
-                // TODO: Add this kind check to KindDescs
-                if self.ty == LightTy::Artificial && *new_kind == 4.into() {
-                    emission
-                        .entry(*local)
-                        .or_insert(vec![])
-                        // TODO: Get this from Kind emission value
-                        .push((*voxel, 10u8));
-                } else {
-                    // Get the highest surrounding light source and propagate to current voxel
-                    if let Some((propagation_source_local, propagation_source_voxel)) =
-                        self.find_highest_surrounding_light(*local, *voxel)
-                    {
-                        propagation
-                            .entry(propagation_source_local)
-                            .or_insert(vec![])
-                            .push(propagation_source_voxel);
+            if let Some(chunk) = self.world.get(*local) {
+                for &(voxel, new_kind) in voxels_update {
+                    let old_light = chunk.lights.get(voxel).get(self.ty);
+                    // TODO: Add this kind check to KindDescs
+                    let new_light = if self.ty == LightTy::Artificial && new_kind == 4.into() {
+                        10u8
+                    } else {
+                        0u8
+                    };
+
+                    if old_light > new_light {
+                        removal.entry(*local).or_insert(vec![]).push(voxel);
                     }
-                };
+
+                    if new_light > 0 {
+                        emission
+                            .entry(*local)
+                            .or_insert(vec![])
+                            // TODO: Get this from Kind emission value
+                            .push((voxel, 10u8));
+                    } else {
+                        // Get the highest surrounding light source and propagate to current voxel
+                        if let Some((propagation_source_local, propagation_source_voxel)) =
+                            self.find_highest_surrounding_light(*local, voxel)
+                        {
+                            propagation
+                                .entry(propagation_source_local)
+                                .or_insert(vec![])
+                                .push(propagation_source_voxel);
+                        }
+                    }
+                }
             }
         }
 
@@ -666,7 +676,7 @@ mod tests {
         + ---- X     +---------------------------------------+        +---------------------------------------+
                   0  | -- | 6  | 7  | 8  | 9  | 8  | 7  | -- |     0  | -- | 0  | 1  | 2  | 3  | 2  | 1  | -- |
                      +---------------------------------------+        +---------------------------------------+
-                                                                      
+
                   +    0    1    2    3    4    5    6    7        +    0    1    2    3    4    5    6    7
         */
 
