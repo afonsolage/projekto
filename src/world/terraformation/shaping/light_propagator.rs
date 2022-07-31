@@ -207,8 +207,7 @@ impl<'a> Propagator<'a> {
         self.propagate_queue = propagation.into_iter().collect();
         self.remove_queue = removal.into_iter().collect();
 
-        // TODO: Implement emission
-
+        self.set_light(emission.into_iter().collect());
         self.remove_light();
         self.propagate_light(false);
     }
@@ -515,7 +514,48 @@ mod tests {
     }
 
     #[test]
-    fn update_light_simple() {
+    fn update_artificial_light_simple() {
+        let mut chunk = Chunk::default();
+        fill_z_axis(1, &mut chunk);
+
+        /*
+                        +------------------------+
+                     4  | 6  | 7  | 8  | 7  | 6  |
+                        +------------------------+
+                     3  | 7  | 8  | 9  | 8  | 7  |
+                        +------------------------+
+        Y            2  | 8  | 9  | 10 | 9  | 8  |
+        |               +------------------------+
+        |            1  | 7  | 8  | 9  | 8  | 7  |
+        + ---- X        +------------------------+
+                     0  | 6  | 7  | 8  | 7  | 6  |
+                        +------------------------+
+
+                     +    0    1    2    3    4
+        */
+
+        chunk.kinds.set((2, 2, 0).into(), 4.into());
+
+        let mut world = VoxWorld::default();
+        world.add((0, 0, 0).into(), chunk);
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((2, 2, 0).into(), 4.into())])],
+            LightTy::Artificial,
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+
+        assert_eq!(
+            chunk.lights.get((2, 2, 0).into()).get(LightTy::Artificial),
+            10,
+            "Light value should be set on placed voxel"
+        );
+    }
+
+    #[test]
+    fn update_natural_light_simple() {
         let mut chunk = Chunk::default();
         set_natural_light_on_top_voxels(&mut chunk);
         fill_z_axis(1, &mut chunk);
