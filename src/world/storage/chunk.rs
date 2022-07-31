@@ -186,14 +186,10 @@ pub type ChunkKind = ChunkStorage<voxel::Kind>;
 pub type ChunkLight = ChunkStorage<voxel::Light>;
 
 impl ChunkLight {
-    pub fn set_natural(&mut self, local: IVec3, intensity: u8) {
+    pub fn set_type(&mut self, local: IVec3, ty: voxel::LightTy, intensity: u8) {
         let mut light = self.get(local);
-        light.set(voxel::LightTy::Natural, intensity);
+        light.set(ty, intensity);
         self.set(local, light);
-    }
-
-    pub fn get_natural(&self, local: IVec3) -> u8 {
-        self.get(local).get(voxel::LightTy::Natural)
     }
 
     pub fn get_face_reflected_intensity(&self, voxel: IVec3, side: voxel::Side) -> u8 {

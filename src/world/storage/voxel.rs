@@ -105,12 +105,13 @@ impl Kind {
     #[inline]
     pub fn is_opaque(&self) -> bool {
         // TODO: Implement light emission based on kind descs
-        self.0 > 0
+        self.0 != 4 && self.0 > 0
     }
 }
 
 impl ChunkStorageType for Kind {}
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub enum LightTy {
     Natural,
     Artificial,

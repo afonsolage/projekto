@@ -18,28 +18,35 @@ use crate::world::{
 /// This function assumes all chunk kind neighborhood is updated.
 ///
 ///  **Returns** a list of updated chunks.
-/// Some returned chunks may have been maked as updated due to it's neighbor being updated on the edge.
+/// Some returned chunks may have been marked as updated due to it's neighbor being updated on the edge.
 pub fn update_light(world: &mut VoxWorld, updated: &[(IVec3, VoxelUpdateList)]) -> Vec<IVec3> {
-    let mut propagator = Propagator::new(world);
+    let mut propagator = Propagator::new(world, LightTy::Artificial);
     propagator.update_light(updated);
-    propagator.finish()
+    let mut dirty_chunks = propagator.finish();
+
+    let mut propagator = Propagator::new(world, LightTy::Natural);
+    propagator.update_light(updated);
+    dirty_chunks.extend(propagator.finish());
+
+    dirty_chunks.into_iter().unique().collect()
 }
 
-/// Propagate light on new generated chunks. This function is optimized to be run on chunks which has no previous light.
+/// Propagates natural light on new generated chunks. This function is optimized to be run on chunks which has no previous light.
 /// For chunks that already has light values, use [`update_light`] instead.
 /// This function won't remove any light.
 ///
 /// The way this function works is by first propagating all lights internally on all given chunks, without neighbor propagation.
 /// After that, all light values are propagated from a chunk to another one.
-pub fn propagate_light_on_new_chunk(world: &mut VoxWorld, locals: &[IVec3]) {
-    let mut propagator = Propagator::new(world);
-    propagator.propagate_light_on_new_chunks(locals);
+pub fn propagate_natural_light_on_new_chunk(world: &mut VoxWorld, locals: &[IVec3]) {
+    let mut propagator = Propagator::new(world, LightTy::Natural);
+    propagator.propagate_natural_light_on_new_chunks(locals);
     let _ = propagator.finish();
 }
 
 /// Helper struct, used to simplify and optimize propagation process.
 struct Propagator<'a> {
     world: &'a mut VoxWorld,
+    ty: LightTy,
     propagate_queue: VecDeque<(IVec3, Vec<IVec3>)>,
     remove_queue: VecDeque<(IVec3, Vec<IVec3>)>,
     dirty_chunks: Vec<IVec3>,
@@ -47,9 +54,10 @@ struct Propagator<'a> {
 
 impl<'a> Propagator<'a> {
     /// Creates a new [`Propagator`] for the given [`VoxWorld`]
-    fn new(world: &'a mut VoxWorld) -> Self {
+    fn new(world: &'a mut VoxWorld, ty: LightTy) -> Self {
         Self {
             world,
+            ty,
             propagate_queue: Default::default(),
             remove_queue: Default::default(),
             dirty_chunks: Default::default(),
@@ -73,55 +81,154 @@ impl<'a> Propagator<'a> {
         dirty_chunks
     }
 
+    /// Propagate light on newly generated chunks in an optimized way.
+    fn propagate_natural_light_on_new_chunks(&mut self, locals: &[IVec3]) {
+        trace!("Propagating natural light on new {} chunks", locals.len());
+
+        debug_assert!(
+            self.ty == LightTy::Natural,
+            "This function should be used only natural light propagation"
+        );
+
+        self.propagate_natural_light_top_down(locals);
+        self.propagate_natural_light_neighborhood(locals);
+    }
+
+    /// Propagate light on queued chunks and voxels.
+    /// This function update light chunk neighborhood before working on a chunk, but not after, so it may end with outdated values.
+    /// This function also update neighborhood light values based on propagation across neighbors.
+    fn propagate_light(&mut self, skip_neighbors: bool) {
+        perf_fn_scope!();
+
+        while let Some((local, voxels)) = self.propagate_queue.pop_front() {
+            if !self.world.exists(local) {
+                continue;
+            }
+
+            self.dirty_chunks.push(local);
+
+            // TODO: Check if it's possible to optimize this later on
+            self.update_light_chunk_neighborhood(local);
+
+            // Apply propagation on current chunk, if exists, and get a list of propagations to be applied on neighbors.
+            let neighbor_propagation = self.propagate_light_on_chunk(local, voxels, skip_neighbors);
+
+            if !skip_neighbors {
+                self.set_light(neighbor_propagation);
+            }
+        }
+    }
+
+    /// Propagates natural light across neighborhood.
+    /// This function must be called after natural internal propagation, since it will check edge chunks only.
+    fn propagate_natural_light_neighborhood(&mut self, locals: &[IVec3]) {
+        perf_fn_scope!();
+
+        trace!(
+            "Preparing to propagate natural light to neighbors of {} chunks",
+            locals.len()
+        );
+
+        // Map all voxels on the edge of chunk and propagate it's light to the neighborhood.
+        let chunks_boundary_voxels = locals
+            .iter()
+            .map(|&local| {
+                (
+                    local,
+                    voxel::SIDES
+                        .iter()
+                        .flat_map(|&side| ChunkNeighborhood::<voxel::Light>::side_iterator(side))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        trace!(
+            "Propagating light on {} chunk neighbors",
+            chunks_boundary_voxels.keys().len()
+        );
+
+        self.propagate_queue = chunks_boundary_voxels.into_iter().collect();
+        self.propagate_light(false);
+    }
+
+    /// Propagate initial top-down natural light across all given chunks.
+    /// This function propagate the natural light from the top-most voxels downwards.
+    /// This function only propagate internally, does not spread the light to neighbors.
+    fn propagate_natural_light_top_down(&mut self, locals: &[IVec3]) {
+        perf_fn_scope!();
+
+        let top_voxels = (0..=chunk::X_END)
+            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
+            .collect_vec();
+
+        self.propagate_queue = locals
+            .iter()
+            .map(|&local| (local, top_voxels.clone()))
+            .collect();
+
+        self.propagate_light(true);
+    }
+
     /// Update light values based on the given [`VoxelUpdateList`] for each chunk local.
     /// This function uses a [`flood_fill`](https://en.wikipedia.org/wiki/Flood_fill) with [`BFS`](https://en.wikipedia.org/wiki/Breadth-first_search)
     /// traversal, based on [`Benjamin`](https://github.com/afonsolage/projekto/issues/29) approach.
     fn update_light(&mut self, updated: &[(IVec3, VoxelUpdateList)]) {
         perf_fn_scope!();
 
-        let (mut removal, mut propagation) = (HashMap::new(), HashMap::new());
+        let (mut removal, mut emission, mut propagation) =
+            (HashMap::new(), HashMap::new(), HashMap::new());
 
         // Split updated list in removal and propagation
         for (local, voxels_update) in updated {
-            for (voxel, new_kind) in voxels_update {
-                if new_kind.is_opaque() {
-                    removal.entry(*local).or_insert(vec![]).push(*voxel);
-                } else {
-                    // Get the highest surrounding light source and propagate to current voxel
-                    if let Some((propagation_source_local, propagation_source_voxel)) =
-                        self.find_highest_surrounding_light(*local, *voxel)
-                    {
-                        propagation
-                            .entry(propagation_source_local)
-                            .or_insert(vec![])
-                            .push(propagation_source_voxel);
+            if let Some(chunk) = self.world.get(*local) {
+                for &(voxel, new_kind) in voxels_update {
+                    let old_light = chunk.lights.get(voxel).get(self.ty);
+                    // TODO: Add this kind check to KindDescs
+                    let new_light = if self.ty == LightTy::Artificial && new_kind == 4.into() {
+                        10u8
+                    } else {
+                        0u8
+                    };
+
+                    if old_light > new_light {
+                        removal.entry(*local).or_insert(vec![]).push(voxel);
                     }
-                };
+
+                    if new_light > 0 {
+                        emission
+                            .entry(*local)
+                            .or_insert(vec![])
+                            // TODO: Get this from Kind emission value
+                            .push((voxel, 10u8));
+                    } else {
+                        // Get the highest surrounding light source and propagate to current voxel
+                        if let Some((propagation_source_local, propagation_source_voxel)) =
+                            self.find_highest_surrounding_light(*local, voxel)
+                        {
+                            propagation
+                                .entry(propagation_source_local)
+                                .or_insert(vec![])
+                                .push(propagation_source_voxel);
+                        }
+                    }
+                }
             }
         }
 
         self.propagate_queue = propagation.into_iter().collect();
         self.remove_queue = removal.into_iter().collect();
 
-        // TODO: Implement emission
-
-        self.remove_natural_light();
-        self.propagate_natural_light(false);
-    }
-
-    /// Propagate light on newly generated chunks in an optimized way.
-    fn propagate_light_on_new_chunks(&mut self, locals: &[IVec3]) {
-        trace!("Propagating natural light on new {} chunks", locals.len());
-
-        self.propagate_natural_light_top_down(locals);
-        self.propagate_natural_light_neighborhood(locals);
+        self.set_light(emission.into_iter().collect());
+        self.remove_light();
+        self.propagate_light(false);
     }
 
     /// Propagates light using a [`flood_fill`](https://en.wikipedia.org/wiki/Flood_fill) with [`BFS`](https://en.wikipedia.org/wiki/Breadth-first_search).
     /// This function won't update any neighbor, instead it returns a map containing the value to set and propagate on neighbors.
     ///
     /// **Returns** a map with values to propagate on neighbors.
-    fn propagate_natural_light_on_chunk(
+    fn propagate_light_on_chunk(
         &mut self,
         local: IVec3,
         voxels: Vec<IVec3>,
@@ -140,7 +247,7 @@ impl<'a> Propagator<'a> {
                 continue;
             }
 
-            let current_intensity = chunk.lights.get_natural(voxel);
+            let current_intensity = chunk.lights.get(voxel).get(self.ty);
 
             for side in voxel::SIDES {
                 let side_voxel = voxel + side.dir();
@@ -151,14 +258,17 @@ impl<'a> Propagator<'a> {
                     continue;
                 }
 
-                let propagated_intensity = Self::calc_propagated_intensity(side, current_intensity);
+                let propagated_intensity =
+                    Self::calc_propagated_intensity(self.ty, side, current_intensity);
 
                 if chunk::is_within_bounds(side_voxel) {
                     // Propagate inside the chunk
-                    let side_intensity = chunk.lights.get_natural(side_voxel);
+                    let side_intensity = chunk.lights.get(side_voxel).get(self.ty);
 
                     if propagated_intensity > side_intensity {
-                        chunk.lights.set_natural(side_voxel, propagated_intensity);
+                        chunk
+                            .lights
+                            .set_type(side_voxel, self.ty, propagated_intensity);
 
                         // TODO: Find a better way to distinguish between dirty chunks and propagation chunks
                         // If current side_voxel is on the edge, flag all neighbors as dirty, so they can be updated.
@@ -179,7 +289,7 @@ impl<'a> Propagator<'a> {
 
                     let neighbor_intensity =
                         match chunk.lights.neighborhood.get(side, neighbor_voxel) {
-                            Some(l) => l.get(LightTy::Natural),
+                            Some(l) => l.get(self.ty),
                             None => continue,
                         };
 
@@ -230,7 +340,7 @@ impl<'a> Propagator<'a> {
                 for (neighbor_voxel, new_intensity) in neighbor_lights {
                     neighbor_chunk
                         .lights
-                        .set_natural(neighbor_voxel, new_intensity);
+                        .set_type(neighbor_voxel, self.ty, new_intensity);
 
                     self.dirty_chunks
                         .extend(chunk::neighboring(neighbor_local, neighbor_voxel));
@@ -248,83 +358,6 @@ impl<'a> Propagator<'a> {
         }
     }
 
-    /// Propagate natural light on queued chunks and voxels.
-    /// This function update light chunk neighborhood before working on a chunk, but not after, so it may end with outdated values.
-    /// This function also update neighborhood light values based on propagation across neighbors.
-    fn propagate_natural_light(&mut self, skip_neighbors: bool) {
-        perf_fn_scope!();
-
-        while let Some((local, voxels)) = self.propagate_queue.pop_front() {
-            if !self.world.exists(local) {
-                continue;
-            }
-
-            self.dirty_chunks.push(local);
-
-            // TODO: Check if it's possible to optimize this later on
-            self.update_light_chunk_neighborhood(local);
-
-            // Apply propagation on current chunk, if exists, and get a list of propagations to be applied on neighbors.
-            let neighbor_propagation =
-                self.propagate_natural_light_on_chunk(local, voxels, skip_neighbors);
-
-            if !skip_neighbors {
-                self.set_light(neighbor_propagation);
-            }
-        }
-    }
-
-    /// Propagates natural light across neighborhood.
-    /// This function must be called after natural internal propagation, since it will check edge chunks only.
-    fn propagate_natural_light_neighborhood(&mut self, locals: &[IVec3]) {
-        perf_fn_scope!();
-
-        trace!(
-            "Preparing to propagate natural light to neighbors of {} chunks",
-            locals.len()
-        );
-
-        // Map all voxels on the edge of chunk and propagate it's light to the neighborhood.
-        let chunks_boundary_voxels = locals
-            .iter()
-            .map(|&local| {
-                (
-                    local,
-                    voxel::SIDES
-                        .iter()
-                        .flat_map(|&side| ChunkNeighborhood::<voxel::Light>::side_iterator(side))
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .collect::<HashMap<_, _>>();
-
-        trace!(
-            "Propagating light on {} chunk neighbors",
-            chunks_boundary_voxels.keys().len()
-        );
-
-        self.propagate_queue = chunks_boundary_voxels.into_iter().collect();
-        self.propagate_natural_light(false);
-    }
-
-    /// Propagate initial top-down natural light across all given chunks.
-    /// This function propagate the natural light from the top-most voxels downwards.
-    /// This function only propagate internally, does not spread the light to neighbors.
-    fn propagate_natural_light_top_down(&mut self, locals: &[IVec3]) {
-        perf_fn_scope!();
-
-        let top_voxels = (0..=chunk::X_END)
-            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
-            .collect_vec();
-
-        self.propagate_queue = locals
-            .iter()
-            .map(|&local| (local, top_voxels.clone()))
-            .collect();
-
-        self.propagate_natural_light(true);
-    }
-
     /// Find the surrounding voxel with highest light intensity.
     /// **Returns** [`Option::Some`] with chunk local and voxel position.
     /// **Returns** [`Option::None`]  if there is no surrounding light value or if it's less or equals than 1.
@@ -338,7 +371,7 @@ impl<'a> Propagator<'a> {
                 chunk
                     .lights
                     .get_absolute(voxel + side.dir())
-                    .map(|l| (side, l.get(LightTy::Natural)))
+                    .map(|l| (side, l.get(self.ty)))
             })
             .max_by_key(|&(_, l)| l)?;
 
@@ -356,11 +389,11 @@ impl<'a> Propagator<'a> {
         }
     }
 
-    /// Removed natural light on queued chunks and voxels.
+    /// Removed light on queued chunks and voxels.
     /// This function update light chunk neighborhood before working on a chunk, but not after, so it may end with outdated values.
     /// This function also update neighborhood light values based on light removal across neighbors.
-    /// This function may queue voxels for propagation so it should be called before [`propagate_natural_light`]
-    fn remove_natural_light(&mut self) {
+    /// This function may queue voxels for propagation so it should be called before [`propagate_light`]
+    fn remove_light(&mut self) {
         perf_fn_scope!();
 
         while let Some((local, voxels)) = self.remove_queue.pop_front() {
@@ -368,23 +401,30 @@ impl<'a> Propagator<'a> {
                 // TODO: Check if it's possible to optimize this later on
                 self.update_light_chunk_neighborhood(local);
 
-                self.remove_natural_light_on_chunk(local, &voxels);
+                self.remove_light_on_chunk(local, &voxels);
             }
         }
     }
 
-    /// Removes natural light of the given chunk on given voxels and queue chunks for propagation.
-    fn remove_natural_light_on_chunk(&mut self, local: IVec3, voxels: &[IVec3]) {
+    /// Checks if this a natural light propagation
+    fn is_natural_propagation(ty: LightTy, side: voxel::Side, intensity: u8) -> bool {
+        ty == LightTy::Natural
+            && side == voxel::Side::Down
+            && intensity == voxel::Light::MAX_NATURAL_INTENSITY
+    }
+
+    /// Removes light of the given chunk on given voxels and queue chunks for propagation.
+    fn remove_light_on_chunk(&mut self, local: IVec3, voxels: &[IVec3]) {
         perf_fn_scope!();
 
         let chunk = self.world.get_mut(local).unwrap();
 
-        // Remove all natural light from given voxels and queue'em up with older intensity value
+        // Remove all light from given voxels and queue'em up with older intensity value
         let mut queue = voxels
             .iter()
             .map(|&voxel| {
-                let intensity = chunk.lights.get_natural(voxel);
-                chunk.lights.set_natural(voxel, 0);
+                let intensity = chunk.lights.get(voxel).get(self.ty);
+                chunk.lights.set_type(voxel, self.ty, 0);
                 (voxel, intensity)
             })
             .collect::<VecDeque<_>>();
@@ -398,13 +438,12 @@ impl<'a> Propagator<'a> {
                 let side_voxel = voxel + side.dir();
 
                 if chunk::is_within_bounds(side_voxel) {
-                    let side_intensity = chunk.lights.get_natural(side_voxel);
+                    let side_intensity = chunk.lights.get(side_voxel).get(self.ty);
 
-                    if (side == voxel::Side::Down
-                        && side_intensity == voxel::Light::MAX_NATURAL_INTENSITY)
+                    if (Self::is_natural_propagation(self.ty, side, side_intensity))
                         || (side_intensity != 0 && old_intensity > side_intensity)
                     {
-                        chunk.lights.set_natural(side_voxel, 0);
+                        chunk.lights.set_type(side_voxel, self.ty, 0);
 
                         self.dirty_chunks.extend(chunk::neighboring(local, voxel));
 
@@ -414,7 +453,7 @@ impl<'a> Propagator<'a> {
                     }
                 } else {
                     if let Some(neighbor_light) = chunk.lights.get_absolute(side_voxel) {
-                        let neighbor_intensity = neighbor_light.get(voxel::LightTy::Natural);
+                        let neighbor_intensity = neighbor_light.get(self.ty);
 
                         let (_, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
 
@@ -445,10 +484,14 @@ impl<'a> Propagator<'a> {
         );
     }
 
-    /// **Returns** the propagated intensity based on side. 
-    fn calc_propagated_intensity(side: voxel::Side, intensity: u8) -> u8 {
+    /// **Returns** the propagated intensity based on side.
+    fn calc_propagated_intensity(ty: LightTy, side: voxel::Side, intensity: u8) -> u8 {
         match side {
-            voxel::Side::Down if intensity == voxel::Light::MAX_NATURAL_INTENSITY => intensity,
+            voxel::Side::Down
+                if ty == LightTy::Natural && intensity == voxel::Light::MAX_NATURAL_INTENSITY =>
+            {
+                intensity
+            }
             _ if intensity > 0 => intensity - 1,
             _ => 0,
         }
@@ -482,8 +525,343 @@ mod tests {
         }
     }
 
+    fn create_world_complex_shape() -> VoxWorld {
+        /*
+                                        Natural
+                        +---------------------------------------+
+                     7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |
+                        +---------------------------------------+
+                     6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |
+                        +---------------------------------------+
+                     5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |
+                        +---------------------------------------+
+                     4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |
+                        +---------------------------------------+
+                     3  | 15 | -- | 12 | -- | 6  | -- | 4  | -- |
+                        +---------------------------------------+
+        Y            2  | 15 | 14 | 13 | -- | 5  | -- | 3  | -- |
+        |               +---------------------------------------+
+        |            1  | -- | -- | -- | -- | 4  | 3  | 2  | -- |
+        + ---- X        +---------------------------------------+
+                     0  | -- | 0  | 1  | 2  | 3  | 2  | 1  | -- |
+                        +---------------------------------------+
+                     +    0    1    2    3    4    5    6    7
+        */
+
+        let mut chunk = Chunk::default();
+
+        // Fill all blocks on Z = 1 so we can ignore the third dimension when propagating the light
+        fill_z_axis(1, &mut chunk);
+
+        set_natural_light_on_top_voxels(&mut chunk);
+
+        {
+            chunk.kinds.set((0, 0, 0).into(), 1.into());
+            chunk.kinds.set((0, 1, 0).into(), 1.into());
+            chunk.kinds.set((1, 1, 0).into(), 1.into());
+            chunk.kinds.set((1, 3, 0).into(), 1.into());
+            chunk.kinds.set((1, 4, 0).into(), 1.into());
+            chunk.kinds.set((1, 5, 0).into(), 1.into());
+            chunk.kinds.set((2, 1, 0).into(), 1.into());
+            chunk.kinds.set((2, 6, 0).into(), 1.into());
+            chunk.kinds.set((3, 1, 0).into(), 1.into());
+            chunk.kinds.set((3, 2, 0).into(), 1.into());
+            chunk.kinds.set((3, 3, 0).into(), 1.into());
+            chunk.kinds.set((3, 4, 0).into(), 1.into());
+            chunk.kinds.set((3, 6, 0).into(), 1.into());
+            chunk.kinds.set((4, 6, 0).into(), 1.into());
+            chunk.kinds.set((5, 2, 0).into(), 1.into());
+            chunk.kinds.set((5, 3, 0).into(), 1.into());
+            chunk.kinds.set((5, 4, 0).into(), 1.into());
+            chunk.kinds.set((5, 6, 0).into(), 1.into());
+            chunk.kinds.set((6, 6, 0).into(), 1.into());
+            chunk.kinds.set((7, 0, 0).into(), 1.into());
+            chunk.kinds.set((7, 1, 0).into(), 1.into());
+            chunk.kinds.set((7, 2, 0).into(), 1.into());
+            chunk.kinds.set((7, 3, 0).into(), 1.into());
+            chunk.kinds.set((7, 4, 0).into(), 1.into());
+            chunk.kinds.set((7, 5, 0).into(), 1.into());
+        }
+
+        let mut world = VoxWorld::default();
+        world.add((0, 0, 0).into(), chunk);
+
+        let mut propagator = Propagator::new(&mut world, LightTy::Natural);
+        propagator.propagate_natural_light_on_new_chunks(&[(0, 0, 0).into()]);
+
+        world
+    }
+
     #[test]
-    fn update_light_simple() {
+    fn update_natural_and_artificial_blocked() {
+        /*
+                                Natural + Artificial
+                     +---------------------------------------+
+                  7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |
+                     +---------------------------------------+
+                  6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |
+                     +---------------------------------------+
+                  5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |
+                     +---------------------------------------+
+                  4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |
+                     +---------------------------------------+
+                  3  | 15 | -- | 12 | -- | 8  | -- | 6  | -- |
+                     +---------------------------------------+
+        Y         2  | 15 | 14 | 13 | -- | 9  | -- | 7  | -- |
+        |            +---------------------------------------+
+        |         1  | -- | -- | -- | -- | 10*| 9  | 8  | -- |
+        + ---- X     +---------------------------------------+
+                  0  | -- | 6  | 7  | 8  | 9  | 8  | 7  | -- |
+                     +---------------------------------------+
+
+                  +    0    1    2    3    4    5    6    7
+        */
+
+        let mut world = create_world_complex_shape();
+
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+        chunk.kinds.set((4, 1, 0).into(), 4.into());
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((4, 1, 0).into(), 4.into())])],
+        );
+
+        let expected = [
+            ((4, 1, 0).into(), 10),
+            ((4, 0, 0).into(), 9),
+            ((4, 2, 0).into(), 9),
+            ((5, 1, 0).into(), 9),
+            ((3, 0, 0).into(), 8),
+            ((5, 0, 0).into(), 8),
+            ((4, 3, 0).into(), 8),
+            ((6, 1, 0).into(), 8),
+            ((2, 0, 0).into(), 7),
+            ((6, 0, 0).into(), 7),
+            ((6, 2, 0).into(), 7),
+            ((6, 0, 0).into(), 7),
+            ((1, 0, 0).into(), 6),
+            ((6, 3, 0).into(), 6),
+        ];
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+        for (voxel, intensity) in expected {
+            assert_eq!(
+                chunk.lights.get(voxel).get_greater_intensity(),
+                intensity,
+                "Failed at {voxel}"
+            );
+        }
+    }
+
+    #[test]
+    fn update_light_artificial_removal() {
+        /*
+
+                                Natural + Artificial                               Natural Only
+                     +---------------------------------------+        +---------------------------------------+
+                  7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |     7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |
+                     +---------------------------------------+        +---------------------------------------+
+                  6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |     6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |
+                     +---------------------------------------+        +---------------------------------------+
+                  5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |     5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |
+                     +---------------------------------------+        +---------------------------------------+
+                  4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |     4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |
+                     +---------------------------------------+        +---------------------------------------+
+                  3  | 15 | -- | 12 | -- | 8  | -- | 6  | -- |     3  | 15 | -- | 12 | -- | 6  | -- | 4  | -- |
+                     +---------------------------------------+        +---------------------------------------+
+        Y         2  | 15 | 14 | 13 | -- | 9  | -- | 7  | -- |     2  | 15 | 14 | 13 | -- | 5  | -- | 3  | -- |
+        |            +---------------------------------------+        +---------------------------------------+
+        |         1  | -- | -- | -- | -- | 10*| 9  | 8  | -- |     1  | -- | -- | -- | -- | 4  | 3  | 2  | -- |
+        + ---- X     +---------------------------------------+        +---------------------------------------+
+                  0  | -- | 6  | 7  | 8  | 9  | 8  | 7  | -- |     0  | -- | 0  | 1  | 2  | 3  | 2  | 1  | -- |
+                     +---------------------------------------+        +---------------------------------------+
+
+                  +    0    1    2    3    4    5    6    7        +    0    1    2    3    4    5    6    7
+        */
+
+        let mut world = create_world_complex_shape();
+
+        // Add artificial light
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+        chunk.kinds.set((4, 1, 0).into(), 4.into());
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((4, 1, 0).into(), 4.into())])],
+        );
+
+        // Remove artificial light
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+        chunk.kinds.set((4, 1, 0).into(), 0.into());
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((4, 1, 0).into(), 0.into())])],
+        );
+
+        // Check
+        let expected = [
+            ((0, 0, 0).into(), 0),
+            ((0, 1, 0).into(), 0),
+            ((0, 2, 0).into(), 15),
+            ((0, 3, 0).into(), 15),
+            ((0, 4, 0).into(), 15),
+            ((0, 5, 0).into(), 15),
+            ((0, 6, 0).into(), 15),
+            ((0, 7, 0).into(), 15),
+            ((1, 0, 0).into(), 0),
+            ((1, 1, 0).into(), 0),
+            ((1, 2, 0).into(), 14),
+            ((1, 3, 0).into(), 0),
+            ((1, 4, 0).into(), 0),
+            ((1, 5, 0).into(), 0),
+            ((1, 6, 0).into(), 15),
+            ((1, 7, 0).into(), 15),
+            ((2, 0, 0).into(), 1),
+            ((2, 1, 0).into(), 0),
+            ((2, 2, 0).into(), 13),
+            ((2, 3, 0).into(), 12),
+            ((2, 4, 0).into(), 11),
+            ((2, 5, 0).into(), 10),
+            ((2, 6, 0).into(), 0),
+            ((2, 7, 0).into(), 15),
+            ((3, 0, 0).into(), 2),
+            ((3, 1, 0).into(), 0),
+            ((3, 2, 0).into(), 0),
+            ((3, 3, 0).into(), 0),
+            ((3, 4, 0).into(), 0),
+            ((3, 5, 0).into(), 9),
+            ((3, 6, 0).into(), 0),
+            ((3, 7, 0).into(), 15),
+            ((4, 0, 0).into(), 3),
+            ((4, 1, 0).into(), 4),
+            ((4, 2, 0).into(), 5),
+            ((4, 3, 0).into(), 6),
+            ((4, 4, 0).into(), 7),
+            ((4, 5, 0).into(), 8),
+            ((4, 6, 0).into(), 0),
+            ((4, 7, 0).into(), 15),
+            ((5, 0, 0).into(), 2),
+            ((5, 1, 0).into(), 3),
+            ((5, 2, 0).into(), 0),
+            ((5, 3, 0).into(), 0),
+            ((5, 4, 0).into(), 0),
+            ((5, 5, 0).into(), 7),
+            ((5, 6, 0).into(), 0),
+            ((5, 7, 0).into(), 15),
+            ((6, 0, 0).into(), 1),
+            ((6, 1, 0).into(), 2),
+            ((6, 2, 0).into(), 3),
+            ((6, 3, 0).into(), 4),
+            ((6, 4, 0).into(), 5),
+            ((6, 5, 0).into(), 6),
+            ((6, 6, 0).into(), 0),
+            ((6, 7, 0).into(), 15),
+            ((7, 0, 0).into(), 0),
+            ((7, 1, 0).into(), 0),
+            ((7, 2, 0).into(), 0),
+            ((7, 3, 0).into(), 0),
+            ((7, 4, 0).into(), 0),
+            ((7, 5, 0).into(), 0),
+            ((7, 6, 0).into(), 15),
+            ((7, 7, 0).into(), 15),
+        ];
+
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+
+        for (local, intensity) in expected {
+            assert_eq!(
+                chunk.lights.get(local).get_greater_intensity(),
+                intensity,
+                "Failed at local {:?}",
+                local
+            );
+        }
+    }
+
+    #[test]
+    fn update_artificial_light_removal() {
+        let mut chunk = Chunk::default();
+        fill_z_axis(1, &mut chunk);
+
+        /*
+                        +------------------------+
+                     4  | 6  | 7  | 8  | 7  | 6  |
+                        +------------------------+
+                     3  | 7  | 8  | 9  | 8  | 7  |
+                        +------------------------+
+        Y            2  | 8  | 9  | 10 | 9  | 8  |
+        |               +------------------------+
+        |            1  | 7  | 8  | 9  | 8  | 7  |
+        + ---- X        +------------------------+
+                     0  | 6  | 7  | 8  | 7  | 6  |
+                        +------------------------+
+
+                     +    0    1    2    3    4
+        */
+
+        chunk.kinds.set((2, 2, 0).into(), 4.into());
+
+        let mut world = VoxWorld::default();
+        world.add((0, 0, 0).into(), chunk);
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((2, 2, 0).into(), 4.into())])],
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+
+        assert_eq!(
+            chunk.lights.get((2, 2, 0).into()).get(LightTy::Artificial),
+            10,
+            "Light value should be set on placed voxel"
+        );
+    }
+
+    #[test]
+    fn update_artificial_light_simple() {
+        let mut chunk = Chunk::default();
+        fill_z_axis(1, &mut chunk);
+
+        /*
+                        +------------------------+
+                     4  | 6  | 7  | 8  | 7  | 6  |
+                        +------------------------+
+                     3  | 7  | 8  | 9  | 8  | 7  |
+                        +------------------------+
+        Y            2  | 8  | 9  | 10 | 9  | 8  |
+        |               +------------------------+
+        |            1  | 7  | 8  | 9  | 8  | 7  |
+        + ---- X        +------------------------+
+                     0  | 6  | 7  | 8  | 7  | 6  |
+                        +------------------------+
+
+                     +    0    1    2    3    4
+        */
+
+        chunk.kinds.set((2, 2, 0).into(), 4.into());
+
+        let mut world = VoxWorld::default();
+        world.add((0, 0, 0).into(), chunk);
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((2, 2, 0).into(), 4.into())])],
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+
+        assert_eq!(
+            chunk.lights.get((2, 2, 0).into()).get(LightTy::Artificial),
+            10,
+            "Light value should be set on placed voxel"
+        );
+    }
+
+    #[test]
+    fn update_natural_light_simple() {
         let mut chunk = Chunk::default();
         set_natural_light_on_top_voxels(&mut chunk);
         fill_z_axis(1, &mut chunk);
@@ -495,10 +873,10 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((0, 0, 0).into(), chunk);
 
-        super::propagate_light_on_new_chunk(&mut world, &[(0, 0, 0).into()]);
+        super::propagate_natural_light_on_new_chunk(&mut world, &[(0, 0, 0).into()]);
 
         let chunk = world.get_mut((0, 0, 0).into()).unwrap();
-        assert_eq!(chunk.lights.get_natural((1, 3, 0).into()), 15);
+        assert_eq!(chunk.lights.get((1, 3, 0).into()).get(LightTy::Natural), 15);
 
         chunk.kinds.set((1, 2, 0).into(), 0.into());
         drop(chunk);
@@ -509,7 +887,7 @@ mod tests {
         );
 
         let chunk = world.get_mut((0, 0, 0).into()).unwrap();
-        assert_eq!(chunk.lights.get_natural((1, 2, 0).into()), 15);
+        assert_eq!(chunk.lights.get((1, 2, 0).into()).get(LightTy::Natural), 15);
     }
 
     #[test]
@@ -520,8 +898,8 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((0, 0, 0).into(), chunk);
 
-        let mut propagador = Propagator::new(&mut world);
-        propagador.propagate_natural_light_on_chunk((0, 0, 0).into(), top_voxels().collect(), true);
+        let mut propagador = Propagator::new(&mut world, LightTy::Natural);
+        propagador.propagate_light_on_chunk((0, 0, 0).into(), top_voxels().collect(), true);
 
         // Test the test function
         assert_eq!(
@@ -622,14 +1000,18 @@ mod tests {
             vec![(0, 0, 0).into(), (1, 0, 0).into()].iter(),
         );
 
-        super::propagate_light_on_new_chunk(&mut world, &vec![(0, 0, 0).into(), (1, 0, 0).into()]);
+        super::propagate_natural_light_on_new_chunk(
+            &mut world,
+            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
+        );
 
         assert_eq!(
             world
                 .get((1, 0, 0).into())
                 .unwrap()
                 .lights
-                .get_natural((0, 0, 0).into()),
+                .get((0, 0, 0).into())
+                .get(LightTy::Natural),
             13,
             "Light propagation failed. This is handled in another test"
         );
@@ -639,7 +1021,8 @@ mod tests {
                 .get((0, 0, 0).into())
                 .unwrap()
                 .lights
-                .get_natural((15, 0, 0).into()),
+                .get((15, 0, 0).into())
+                .get(LightTy::Natural),
             12,
             "Light propagation failed. This is handled in another test"
         );
@@ -674,7 +1057,7 @@ mod tests {
 
         for (voxel, intensity) in expected_neighbor {
             assert_eq!(
-                neighbor.lights.get_natural(voxel),
+                neighbor.lights.get(voxel).get(LightTy::Natural),
                 intensity,
                 "Failed at {voxel}"
             );
@@ -694,7 +1077,7 @@ mod tests {
 
         for (voxel, intensity) in expected_chunk {
             assert_eq!(
-                chunk.lights.get_natural(voxel),
+                chunk.lights.get(voxel).get(LightTy::Natural),
                 intensity,
                 "Failed at {voxel}"
             );
@@ -783,14 +1166,18 @@ mod tests {
             &mut world,
             vec![(0, 0, 0).into(), (1, 0, 0).into()].iter(),
         );
-        super::propagate_light_on_new_chunk(&mut world, &vec![(0, 0, 0).into(), (1, 0, 0).into()]);
+        super::propagate_natural_light_on_new_chunk(
+            &mut world,
+            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
+        );
 
         assert_eq!(
             world
                 .get((1, 0, 0).into())
                 .unwrap()
                 .lights
-                .get_natural((0, 0, 0).into()),
+                .get((0, 0, 0).into())
+                .get(LightTy::Natural),
             13,
             "Light propagation failed. This is handled in another test"
         );
@@ -800,7 +1187,8 @@ mod tests {
                 .get((0, 0, 0).into())
                 .unwrap()
                 .lights
-                .get_natural((15, 0, 0).into()),
+                .get((15, 0, 0).into())
+                .get(LightTy::Natural),
             12,
             "Light propagation failed. This is handled in another test"
         );
@@ -818,7 +1206,7 @@ mod tests {
         drop(neighbor);
 
         //Act
-        let mut propagator = Propagator::new(&mut world);
+        let mut propagator = Propagator::new(&mut world, LightTy::Natural);
         propagator.update_light(&voxels);
 
         // Check neighbor
@@ -834,7 +1222,7 @@ mod tests {
 
         for (voxel, intensity) in expected_neighbor {
             assert_eq!(
-                neighbor.lights.get_natural(voxel),
+                neighbor.lights.get(voxel).get(LightTy::Natural),
                 intensity,
                 "Failed at {voxel}"
             );
@@ -854,7 +1242,7 @@ mod tests {
 
         for (voxel, intensity) in expected_chunk {
             assert_eq!(
-                chunk.lights.get_natural(voxel),
+                chunk.lights.get(voxel).get(LightTy::Natural),
                 intensity,
                 "Failed at {voxel}"
             );
@@ -887,14 +1275,14 @@ mod tests {
 
         let mut world = VoxWorld::default();
         world.add((0, 0, 0).into(), chunk);
-        super::propagate_light_on_new_chunk(&mut world, &[(0, 0, 0).into()]);
+        super::propagate_natural_light_on_new_chunk(&mut world, &[(0, 0, 0).into()]);
 
         let chunk = world.get_mut((0, 0, 0).into()).unwrap();
 
         for x in 0..=chunk::X_END {
             for y in 0..=chunk::Y_END {
                 assert_eq!(
-                    chunk.lights.get_natural((x, y, 0).into()),
+                    chunk.lights.get((x, y, 0).into()).get(LightTy::Natural),
                     voxel::Light::MAX_NATURAL_INTENSITY,
                     "Failed at {}",
                     IVec3::new(x, y, 0),
@@ -963,7 +1351,7 @@ mod tests {
         let chunk = world.get((0, 0, 0).into()).unwrap();
         for (voxel, intensity) in expected {
             assert_eq!(
-                chunk.lights.get_natural(voxel),
+                chunk.lights.get(voxel).get(LightTy::Natural),
                 intensity,
                 "Failed at {voxel}"
             );
@@ -997,8 +1385,8 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((0, 0, 0).into(), chunk);
 
-        let mut propagator = Propagator::new(&mut world);
-        propagator.propagate_light_on_new_chunks(&[(0, 0, 0).into()]);
+        let mut propagator = Propagator::new(&mut world, LightTy::Natural);
+        propagator.propagate_natural_light_on_new_chunks(&[(0, 0, 0).into()]);
 
         let chunk = world.get((0, 0, 0).into()).unwrap();
 
@@ -1026,66 +1414,7 @@ mod tests {
 
     #[test]
     fn propagate_chunk_natural_light_complex_blocked() {
-        /*
-                        +-----------------------------+----+----+
-                     7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |
-                        +-----------------------------+----+----+
-                     6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |
-                        +-----------------------------+----+----+
-                     5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |
-                        +-----------------------------+----+----+
-                     4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |
-                        +-----------------------------+----+----+
-                     3  | 15 | -- | 12 | -- | 6  | -- | 4  | -- |
-                        +-----------------------------+----+----+
-        Y            2  | 15 | 14 | 13 | -- | 5  | -- | 3  | -- |
-        |               +-----------------------------+----+----+
-        |            1  | -- | -- | -- | -- | 4  | 3  | 2  | -- |
-        + ---- X        +-----------------------------+----+----+
-                     0  | -- | 0  | 1  | 2  | 3  | 2  | 1  | -- |
-                        +-----------------------------+----+----+
-
-                     +    0    1    2    3    4    5    6    7
-        */
-
-        let mut chunk = Chunk::default();
-
-        // Fill all blocks on Z = 1 so we can ignore the third dimension when propagating the light
-        fill_z_axis(1, &mut chunk);
-
-        set_natural_light_on_top_voxels(&mut chunk);
-
-        chunk.kinds.set((0, 0, 0).into(), 1.into());
-        chunk.kinds.set((0, 1, 0).into(), 1.into());
-        chunk.kinds.set((1, 1, 0).into(), 1.into());
-        chunk.kinds.set((1, 3, 0).into(), 1.into());
-        chunk.kinds.set((1, 4, 0).into(), 1.into());
-        chunk.kinds.set((1, 5, 0).into(), 1.into());
-        chunk.kinds.set((2, 1, 0).into(), 1.into());
-        chunk.kinds.set((2, 6, 0).into(), 1.into());
-        chunk.kinds.set((3, 1, 0).into(), 1.into());
-        chunk.kinds.set((3, 2, 0).into(), 1.into());
-        chunk.kinds.set((3, 3, 0).into(), 1.into());
-        chunk.kinds.set((3, 4, 0).into(), 1.into());
-        chunk.kinds.set((3, 6, 0).into(), 1.into());
-        chunk.kinds.set((4, 6, 0).into(), 1.into());
-        chunk.kinds.set((5, 2, 0).into(), 1.into());
-        chunk.kinds.set((5, 3, 0).into(), 1.into());
-        chunk.kinds.set((5, 4, 0).into(), 1.into());
-        chunk.kinds.set((5, 6, 0).into(), 1.into());
-        chunk.kinds.set((6, 6, 0).into(), 1.into());
-        chunk.kinds.set((7, 0, 0).into(), 1.into());
-        chunk.kinds.set((7, 1, 0).into(), 1.into());
-        chunk.kinds.set((7, 2, 0).into(), 1.into());
-        chunk.kinds.set((7, 3, 0).into(), 1.into());
-        chunk.kinds.set((7, 4, 0).into(), 1.into());
-        chunk.kinds.set((7, 5, 0).into(), 1.into());
-
-        let mut world = VoxWorld::default();
-        world.add((0, 0, 0).into(), chunk);
-
-        let mut propagator = Propagator::new(&mut world);
-        propagator.propagate_light_on_new_chunks(&[(0, 0, 0).into()]);
+        let mut world = create_world_complex_shape();
 
         let expected = [
             ((0, 0, 0).into(), 0),
@@ -1190,7 +1519,7 @@ mod tests {
         // Allow light to enter on (7, 5)
         chunk.kinds.set((7, 5, 0).into(), 0.into());
 
-        let mut propagator = Propagator::new(&mut world);
+        let mut propagator = Propagator::new(&mut world, LightTy::Natural);
         propagator.update_light(&[((0, 0, 0).into(), vec![((7, 5, 0).into(), 0.into())])]);
 
         let expected = [
@@ -1349,7 +1678,10 @@ mod tests {
             [(0, 0, 0).into(), (1, 0, 0).into()].iter(),
         );
 
-        super::propagate_light_on_new_chunk(&mut world, &[(0, 0, 0).into(), (1, 0, 0).into()]);
+        super::propagate_natural_light_on_new_chunk(
+            &mut world,
+            &[(0, 0, 0).into(), (1, 0, 0).into()],
+        );
 
         let chunk_expected = [
             ((15, 11, 0).into(), 15),
