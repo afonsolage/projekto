@@ -21,17 +21,18 @@ pub struct WireframeDebugPlugin;
 impl Plugin for WireframeDebugPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DebugWireframeStateRes::default())
-            .add_startup_system(setup_wireframe_shader_system)
+            .add_startup_system(setup_wireframe_shader)
             .add_asset::<WireframeMaterial>()
             .add_plugin(MaterialPlugin::<WireframeMaterial>::default())
-            .add_system(toggle_mesh_wireframe_system)
-            .add_system(toggle_chunk_voxels_wireframe_system)
-            .add_system(toggle_landscape_pause_system)
-            .add_system(draw_voxels_system)
-            .add_system(do_raycast_system)
-            .add_system(draw_raycast_system)
-            .add_system(check_raycast_intersections_system)
-            .add_system(remove_voxel_system);
+            .add_system(toggle_mesh_wireframe)
+            .add_system(toggle_chunk_voxels_wireframe)
+            .add_system(toggle_landscape_pause)
+            .add_system(draw_voxels)
+            .add_system(do_raycast)
+            .add_system(draw_raycast)
+            .add_system(check_raycast_intersections)
+            .add_system(remove_voxel)
+            .add_system(add_voxel);
     }
 }
 
@@ -70,10 +71,7 @@ pub struct DrawVoxels {
 
 // Systems
 
-fn toggle_landscape_pause_system(
-    keyboard: Res<Input<KeyCode>>,
-    mut config: ResMut<LandscapeConfig>,
-) {
+fn toggle_landscape_pause(keyboard: Res<Input<KeyCode>>, mut config: ResMut<LandscapeConfig>) {
     if !keyboard.just_pressed(KeyCode::F5) {
         return;
     }
@@ -81,7 +79,7 @@ fn toggle_landscape_pause_system(
     config.paused = !config.paused;
 }
 
-fn toggle_chunk_voxels_wireframe_system(
+fn toggle_chunk_voxels_wireframe(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
     mut wireframe_state: ResMut<DebugWireframeStateRes>,
@@ -131,7 +129,7 @@ fn toggle_chunk_voxels_wireframe_system(
     }
 }
 
-fn setup_wireframe_shader_system(
+fn setup_wireframe_shader(
     mut commands: Commands,
     mut materials: ResMut<Assets<WireframeMaterial>>,
 ) {
@@ -169,7 +167,7 @@ fn setup_wireframe_shader_system(
     commands.insert_resource(wireframe_materials);
 }
 
-fn toggle_mesh_wireframe_system(
+fn toggle_mesh_wireframe(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut debug_state: ResMut<DebugWireframeStateRes>,
@@ -256,7 +254,7 @@ fn compute_wireframe_indices(vertex_count: usize) -> Vec<u32> {
     res
 }
 
-fn draw_voxels_system(
+fn draw_voxels(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Res<WireframeMaterialsMap>,
@@ -317,7 +315,7 @@ fn generate_voxel_edges_mesh(voxels: &[IVec3]) -> (Vec<[f32; 3]>, Vec<u32>) {
     (vertices, indices)
 }
 
-fn do_raycast_system(
+fn do_raycast(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
     q_cam: Query<(&Transform, &FlyByCamera)>,
@@ -353,7 +351,7 @@ impl CheckRaycastIntersectionsSystemMeta {
     }
 }
 
-fn check_raycast_intersections_system(
+fn check_raycast_intersections(
     mut meta: Local<CheckRaycastIntersectionsSystemMeta>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -442,7 +440,7 @@ fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, po
     });
 }
 
-fn draw_raycast_system(
+fn draw_raycast(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Res<WireframeMaterialsMap>,
@@ -474,7 +472,7 @@ fn draw_raycast_system(
     }
 }
 
-fn remove_voxel_system(
+fn remove_voxel(
     q_cam: Query<(&Transform, &FlyByCamera)>,
     mouse_input: Res<Input<MouseButton>>,
     mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
@@ -500,6 +498,63 @@ fn remove_voxel_system(
                         chunk_hit.local,
                         vec![(voxel_hit.local, 0.into())],
                     ));
+
+                    return;
+                }
+            }
+        }
+    } else {
+        if !mouse_input.just_pressed(MouseButton::Right) {
+            return;
+        }
+
+        if let Ok((transform, camera)) = q_cam.get_single() {
+            if !camera.active {
+                return;
+            }
+
+            let origin = transform.translation;
+            let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
+            let range = 100.0;
+
+            query.raycast(origin, dir, range);
+        }
+    }
+}
+
+fn add_voxel(
+    q_cam: Query<(&Transform, &FlyByCamera)>,
+    mouse_input: Res<Input<MouseButton>>,
+    mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
+    mut query: ChunkSystemRaycast,
+) {
+    if query.is_waiting() {
+        if let Some(result) = query.fetch() {
+            let hit_results = result.hits();
+
+            for (chunk_hit, voxels_hit) in hit_results {
+                let chunk = match result.chunks.get(&chunk_hit.local) {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                for voxel_hit in voxels_hit {
+                    if chunk.get(voxel_hit.local).is_empty() {
+                        continue;
+                    }
+
+                    debug!("Hit voxel at {:?} {:?}", chunk_hit.local, voxel_hit.local);
+                    let voxel = voxel_hit.local + voxel_hit.normal;
+
+                    let (local, voxel) = if chunk::is_within_bounds(voxel) {
+                        (chunk_hit.local, voxel)
+                    } else {
+                        let neighbor_local = chunk_hit.local + chunk_hit.normal;
+                        let (_, neighbor_voxel) = chunk::overlap_voxel(voxel);
+                        (neighbor_local, neighbor_voxel)
+                    };
+
+                    set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, 1.into())]));
 
                     return;
                 }
