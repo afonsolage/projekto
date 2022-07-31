@@ -143,11 +143,7 @@ pub fn recompute_chunks_internals(
     let mut locals = valid_update.iter().map(|(l, _)| *l).collect::<HashSet<_>>();
     update_kind_neighborhoods(world, locals.iter());
 
-    locals.extend(light_propagator::update_light(
-        world,
-        &valid_update,
-        voxel::LightTy::Natural,
-    ));
+    locals.extend(light_propagator::update_light(world, &valid_update));
 
     generate_internals(world, kinds_descs, locals.iter());
 

@@ -19,14 +19,16 @@ use crate::world::{
 ///
 ///  **Returns** a list of updated chunks.
 /// Some returned chunks may have been marked as updated due to it's neighbor being updated on the edge.
-pub fn update_light(
-    world: &mut VoxWorld,
-    updated: &[(IVec3, VoxelUpdateList)],
-    ty: LightTy,
-) -> Vec<IVec3> {
-    let mut propagator = Propagator::new(world, ty);
+pub fn update_light(world: &mut VoxWorld, updated: &[(IVec3, VoxelUpdateList)]) -> Vec<IVec3> {
+    let mut propagator = Propagator::new(world, LightTy::Artificial);
     propagator.update_light(updated);
-    propagator.finish()
+    let mut dirty_chunks = propagator.finish();
+
+    let mut propagator = Propagator::new(world, LightTy::Natural);
+    propagator.update_light(updated);
+    dirty_chunks.extend(propagator.finish());
+
+    dirty_chunks.into_iter().unique().collect()
 }
 
 /// Propagates natural light on new generated chunks. This function is optimized to be run on chunks which has no previous light.
@@ -407,7 +409,7 @@ impl<'a> Propagator<'a> {
 
         let chunk = self.world.get_mut(local).unwrap();
 
-        // Remove all natural light from given voxels and queue'em up with older intensity value
+        // Remove all light from given voxels and queue'em up with older intensity value
         let mut queue = voxels
             .iter()
             .map(|&voxel| {
@@ -513,6 +515,301 @@ mod tests {
         }
     }
 
+    fn create_world_complex_shape() -> VoxWorld {
+        /*
+                                        Natural
+                        +---------------------------------------+
+                     7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |
+                        +---------------------------------------+
+                     6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |
+                        +---------------------------------------+
+                     5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |
+                        +---------------------------------------+
+                     4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |
+                        +---------------------------------------+
+                     3  | 15 | -- | 12 | -- | 6  | -- | 4  | -- |
+                        +---------------------------------------+
+        Y            2  | 15 | 14 | 13 | -- | 5  | -- | 3  | -- |
+        |               +---------------------------------------+
+        |            1  | -- | -- | -- | -- | 4  | 3  | 2  | -- |
+        + ---- X        +---------------------------------------+
+                     0  | -- | 0  | 1  | 2  | 3  | 2  | 1  | -- |
+                        +---------------------------------------+
+                     +    0    1    2    3    4    5    6    7
+        */
+
+        let mut chunk = Chunk::default();
+
+        // Fill all blocks on Z = 1 so we can ignore the third dimension when propagating the light
+        fill_z_axis(1, &mut chunk);
+
+        set_natural_light_on_top_voxels(&mut chunk);
+
+        {
+            chunk.kinds.set((0, 0, 0).into(), 1.into());
+            chunk.kinds.set((0, 1, 0).into(), 1.into());
+            chunk.kinds.set((1, 1, 0).into(), 1.into());
+            chunk.kinds.set((1, 3, 0).into(), 1.into());
+            chunk.kinds.set((1, 4, 0).into(), 1.into());
+            chunk.kinds.set((1, 5, 0).into(), 1.into());
+            chunk.kinds.set((2, 1, 0).into(), 1.into());
+            chunk.kinds.set((2, 6, 0).into(), 1.into());
+            chunk.kinds.set((3, 1, 0).into(), 1.into());
+            chunk.kinds.set((3, 2, 0).into(), 1.into());
+            chunk.kinds.set((3, 3, 0).into(), 1.into());
+            chunk.kinds.set((3, 4, 0).into(), 1.into());
+            chunk.kinds.set((3, 6, 0).into(), 1.into());
+            chunk.kinds.set((4, 6, 0).into(), 1.into());
+            chunk.kinds.set((5, 2, 0).into(), 1.into());
+            chunk.kinds.set((5, 3, 0).into(), 1.into());
+            chunk.kinds.set((5, 4, 0).into(), 1.into());
+            chunk.kinds.set((5, 6, 0).into(), 1.into());
+            chunk.kinds.set((6, 6, 0).into(), 1.into());
+            chunk.kinds.set((7, 0, 0).into(), 1.into());
+            chunk.kinds.set((7, 1, 0).into(), 1.into());
+            chunk.kinds.set((7, 2, 0).into(), 1.into());
+            chunk.kinds.set((7, 3, 0).into(), 1.into());
+            chunk.kinds.set((7, 4, 0).into(), 1.into());
+            chunk.kinds.set((7, 5, 0).into(), 1.into());
+        }
+
+        let mut world = VoxWorld::default();
+        world.add((0, 0, 0).into(), chunk);
+
+        let mut propagator = Propagator::new(&mut world, LightTy::Natural);
+        propagator.propagate_natural_light_on_new_chunks(&[(0, 0, 0).into()]);
+
+        world
+    }
+
+    #[test]
+    fn update_natural_and_artificial_blocked() {
+        /*
+                                Natural + Artificial
+                     +---------------------------------------+
+                  7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |
+                     +---------------------------------------+
+                  6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |
+                     +---------------------------------------+
+                  5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |
+                     +---------------------------------------+
+                  4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |
+                     +---------------------------------------+
+                  3  | 15 | -- | 12 | -- | 8  | -- | 6  | -- |
+                     +---------------------------------------+
+        Y         2  | 15 | 14 | 13 | -- | 9  | -- | 7  | -- |
+        |            +---------------------------------------+
+        |         1  | -- | -- | -- | -- | 10*| 9  | 8  | -- |
+        + ---- X     +---------------------------------------+
+                  0  | -- | 6  | 7  | 8  | 9  | 8  | 7  | -- |
+                     +---------------------------------------+
+
+                  +    0    1    2    3    4    5    6    7
+        */
+
+        let mut world = create_world_complex_shape();
+
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+        chunk.kinds.set((4, 1, 0).into(), 4.into());
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((4, 1, 0).into(), 4.into())])],
+        );
+
+        let expected = [
+            ((4, 1, 0).into(), 10),
+            ((4, 0, 0).into(), 9),
+            ((4, 2, 0).into(), 9),
+            ((5, 1, 0).into(), 9),
+            ((3, 0, 0).into(), 8),
+            ((5, 0, 0).into(), 8),
+            ((4, 3, 0).into(), 8),
+            ((6, 1, 0).into(), 8),
+            ((2, 0, 0).into(), 7),
+            ((6, 0, 0).into(), 7),
+            ((6, 2, 0).into(), 7),
+            ((6, 0, 0).into(), 7),
+            ((1, 0, 0).into(), 6),
+            ((6, 3, 0).into(), 6),
+        ];
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+        for (voxel, intensity) in expected {
+            assert_eq!(
+                chunk.lights.get(voxel).get_greater_intensity(),
+                intensity,
+                "Failed at {voxel}"
+            );
+        }
+    }
+
+    #[test]
+    fn update_light_artificial_removal() {
+        /*
+
+                                Natural + Artificial                               Natural Only
+                     +---------------------------------------+        +---------------------------------------+
+                  7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |     7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |
+                     +---------------------------------------+        +---------------------------------------+
+                  6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |     6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |
+                     +---------------------------------------+        +---------------------------------------+
+                  5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |     5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |
+                     +---------------------------------------+        +---------------------------------------+
+                  4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |     4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |
+                     +---------------------------------------+        +---------------------------------------+
+                  3  | 15 | -- | 12 | -- | 8  | -- | 6  | -- |     3  | 15 | -- | 12 | -- | 6  | -- | 4  | -- |
+                     +---------------------------------------+        +---------------------------------------+
+        Y         2  | 15 | 14 | 13 | -- | 9  | -- | 7  | -- |     2  | 15 | 14 | 13 | -- | 5  | -- | 3  | -- |
+        |            +---------------------------------------+        +---------------------------------------+
+        |         1  | -- | -- | -- | -- | 10*| 9  | 8  | -- |     1  | -- | -- | -- | -- | 4  | 3  | 2  | -- |
+        + ---- X     +---------------------------------------+        +---------------------------------------+
+                  0  | -- | 6  | 7  | 8  | 9  | 8  | 7  | -- |     0  | -- | 0  | 1  | 2  | 3  | 2  | 1  | -- |
+                     +---------------------------------------+        +---------------------------------------+
+                                                                      
+                  +    0    1    2    3    4    5    6    7        +    0    1    2    3    4    5    6    7
+        */
+
+        let mut world = create_world_complex_shape();
+
+        // Add artificial light
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+        chunk.kinds.set((4, 1, 0).into(), 4.into());
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((4, 1, 0).into(), 4.into())])],
+        );
+
+        // Remove artificial light
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+        chunk.kinds.set((4, 1, 0).into(), 0.into());
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((4, 1, 0).into(), 0.into())])],
+        );
+
+        // Check
+        let expected = [
+            ((0, 0, 0).into(), 0),
+            ((0, 1, 0).into(), 0),
+            ((0, 2, 0).into(), 15),
+            ((0, 3, 0).into(), 15),
+            ((0, 4, 0).into(), 15),
+            ((0, 5, 0).into(), 15),
+            ((0, 6, 0).into(), 15),
+            ((0, 7, 0).into(), 15),
+            ((1, 0, 0).into(), 0),
+            ((1, 1, 0).into(), 0),
+            ((1, 2, 0).into(), 14),
+            ((1, 3, 0).into(), 0),
+            ((1, 4, 0).into(), 0),
+            ((1, 5, 0).into(), 0),
+            ((1, 6, 0).into(), 15),
+            ((1, 7, 0).into(), 15),
+            ((2, 0, 0).into(), 1),
+            ((2, 1, 0).into(), 0),
+            ((2, 2, 0).into(), 13),
+            ((2, 3, 0).into(), 12),
+            ((2, 4, 0).into(), 11),
+            ((2, 5, 0).into(), 10),
+            ((2, 6, 0).into(), 0),
+            ((2, 7, 0).into(), 15),
+            ((3, 0, 0).into(), 2),
+            ((3, 1, 0).into(), 0),
+            ((3, 2, 0).into(), 0),
+            ((3, 3, 0).into(), 0),
+            ((3, 4, 0).into(), 0),
+            ((3, 5, 0).into(), 9),
+            ((3, 6, 0).into(), 0),
+            ((3, 7, 0).into(), 15),
+            ((4, 0, 0).into(), 3),
+            ((4, 1, 0).into(), 4),
+            ((4, 2, 0).into(), 5),
+            ((4, 3, 0).into(), 6),
+            ((4, 4, 0).into(), 7),
+            ((4, 5, 0).into(), 8),
+            ((4, 6, 0).into(), 0),
+            ((4, 7, 0).into(), 15),
+            ((5, 0, 0).into(), 2),
+            ((5, 1, 0).into(), 3),
+            ((5, 2, 0).into(), 0),
+            ((5, 3, 0).into(), 0),
+            ((5, 4, 0).into(), 0),
+            ((5, 5, 0).into(), 7),
+            ((5, 6, 0).into(), 0),
+            ((5, 7, 0).into(), 15),
+            ((6, 0, 0).into(), 1),
+            ((6, 1, 0).into(), 2),
+            ((6, 2, 0).into(), 3),
+            ((6, 3, 0).into(), 4),
+            ((6, 4, 0).into(), 5),
+            ((6, 5, 0).into(), 6),
+            ((6, 6, 0).into(), 0),
+            ((6, 7, 0).into(), 15),
+            ((7, 0, 0).into(), 0),
+            ((7, 1, 0).into(), 0),
+            ((7, 2, 0).into(), 0),
+            ((7, 3, 0).into(), 0),
+            ((7, 4, 0).into(), 0),
+            ((7, 5, 0).into(), 0),
+            ((7, 6, 0).into(), 15),
+            ((7, 7, 0).into(), 15),
+        ];
+
+        let chunk = world.get_mut((0, 0, 0).into()).unwrap();
+
+        for (local, intensity) in expected {
+            assert_eq!(
+                chunk.lights.get(local).get_greater_intensity(),
+                intensity,
+                "Failed at local {:?}",
+                local
+            );
+        }
+    }
+
+    #[test]
+    fn update_artificial_light_removal() {
+        let mut chunk = Chunk::default();
+        fill_z_axis(1, &mut chunk);
+
+        /*
+                        +------------------------+
+                     4  | 6  | 7  | 8  | 7  | 6  |
+                        +------------------------+
+                     3  | 7  | 8  | 9  | 8  | 7  |
+                        +------------------------+
+        Y            2  | 8  | 9  | 10 | 9  | 8  |
+        |               +------------------------+
+        |            1  | 7  | 8  | 9  | 8  | 7  |
+        + ---- X        +------------------------+
+                     0  | 6  | 7  | 8  | 7  | 6  |
+                        +------------------------+
+
+                     +    0    1    2    3    4
+        */
+
+        chunk.kinds.set((2, 2, 0).into(), 4.into());
+
+        let mut world = VoxWorld::default();
+        world.add((0, 0, 0).into(), chunk);
+
+        super::update_light(
+            &mut world,
+            &[((0, 0, 0).into(), vec![((2, 2, 0).into(), 4.into())])],
+        );
+
+        let chunk = world.get((0, 0, 0).into()).unwrap();
+
+        assert_eq!(
+            chunk.lights.get((2, 2, 0).into()).get(LightTy::Artificial),
+            10,
+            "Light value should be set on placed voxel"
+        );
+    }
+
     #[test]
     fn update_artificial_light_simple() {
         let mut chunk = Chunk::default();
@@ -542,7 +839,6 @@ mod tests {
         super::update_light(
             &mut world,
             &[((0, 0, 0).into(), vec![((2, 2, 0).into(), 4.into())])],
-            LightTy::Artificial,
         );
 
         let chunk = world.get((0, 0, 0).into()).unwrap();
@@ -578,7 +874,6 @@ mod tests {
         super::update_light(
             &mut world,
             &[((0, 0, 0).into(), vec![((1, 2, 0).into(), 0.into())])],
-            LightTy::Natural,
         );
 
         let chunk = world.get_mut((0, 0, 0).into()).unwrap();
@@ -734,7 +1029,7 @@ mod tests {
         let updated = [((1, 0, 0).into(), vec![((0, 10, 0).into(), 0.into())])];
 
         //Act
-        super::update_light(&mut world, &updated, LightTy::Natural);
+        super::update_light(&mut world, &updated);
 
         // Check neighbor
         let neighbor = world.get((1, 0, 0).into()).unwrap();
@@ -1013,7 +1308,7 @@ mod tests {
             ],
         )];
 
-        super::update_light(&mut world, &chunk_map, LightTy::Natural);
+        super::update_light(&mut world, &chunk_map);
 
         let expected = vec![
             ((0, 0, 0).into(), 0),
@@ -1109,66 +1404,7 @@ mod tests {
 
     #[test]
     fn propagate_chunk_natural_light_complex_blocked() {
-        /*
-                        +-----------------------------+----+----+
-                     7  | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 |
-                        +-----------------------------+----+----+
-                     6  | 15 | 15 | -- | -- | -- | -- | -- | 15 |
-                        +-----------------------------+----+----+
-                     5  | 15 | -- | 10 | 9  | 8  | 7  | 6  | -- |
-                        +-----------------------------+----+----+
-                     4  | 15 | -- | 11 | -- | 7  | -- | 5  | -- |
-                        +-----------------------------+----+----+
-                     3  | 15 | -- | 12 | -- | 6  | -- | 4  | -- |
-                        +-----------------------------+----+----+
-        Y            2  | 15 | 14 | 13 | -- | 5  | -- | 3  | -- |
-        |               +-----------------------------+----+----+
-        |            1  | -- | -- | -- | -- | 4  | 3  | 2  | -- |
-        + ---- X        +-----------------------------+----+----+
-                     0  | -- | 0  | 1  | 2  | 3  | 2  | 1  | -- |
-                        +-----------------------------+----+----+
-
-                     +    0    1    2    3    4    5    6    7
-        */
-
-        let mut chunk = Chunk::default();
-
-        // Fill all blocks on Z = 1 so we can ignore the third dimension when propagating the light
-        fill_z_axis(1, &mut chunk);
-
-        set_natural_light_on_top_voxels(&mut chunk);
-
-        chunk.kinds.set((0, 0, 0).into(), 1.into());
-        chunk.kinds.set((0, 1, 0).into(), 1.into());
-        chunk.kinds.set((1, 1, 0).into(), 1.into());
-        chunk.kinds.set((1, 3, 0).into(), 1.into());
-        chunk.kinds.set((1, 4, 0).into(), 1.into());
-        chunk.kinds.set((1, 5, 0).into(), 1.into());
-        chunk.kinds.set((2, 1, 0).into(), 1.into());
-        chunk.kinds.set((2, 6, 0).into(), 1.into());
-        chunk.kinds.set((3, 1, 0).into(), 1.into());
-        chunk.kinds.set((3, 2, 0).into(), 1.into());
-        chunk.kinds.set((3, 3, 0).into(), 1.into());
-        chunk.kinds.set((3, 4, 0).into(), 1.into());
-        chunk.kinds.set((3, 6, 0).into(), 1.into());
-        chunk.kinds.set((4, 6, 0).into(), 1.into());
-        chunk.kinds.set((5, 2, 0).into(), 1.into());
-        chunk.kinds.set((5, 3, 0).into(), 1.into());
-        chunk.kinds.set((5, 4, 0).into(), 1.into());
-        chunk.kinds.set((5, 6, 0).into(), 1.into());
-        chunk.kinds.set((6, 6, 0).into(), 1.into());
-        chunk.kinds.set((7, 0, 0).into(), 1.into());
-        chunk.kinds.set((7, 1, 0).into(), 1.into());
-        chunk.kinds.set((7, 2, 0).into(), 1.into());
-        chunk.kinds.set((7, 3, 0).into(), 1.into());
-        chunk.kinds.set((7, 4, 0).into(), 1.into());
-        chunk.kinds.set((7, 5, 0).into(), 1.into());
-
-        let mut world = VoxWorld::default();
-        world.add((0, 0, 0).into(), chunk);
-
-        let mut propagator = Propagator::new(&mut world, LightTy::Natural);
-        propagator.propagate_natural_light_on_new_chunks(&[(0, 0, 0).into()]);
+        let mut world = create_world_complex_shape();
 
         let expected = [
             ((0, 0, 0).into(), 0),
