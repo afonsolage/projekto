@@ -111,6 +111,7 @@ impl Kind {
 
 impl ChunkStorageType for Kind {}
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub enum LightTy {
     Natural,
     Artificial,

@@ -736,7 +736,7 @@ fn format_local(local: IVec3) -> String {
 mod tests {
     use std::fs::remove_file;
 
-    use crate::world::storage::voxel::{KindDescItem, Light};
+    use crate::world::storage::voxel::{KindDescItem, Light, LightTy};
 
     use super::*;
 
@@ -851,10 +851,10 @@ mod tests {
         );
 
         let chunk = world.get((0, 0, 0).into()).unwrap();
-        assert_eq!(chunk.lights.get_natural((15, 6, 0).into()), 4, "Failed to compute chunk internals. This is likely a bug handled by others tests. Ignore this and fix others.");
+        assert_eq!(chunk.lights.get((15, 6, 0).into()).get(LightTy::Natural), 4, "Failed to compute chunk internals. This is likely a bug handled by others tests. Ignore this and fix others.");
 
         let neighbor = world.get((1, 0, 0).into()).unwrap();
-        assert_eq!(neighbor.lights.get_natural((0, 6, 0).into()), 5, "Failed to compute chunk internals. This is likely a bug handled by others tests. Ignore this and fix others.");
+        assert_eq!(neighbor.lights.get((0, 6, 0).into()).get(LightTy::Natural), 5, "Failed to compute chunk internals. This is likely a bug handled by others tests. Ignore this and fix others.");
 
         world
     }
@@ -883,7 +883,7 @@ mod tests {
         );
 
         assert_eq!(
-            chunk.lights.get_natural((15, 10, 0).into()),
+            chunk.lights.get((15, 10, 0).into()).get(LightTy::Natural),
             Light::MAX_NATURAL_INTENSITY,
             "Voxel should have a natural light propagated to it"
         );

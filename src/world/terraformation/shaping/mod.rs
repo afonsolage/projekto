@@ -111,7 +111,7 @@ pub fn compute_chunks_internals(
     trace!("Computing {} chunks internals", locals.len());
 
     update_kind_neighborhoods(world, locals.iter());
-    light_propagator::propagate_light_on_new_chunk(world, &locals);
+    light_propagator::propagate_natural_light_on_new_chunk(world, &locals);
 
     generate_internals(world, kinds_descs, locals.iter());
 
@@ -143,7 +143,11 @@ pub fn recompute_chunks_internals(
     let mut locals = valid_update.iter().map(|(l, _)| *l).collect::<HashSet<_>>();
     update_kind_neighborhoods(world, locals.iter());
 
-    locals.extend(light_propagator::update_light(world, &valid_update));
+    locals.extend(light_propagator::update_light(
+        world,
+        &valid_update,
+        voxel::LightTy::Natural,
+    ));
 
     generate_internals(world, kinds_descs, locals.iter());
 
