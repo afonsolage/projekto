@@ -17,7 +17,7 @@ pub fn euclid_rem(vec: IVec3, div: IVec3) -> IVec3 {
     )
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, PartialEq, PartialOrd)]
 pub enum Vec3Element {
     X,
     Y,

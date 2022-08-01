@@ -82,7 +82,7 @@ impl KindsDescs {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
 impl From<u16> for Kind {
@@ -111,7 +111,7 @@ impl Kind {
 
 impl ChunkStorageType for Kind {}
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum LightTy {
     Natural,
     Artificial,
@@ -133,7 +133,7 @@ impl LightTy {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Light(u8);
 
 impl Light {
@@ -173,7 +173,7 @@ impl Into<u8> for Light {
 
 impl ChunkStorageType for Light {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
 pub enum Side {
     #[default]
     Right = 0,
@@ -236,7 +236,7 @@ impl Side {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub struct FacesOcclusion(u8);
 
 const FULL_OCCLUDED_MASK: u8 = 0b0011_1111;
@@ -283,7 +283,7 @@ impl From<[bool; 6]> for FacesOcclusion {
 
 impl ChunkStorageType for FacesOcclusion {}
 
-#[derive(Debug, PartialEq, Eq, Default)]
+#[derive(Debug, PartialEq, Default)]
 pub struct VoxelFace {
     pub vertices: [IVec3; 4],
     pub side: Side,

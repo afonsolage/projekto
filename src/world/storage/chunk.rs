@@ -69,7 +69,6 @@ pub trait ChunkStorageType:
     + DeserializeOwned
     + Serialize
     + PartialEq
-    + Eq
     + PartialOrd
 {
 }

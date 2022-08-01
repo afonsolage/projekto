@@ -18,6 +18,7 @@ use super::VoxelUpdateList;
 
 mod faces_merger;
 mod light_propagator;
+mod light_smoother;
 
 /*
      v3               v2
