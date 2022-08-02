@@ -107,6 +107,11 @@ impl Kind {
         // TODO: Implement light emission based on kind descs
         self.0 != 4 && self.0 > 0
     }
+
+    pub fn is_light_emitter(&self) -> bool {
+        // TODO: Implement light emission based on kind descs
+        self.0 == 4
+    }
 }
 
 impl ChunkStorageType for Kind {}

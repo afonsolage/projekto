@@ -222,9 +222,16 @@ fn smooth_ambient_occlusion(
     neighbors: &[NeighborLight; NEIGHBOR_COUNT],
     side: voxel::Side,
     vertex: usize,
+    emitter: bool,
 ) -> f32 {
     let idx = side as usize;
     let side = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][0]];
+
+    // Light emitter doesn't have ambient occlusion nor light smoothing.
+    if emitter {
+        return side.intensity() as f32;
+    }
+
     let side1 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][1]];
     let side2 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][2]];
     let corner = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][3]];
@@ -246,33 +253,37 @@ pub fn smooth_lighting(
 ) -> ChunkSmoothLight {
     let mut chunk_smooth_light = ChunkSmoothLight::default();
 
-    for voxel in chunk::voxels() {
-        let occlusion = occlusion.get(voxel);
+    if let Some(chunk) = world.get(local) {
+        for voxel in chunk::voxels() {
+            let occlusion = occlusion.get(voxel);
 
-        if occlusion.is_fully_occluded() {
-            continue;
-        }
-
-        let neighbors = gather_neighborhood_light(world, local, voxel);
-        let mut smooth_light = SmoothLight::default();
-
-        for side in voxel::SIDES {
-            if occlusion.is_occluded(side) {
+            if occlusion.is_fully_occluded() {
                 continue;
             }
 
-            smooth_light.set(
-                side,
-                [
-                    smooth_ambient_occlusion(&neighbors, side, 0),
-                    smooth_ambient_occlusion(&neighbors, side, 1),
-                    smooth_ambient_occlusion(&neighbors, side, 2),
-                    smooth_ambient_occlusion(&neighbors, side, 3),
-                ],
-            );
-        }
+            let emitter = chunk.kinds.get(voxel).is_light_emitter();
 
-        chunk_smooth_light.set(voxel, smooth_light);
+            let neighbors = gather_neighborhood_light(world, local, voxel);
+            let mut smooth_light = SmoothLight::default();
+
+            for side in voxel::SIDES {
+                if occlusion.is_occluded(side) {
+                    continue;
+                }
+
+                smooth_light.set(
+                    side,
+                    [
+                        smooth_ambient_occlusion(&neighbors, side, 0, emitter),
+                        smooth_ambient_occlusion(&neighbors, side, 1, emitter),
+                        smooth_ambient_occlusion(&neighbors, side, 2, emitter),
+                        smooth_ambient_occlusion(&neighbors, side, 3, emitter),
+                    ],
+                );
+            }
+
+            chunk_smooth_light.set(voxel, smooth_light);
+        }
     }
 
     chunk_smooth_light
@@ -283,31 +294,6 @@ mod tests {
     use crate::world::storage::{chunk::Chunk, voxel::Light};
 
     use super::*;
-
-    // #[test]
-    // fn smooth_ambient_occlusion() {
-    //     assert_eq!(
-    //         super::smooth_ambient_occlusion(0, 0, 0, 0),
-    //         0.0,
-    //         "Should return 0 when all sides are also 0"
-    //     );
-
-    //     assert_eq!(
-    //         super::smooth_ambient_occlusion(2, 2, 2, 2),
-    //         2.0,
-    //         "Should smoothing nothing, since all sides neighbor are equals"
-    //     );
-
-    //     assert_eq!(
-    //         super::smooth_ambient_occlusion(4, 0, 0, 10),
-    //         1.0,
-    //         "Should ignore corner when side1 and side2 are 0"
-    //     );
-
-    //     assert_eq!(super::smooth_ambient_occlusion(4, 0, 0, 0), 1.0);
-
-    //     assert_eq!(super::smooth_ambient_occlusion(7, 8, 9, 10), 8.5);
-    // }
 
     #[test]
     fn gather_neighborhood_light() {
