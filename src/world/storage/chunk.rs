@@ -62,15 +62,7 @@ impl Iterator for ChunkIter {
 }
 
 pub trait ChunkStorageType:
-    Clone
-    + Copy
-    + core::fmt::Debug
-    + Default
-    + DeserializeOwned
-    + Serialize
-    + PartialEq
-    + Eq
-    + PartialOrd
+    Clone + Copy + core::fmt::Debug + Default + DeserializeOwned + Serialize + PartialEq + PartialOrd
 {
 }
 
@@ -190,12 +182,6 @@ impl ChunkLight {
         let mut light = self.get(local);
         light.set(ty, intensity);
         self.set(local, light);
-    }
-
-    pub fn get_face_reflected_intensity(&self, voxel: IVec3, side: voxel::Side) -> u8 {
-        self.get_absolute(voxel + side.dir())
-            .unwrap_or_default()
-            .get_greater_intensity()
     }
 }
 
