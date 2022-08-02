@@ -7,6 +7,8 @@ use crate::world::{
 };
 use bevy::prelude::*;
 
+use super::light_smoother::ChunkSmoothLight;
+
 /**
   Checks if voxel is out of bounds, or is empty or is already merged or is fully occluded.
 */
@@ -32,13 +34,22 @@ fn find_furthest_eq_voxel(
     side: voxel::Side,
     chunk: &Chunk,
     occlusion: &ChunkFacesOcclusion,
+    chunk_smooth_light: &ChunkSmoothLight,
     until: Option<IVec3>,
 ) -> IVec3 {
     perf_fn_scope!();
 
     let mut next_voxel = begin + step;
 
-    while should_merge(begin, next_voxel, chunk, merged, side, occlusion) {
+    while should_merge(
+        begin,
+        next_voxel,
+        chunk,
+        merged,
+        side,
+        occlusion,
+        chunk_smooth_light,
+    ) {
         if let Some(target) = until && target == next_voxel {
                 return next_voxel;
             } else {
@@ -59,6 +70,7 @@ fn should_merge(
     merged: &[bool],
     side: voxel::Side,
     occlusion: &ChunkFacesOcclusion,
+    chunk_smooth_light: &ChunkSmoothLight,
 ) -> bool {
     chunk::is_within_bounds(next_voxel)
         && !should_skip_voxel(
@@ -69,8 +81,7 @@ fn should_merge(
             occlusion,
         )
         && chunk.kinds.get(voxel) == chunk.kinds.get(next_voxel)
-        && chunk.lights.get_face_reflected_intensity(voxel, side)
-            == chunk.lights.get_face_reflected_intensity(next_voxel, side)
+        && chunk_smooth_light.get(voxel).get(side) == chunk_smooth_light.get(next_voxel).get(side)
 }
 
 /**
@@ -227,7 +238,11 @@ impl Iterator for MergerIterator {
 
  **Returns** a list of merged [`VoxelFace`]
 */
-pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelFace> {
+pub(super) fn merge(
+    occlusion: ChunkFacesOcclusion,
+    chunk_smooth_light: ChunkSmoothLight,
+    chunk: &Chunk,
+) -> Vec<VoxelFace> {
     perf_fn_scope!();
 
     let mut faces_vertices = vec![];
@@ -247,12 +262,20 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
                 continue;
             }
 
-            let light_intensity = chunk.lights.get_face_reflected_intensity(voxel, side);
+            let smooth_light = chunk_smooth_light.get(voxel);
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
-            let v2 =
-                find_furthest_eq_voxel(voxel, current_axis, &merged, side, chunk, &occlusion, None);
+            let v2 = find_furthest_eq_voxel(
+                voxel,
+                current_axis,
+                &merged,
+                side,
+                chunk,
+                &occlusion,
+                &chunk_smooth_light,
+                None,
+            );
 
             // Finds the furthest equal voxel on perpendicular axis
             let perpendicular_step = perpendicular_axis;
@@ -261,7 +284,15 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
             // The loop walks all the way up on current_axis and than stepping one unit at time on perpendicular_axis.
             // This walk it'll be possible to find the next vertex (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
-            while should_merge(voxel, next_begin_voxel, chunk, &merged, side, &occlusion) {
+            while should_merge(
+                voxel,
+                next_begin_voxel,
+                chunk,
+                &merged,
+                side,
+                &occlusion,
+                &chunk_smooth_light,
+            ) {
                 let furthest = find_furthest_eq_voxel(
                     next_begin_voxel,
                     current_axis,
@@ -269,6 +300,7 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
                     side,
                     chunk,
                     &occlusion,
+                    &chunk_smooth_light,
                     Some(v3),
                 );
 
@@ -295,7 +327,7 @@ pub(super) fn merge(occlusion: ChunkFacesOcclusion, chunk: &Chunk) -> Vec<VoxelF
                 vertices: [v1, v2, v3, v4],
                 side,
                 kind,
-                light_intensity,
+                light: smooth_light.get(side),
             })
         }
     }
@@ -313,7 +345,7 @@ mod tests {
     #[bench]
     fn merge_faces_empty_chunk(b: &mut Bencher) {
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &Chunk::default());
+            super::merge(default(), default(), &default());
         });
     }
 
@@ -328,7 +360,7 @@ mod tests {
         }
 
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &chunk);
+            super::merge(default(), default(), &chunk);
         });
     }
 
@@ -343,7 +375,7 @@ mod tests {
         }
 
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &chunk);
+            super::merge(default(), default(), &chunk);
         });
     }
 
@@ -356,7 +388,7 @@ mod tests {
         }
 
         b.iter(|| {
-            super::merge(ChunkFacesOcclusion::default(), &chunk);
+            super::merge(default(), default(), &chunk);
         });
     }
 
@@ -397,7 +429,7 @@ mod tests {
         kinds.set((0, 4, 1).into(), 2.into());
         kinds.set((0, 4, 2).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
+        let merged = super::merge(default(), default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Right) //We care only for right faces here
             .collect::<Vec<_>>();
@@ -504,7 +536,7 @@ mod tests {
         kinds.set((0, 4, 2).into(), 2.into());
         kinds.set((0, 4, 3).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
+        let merged = super::merge(default(), default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Left) //We care only for left faces here
             .collect::<Vec<_>>();
@@ -611,7 +643,7 @@ mod tests {
         kinds.set((2, 0, 0).into(), 2.into());
         kinds.set((3, 0, 0).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
+        let merged = super::merge(default(), default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Up) //We care only for Up faces here
             .collect::<Vec<_>>();
@@ -715,7 +747,7 @@ mod tests {
         kinds.set((1, 0, 0).into(), 1.into());
         kinds.set((2, 0, 0).into(), 1.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
+        let merged = super::merge(default(), default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Up) //We care only for Up faces here
             .collect::<Vec<_>>();
@@ -811,7 +843,7 @@ mod tests {
         kinds.set((2, 0, 4).into(), 2.into());
         kinds.set((3, 0, 4).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
+        let merged = super::merge(default(), default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Down) //We care only for Down faces here
             .collect::<Vec<_>>();
@@ -918,7 +950,7 @@ mod tests {
         kinds.set((2, 4, 0).into(), 2.into());
         kinds.set((3, 4, 0).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
+        let merged = super::merge(default(), default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Front) //We care only for Front faces here
             .collect::<Vec<_>>();
@@ -1025,7 +1057,7 @@ mod tests {
         kinds.set((2, 4, 0).into(), 2.into());
         kinds.set((1, 4, 0).into(), 2.into());
 
-        let merged = super::merge(ChunkFacesOcclusion::default(), &chunk)
+        let merged = super::merge(default(), default(), &chunk)
             .into_iter()
             .filter(|vf| vf.side == voxel::Side::Back) //We care only for Back faces here
             .collect::<Vec<_>>();

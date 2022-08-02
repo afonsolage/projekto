@@ -902,7 +902,11 @@ mod tests {
         );
 
         let updated_voxel_side_vertex = updated_voxel_side_vertex.unwrap();
-        assert_eq!(updated_voxel_side_vertex.light, Vec3::ONE);
+        assert_eq!(
+            updated_voxel_side_vertex.light,
+            Vec3::new(0.25, 0.25, 0.25),
+            "Should return 1/4 or light intensity, since all neighbors are occluded"
+        );
     }
 
     #[test]

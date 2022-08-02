@@ -161,16 +161,20 @@ fn generate_internals<'a>(
     let occlusions = locals
         .map(|&l| (l, world.get(l).unwrap()))
         .map(|(l, chunk)| (l, faces_occlusion(chunk)))
-        .collect::<Vec<_>>();
+        .map(|(l, occ)| (l, light_smoother::smooth_lighting(world, l, &occ), occ))
+        .collect_vec();
 
-    trace!("Faces occlusion completed on {} chunks", occlusions.len());
+    trace!(
+        "Faces occlusion and light smoothing completed on {} chunks",
+        occlusions.len()
+    );
 
-    for (local, occlusion) in occlusions {
+    for (local, smooth_light, occlusion) in occlusions {
         let chunk = world.get_mut(local).unwrap();
         if occlusion.is_fully_occluded() {
             chunk.vertices = vec![];
         } else {
-            let faces = faces_merger::merge(occlusion, chunk);
+            let faces = faces_merger::merge(occlusion, smooth_light, chunk);
             chunk.vertices = generate_vertices(faces, kinds_descs);
         }
     }
@@ -259,13 +263,7 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
             (0.0, 0.0).into(),
         ];
 
-        let light = if face.light_intensity > 0 {
-            Vec3::splat(
-                (1.0 / voxel::Light::MAX_NATURAL_INTENSITY as f32) * face.light_intensity as f32,
-            )
-        } else {
-            Vec3::ZERO
-        };
+        let light_fraction = 1.0 / voxel::Light::MAX_NATURAL_INTENSITY as f32;
 
         for (i, v) in faces_vertices.into_iter().enumerate() {
             vertices.push(VoxelVertex {
@@ -273,7 +271,7 @@ fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<Vox
                 normal,
                 uv: tile_uv[i],
                 tile_coord_start,
-                light,
+                light: Vec3::splat(face.light[i] * light_fraction),
             });
         }
     }

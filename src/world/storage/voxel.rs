@@ -288,7 +288,7 @@ pub struct VoxelFace {
     pub vertices: [IVec3; 4],
     pub side: Side,
     pub kind: Kind,
-    pub light_intensity: u8,
+    pub light: [f32; 4],
     //TODO: color
 }
 
