@@ -9,8 +9,13 @@ use crate::world::{
     terraformation::ChunkFacesOcclusion,
 };
 
-const NEIGHBOR_COUNT: usize = 26;
+/// Number of neighbors per voxel.
+// 3 voxels (-1..=1) per axis.
+// -1 to skip self (0, 0, 0)
+const NEIGHBOR_COUNT: usize = (3*3*3) - 1;
+/// Vertex count per face
 const VERTEX_COUNT: usize = 4;
+/// Direct side, side1, side2 and corner
 const VERTEX_NEIGHBOR_COUNT: usize = 4;
 
 /// Lookup table used to gather neighbor information in order to smooth lighting
@@ -80,6 +85,7 @@ const NEIGHBOR_VERTEX_LOOKUP: [[[usize; VERTEX_COUNT]; VERTEX_NEIGHBOR_COUNT]; v
     ],
 ];
 
+/// Contains smoothed vertex light for each face
 #[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub struct SmoothLight([[f32; 4]; voxel::SIDE_COUNT]);
 
@@ -97,6 +103,8 @@ impl ChunkStorageType for SmoothLight {}
 
 pub type ChunkSmoothLight = ChunkStorage<SmoothLight>;
 
+/// Helper enum used to distinguish between fully dark voxels and opaque voxels.
+/// Ambient Occlusions needs to block corner light when both sides are opaque.
 #[derive(Debug, Copy, Clone, Default)]
 enum NeighborLight {
     #[default]
@@ -120,6 +128,10 @@ impl NeighborLight {
     }
 }
 
+/// Gathers light of all neighbors.
+/// This functions works on chunk edge voxels.
+/// Even corner neighbors, like (-1, -1 -1) are gathered.
+/// This function assumes the given chunk local exists and is valid.
 fn gather_neighborhood_light(
     world: &VoxWorld,
     local: IVec3,
@@ -218,6 +230,8 @@ fn gather_neighborhood_light(
     neighbors
 }
 
+/// Calculates the ambient occlusion and light smoothness based on [0fps article](https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/)
+/// Skips AO and Light Smoothness if voxel is a light emitter
 fn smooth_ambient_occlusion(
     neighbors: &[NeighborLight; NEIGHBOR_COUNT],
     side: voxel::Side,
@@ -246,6 +260,7 @@ fn smooth_ambient_occlusion(
     (side.intensity() + side1.intensity() + side2.intensity() + corner.intensity()) as f32 / 4.0
 }
 
+/// Calculates ambient occlusion and light smoothness for the given chunk.
 pub fn smooth_lighting(
     world: &VoxWorld,
     local: IVec3,
