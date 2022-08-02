@@ -97,7 +97,34 @@ impl ChunkStorageType for SmoothLight {}
 
 pub type ChunkSmoothLight = ChunkStorage<SmoothLight>;
 
-fn gather_neighborhood_light(world: &VoxWorld, local: IVec3, voxel: IVec3) -> [u8; NEIGHBOR_COUNT] {
+#[derive(Debug, Copy, Clone, Default)]
+enum NeighborLight {
+    #[default]
+    Opaque,
+    Transparent(u8),
+}
+
+impl NeighborLight {
+    fn is_opaque(&self) -> bool {
+        match self {
+            NeighborLight::Opaque => true,
+            NeighborLight::Transparent(_) => false,
+        }
+    }
+
+    fn intensity(self) -> u8 {
+        match self {
+            NeighborLight::Opaque => 0,
+            NeighborLight::Transparent(i) => i,
+        }
+    }
+}
+
+fn gather_neighborhood_light(
+    world: &VoxWorld,
+    local: IVec3,
+    voxel: IVec3,
+) -> [NeighborLight; NEIGHBOR_COUNT] {
     /*
 
                              +------+------+------+
@@ -132,7 +159,7 @@ fn gather_neighborhood_light(world: &VoxWorld, local: IVec3, voxel: IVec3) -> [u
                        +------+------+------+
     */
 
-    let mut neighbors = [0; NEIGHBOR_COUNT];
+    let mut neighbors = [default(); NEIGHBOR_COUNT];
 
     let chunk = world
         .get(local)
@@ -151,21 +178,36 @@ fn gather_neighborhood_light(world: &VoxWorld, local: IVec3, voxel: IVec3) -> [u
                 let side_voxel = voxel + dir;
 
                 let intensity = if chunk::is_within_bounds(side_voxel) {
-                    chunk.lights.get(side_voxel).get_greater_intensity()
+                    let intensity = chunk.lights.get(side_voxel).get_greater_intensity();
+
+                    // Check if returned block is opaque
+                    if intensity == 0 && chunk.kinds.get(side_voxel).is_opaque() {
+                        NeighborLight::Opaque
+                    } else {
+                        NeighborLight::Transparent(intensity)
+                    }
                 } else {
                     let (dir, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
                     let neighbor_local = local + dir;
 
                     if let Some(neighbor_chunk) = world.get(neighbor_local) {
-                        neighbor_chunk
+                        let intensity = neighbor_chunk
                             .lights
                             .get(neighbor_voxel)
-                            .get_greater_intensity()
+                            .get_greater_intensity();
+
+                        // Check if returned block is opaque
+                        if intensity == 0 && neighbor_chunk.kinds.get(neighbor_voxel).is_opaque() {
+                            NeighborLight::Opaque
+                        } else {
+                            NeighborLight::Transparent(intensity)
+                        }
                     } else {
                         // TODO: When a neighbor chunk isn't loaded we should make it lighter or darker?
-                        0
+                        NeighborLight::Transparent(0)
                     }
                 };
+
                 neighbors[i] = intensity;
 
                 i += 1;
@@ -177,23 +219,24 @@ fn gather_neighborhood_light(world: &VoxWorld, local: IVec3, voxel: IVec3) -> [u
 }
 
 fn smooth_ambient_occlusion(
-    neighbors: &[u8; NEIGHBOR_COUNT],
+    neighbors: &[NeighborLight; NEIGHBOR_COUNT],
     side: voxel::Side,
     vertex: usize,
 ) -> f32 {
     let idx = side as usize;
-    let side = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][0]] as f32;
-    let side1 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][1]] as f32;
-    let side2 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][2]] as f32;
-    let corner = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][3]] as f32;
+    let side = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][0]];
+    let side1 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][1]];
+    let side2 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][2]];
+    let corner = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][vertex][3]];
 
-    let corner = if side1 == 0.0 && side2 == 0.0 {
-        0.0
+    let corner = if side1.is_opaque() && side2.is_opaque() {
+        NeighborLight::Opaque
     } else {
         corner
     };
-    (side + side1 + side2 + corner) as f32 / 4.0
-    // side as f32
+
+    // Convert from i32, which has the info if the voxel is opaque, to pure light intensity
+    (side.intensity() + side1.intensity() + side2.intensity() + corner.intensity()) as f32 / 4.0
 }
 
 pub fn smooth_lighting(
@@ -302,7 +345,7 @@ mod tests {
 
                     assert_eq!(
                         chunk.lights.get(neighbor).get_greater_intensity(),
-                        neighbors[i],
+                        neighbors[i].intensity(),
                         "Failed at {neighbor} [{i}]"
                     );
                     i += 1
