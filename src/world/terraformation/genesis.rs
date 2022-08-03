@@ -37,8 +37,7 @@ impl Plugin for GenesisPlugin {
 
 #[derive(TypeUuid, Debug)]
 #[uuid = "e6edff2a-e204-497f-999c-bdebd1f92f62"]
-pub struct KindsDescsRes {
-    pub descs: KindsDescs,
+pub struct KindsAtlasRes {
     pub atlas: Handle<Image>,
 }
 
@@ -54,14 +53,11 @@ fn setup_resources(mut commands: Commands, asset_server: Res<AssetServer>) {
     let vox_world = VoxWorld::default();
     commands.insert_resource(WorldRes(Some(vox_world)));
 
-    // TODO: Find a better way to load this
-    let input_path = format!("{}/assets/voxels/kind.ron", env!("CARGO_MANIFEST_DIR"));
-    let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
-    let descs: KindsDescs = ron::de::from_reader(f).unwrap();
+    let descs = voxel::KindsDescs::get_or_init();
 
     let atlas = asset_server.load(&descs.atlas_path);
 
-    commands.insert_resource(KindsDescsRes { descs, atlas });
+    commands.insert_resource(KindsAtlasRes { atlas });
 
     commands.insert_resource(BatchChunkCmdRes::default());
 }
@@ -209,7 +205,6 @@ struct ProcessBatchSystemMeta {
  * This can take several frames.
  */
 fn update_world_system(
-    kind_assets: Res<KindsDescsRes>,
     mut batch_res: ResMut<BatchChunkCmdRes>,
     mut meta: Local<ProcessBatchSystemMeta>,
     mut world_res: ResMut<WorldRes>,
@@ -236,7 +231,7 @@ fn update_world_system(
         perf_scope!(_perf);
 
         let world = world_res.take();
-        let kinds_descs = kind_assets.descs.clone();
+        let kinds_descs = voxel::KindsDescs::get_or_init().clone();
         let batch = batch_res.swap_and_clone();
 
         let task_pool = AsyncComputeTaskPool::get();
@@ -630,11 +625,7 @@ fn generate_chunk(local: IVec3) -> Chunk {
 
             for y in 0..end {
                 // TODO: Check this following biome settings
-                let kind = match y {
-                    y if y == end - 1 => 2.into(),
-                    y if y < end - 3 => 3.into(),
-                    _ => 1.into(),
-                };
+                let kind = voxel::Kind::get_kind_with_height_source(end, y);
 
                 kinds.set((x as i32, y as i32, z as i32).into(), kind);
             }
@@ -750,6 +741,7 @@ mod tests {
                     name: format!("Kind {i}"),
                     id: i,
                     sides: voxel::KindSidesDesc::All(Default::default()),
+                    ..Default::default()
                 })
                 .collect::<Vec<_>>(),
         }

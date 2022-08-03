@@ -8,8 +8,8 @@ use crate::{
     world::{
         query,
         rendering::{ChunkMaterial, ChunkMaterialHandle},
-        storage::{chunk, landscape},
-        terraformation::prelude::KindsDescsRes,
+        storage::{chunk, landscape, voxel},
+        terraformation::prelude::KindsAtlasRes,
     },
 };
 
@@ -37,11 +37,11 @@ pub struct LandscapeConfig {
 fn setup_resources(
     mut commands: Commands,
     mut materials: ResMut<Assets<ChunkMaterial>>,
-    kinds_res: Res<KindsDescsRes>,
+    kinds_res: Res<KindsAtlasRes>,
 ) {
     trace_system_run!();
     let material = materials.add(ChunkMaterial {
-        tile_texture_size: 1.0 / kinds_res.descs.count_tiles() as f32,
+        tile_texture_size: 1.0 / voxel::KindsDescs::get_or_init().count_tiles() as f32,
         texture: kinds_res.atlas.clone(),
     });
 

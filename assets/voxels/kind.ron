@@ -8,6 +8,8 @@
             name: "None",
             id: 0,
             sides: None,
+            light: None,
+            source: None,
         ),
         (
             name: "Dirt",
@@ -19,6 +21,11 @@
                     offset: (0, 0),
                 )
             ),
+            light: Opaque,
+            source: Genesis
+            (
+                height: 1,
+            )
         ),
         (
             name: "Grass",
@@ -50,6 +57,11 @@
                     offset: (0, 1),
                 ),
             ),
+            light: Opaque,
+            source: Genesis
+            (
+                height: 0,
+            )
         ),
         (
             name: "Rock",
@@ -61,6 +73,11 @@
                     offset: (2, 0),
                 )
             ),
+            light: Opaque,
+            source: Genesis
+            (
+                height: 3,
+            )
         ),
         (
             name: "Lamp",
@@ -72,6 +89,8 @@
                     offset: (1, 1),
                 )
             ),
+            light: Emitter(10),
+            source: None,
         ),
     ]
 )

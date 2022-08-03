@@ -496,7 +496,7 @@ fn remove_voxel(
                     debug!("Hit voxel at {:?} {:?}", chunk_hit.local, voxel_hit.local);
                     set_voxel_writer.send(CmdChunkUpdate(
                         chunk_hit.local,
-                        vec![(voxel_hit.local, 0.into())],
+                        vec![(voxel_hit.local, voxel::Kind::none())],
                     ));
 
                     return;
@@ -554,7 +554,7 @@ fn add_voxel(
                         (neighbor_local, neighbor_voxel)
                     };
 
-                    set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, 4.into())]));
+                    set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, voxel::Kind::id(4))]));
 
                     return;
                 }

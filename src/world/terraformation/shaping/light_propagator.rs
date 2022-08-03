@@ -185,7 +185,8 @@ impl<'a> Propagator<'a> {
                 for &(voxel, new_kind) in voxels_update {
                     let old_light = chunk.lights.get(voxel).get(self.ty);
                     // TODO: Add this kind check to KindDescs
-                    let new_light = if self.ty == LightTy::Artificial && new_kind == 4.into() {
+                    let new_light = if self.ty == LightTy::Artificial && new_kind.is_light_emitter()
+                    {
                         10u8
                     } else {
                         0u8

@@ -2,6 +2,9 @@
 #![allow(clippy::forget_non_drop)]
 #![feature(int_log)]
 #![feature(test)]
+#![feature(once_cell)]
+
+
 
 use bevy::{prelude::*, window::PresentMode, render::texture::ImageSettings};
 
@@ -10,6 +13,10 @@ use bevy_inspector_egui;
 
 #[macro_use]
 mod macros;
+
+#[macro_use]
+extern crate lazy_static;
+
 
 mod fly_by_camera;
 use fly_by_camera::FlyByCameraPlugin;

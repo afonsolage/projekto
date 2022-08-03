@@ -1,9 +1,22 @@
 use bevy::prelude::*;
+use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
 
 use crate::world::storage::chunk::ChunkStorageType;
 
 use super::{Side, VoxelFace};
+
+const ASSET_PATH: &'static str = "/assets/voxels/kind.ron";
+
+lazy_static! {
+    static ref KINDS_DESCS: &'static KindsDescs = {
+        let input_path = format!("{}{}", env!("CARGO_MANIFEST_DIR"), ASSET_PATH);
+        let file = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
+        let kinds_descs: KindsDescs = from_reader(file).unwrap();
+
+        Box::leak(Box::new(kinds_descs))
+    };
+}
 
 #[derive(Debug, Copy, Clone, Deserialize, Default)]
 pub struct KindSideTexture {
@@ -27,10 +40,29 @@ pub enum KindSidesDesc {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+pub enum KindLightDesc {
+    #[default]
+    None,
+    Opaque,
+    Emitter(u8),
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub enum KindSourceDesc {
+    #[default]
+    None,
+    Genesis {
+        height: i32,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct KindDescItem {
     pub name: String,
     pub id: u16,
     pub sides: KindSidesDesc,
+    pub light: KindLightDesc,
+    pub source: KindSourceDesc,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -76,17 +108,23 @@ impl KindsDescs {
             },
         }
     }
+
+    pub fn get_or_init() -> &'static Self {
+        &KINDS_DESCS
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
+#[cfg(test)]
 impl From<u16> for Kind {
     fn from(v: u16) -> Self {
         Self(v)
     }
 }
 
+#[cfg(test)]
 impl Into<u16> for Kind {
     fn into(self) -> u16 {
         self.0
@@ -94,6 +132,14 @@ impl Into<u16> for Kind {
 }
 
 impl Kind {
+    pub fn id(id: u16) -> Self {
+        Kind(id)
+    }
+
+    pub fn none() -> Self {
+        Kind(0)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.0 == 0
     }
@@ -107,6 +153,16 @@ impl Kind {
     pub fn is_light_emitter(&self) -> bool {
         // TODO: Implement light emission based on kind descs
         self.0 == 4
+    }
+
+    pub fn get_kind_with_height_source(surface: usize, height: usize) -> Self {
+        let depth = height as i32 - surface as i32;
+
+        match depth {
+            depth if depth == 0 => Kind(2),
+            depth if depth <= -1 => Kind(1),
+            _ => Kind(3),
+        }
     }
 }
 
