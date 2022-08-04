@@ -1120,8 +1120,6 @@ mod tests {
             },
         ];
 
-        dbg!(&merged);
-
         assert_eq!(&merged.len(), &test_merged.len());
 
         test_merged.into_iter().enumerate().for_each(|(i, f)| {

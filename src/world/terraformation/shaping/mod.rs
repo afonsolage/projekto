@@ -8,7 +8,7 @@ use crate::world::storage::voxel::{self, FacesOcclusion};
 use crate::world::{
     storage::{
         chunk::{self, Chunk, ChunkNeighborhood},
-        voxel::{KindsDescs, VoxelFace, VoxelVertex},
+        voxel::{VoxelFace, VoxelVertex},
         VoxWorld,
     },
     terraformation::ChunkFacesOcclusion,
@@ -96,11 +96,7 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
 
  **Returns** a list of chunks which chunk was computed.
 */
-pub fn compute_chunks_internals(
-    world: &mut VoxWorld,
-    kinds_descs: &KindsDescs,
-    locals: Vec<IVec3>,
-) -> Vec<IVec3> {
+pub fn compute_chunks_internals(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVec3> {
     perf_fn_scope!();
 
     // Keeps only existing chunks
@@ -114,7 +110,7 @@ pub fn compute_chunks_internals(
     update_kind_neighborhoods(world, locals.iter());
     light_propagator::propagate_natural_light_on_new_chunk(world, &locals);
 
-    generate_internals(world, kinds_descs, locals.iter());
+    generate_internals(world, locals.iter());
 
     locals
 }
@@ -128,7 +124,6 @@ pub fn compute_chunks_internals(
 */
 pub fn recompute_chunks_internals(
     world: &mut VoxWorld,
-    kinds_descs: &KindsDescs,
     update: &[(IVec3, VoxelUpdateList)],
 ) -> Vec<IVec3> {
     perf_fn_scope!();
@@ -146,16 +141,12 @@ pub fn recompute_chunks_internals(
 
     locals.extend(light_propagator::update_light(world, &valid_update));
 
-    generate_internals(world, kinds_descs, locals.iter());
+    generate_internals(world, locals.iter());
 
     locals.into_iter().collect()
 }
 
-fn generate_internals<'a>(
-    world: &mut VoxWorld,
-    kinds_descs: &KindsDescs,
-    locals: impl Iterator<Item = &'a IVec3>,
-) {
+fn generate_internals<'a>(world: &mut VoxWorld, locals: impl Iterator<Item = &'a IVec3>) {
     trace!("Generating internals",);
 
     let occlusions = locals
@@ -175,7 +166,7 @@ fn generate_internals<'a>(
             chunk.vertices = vec![];
         } else {
             let faces = faces_merger::merge(occlusion, smooth_light, chunk);
-            chunk.vertices = generate_vertices(faces, kinds_descs);
+            chunk.vertices = generate_vertices(faces);
         }
     }
 }
@@ -220,10 +211,11 @@ All generated indices will be relative to a triangle list.
 
 **Returns** a list of generated [`VoxelVertex`].
 */
-fn generate_vertices(faces: Vec<VoxelFace>, kinds_descs: &KindsDescs) -> Vec<VoxelVertex> {
+fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
     perf_fn_scope!();
 
     let mut vertices = vec![];
+    let kinds_descs = voxel::KindsDescs::get_or_init();
     let tile_texture_size = 1.0 / kinds_descs.count_tiles() as f32;
 
     for face in faces {
@@ -307,8 +299,6 @@ fn update_kind_neighborhoods<'a>(world: &mut VoxWorld, locals: impl Iterator<Ite
 
 #[cfg(test)]
 mod tests {
-    use crate::world::storage::voxel::{KindDescItem, KindSideTexture, KindSidesDesc};
-
     use super::*;
 
     #[test]
@@ -527,17 +517,8 @@ mod tests {
             ..Default::default()
         }];
 
-        let mut descs = KindsDescs::default();
-        descs.atlas_size = 100;
-        descs.atlas_tile_size = 10; // Each tile is 0.1 wide 1.0/(100.0/10.0)
-        descs.descriptions = vec![KindDescItem {
-            id: 1,
-            sides: KindSidesDesc::All(KindSideTexture::default()),
-            ..Default::default()
-        }];
-
         // Act
-        let vertices = super::generate_vertices(faces, &descs);
+        let vertices = super::generate_vertices(faces);
 
         // Assert
         let normal = side.normal();

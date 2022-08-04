@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use ron::de::from_reader;
 use serde::{Deserialize, Serialize};
 
 use crate::world::storage::chunk::ChunkStorageType;
@@ -10,10 +9,10 @@ const ASSET_PATH: &'static str = "/assets/voxels/kind.ron";
 
 lazy_static! {
     static ref KINDS_DESCS: &'static KindsDescs = {
+        trace!("Loading kinds descriptions from {}", ASSET_PATH);
         let input_path = format!("{}{}", env!("CARGO_MANIFEST_DIR"), ASSET_PATH);
         let file = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
-        let kinds_descs: KindsDescs = from_reader(file).unwrap();
-
+        let kinds_descs: KindsDescs = ron::de::from_reader(file).unwrap();
         Box::leak(Box::new(kinds_descs))
     };
 }
