@@ -17,17 +17,24 @@ lazy_static! {
     };
 }
 
+/// Describes what color and offset on texture atlas to be used.
 #[derive(Debug, Copy, Clone, Deserialize, Default)]
 pub struct KindSideTexture {
+    /// RGBA Color in scalar range [0.0 ~ 1.0]
     pub color: (f32, f32, f32, f32),
+    /// Texture atlas off set (X, Y)
     pub offset: IVec2,
 }
 
+/// Describes how each side of voxel kind should be rendered.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub enum KindSidesDesc {
+    /// Do not render this kind
     #[default]
     None,
+    /// All sides are equals and should be rendered the same
     All(KindSideTexture),
+    /// Each side has it's own unique behavior
     Unique {
         right: KindSideTexture,
         left: KindSideTexture,
@@ -38,14 +45,19 @@ pub enum KindSidesDesc {
     },
 }
 
+/// Describes how this kind should behave when interacting with light.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub enum KindLightDesc {
+    /// No light interaction at all
     #[default]
     None,
+    /// Fully blocks light
     Opaque,
+    /// Emits given light as artificial light
     Emitter(u8),
 }
 
+// TODO: Find a better way to describe this
 #[derive(Debug, Clone, Deserialize, Default)]
 pub enum KindSourceDesc {
     #[default]
@@ -55,6 +67,7 @@ pub enum KindSourceDesc {
     },
 }
 
+/// Describes how this kind should behave on the voxel world.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct KindDescItem {
     pub name: String,
@@ -64,6 +77,8 @@ pub struct KindDescItem {
     pub source: KindSourceDesc,
 }
 
+/// Holds a list of [`KindDescItem`] and other global data.
+/// This struct is create from a ron file.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct KindsDescs {
     pub atlas_path: String,
@@ -73,12 +88,12 @@ pub struct KindsDescs {
 }
 
 impl KindsDescs {
+    /// Counts how many tiles there are on a single texture atlas row
     pub fn count_tiles(&self) -> u16 {
         self.atlas_size / self.atlas_tile_size
     }
-}
 
-impl KindsDescs {
+    /// **Returns** how a given face should be rendered
     pub fn get_face_desc(&self, face: &VoxelFace) -> KindSideTexture {
         let kind_desc = self
             .descriptions
@@ -108,11 +123,18 @@ impl KindsDescs {
         }
     }
 
+    /// On the first call, this functions reads the ron file and load the [`KindsDescs`] struct from it.
+    /// The reading operation is thread-blocking.
+    /// This function should be first called on a controlled context to avoid blocking.
+    /// Subsequent calls just get a static reference from loaded struct.
     pub fn get_or_init() -> &'static Self {
         &KINDS_DESCS
     }
 }
 
+/// Kind id reference.
+/// This function uses [`KindsDescs`] to determine how this kind should behave.
+/// May panic if current kind id doesn't exists on [`KindsDescs`].
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
@@ -131,18 +153,22 @@ impl Into<u16> for Kind {
 }
 
 impl Kind {
+    /// Creates a new [`Kind`] with the given id
     pub fn id(id: u16) -> Self {
         Kind(id)
     }
 
+    /// Creates a new [`Kind`] with id 0.
     pub fn none() -> Self {
         Kind(0)
     }
 
+    /// Checks if current kind is the None [`Kind`], which has id 0.
     pub fn is_none(&self) -> bool {
         self.0 == 0
     }
 
+    /// Checks if current kind is [`KindLightDesc::Opaque`].
     pub fn is_opaque(&self) -> bool {
         match self.desc().light {
             KindLightDesc::Opaque => true,
@@ -150,6 +176,7 @@ impl Kind {
         }
     }
 
+    /// Checks if current kind is [`KindLightDesc::Emitter`].
     pub fn is_light_emitter(&self) -> bool {
         match self.desc().light {
             KindLightDesc::Emitter(_) => true,
@@ -157,6 +184,15 @@ impl Kind {
         }
     }
 
+    /// **Returns** the light intensity emitted by this kind or zero if it isn't a [`KindLightDesc::Emitter`]
+    pub fn light_emission(&self) -> u8 {
+        match self.desc().light {
+            KindLightDesc::Emitter(intensity) => intensity,
+            _ => 0,
+        }
+    }
+
+    // TODO: rework this, to use noise layers and get generated kind for each layer
     pub fn get_kind_with_height_source(surface: usize, height: usize) -> Self {
         let depth = height as i32 - surface as i32;
 
@@ -167,6 +203,8 @@ impl Kind {
         }
     }
 
+    /// Get the [`KindDescItem`] corresponding to this kind id.
+    /// Panics with there is no kind id on [`KindsDescs`] global reference.
     fn desc(&self) -> &KindDescItem {
         for desc in KINDS_DESCS.descriptions.iter() {
             if desc.id == self.0 {
@@ -175,13 +213,6 @@ impl Kind {
         }
 
         panic!("Failed to find kind description {}", self.0);
-    }
-
-    pub fn light_emission(&self) -> u8 {
-        match self.desc().light {
-            KindLightDesc::Emitter(intensity) => intensity,
-            _ => 0,
-        }
     }
 }
 
