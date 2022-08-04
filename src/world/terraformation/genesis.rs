@@ -7,7 +7,7 @@ use std::{
 use bevy::{
     prelude::*,
     reflect::TypeUuid,
-    tasks::{AsyncComputeTaskPool, Task},
+    tasks::{AsyncComputeTaskPool, IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
@@ -234,7 +234,7 @@ fn update_world_system(
         let batch = batch_res.swap_and_clone();
 
         let task_pool = AsyncComputeTaskPool::get();
-        meta.running_task = Some(task_pool.spawn(async move { process_batch(world, batch) }));
+        meta.running_task = Some(task_pool.spawn(process_batch(world, batch)));
     }
 
     assert_ne!(
@@ -402,7 +402,7 @@ This function triggers [`recompute_chunks`] whenever a new chunk is generated or
 
 ***Returns*** the [`VoxWorld`] ownership and a list of updated chunks.
  */
-fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<IVec3>) {
+async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<IVec3>) {
     let mut _perf = perf_fn!();
 
     let commands = optimize_commands(&world, commands);
@@ -410,7 +410,7 @@ fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec
 
     unload_chunks(&mut world, &unload);
 
-    let not_found = load_chunks(&mut world, &load);
+    let not_found = load_chunks(&mut world, load).await;
 
     let mut updated = generate_chunks(&mut world, not_found)
         .into_iter()
@@ -487,16 +487,31 @@ Load from cache into [`VoxWorld`] all chunks on the given list.
 
 ***Returns*** A list of chunks locals which doesn't exists on cache.
  */
-fn load_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> Vec<IVec3> {
-    locals
-        .iter()
-        .filter_map(|local| {
-            let path = local_path(*local);
-            if path.exists() {
-                world.add(*local, load_chunk(&path));
+async fn load_chunks(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVec3> {
+    let loaded_chunks = IoTaskPool::get()
+        .spawn(async move {
+            locals
+                .iter()
+                .map(|local| {
+                    let path = local_path(*local);
+                    if path.exists() {
+                        (*local, Some(load_chunk(&path)))
+                    } else {
+                        (*local, None)
+                    }
+                })
+                .collect_vec()
+        })
+        .await;
+
+    loaded_chunks
+        .into_iter()
+        .filter_map(|(local, chunk)| {
+            if let Some(chunk) = chunk {
+                world.add(local, chunk);
                 None
             } else {
-                Some(*local)
+                Some(local)
             }
         })
         .collect()
@@ -537,10 +552,17 @@ fn compute_chunks_internals(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVe
     trace!("Saving {} chunks on disk!", locals.len());
 
     // TODO: Find a way to only saving chunks which was really updated.
-    for &local in locals.iter() {
-        let path = local_path(local);
-        save_chunk(&path, world.get(local).unwrap());
-    }
+    let cloned_chunks = locals
+        .iter()
+        .map(|&l| (l, world.get(l).unwrap().clone()))
+        .collect_vec();
+
+    IoTaskPool::get().spawn(async move {
+        for (local, chunk) in cloned_chunks {
+            let path = local_path(local);
+            save_chunk(&path, &chunk);
+        }
+    });
 
     locals
 }
@@ -707,6 +729,8 @@ fn format_local(local: IVec3) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs::remove_file;
+
+    use futures_lite::future::block_on;
 
     use crate::world::storage::voxel::{Light, LightTy};
 
@@ -905,6 +929,8 @@ mod tests {
 
     #[test]
     fn load_chunks() {
+        IoTaskPool::init(|| Default::default());
+
         // Load existing cache
         let local = (9943, 9943, 9999).into();
         let path = super::local_path(local);
@@ -914,7 +940,7 @@ mod tests {
 
         let mut world = VoxWorld::default();
 
-        let dirty_chunks = super::load_chunks(&mut world, &vec![local]);
+        let dirty_chunks = block_on(super::load_chunks(&mut world, vec![local]));
 
         assert_eq!(
             dirty_chunks.len(),
@@ -929,7 +955,7 @@ mod tests {
         let local = (9942, 9944, 9421).into();
 
         let mut world = VoxWorld::default();
-        let not_loaded = super::load_chunks(&mut world, &vec![local]);
+        let not_loaded = block_on(super::load_chunks(&mut world, vec![local]));
 
         assert_eq!(
             not_loaded.len(),
