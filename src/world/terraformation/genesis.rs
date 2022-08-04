@@ -606,7 +606,7 @@ fn generate_chunk(local: IVec3) -> Chunk {
 
             for y in 0..end {
                 // TODO: Check this following biome settings
-                let kind = voxel::Kind::get_kind_with_height_source(end, y);
+                let kind = voxel::Kind::get_kind_with_height_source(end - 1, y);
 
                 kinds.set((x as i32, y as i32, z as i32).into(), kind);
             }

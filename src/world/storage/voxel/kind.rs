@@ -159,7 +159,7 @@ impl Kind {
 
         match depth {
             depth if depth == 0 => Kind(2),
-            depth if depth <= -1 => Kind(1),
+            depth if depth >= -3 && depth <= -1 => Kind(1),
             _ => Kind(3),
         }
     }
