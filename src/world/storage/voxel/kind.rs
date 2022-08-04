@@ -139,19 +139,22 @@ impl Kind {
         Kind(0)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub fn is_none(&self) -> bool {
         self.0 == 0
     }
 
-    #[inline]
     pub fn is_opaque(&self) -> bool {
-        // TODO: Implement light emission based on kind descs
-        self.0 != 4 && self.0 > 0
+        match self.desc().light {
+            KindLightDesc::Opaque => true,
+            _ => false,
+        }
     }
 
     pub fn is_light_emitter(&self) -> bool {
-        // TODO: Implement light emission based on kind descs
-        self.0 == 4
+        match self.desc().light {
+            KindLightDesc::Emitter(_) => true,
+            _ => false,
+        }
     }
 
     pub fn get_kind_with_height_source(surface: usize, height: usize) -> Self {
@@ -161,6 +164,23 @@ impl Kind {
             depth if depth == 0 => Kind(2),
             depth if depth >= -3 && depth <= -1 => Kind(1),
             _ => Kind(3),
+        }
+    }
+
+    fn desc(&self) -> &KindDescItem {
+        for desc in KINDS_DESCS.descriptions.iter() {
+            if desc.id == self.0 {
+                return desc;
+            }
+        }
+
+        panic!("Failed to find kind description {}", self.0);
+    }
+
+    pub fn light_emission(&self) -> u8 {
+        match self.desc().light {
+            KindLightDesc::Emitter(intensity) => intensity,
+            _ => 0,
         }
     }
 }

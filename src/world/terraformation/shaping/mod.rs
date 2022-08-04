@@ -185,7 +185,7 @@ fn faces_occlusion(chunk: &Chunk) -> ChunkFacesOcclusion {
     for voxel in chunk::voxels() {
         let mut voxel_faces = FacesOcclusion::default();
 
-        if kinds.get(voxel).is_empty() {
+        if kinds.get(voxel).is_none() {
             voxel_faces.set_all(true);
         } else {
             for side in voxel::SIDES {
@@ -193,7 +193,7 @@ fn faces_occlusion(chunk: &Chunk) -> ChunkFacesOcclusion {
                 let neighbor_pos = voxel + dir;
 
                 if let Some(neighbor_kind) = kinds.get_absolute(neighbor_pos) {
-                    voxel_faces.set(side, !neighbor_kind.is_empty());
+                    voxel_faces.set(side, !neighbor_kind.is_none());
                 }
             }
         }

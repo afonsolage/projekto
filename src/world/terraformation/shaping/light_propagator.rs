@@ -184,7 +184,6 @@ impl<'a> Propagator<'a> {
             if let Some(chunk) = self.world.get(*local) {
                 for &(voxel, new_kind) in voxels_update {
                     let old_light = chunk.lights.get(voxel).get(self.ty);
-                    // TODO: Add this kind check to KindDescs
                     let new_light = if self.ty == LightTy::Artificial && new_kind.is_light_emitter()
                     {
                         10u8
@@ -200,8 +199,7 @@ impl<'a> Propagator<'a> {
                         emission
                             .entry(*local)
                             .or_insert(vec![])
-                            // TODO: Get this from Kind emission value
-                            .push((voxel, 10u8));
+                            .push((voxel, new_kind.light_emission()));
                     } else {
                         // Get the highest surrounding light source and propagate to current voxel
                         if let Some((propagation_source_local, propagation_source_voxel)) =
