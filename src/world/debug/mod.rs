@@ -96,7 +96,7 @@ fn toggle_chunk_voxels_wireframe(
                 };
 
                 let voxels = chunk::voxels()
-                    .filter(|&v| !chunk.get(v).is_empty())
+                    .filter(|&v| !chunk.get(v).is_none())
                     .collect();
 
                 commands.entity(e).with_children(|c| {
@@ -383,7 +383,7 @@ fn check_raycast_intersections(
 
                 let mut voxels = vec![];
                 for voxel_hit in voxels_hit.iter() {
-                    if chunk.get(voxel_hit.local).is_empty() {
+                    if chunk.get(voxel_hit.local).is_none() {
                         continue;
                     }
 
@@ -489,14 +489,14 @@ fn remove_voxel(
                 };
 
                 for voxel_hit in voxels_hit {
-                    if chunk.get(voxel_hit.local).is_empty() {
+                    if chunk.get(voxel_hit.local).is_none() {
                         continue;
                     }
 
                     debug!("Hit voxel at {:?} {:?}", chunk_hit.local, voxel_hit.local);
                     set_voxel_writer.send(CmdChunkUpdate(
                         chunk_hit.local,
-                        vec![(voxel_hit.local, 0.into())],
+                        vec![(voxel_hit.local, voxel::Kind::none())],
                     ));
 
                     return;
@@ -539,7 +539,7 @@ fn add_voxel(
                 };
 
                 for voxel_hit in voxels_hit {
-                    if chunk.get(voxel_hit.local).is_empty() {
+                    if chunk.get(voxel_hit.local).is_none() {
                         continue;
                     }
 
@@ -554,7 +554,7 @@ fn add_voxel(
                         (neighbor_local, neighbor_voxel)
                     };
 
-                    set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, 4.into())]));
+                    set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, voxel::Kind::id(4))]));
 
                     return;
                 }

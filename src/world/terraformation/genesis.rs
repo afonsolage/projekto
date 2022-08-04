@@ -16,7 +16,7 @@ use itertools::Itertools;
 
 use crate::world::storage::{
     chunk::{self, Chunk, ChunkKind, ChunkLight},
-    voxel::{self, KindsDescs},
+    voxel::{self},
     VoxWorld,
 };
 
@@ -37,8 +37,7 @@ impl Plugin for GenesisPlugin {
 
 #[derive(TypeUuid, Debug)]
 #[uuid = "e6edff2a-e204-497f-999c-bdebd1f92f62"]
-pub struct KindsDescsRes {
-    pub descs: KindsDescs,
+pub struct KindsAtlasRes {
     pub atlas: Handle<Image>,
 }
 
@@ -54,14 +53,11 @@ fn setup_resources(mut commands: Commands, asset_server: Res<AssetServer>) {
     let vox_world = VoxWorld::default();
     commands.insert_resource(WorldRes(Some(vox_world)));
 
-    // TODO: Find a better way to load this
-    let input_path = format!("{}/assets/voxels/kind.ron", env!("CARGO_MANIFEST_DIR"));
-    let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
-    let descs: KindsDescs = ron::de::from_reader(f).unwrap();
+    let descs = voxel::KindsDescs::get_or_init();
 
     let atlas = asset_server.load(&descs.atlas_path);
 
-    commands.insert_resource(KindsDescsRes { descs, atlas });
+    commands.insert_resource(KindsAtlasRes { atlas });
 
     commands.insert_resource(BatchChunkCmdRes::default());
 }
@@ -209,7 +205,6 @@ struct ProcessBatchSystemMeta {
  * This can take several frames.
  */
 fn update_world_system(
-    kind_assets: Res<KindsDescsRes>,
     mut batch_res: ResMut<BatchChunkCmdRes>,
     mut meta: Local<ProcessBatchSystemMeta>,
     mut world_res: ResMut<WorldRes>,
@@ -236,12 +231,10 @@ fn update_world_system(
         perf_scope!(_perf);
 
         let world = world_res.take();
-        let kinds_descs = kind_assets.descs.clone();
         let batch = batch_res.swap_and_clone();
 
         let task_pool = AsyncComputeTaskPool::get();
-        meta.running_task =
-            Some(task_pool.spawn(async move { process_batch(world, kinds_descs, batch) }));
+        meta.running_task = Some(task_pool.spawn(async move { process_batch(world, batch) }));
     }
 
     assert_ne!(
@@ -409,11 +402,7 @@ This function triggers [`recompute_chunks`] whenever a new chunk is generated or
 
 ***Returns*** the [`VoxWorld`] ownership and a list of updated chunks.
  */
-fn process_batch(
-    mut world: VoxWorld,
-    kinds_descs: KindsDescs,
-    commands: Vec<ChunkCmd>,
-) -> (VoxWorld, Vec<IVec3>) {
+fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> (VoxWorld, Vec<IVec3>) {
     let mut _perf = perf_fn!();
 
     let commands = optimize_commands(&world, commands);
@@ -423,13 +412,13 @@ fn process_batch(
 
     let not_found = load_chunks(&mut world, &load);
 
-    let mut updated = generate_chunks(&mut world, not_found, &kinds_descs)
+    let mut updated = generate_chunks(&mut world, not_found)
         .into_iter()
         .collect::<HashSet<_>>();
 
     trace!("Generation completed! {} chunks updated.", updated.len());
 
-    updated.extend(update_chunks(&mut world, &update, &kinds_descs));
+    updated.extend(update_chunks(&mut world, &update));
 
     // let dirty_chunks = dirty_chunks.into_iter().collect::<Vec<_>>();
     // let updated = recompute_chunks(&mut world, kinds_descs, dirty_chunks);
@@ -442,11 +431,7 @@ Applies on the given [`VoxWorld`] a voxel modification list [`VoxelUpdateList`]
 
 ***Returns*** A list of chunks locals that are dirty due to voxel modifications. This is usually neighboring chunks where voxel was updated
  */
-fn update_chunks(
-    world: &mut VoxWorld,
-    update_list: &[(IVec3, VoxelUpdateList)],
-    kinds_descs: &KindsDescs,
-) -> Vec<IVec3> {
+fn update_chunks(world: &mut VoxWorld, update_list: &[(IVec3, VoxelUpdateList)]) -> Vec<IVec3> {
     perf_fn_scope!();
 
     let mut recompute_map = HashMap::default();
@@ -475,7 +460,7 @@ fn update_chunks(
     }
 
     let updated_chunks = recompute_map.into_iter().collect::<Vec<_>>();
-    recompute_chunks_internals(world, kinds_descs, &updated_chunks)
+    recompute_chunks_internals(world, &updated_chunks)
 }
 
 /**
@@ -524,12 +509,11 @@ Refresh chunks internal data due to change in the chunk itself or neighborhood.
  */
 fn recompute_chunks_internals(
     world: &mut VoxWorld,
-    kinds_descs: &KindsDescs,
     update: &[(IVec3, VoxelUpdateList)],
 ) -> Vec<IVec3> {
     perf_fn_scope!();
 
-    let locals = shaping::recompute_chunks_internals(world, &kinds_descs, update);
+    let locals = shaping::recompute_chunks_internals(world, update);
 
     // TODO: Find a way to only saving chunks which was really updated.
     for &local in locals.iter() {
@@ -545,14 +529,10 @@ Refresh chunks internal data due to change in the neighborhood. At moment this f
 
 ***Returns*** A list of chunks locals that was refreshed.
  */
-fn compute_chunks_internals(
-    world: &mut VoxWorld,
-    kinds_descs: &KindsDescs,
-    locals: Vec<IVec3>,
-) -> Vec<IVec3> {
+fn compute_chunks_internals(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVec3> {
     perf_fn_scope!();
 
-    let locals = shaping::compute_chunks_internals(world, &kinds_descs, locals);
+    let locals = shaping::compute_chunks_internals(world, locals);
 
     trace!("Saving {} chunks on disk!", locals.len());
 
@@ -565,11 +545,7 @@ fn compute_chunks_internals(
     locals
 }
 
-fn generate_chunks(
-    world: &mut VoxWorld,
-    locals: Vec<IVec3>,
-    kinds_descs: &KindsDescs,
-) -> Vec<IVec3> {
+fn generate_chunks(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVec3> {
     trace!("Generating {} chunks.", locals.len());
 
     // Before doing anything else, all generated chunks have to be added to world.
@@ -589,7 +565,7 @@ fn generate_chunks(
         .unique()
         .collect();
 
-    compute_chunks_internals(world, kinds_descs, dirty_chunks)
+    compute_chunks_internals(world, dirty_chunks)
 }
 
 /**
@@ -630,11 +606,7 @@ fn generate_chunk(local: IVec3) -> Chunk {
 
             for y in 0..end {
                 // TODO: Check this following biome settings
-                let kind = match y {
-                    y if y == end - 1 => 2.into(),
-                    y if y < end - 3 => 3.into(),
-                    _ => 1.into(),
-                };
+                let kind = voxel::Kind::get_kind_with_height_source(end - 1, y);
 
                 kinds.set((x as i32, y as i32, z as i32).into(), kind);
             }
@@ -736,24 +708,9 @@ fn format_local(local: IVec3) -> String {
 mod tests {
     use std::fs::remove_file;
 
-    use crate::world::storage::voxel::{KindDescItem, Light, LightTy};
+    use crate::world::storage::voxel::{Light, LightTy};
 
     use super::*;
-
-    fn create_kinds_descs() -> KindsDescs {
-        KindsDescs {
-            atlas_path: "".into(),
-            atlas_size: 320,
-            atlas_tile_size: 32,
-            descriptions: (0..100u16)
-                .map(|i| KindDescItem {
-                    name: format!("Kind {i}"),
-                    id: i,
-                    sides: voxel::KindSidesDesc::All(Default::default()),
-                })
-                .collect::<Vec<_>>(),
-        }
-    }
 
     fn top_voxels() -> impl Iterator<Item = IVec3> {
         (0..=chunk::X_END)
@@ -846,7 +803,6 @@ mod tests {
 
         let _ = super::shaping::compute_chunks_internals(
             &mut world,
-            &create_kinds_descs(),
             vec![(0, 0, 0).into(), (1, 0, 0).into()],
         );
 
@@ -865,8 +821,7 @@ mod tests {
 
         let update_list = [((0, 0, 0).into(), vec![((15, 10, 0).into(), 0.into())])];
 
-        let descs = create_kinds_descs();
-        let updated = super::update_chunks(&mut world, &update_list, &descs);
+        let updated = super::update_chunks(&mut world, &update_list);
 
         assert_eq!(
             updated.len(),
@@ -921,8 +876,7 @@ mod tests {
             ((0, chunk::Y_END as i32, 5).into(), 3.into()),
         ];
 
-        let dirty_chunks =
-            super::update_chunks(&mut world, &vec![(local, voxels)], &create_kinds_descs());
+        let dirty_chunks = super::update_chunks(&mut world, &vec![(local, voxels)]);
 
         let kinds = &world.get(local).unwrap().kinds;
 

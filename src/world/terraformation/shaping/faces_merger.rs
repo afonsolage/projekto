@@ -20,7 +20,7 @@ fn should_skip_voxel(
     kind: voxel::Kind,
     occlusion: &ChunkFacesOcclusion,
 ) -> bool {
-    kind.is_empty() || merged[chunk::to_index(voxel)] || occlusion.get(voxel).is_occluded(side)
+    kind.is_none() || merged[chunk::to_index(voxel)] || occlusion.get(voxel).is_occluded(side)
 }
 
 /**
@@ -1119,8 +1119,6 @@ mod tests {
                 ..Default::default()
             },
         ];
-
-        dbg!(&merged);
 
         assert_eq!(&merged.len(), &test_merged.len());
 
