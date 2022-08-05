@@ -552,17 +552,12 @@ fn compute_chunks_internals(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVe
     trace!("Saving {} chunks on disk!", locals.len());
 
     // TODO: Find a way to only saving chunks which was really updated.
-    let cloned_chunks = locals
-        .iter()
-        .map(|&l| (l, world.get(l).unwrap().clone()))
-        .collect_vec();
-
-    IoTaskPool::get().spawn(async move {
-        for (local, chunk) in cloned_chunks {
-            let path = local_path(local);
-            save_chunk(&path, &chunk);
+    for local in locals.iter() {
+        if let Some(chunk) = world.get(*local) {
+            let path = local_path(*local);
+            save_chunk(&path, chunk);
         }
-    });
+    }
 
     locals
 }
@@ -647,8 +642,6 @@ fn generate_chunk(local: IVec3) -> Chunk {
 */
 fn save_chunk(path: &Path, chunk: &Chunk) {
     perf_fn_scope!();
-
-    // TODO: Change this to an async version?
 
     let mut file = std::fs::OpenOptions::new()
         .write(true)
