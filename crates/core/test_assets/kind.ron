@@ -1,0 +1,96 @@
+(
+    atlas_path: "textures/terrain_sheet.png",
+    atlas_size: 320, // Atlas must be a perfect square
+    atlas_tile_size: 32, // Tile must also be a perfect square
+    descriptions: 
+    [
+        (
+            name: "None",
+            id: 0,
+            sides: None,
+            light: None,
+            source: None,
+        ),
+        (
+            name: "Dirt",
+            id: 1,
+            sides: All
+            (
+                (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (0, 0),
+                )
+            ),
+            light: Opaque,
+            source: Genesis
+            (
+                height: 1,
+            )
+        ),
+        (
+            name: "Grass",
+            id: 2,
+            sides: Unique
+            (
+                right: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (0, 1),
+                ),
+                left: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (0, 1),
+                ),
+                up: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (1, 0),
+                ),
+                down: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (0, 0),
+                ),
+                front: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (0, 1),
+                ),
+                back: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (0, 1),
+                ),
+            ),
+            light: Opaque,
+            source: Genesis
+            (
+                height: 0,
+            )
+        ),
+        (
+            name: "Rock",
+            id: 3,
+            sides: All
+            (
+                (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (2, 0),
+                )
+            ),
+            light: Opaque,
+            source: Genesis
+            (
+                height: 3,
+            )
+        ),
+        (
+            name: "Lamp",
+            id: 4,
+            sides: All
+            (
+                (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (1, 1),
+                )
+            ),
+            light: Emitter(10),
+            source: None,
+        ),
+    ]
+)

@@ -1,4 +1,5 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy_math::IVec3;
+use bevy_utils::HashMap;
 
 use super::chunk::Chunk;
 
@@ -40,7 +41,7 @@ impl VoxWorld {
 
 #[cfg(test)]
 mod test {
-    use bevy::math::IVec3;
+    use bevy_math::IVec3;
 
     use super::*;
 

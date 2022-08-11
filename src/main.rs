@@ -4,19 +4,13 @@
 #![feature(test)]
 #![feature(once_cell)]
 
-
-
-use bevy::{prelude::*, window::PresentMode, render::texture::ImageSettings};
+use bevy::{prelude::*, render::texture::ImageSettings, window::PresentMode};
 
 #[cfg(feature = "inspector")]
 use bevy_inspector_egui;
 
 #[macro_use]
 mod macros;
-
-#[macro_use]
-extern crate lazy_static;
-
 
 mod fly_by_camera;
 use fly_by_camera::FlyByCameraPlugin;

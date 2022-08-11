@@ -1,18 +1,16 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::world::{
-    storage::{
-        chunk::{self, ChunkStorage, ChunkStorageType},
-        voxel, VoxWorld,
-    },
-    terraformation::ChunkFacesOcclusion,
+use projekto_core::{
+    chunk::{self, ChunkStorage, ChunkStorageType},
+    voxel::{self, ChunkFacesOcclusion},
+    VoxWorld,
 };
 
 /// Number of neighbors per voxel.
 // 3 voxels (-1..=1) per axis.
 // -1 to skip self (0, 0, 0)
-const NEIGHBOR_COUNT: usize = (3*3*3) - 1;
+const NEIGHBOR_COUNT: usize = (3 * 3 * 3) - 1;
 /// Vertex count per face
 const VERTEX_COUNT: usize = 4;
 /// Direct side, side1, side2 and corner
@@ -306,7 +304,7 @@ pub fn smooth_lighting(
 
 #[cfg(test)]
 mod tests {
-    use crate::world::storage::{chunk::Chunk, voxel::Light};
+    use projekto_core::{chunk::Chunk, voxel::Light};
 
     use super::*;
 

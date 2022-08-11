@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use super::storage::{chunk::ChunkStorage, landscape, voxel};
+use projekto_core::{chunk::ChunkStorage, landscape, voxel};
 
 mod genesis;
 mod landscaping;
@@ -39,12 +39,6 @@ pub struct TerraformationConfig {
     pub horizontal_radius: u32,
 }
 
-pub type ChunkFacesOcclusion = ChunkStorage<voxel::FacesOcclusion>;
 
-impl ChunkFacesOcclusion {
-    pub fn is_fully_occluded(&self) -> bool {
-        self.iter().all(voxel::FacesOcclusion::is_fully_occluded)
-    }
-}
 
 type VoxelUpdateList = Vec<(IVec3, voxel::Kind)>;

@@ -1,21 +1,14 @@
-use bevy::prelude::*;
+use std::path::Path;
+
+use bevy_math::IVec2;
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
-use crate::world::storage::chunk::ChunkStorageType;
+use crate::chunk::ChunkStorageType;
 
 use super::{Side, VoxelFace};
 
-const ASSET_PATH: &'static str = "/assets/voxels/kind.ron";
-
-lazy_static! {
-    static ref KINDS_DESCS: &'static KindsDescs = {
-        trace!("Loading kinds descriptions from {}", ASSET_PATH);
-        let input_path = format!("{}{}", env!("CARGO_MANIFEST_DIR"), ASSET_PATH);
-        let file = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
-        let kinds_descs: KindsDescs = ron::de::from_reader(file).unwrap();
-        Box::leak(Box::new(kinds_descs))
-    };
-}
+static KINDS_DESCS: OnceCell<KindsDescs> = OnceCell::new();
 
 /// Describes what color and offset on texture atlas to be used.
 #[derive(Debug, Copy, Clone, Deserialize, Default)]
@@ -127,8 +120,17 @@ impl KindsDescs {
     /// The reading operation is thread-blocking.
     /// This function should be first called on a controlled context to avoid blocking.
     /// Subsequent calls just get a static reference from loaded struct.
-    pub fn get_or_init() -> &'static Self {
-        &KINDS_DESCS
+    pub fn get() -> &'static Self {
+        KINDS_DESCS
+            .get()
+            .expect("KindsDescs should be initialized before used")
+    }
+
+    pub fn init(path: impl AsRef<Path>) -> &'static Self {
+        let file = std::fs::File::open(&path).expect("Failed opening kind descriptions file");
+        let kinds_descs: KindsDescs = ron::de::from_reader(file).unwrap();
+        KINDS_DESCS.set(kinds_descs).ok();
+        Self::get()
     }
 }
 
@@ -138,14 +140,12 @@ impl KindsDescs {
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
-#[cfg(test)]
 impl From<u16> for Kind {
     fn from(v: u16) -> Self {
         Self(v)
     }
 }
 
-#[cfg(test)]
 impl Into<u16> for Kind {
     fn into(self) -> u16 {
         self.0
@@ -206,7 +206,7 @@ impl Kind {
     /// Get the [`KindDescItem`] corresponding to this kind id.
     /// Panics with there is no kind id on [`KindsDescs`] global reference.
     fn desc(&self) -> &KindDescItem {
-        for desc in KINDS_DESCS.descriptions.iter() {
+        for desc in KindsDescs::get().descriptions.iter() {
             if desc.id == self.0 {
                 return desc;
             }
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn load_kind_descriptions() {
-        let input_path = format!("{}/assets/voxels/kind.ron", env!("CARGO_MANIFEST_DIR"));
+        let input_path = format!("{}/test_assets/kind.ron", env!("CARGO_MANIFEST_DIR"));
         let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
 
         let _: KindsDescs = from_reader(f).unwrap();

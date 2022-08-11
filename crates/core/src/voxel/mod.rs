@@ -1,8 +1,11 @@
-use bevy::prelude::*;
+use bevy_math::IVec3;
+use bevy_math::Vec2;
+use bevy_math::Vec3;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::world::math;
+use crate::chunk::ChunkStorage;
+use crate::math;
 
 use super::chunk;
 use super::chunk::ChunkStorageType;
@@ -183,6 +186,14 @@ impl From<[bool; 6]> for FacesOcclusion {
 }
 
 impl ChunkStorageType for FacesOcclusion {}
+
+pub type ChunkFacesOcclusion = ChunkStorage<FacesOcclusion>;
+
+impl ChunkFacesOcclusion {
+    pub fn is_fully_occluded(&self) -> bool {
+        self.iter().all(FacesOcclusion::is_fully_occluded)
+    }
+}
 
 #[derive(Debug, PartialEq, Default)]
 pub struct VoxelFace {

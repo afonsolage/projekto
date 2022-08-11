@@ -1,6 +1,6 @@
 use bevy::{prelude::*, utils::HashSet};
 
-use crate::world::{query, storage::chunk};
+use projekto_core::{chunk, query};
 
 use super::{
     prelude::{BatchChunkCmdRes, WorldRes},

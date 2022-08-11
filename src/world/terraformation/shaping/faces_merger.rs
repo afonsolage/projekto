@@ -1,11 +1,8 @@
-use crate::world::{
-    storage::{
-        chunk::{self, Chunk},
-        voxel::{self, VoxelFace},
-    },
-    terraformation::ChunkFacesOcclusion,
-};
 use bevy::prelude::*;
+use projekto_core::{
+    chunk::{self, Chunk},
+    voxel::{self, ChunkFacesOcclusion, VoxelFace},
+};
 
 use super::light_smoother::ChunkSmoothLight;
 

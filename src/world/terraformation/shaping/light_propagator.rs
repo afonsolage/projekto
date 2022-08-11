@@ -3,13 +3,11 @@ use std::collections::VecDeque;
 use bevy::{prelude::*, utils::HashMap};
 use itertools::Itertools;
 
-use crate::world::{
-    storage::{
-        chunk::{self, ChunkNeighborhood},
-        voxel::{self, LightTy},
-        VoxWorld,
-    },
-    terraformation::VoxelUpdateList,
+use crate::world::terraformation::VoxelUpdateList;
+use projekto_core::{
+    chunk::{self, ChunkNeighborhood},
+    voxel::{self, LightTy},
+    VoxWorld,
 };
 
 /// Update light on the world based on the voxel update list.
@@ -499,7 +497,7 @@ impl<'a> Propagator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::world::storage::{chunk::Chunk, voxel::Light};
+    use projekto_core::{chunk::Chunk, voxel::Light};
 
     use super::*;
 

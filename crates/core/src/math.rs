@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy_math::{Vec3, IVec3};
 
 pub fn floor(vec: Vec3) -> IVec3 {
     IVec3::new(

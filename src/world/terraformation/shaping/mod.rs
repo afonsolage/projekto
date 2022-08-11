@@ -3,15 +3,12 @@ use bevy::prelude::trace;
 use bevy::utils::HashSet;
 use itertools::Itertools;
 
-use crate::world::storage::voxel::{self, FacesOcclusion};
+use projekto_core::voxel::{self, ChunkFacesOcclusion, FacesOcclusion};
 
-use crate::world::{
-    storage::{
-        chunk::{self, Chunk, ChunkNeighborhood},
-        voxel::{VoxelFace, VoxelVertex},
-        VoxWorld,
-    },
-    terraformation::ChunkFacesOcclusion,
+use projekto_core::{
+    chunk::{self, Chunk, ChunkNeighborhood},
+    voxel::{VoxelFace, VoxelVertex},
+    VoxWorld,
 };
 
 use super::VoxelUpdateList;
@@ -215,7 +212,7 @@ fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
     perf_fn_scope!();
 
     let mut vertices = vec![];
-    let kinds_descs = voxel::KindsDescs::get_or_init();
+    let kinds_descs = voxel::KindsDescs::get();
     let tile_texture_size = 1.0 / kinds_descs.count_tiles() as f32;
 
     for face in faces {

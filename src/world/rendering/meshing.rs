@@ -4,8 +4,9 @@ use bevy::{
     prelude::*,
     render::mesh::{Indices, PrimitiveTopology},
 };
+use projekto_core::voxel::VoxelVertex;
 
-use crate::world::{storage::voxel::VoxelVertex, terraformation::prelude::shaping};
+use crate::world::terraformation::prelude::shaping;
 
 use super::{ChunkEntityMap, ChunkMaterial, EvtChunkMeshDirty, WorldRes};
 
