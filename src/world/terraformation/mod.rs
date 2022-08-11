@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use projekto_core::{chunk::ChunkStorage, landscape, voxel};
+use projekto_core::{landscape, voxel};
 
 mod genesis;
 mod landscaping;
@@ -38,7 +38,5 @@ pub struct TerraformationCenter;
 pub struct TerraformationConfig {
     pub horizontal_radius: u32,
 }
-
-
 
 type VoxelUpdateList = Vec<(IVec3, voxel::Kind)>;
