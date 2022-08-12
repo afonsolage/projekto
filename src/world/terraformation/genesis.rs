@@ -53,7 +53,7 @@ fn setup_resources(mut commands: Commands, asset_server: Res<AssetServer>) {
     let vox_world = VoxWorld::default();
     commands.insert_resource(WorldRes(Some(vox_world)));
 
-    let kinds_path = format!("{}{}", env!("CARGO_MANIFEST_DIR"), "assets/voxels/kind.ron");
+    let kinds_path = format!("{}{}", env!("CARGO_MANIFEST_DIR"), "/assets/voxels/kind.ron");
     let descs = voxel::KindsDescs::init(kinds_path);
 
     let atlas = asset_server.load(&descs.atlas_path);
