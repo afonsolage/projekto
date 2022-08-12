@@ -4,16 +4,14 @@ use bevy::{
 };
 use projekto_core::{chunk, landscape, query, voxel};
 
-use crate::{
-    fly_by_camera::FlyByCamera,
-    world::{
-        rendering::{ChunkMaterial, ChunkMaterialHandle},
-        terraformation::prelude::KindsAtlasRes,
-    },
+use crate::world::{
+    rendering::{ChunkMaterial, ChunkMaterialHandle},
+    terraformation::prelude::KindsAtlasRes,
 };
 
 use super::{
-    ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated, WorldRes,
+    ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated, LandscapeCenter,
+    WorldRes,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -33,6 +31,10 @@ pub struct LandscapeConfig {
     pub paused: bool,
 }
 
+struct LandscapeMeta {
+    root: Entity,
+}
+
 fn setup_resources(
     mut commands: Commands,
     mut materials: ResMut<Assets<ChunkMaterial>>,
@@ -46,7 +48,13 @@ fn setup_resources(
 
     commands.insert_resource(ChunkMaterialHandle(material));
     commands.insert_resource(ChunkEntityMap(HashMap::default()));
-    commands.insert_resource(LandscapeConfig { paused: false })
+    commands.insert_resource(LandscapeConfig { paused: false });
+
+    let root = commands
+        .spawn_bundle(SpatialBundle::default())
+        .insert(Name::new("Landscape"))
+        .id();
+    commands.insert_resource(LandscapeMeta { root });
 }
 
 #[derive(Default)]
@@ -63,8 +71,9 @@ fn update_landscape(
     config: Res<LandscapeConfig>, // TODO: Change this to a Run Criteria later on
     world_res: Res<WorldRes>,     // TODO: Change this to a Run Criteria later on
     mut meta: Local<UpdateLandscapeMeta>,
+    landscape_meta: Res<LandscapeMeta>,
     mut writer: EventWriter<EvtChunkMeshDirty>,
-    q: Query<&Transform, With<FlyByCamera>>, // TODO: Use a proper marker
+    center_query: Query<&Transform, With<LandscapeCenter>>,
 ) {
     let mut _perf = perf_fn!();
 
@@ -72,7 +81,7 @@ fn update_landscape(
         return;
     }
 
-    let center = match q.get_single() {
+    let center = match center_query.get_single() {
         Ok(t) => chunk::to_local(t.translation),
         Err(_) => return,
     };
@@ -106,13 +115,22 @@ fn update_landscape(
         }
 
         for &local in spawn.into_iter() {
-            spawn_chunk(
-                &mut commands,
-                &mut entity_map,
-                &material,
-                &mut writer,
-                local,
-            )
+            // Spawn chunks
+            let entity = commands
+                .spawn_bundle(ChunkBundle {
+                    local: ChunkLocal(local),
+                    mesh_bundle: MaterialMeshBundle {
+                        material: material.0.clone(),
+                        transform: Transform::from_translation(chunk::to_world(local)),
+                        ..Default::default()
+                    },
+                })
+                .insert(Name::new(format!("Chunk {}", local)))
+                .id();
+            entity_map.0.insert(local, entity);
+            writer.send(EvtChunkMeshDirty(local));
+
+            commands.entity(landscape_meta.root).add_child(entity);
         }
 
         let despawn = existing_locals
@@ -125,40 +143,10 @@ fn update_landscape(
         }
 
         for &local in despawn.into_iter() {
-            despawn_chunk(&mut commands, &mut entity_map, local);
+            if let Some(entity) = entity_map.0.remove(&local) {
+                commands.entity(entity).despawn_recursive();
+            }
         }
-    }
-}
-
-fn spawn_chunk(
-    commands: &mut Commands,
-    entity_map: &mut ChunkEntityMap,
-    material: &ChunkMaterialHandle,
-    writer: &mut EventWriter<EvtChunkMeshDirty>,
-    local: IVec3,
-) {
-    perf_fn_scope!();
-
-    let entity = commands
-        .spawn_bundle(ChunkBundle {
-            local: ChunkLocal(local),
-            mesh_bundle: MaterialMeshBundle {
-                material: material.0.clone(),
-                transform: Transform::from_translation(chunk::to_world(local)),
-                ..Default::default()
-            },
-        })
-        .insert(Name::new(format!("Chunk {}", local)))
-        .id();
-    entity_map.0.insert(local, entity);
-    writer.send(EvtChunkMeshDirty(local));
-}
-
-fn despawn_chunk(commands: &mut Commands, entity_map: &mut ChunkEntityMap, local: IVec3) {
-    perf_fn_scope!();
-
-    if let Some(entity) = entity_map.0.remove(&local) {
-        commands.entity(entity).despawn_recursive();
     }
 }
 
