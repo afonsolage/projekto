@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use bevy_log::trace;
 use bevy_math::IVec2;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
@@ -127,6 +128,10 @@ impl KindsDescs {
     }
 
     pub fn init(path: impl AsRef<Path>) -> &'static Self {
+        trace!(
+            "Loading kinds descriptions on path {:?}",
+            path.as_ref().as_os_str()
+        );
         match std::fs::File::open(&path) {
             Ok(file) => {
                 let kinds_descs: KindsDescs = ron::de::from_reader(file).unwrap();
