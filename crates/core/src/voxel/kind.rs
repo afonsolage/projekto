@@ -127,10 +127,17 @@ impl KindsDescs {
     }
 
     pub fn init(path: impl AsRef<Path>) -> &'static Self {
-        let file = std::fs::File::open(&path).expect("Failed opening kind descriptions file");
-        let kinds_descs: KindsDescs = ron::de::from_reader(file).unwrap();
-        KINDS_DESCS.set(kinds_descs).ok();
-        Self::get()
+        match std::fs::File::open(&path) {
+            Ok(file) => {
+                let kinds_descs: KindsDescs = ron::de::from_reader(file).unwrap();
+                KINDS_DESCS.set(kinds_descs).ok();
+                Self::get()
+            }
+            Err(e) => {
+                let path = path.as_ref().to_str().unwrap();
+                panic!("Failed to init kinds descriptions on path {path}. Error: {e}");
+            }
+        }
     }
 }
 
