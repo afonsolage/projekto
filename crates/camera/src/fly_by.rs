@@ -79,7 +79,7 @@ fn move_camera(
 fn rotate_camera(
     time: Res<Time>,
     mut motion_evt: EventReader<MouseMotion>,
-    mut config: ResMut<FlyByCameraConfig>,
+    config: Res<FlyByCameraConfig>,
     mut q: Query<&mut Transform, With<MainCamera>>,
 ) {
     if let Ok(mut transform) = q.get_single_mut() {
