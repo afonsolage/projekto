@@ -7,6 +7,7 @@ use bevy::{
 
 use crate::{fly_by_camera::FlyByCamera, world::rendering::*};
 use projekto_core::*;
+use projekto_shaping as shaping;
 
 use self::wireframe::WireframeMaterial;
 

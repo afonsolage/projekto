@@ -1,6 +1,6 @@
-use bevy::prelude::*;
-use serde::{Deserialize, Serialize};
+use bevy_math::IVec3;
 
+use bevy_utils::default;
 use projekto_core::{
     chunk::{self, ChunkStorage, ChunkStorageType},
     voxel::{self, ChunkFacesOcclusion},
@@ -84,7 +84,7 @@ const NEIGHBOR_VERTEX_LOOKUP: [[[usize; VERTEX_COUNT]; VERTEX_NEIGHBOR_COUNT]; v
 ];
 
 /// Contains smoothed vertex light for each face
-#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct SmoothLight([[f32; 4]; voxel::SIDE_COUNT]);
 
 impl SmoothLight {

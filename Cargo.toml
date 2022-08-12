@@ -16,6 +16,7 @@ futures-lite = "1.12.0"
 lz4_flex = "0.9.3"
 itertools = "0.10"
 projekto_core = { path = "crates/core" }
+projekto_shaping = { path = "crates/shaping" }
 
 # Used by perf_counter
 once_cell = { version = "1.8.0", optional = true }
@@ -25,6 +26,7 @@ once_cell = { version = "1.8.0", optional = true }
 
 [dev-dependencies]
 rand = "0.8.4"
+projekto_core = { path = "crates/core", features = ["auto_load_kinds_descs"] }
 
 [features]
 default = [

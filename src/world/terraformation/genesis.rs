@@ -20,7 +20,9 @@ use projekto_core::{
     VoxWorld,
 };
 
-use super::{shaping, VoxelUpdateList};
+use projekto_shaping as shaping;
+
+use super::VoxelUpdateList;
 
 const CACHE_PATH: &str = "cache/chunks/";
 const CACHE_EXT: &str = "bin";
@@ -53,7 +55,11 @@ fn setup_resources(mut commands: Commands, asset_server: Res<AssetServer>) {
     let vox_world = VoxWorld::default();
     commands.insert_resource(WorldRes(Some(vox_world)));
 
-    let kinds_path = format!("{}{}", env!("CARGO_MANIFEST_DIR"), "/assets/voxels/kind.ron");
+    let kinds_path = format!(
+        "{}{}",
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/voxels/kind.ron"
+    );
     let descs = voxel::KindsDescs::init(kinds_path);
 
     let atlas = asset_server.load(&descs.atlas_path);
@@ -726,14 +732,9 @@ mod tests {
 
     use futures_lite::future::block_on;
 
-    use projekto_core::voxel::{Light, LightTy, KindsDescs};
+    use projekto_core::voxel::{Light, LightTy};
 
     use super::*;
-
-    fn load_kinds() {
-        let input_path = format!("{}/assets/voxels/kind.ron", env!("CARGO_MANIFEST_DIR"));
-        KindsDescs::init(input_path);
-    }
 
     fn top_voxels() -> impl Iterator<Item = IVec3> {
         (0..=chunk::X_END)
@@ -749,8 +750,6 @@ mod tests {
     }
 
     fn create_test_world() -> VoxWorld {
-        load_kinds();
-        
         /*
                            Chunk               Neighbor
                         +----+----+        +----+----+----+

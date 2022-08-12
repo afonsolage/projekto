@@ -1,6 +1,6 @@
-use bevy::math::{IVec3, Vec3};
-use bevy::prelude::trace;
-use bevy::utils::HashSet;
+use bevy_log::trace;
+use bevy_math::{IVec3, Vec3};
+use bevy_utils::HashSet;
 use itertools::Itertools;
 
 use projekto_core::voxel::{self, ChunkFacesOcclusion, FacesOcclusion};
@@ -10,8 +10,6 @@ use projekto_core::{
     voxel::{VoxelFace, VoxelVertex},
     VoxWorld,
 };
-
-use super::VoxelUpdateList;
 
 mod faces_merger;
 mod light_propagator;
@@ -94,8 +92,6 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
  **Returns** a list of chunks which chunk was computed.
 */
 pub fn compute_chunks_internals(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVec3> {
-    perf_fn_scope!();
-
     // Keeps only existing chunks
     let locals = locals
         .into_iter()
@@ -121,10 +117,8 @@ pub fn compute_chunks_internals(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec
 */
 pub fn recompute_chunks_internals(
     world: &mut VoxWorld,
-    update: &[(IVec3, VoxelUpdateList)],
+    update: &[(IVec3, Vec<(IVec3, voxel::Kind)>)],
 ) -> Vec<IVec3> {
-    perf_fn_scope!();
-
     // Keeps only existing chunks
     let valid_update = update
         .iter()
@@ -174,8 +168,6 @@ Computes the faces occlusion data of the given [`ChunkKind`]
 **Returns** computed [`ChunkFacesOcclusion`]
 */
 fn faces_occlusion(chunk: &Chunk) -> ChunkFacesOcclusion {
-    perf_fn_scope!();
-
     let kinds = &chunk.kinds;
 
     let mut occlusion = ChunkFacesOcclusion::default();
@@ -209,8 +201,6 @@ All generated indices will be relative to a triangle list.
 **Returns** a list of generated [`VoxelVertex`].
 */
 fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
-    perf_fn_scope!();
-
     let mut vertices = vec![];
     let kinds_descs = voxel::KindsDescs::get();
     let tile_texture_size = 1.0 / kinds_descs.count_tiles() as f32;
@@ -276,8 +266,6 @@ This function assumes all given chunks exists into the world and updates any nei
 **Panics** if a given chunk local doesn't exists
 */
 fn update_kind_neighborhoods<'a>(world: &mut VoxWorld, locals: impl Iterator<Item = &'a IVec3>) {
-    perf_fn_scope!();
-
     for &local in locals {
         let mut neighborhood = ChunkNeighborhood::default();
         for side in voxel::SIDES {
@@ -297,7 +285,6 @@ fn update_kind_neighborhoods<'a>(world: &mut VoxWorld, locals: impl Iterator<Ite
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn faces_occlusion_occlude_empty_chunk() {
         // Arrange

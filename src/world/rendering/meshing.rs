@@ -6,7 +6,7 @@ use bevy::{
 };
 use projekto_core::voxel::VoxelVertex;
 
-use crate::world::terraformation::prelude::shaping;
+use projekto_shaping as shaping;
 
 use super::{ChunkEntityMap, ChunkMaterial, EvtChunkMeshDirty, WorldRes};
 

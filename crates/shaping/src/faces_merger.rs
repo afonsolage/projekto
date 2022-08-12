@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy_math::IVec3;
 use projekto_core::{
     chunk::{self, Chunk},
     voxel::{self, ChunkFacesOcclusion, VoxelFace},
@@ -34,8 +34,6 @@ fn find_furthest_eq_voxel(
     chunk_smooth_light: &ChunkSmoothLight,
     until: Option<IVec3>,
 ) -> IVec3 {
-    perf_fn_scope!();
-
     let mut next_voxel = begin + step;
 
     while should_merge(
@@ -142,8 +140,6 @@ fn calc_walked_voxels(
     perpendicular_axis: IVec3,
     current_axis: IVec3,
 ) -> Vec<IVec3> {
-    perf_fn_scope!();
-
     let mut walked_voxels = vec![];
 
     let mut begin = v1;
@@ -240,8 +236,6 @@ pub(super) fn merge(
     chunk_smooth_light: ChunkSmoothLight,
     chunk: &Chunk,
 ) -> Vec<VoxelFace> {
-    perf_fn_scope!();
-
     let mut faces_vertices = vec![];
 
     for side in voxel::SIDES {
@@ -333,62 +327,10 @@ pub(super) fn merge(
 
 #[cfg(test)]
 mod tests {
-    extern crate test;
+    use bevy_utils::default;
 
     use super::*;
-    use rand::prelude::*;
-    use test::Bencher;
-
-    #[bench]
-    fn merge_faces_empty_chunk(b: &mut Bencher) {
-        b.iter(|| {
-            super::merge(default(), default(), &default());
-        });
-    }
-
-    #[bench]
-    fn merge_faces_half_empty_chunk(b: &mut Bencher) {
-        let mut chunk = Chunk::default();
-
-        let mut rng = StdRng::seed_from_u64(53230);
-
-        for i in 0..chunk::BUFFER_SIZE / 2 {
-            chunk.kinds[i] = rng.gen_range(1u16..100).into();
-        }
-
-        b.iter(|| {
-            super::merge(default(), default(), &chunk);
-        });
-    }
-
-    #[bench]
-    fn merge_faces_half_full_chunk(b: &mut Bencher) {
-        let mut chunk = Chunk::default();
-
-        let mut rng = StdRng::seed_from_u64(53230);
-
-        for i in 0..chunk::BUFFER_SIZE {
-            chunk.kinds[i] = rng.gen_range(1u16..100).into();
-        }
-
-        b.iter(|| {
-            super::merge(default(), default(), &chunk);
-        });
-    }
-
-    #[bench]
-    fn merge_faces_worst_case(b: &mut Bencher) {
-        let mut chunk = Chunk::default();
-
-        for i in 0..chunk::BUFFER_SIZE {
-            chunk.kinds[i] = ((i % u16::MAX as usize) as u16).into();
-        }
-
-        b.iter(|| {
-            super::merge(default(), default(), &chunk);
-        });
-    }
-
+    
     #[test]
     fn merge_right_faces() {
         /*

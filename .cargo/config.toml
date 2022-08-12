@@ -24,3 +24,4 @@ rustflags = ["-Zshare-generics=n"]
 
 [env]
 RUST_LOG = "error,projekto=trace"
+ASSETS_PATH = { value = "assets", relative = true }
