@@ -122,6 +122,11 @@ impl KindsDescs {
     /// This function should be first called on a controlled context to avoid blocking.
     /// Subsequent calls just get a static reference from loaded struct.
     pub fn get() -> &'static Self {
+        #[cfg(feature = "auto_load_kinds_descs")]
+        if KINDS_DESCS.get().is_none() {
+            return Self::init(format!("{}/voxels/kind.ron", env!("ASSETS_PATH")));
+        }
+        
         KINDS_DESCS
             .get()
             .expect("KindsDescs should be initialized before used")
@@ -238,7 +243,7 @@ mod tests {
 
     #[test]
     fn load_kind_descriptions() {
-        let input_path = format!("{}/test_assets/kind.ron", env!("CARGO_MANIFEST_DIR"));
+        let input_path = format!("{}/voxels/kind.ron", env!("ASSETS_PATH"));
         let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
 
         let _: KindsDescs = from_reader(f).unwrap();

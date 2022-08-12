@@ -1,5 +1,6 @@
 use bevy_math::{IVec3, Vec3};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+//de::DeserializeOwned, 
+use serde::{Deserialize, Serialize};
 
 use crate::{math, query};
 
@@ -60,7 +61,7 @@ impl Iterator for ChunkIter {
 }
 
 pub trait ChunkStorageType:
-    Clone + Copy + core::fmt::Debug + Default + DeserializeOwned + Serialize + PartialEq + PartialOrd
+    Clone + Copy + core::fmt::Debug + Default + PartialEq + PartialOrd
 {
 }
 
