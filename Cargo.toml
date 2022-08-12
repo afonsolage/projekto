@@ -2,6 +2,7 @@
 name = "projekto"
 version = "0.1.0"
 edition = "2021"
+default-run = "main"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -18,8 +19,11 @@ bincode = "1.3"
 futures-lite = "1.12"
 lz4_flex = "0.9"
 itertools = "0.10"
+
+# Projekto dependencies
 projekto_core = { path = "crates/core" }
 projekto_shaping = { path = "crates/shaping" }
+projekto_camera = { path = "crates/camera" }
 
 # Used by perf_counter
 once_cell = { version = "1.8", optional = true }
@@ -58,3 +62,11 @@ serde_ron = []
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[[bin]]
+name = "birds_eye_cam"
+path = "snippets/birds_eye_cam.rs"

@@ -1,9 +1,6 @@
-use std::f32::consts::PI;
+use std::f32::consts::{FRAC_PI_2, PI};
 
 use bevy::{ecs::schedule::ShouldRun, input::mouse::MouseMotion, prelude::*};
-
-#[cfg(feature = "inspector")]
-use bevy_egui::EguiContext;
 
 use super::MainCamera;
 
@@ -27,7 +24,6 @@ pub struct FlyByCameraConfig {
     pub move_speed_boost: f32,
     pub rotate_speed: f32,
     pub active: bool,
-    rotation: Vec2,
 }
 
 impl Default for FlyByCameraConfig {
@@ -36,7 +32,6 @@ impl Default for FlyByCameraConfig {
             move_speed: 10.0,
             move_speed_boost: 10.0,
             rotate_speed: PI / 25.0,
-            rotation: Vec2::ZERO,
             active: false,
         }
     }
@@ -44,28 +39,6 @@ impl Default for FlyByCameraConfig {
 
 fn setup(mut commands: Commands) {
     commands.insert_resource(FlyByCameraConfig::default());
-
-    // match q.get_single() {
-    //     Ok(e) => {
-    //         warn!("Camera already exists, adding FlyByCamera to it");
-    //         commands
-    //             .entity(e)
-    //             .insert(FlyByCamera::default())
-    //             .insert(TerraformationCenter);
-    //     }
-    //     Err(QuerySingleError::MultipleEntities(_)) => {
-    //         error!("Multiple camera already exists. Unable to setup FlyByCamera");
-    //     }
-    //     Err(QuerySingleError::NoEntities(_)) => {
-    //         commands
-    //             .spawn_bundle(Camera3dBundle {
-    //                 transform: Transform::from_xyz(-10.0, 25.0, 20.0),
-    //                 ..Default::default()
-    //             })
-    //             .insert(FlyByCamera::default())
-    //             .insert(TerraformationCenter);
-    //     }
-    // }
 }
 
 pub fn is_active(config: Res<FlyByCameraConfig>) -> ShouldRun {
@@ -121,11 +94,13 @@ fn rotate_camera(
 
         delta *= config.rotate_speed * time.delta_seconds();
 
-        config.rotation += delta;
-        config.rotation.y = config.rotation.y.clamp(-PI / 2.0, PI / 2.0);
+        let (pitch, yaw, _) = transform.rotation.to_euler(EulerRot::YXZ);
+        let mut rotation = Vec2::new(pitch, yaw) - delta;
 
-        let pitch = Quat::from_axis_angle(Vec3::X, -config.rotation.y);
-        let yaw = Quat::from_axis_angle(Vec3::Y, -config.rotation.x);
+        rotation.y = rotation.y.clamp(-FRAC_PI_2, FRAC_PI_2);
+
+        let pitch = Quat::from_axis_angle(Vec3::X, rotation.y);
+        let yaw = Quat::from_axis_angle(Vec3::Y, rotation.x);
 
         transform.rotation = yaw * pitch;
     }

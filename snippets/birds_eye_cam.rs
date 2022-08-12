@@ -1,68 +1,31 @@
-//https://github.com/bevyengine/bevy/issues/4601
-#![allow(clippy::forget_non_drop)]
-#![feature(int_log)]
-#![feature(test)]
-#![feature(once_cell)]
-
-use bevy::{prelude::*, render::texture::ImageSettings, window::PresentMode};
-
-#[cfg(feature = "inspector")]
-use bevy_inspector_egui;
-
-#[macro_use]
-mod macros;
-
-mod debug;
-use debug::DebugPlugin;
-
-mod world;
+use bevy::{prelude::*, window::close_on_esc};
+use bevy_inspector_egui::WorldInspectorPlugin;
 use projekto_camera::{CameraPlugin, MainCamera};
-use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
-
-mod ui;
-use ui::UiPlugin;
 
 fn main() {
-    // env_logger::init();
-
-    let mut app = App::new();
-
-    app.insert_resource(WindowDescriptor {
-        present_mode: PresentMode::AutoNoVsync,
-        ..Default::default()
-    })
-    .insert_resource(Msaa { samples: 4 })
-    // This may cause problems later on. Ideally this setup should be done per image
-    .insert_resource(ImageSettings::default_nearest())
-    .add_plugins(DefaultPlugins)
-    .add_plugin(DebugPlugin)
-    .add_plugin(CameraPlugin)
-    .add_plugin(WorldPlugin)
-    .add_plugin(UiPlugin)
-    .add_startup_system(setup);
-
-    #[cfg(feature = "inspector")]
-    app.add_plugin(bevy_inspector_egui::WorldInspectorPlugin::new());
-
-    app.run();
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .add_plugin(WorldInspectorPlugin::default())
+        .add_plugin(CameraPlugin)
+        .add_system(close_on_esc)
+        .add_startup_system(setup_environment)
+        .run();
 }
 
-fn setup(
+fn setup_environment(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // camera
     commands
-        .spawn_bundle(Camera3dBundle::default())
+        .spawn_bundle(Camera3dBundle { ..default() })
         .insert(MainCamera)
-        .insert(Name::new("Main Camera"))
-        .insert(LandscapeCenter)
-        .insert(TerraformationCenter);
+        .insert(Transform::from_xyz(5.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y));
 
-    // focus
+    // target
     commands.spawn_bundle(PbrBundle {
-        transform: Transform::from_xyz(0.0, 20.0, 0.0),
+        transform: Transform::from_xyz(0.0, 5.0, 0.0),
         mesh: meshes.add(Mesh::from(shape::Capsule {
             radius: 0.25,
             depth: 1.5,

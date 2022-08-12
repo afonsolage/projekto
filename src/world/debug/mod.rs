@@ -4,11 +4,10 @@ use bevy::{
     prelude::*,
     render::mesh::{Indices, PrimitiveTopology},
 };
+use projekto_camera::fly_by;
 
-use crate::{
-    camera::{self, MainCamera},
-    world::rendering::*,
-};
+use crate::world::rendering::*;
+use projekto_camera::MainCamera;
 use projekto_core::*;
 use projekto_shaping as shaping;
 
@@ -28,7 +27,7 @@ impl Plugin for WireframeDebugPlugin {
             .add_plugin(MaterialPlugin::<WireframeMaterial>::default())
             .add_system_set(
                 SystemSet::new()
-                    .with_run_criteria(camera::fly_by::is_active)
+                    .with_run_criteria(fly_by::is_active)
                     .with_system(do_raycast)
                     .with_system(remove_voxel)
                     .with_system(add_voxel),

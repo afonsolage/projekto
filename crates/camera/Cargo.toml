@@ -1,0 +1,9 @@
+[package]
+name = "projekto_camera"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+bevy = { version = "0.8", default-features = false }
