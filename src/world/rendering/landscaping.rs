@@ -33,6 +33,8 @@ pub struct LandscapeConfig {
 
 struct LandscapeMeta {
     root: Entity,
+    last_pos: IVec3,
+    next_sync: f32,
 }
 
 fn setup_resources(
@@ -54,14 +56,15 @@ fn setup_resources(
         .spawn_bundle(SpatialBundle::default())
         .insert(Name::new("Landscape"))
         .id();
-    commands.insert_resource(LandscapeMeta { root });
+    commands.insert_resource(LandscapeMeta {
+        root,
+        last_pos: default(),
+        next_sync: default(),
+    });
 }
 
 #[derive(Default)]
-struct UpdateLandscapeMeta {
-    last_pos: IVec3,
-    next_sync: f32,
-}
+struct UpdateLandscapeMeta {}
 
 fn update_landscape(
     mut commands: Commands,
@@ -70,8 +73,7 @@ fn update_landscape(
     time: Res<Time>,              // TODO: Change this to a Run Criteria later on
     config: Res<LandscapeConfig>, // TODO: Change this to a Run Criteria later on
     world_res: Res<WorldRes>,     // TODO: Change this to a Run Criteria later on
-    mut meta: Local<UpdateLandscapeMeta>,
-    landscape_meta: Res<LandscapeMeta>,
+    mut meta: ResMut<LandscapeMeta>,
     mut writer: EventWriter<EvtChunkMeshDirty>,
     center_query: Query<&Transform, With<LandscapeCenter>>,
 ) {
@@ -130,7 +132,7 @@ fn update_landscape(
             entity_map.0.insert(local, entity);
             writer.send(EvtChunkMeshDirty(local));
 
-            commands.entity(landscape_meta.root).add_child(entity);
+            commands.entity(meta.root).add_child(entity);
         }
 
         let despawn = existing_locals
