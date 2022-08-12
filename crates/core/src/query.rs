@@ -1,9 +1,6 @@
-use bevy::prelude::*;
+use bevy_math::{IVec3, Vec3};
 
-use crate::world::{
-    math,
-    storage::{chunk, voxel},
-};
+use crate::{chunk, voxel, math};
 
 /**
  An interator which produced a finite number of [`IVec3`] ranging from `begin` until `end` exclusive

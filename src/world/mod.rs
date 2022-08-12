@@ -1,13 +1,9 @@
 use bevy::prelude::*;
 
 mod debug;
-mod math;
 pub mod rendering;
 
 pub mod terraformation;
-
-pub mod query;
-pub mod storage;
 
 pub struct WorldPlugin;
 

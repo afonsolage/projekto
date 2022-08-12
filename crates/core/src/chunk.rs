@@ -1,8 +1,8 @@
-use bevy::prelude::*;
+use bevy_math::{IVec3, Vec3};
+//de::DeserializeOwned, 
+use serde::{Deserialize, Serialize};
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-
-use crate::world::{math, query, storage::chunk};
+use crate::{math, query};
 
 use super::voxel;
 
@@ -35,7 +35,6 @@ pub struct Chunk {
     pub vertices: Vec<voxel::VoxelVertex>,
 }
 
-#[cfg(test)]
 impl PartialEq for Chunk {
     fn eq(&self, other: &Self) -> bool {
         self.kinds == other.kinds && self.vertices == other.vertices
@@ -62,7 +61,7 @@ impl Iterator for ChunkIter {
 }
 
 pub trait ChunkStorageType:
-    Clone + Copy + core::fmt::Debug + Default + DeserializeOwned + Serialize + PartialEq + PartialOrd
+    Clone + Copy + core::fmt::Debug + Default + PartialEq + PartialOrd
 {
 }
 
@@ -88,7 +87,6 @@ impl<T: ChunkStorageType> Clone for ChunkStorage<T> {
     }
 }
 
-#[cfg(test)]
 impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
     fn eq(&self, other: &Self) -> bool {
         self.main == other.main
@@ -117,8 +115,8 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
 
     #[inline]
     pub fn get_absolute(&self, local: IVec3) -> Option<T> {
-        if !chunk::is_within_bounds(local) {
-            let (dir, next_chunk_voxel) = chunk::overlap_voxel(local);
+        if !is_within_bounds(local) {
+            let (dir, next_chunk_voxel) = overlap_voxel(local);
 
             let side = voxel::Side::from_dir(dir);
 
@@ -128,7 +126,6 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         }
     }
 
-    #[cfg(test)]
     pub fn set_all(&mut self, value: T) {
         self.main.fill(value);
     }
@@ -137,19 +134,16 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.main.iter()
     }
 
-    #[cfg(test)]
     pub fn is_default(&self) -> bool {
         // TODO: Add a clever way to check if ChunkStorage wasn't initialized;
         self.is_all(T::default())
     }
 
-    #[cfg(test)]
     pub fn is_all(&self, value: T) -> bool {
         self.iter().all(|t| *t == value)
     }
 }
 
-#[cfg(test)]
 impl<T: ChunkStorageType> std::ops::Index<usize> for ChunkStorage<T> {
     type Output = T;
 
@@ -159,7 +153,6 @@ impl<T: ChunkStorageType> std::ops::Index<usize> for ChunkStorage<T> {
     }
 }
 
-#[cfg(test)]
 impl<T: ChunkStorageType> std::ops::IndexMut<usize> for ChunkStorage<T> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         debug_assert!(index < BUFFER_SIZE);
@@ -224,7 +217,7 @@ pub fn is_at_bounds(local: IVec3) -> bool {
 
 #[inline]
 pub fn neighboring(local: IVec3, voxel: IVec3) -> Vec<IVec3> {
-    math::to_unit_dir(chunk::get_boundary_dir(voxel))
+    math::to_unit_dir(get_boundary_dir(voxel))
         .into_iter()
         .map(|dir| dir + local)
         .collect()
@@ -378,7 +371,7 @@ pub fn overlap_voxel(pos: IVec3) -> (IVec3, IVec3) {
 
 #[cfg(test)]
 mod tests {
-    use bevy::math::IVec3;
+    use bevy_math::IVec3;
     use rand::{random, Rng};
 
     use super::*;
@@ -497,11 +490,11 @@ mod tests {
 
         assert_eq!(
             IVec3::new(0, -1, -2),
-            super::to_local(Vec3::new(3.0, -0.8, -chunk::Z_END as f32 - 2.0))
+            super::to_local(Vec3::new(3.0, -0.8, -super::Z_END as f32 - 2.0))
         );
         assert_eq!(
             IVec3::new(0, -1, 0),
-            super::to_local(Vec3::new(3.0, -chunk::Y_END as f32 - 0.8, 0.0))
+            super::to_local(Vec3::new(3.0, -super::Y_END as f32 - 0.8, 0.0))
         );
 
         const TEST_COUNT: usize = 1000;
@@ -578,18 +571,18 @@ mod tests {
     fn overlap_voxel() {
         assert_eq!(
             super::overlap_voxel((-1, 10, 5).into()),
-            ((-1, 0, 0).into(), (chunk::X_END, 10, 5).into())
+            ((-1, 0, 0).into(), (super::X_END, 10, 5).into())
         );
         assert_eq!(
-            super::overlap_voxel((-1, 10, chunk::Z_END + 1).into()),
-            ((-1, 0, 1).into(), (chunk::X_END, 10, 0).into())
+            super::overlap_voxel((-1, 10, super::Z_END + 1).into()),
+            ((-1, 0, 1).into(), (super::X_END, 10, 0).into())
         );
         assert_eq!(
             super::overlap_voxel((0, 0, 0).into()),
             ((0, 0, 0).into(), (0, 0, 0).into())
         );
         assert_eq!(
-            super::overlap_voxel((chunk::Y_END + 2, 10, 5).into()),
+            super::overlap_voxel((super::Y_END + 2, 10, 5).into()),
             ((1, 0, 0).into(), (1, 10, 5).into())
         );
     }

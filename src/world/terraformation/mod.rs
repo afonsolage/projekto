@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 
-use super::storage::{chunk::ChunkStorage, landscape, voxel};
+use projekto_core::{landscape, voxel};
 
 mod genesis;
 mod landscaping;
-pub mod shaping;
 mod terraforming;
 
 pub mod prelude {
@@ -12,7 +11,6 @@ pub mod prelude {
     pub use super::genesis::EvtChunkUpdated;
     pub use super::genesis::KindsAtlasRes;
     pub use super::genesis::WorldRes;
-    pub use super::shaping;
     pub use super::terraforming::ChunkSystemQuery;
     pub use super::terraforming::ChunkSystemRaycast;
     pub use super::terraforming::CmdChunkUpdate;
@@ -37,14 +35,6 @@ pub struct TerraformationCenter;
 #[derive(Default)]
 pub struct TerraformationConfig {
     pub horizontal_radius: u32,
-}
-
-pub type ChunkFacesOcclusion = ChunkStorage<voxel::FacesOcclusion>;
-
-impl ChunkFacesOcclusion {
-    pub fn is_fully_occluded(&self) -> bool {
-        self.iter().all(voxel::FacesOcclusion::is_fully_occluded)
-    }
 }
 
 type VoxelUpdateList = Vec<(IVec3, voxel::Kind)>;

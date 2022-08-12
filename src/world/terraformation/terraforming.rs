@@ -1,8 +1,9 @@
 use bevy::{ecs::system::SystemParam, prelude::*, utils::HashMap};
 
-use crate::world::{
+use projekto_core::{
+    chunk::ChunkKind,
     query::{self, RaycastHit},
-    storage::{chunk::ChunkKind, voxel},
+    voxel,
 };
 
 use super::prelude::*;

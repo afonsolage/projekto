@@ -1,0 +1,20 @@
+[package]
+name = "projekto_core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+bevy_math = "0.8"
+bevy_utils = "0.8"
+bevy_log = "0.8"
+serde = "1.0"
+once_cell = "1.13.0"
+ron = "0.7"
+
+[dev-dependencies]
+rand = "0.8.5"
+
+[features]
+auto_load_kinds_descs = []

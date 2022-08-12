@@ -2,13 +2,12 @@ use bevy::{
     prelude::*,
     utils::{HashMap, HashSet},
 };
+use projekto_core::{chunk, landscape, query, voxel};
 
 use crate::{
     fly_by_camera::FlyByCamera,
     world::{
-        query,
         rendering::{ChunkMaterial, ChunkMaterialHandle},
-        storage::{chunk, landscape, voxel},
         terraformation::prelude::KindsAtlasRes,
     },
 };
@@ -41,7 +40,7 @@ fn setup_resources(
 ) {
     trace_system_run!();
     let material = materials.add(ChunkMaterial {
-        tile_texture_size: 1.0 / voxel::KindsDescs::get_or_init().count_tiles() as f32,
+        tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
         texture: kinds_res.atlas.clone(),
     });
 
