@@ -1,17 +1,17 @@
 use bevy::prelude::*;
-use birds_eye::BirdsEyeCameraPlugin;
+use orbit::OrbitCameraPlugin;
 
 use self::fly_by::FlyByCameraPlugin;
 
-pub mod birds_eye;
+pub mod orbit;
 pub mod fly_by;
 
-/// This is a wrapper plugin which justs adds [`FlyByCameraPlugin`] and [`BirdsEyeCameraPlugin`]
+/// This is a wrapper plugin which justs adds [`FlyByCameraPlugin`] and [`OrbitCameraPlugin`]
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(FlyByCameraPlugin)
-            .add_plugin(BirdsEyeCameraPlugin);
+            .add_plugin(OrbitCameraPlugin);
     }
 }

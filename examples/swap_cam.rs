@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use bevy::{ecs::system::SystemParam, prelude::*};
 use projekto_camera::{
-    birds_eye::{BirdsEyeCamera, BirdsEyeCameraConfig, BirdsEyeCameraTarget},
+    orbit::{OrbitCamera, OrbitCameraConfig, OrbitCameraTarget},
     fly_by::{FlyByCamera, FlyByCameraConfig},
     CameraPlugin,
 };
@@ -21,13 +21,13 @@ fn main() {
 #[derive(Default, Debug)]
 enum CurrentCameraType {
     #[default]
-    BirdsEye,
+    Orbit,
     FlyBy,
 }
 
 #[derive(SystemParam)]
 struct CameraConfig<'w, 's> {
-    birds_eye: ResMut<'w, BirdsEyeCameraConfig>,
+    orbit: ResMut<'w, OrbitCameraConfig>,
     flyby: ResMut<'w, FlyByCameraConfig>,
     cam_type: ResMut<'w, CurrentCameraType>,
 
@@ -40,22 +40,22 @@ impl<'w, 's> CameraConfig<'w, 's> {
         trace!("Toggling cameras");
 
         match *self.cam_type {
-            CurrentCameraType::BirdsEye => {
+            CurrentCameraType::Orbit => {
                 *self.cam_type = CurrentCameraType::FlyBy;
                 self.flyby.active = true;
-                self.birds_eye.active = false;
+                self.orbit.active = false;
             }
             CurrentCameraType::FlyBy => {
-                *self.cam_type = CurrentCameraType::BirdsEye;
+                *self.cam_type = CurrentCameraType::Orbit;
                 self.flyby.active = false;
-                self.birds_eye.active = true;
+                self.orbit.active = true;
             }
         }
     }
 
     fn set_active(&mut self, active: bool) {
         match *self.cam_type {
-            CurrentCameraType::BirdsEye => self.birds_eye.active = active,
+            CurrentCameraType::Orbit => self.orbit.active = active,
             CurrentCameraType::FlyBy => self.flyby.active = active,
         }
     }
@@ -103,7 +103,7 @@ fn setup_environment(
     // camera
     commands
         .spawn_bundle(Camera3dBundle { ..default() })
-        .insert(BirdsEyeCamera)
+        .insert(OrbitCamera)
         .insert(FlyByCamera)
         // .insert(Transform::from_xyz(5.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y))
         ;
@@ -120,7 +120,7 @@ fn setup_environment(
             material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
             ..Default::default()
         })
-        .insert(BirdsEyeCameraTarget)
+        .insert(OrbitCameraTarget)
         .insert(Name::new("Target"));
 
     //X axis

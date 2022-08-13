@@ -68,8 +68,8 @@ name = "main"
 path = "src/main.rs"
 
 [[example]]
-name = "birds_eye_cam"
-path = "examples/birds_eye_cam.rs"
+name = "orbit_cam"
+path = "examples/orbit_cam.rs"
 
 [[example]]
 name = "swap_cam"

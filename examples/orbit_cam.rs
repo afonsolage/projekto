@@ -1,7 +1,7 @@
 use bevy::{prelude::*, window};
 use bevy_inspector_egui::WorldInspectorPlugin;
 use projekto_camera::{
-    birds_eye::{BirdsEyeCamera, BirdsEyeCameraTarget},
+    orbit::{OrbitCamera, OrbitCameraTarget, OrbitCameraConfig},
     CameraPlugin,
 };
 
@@ -19,7 +19,7 @@ fn main() {
 fn move_target(
     input: Res<Input<KeyCode>>,
     time: Res<Time>,
-    mut q: Query<&mut Transform, With<BirdsEyeCameraTarget>>,
+    mut q: Query<&mut Transform, With<OrbitCameraTarget>>,
 ) {
     let input_vec = calc_input_vector(&input);
     if input_vec == Vec3::ZERO {
@@ -35,11 +35,12 @@ fn setup_environment(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut config: ResMut<OrbitCameraConfig>,
 ) {
     // camera
     commands
         .spawn_bundle(Camera3dBundle { ..default() })
-        .insert(BirdsEyeCamera)
+        .insert(OrbitCamera)
         // .insert(Transform::from_xyz(5.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y))
         ;
 
@@ -55,7 +56,7 @@ fn setup_environment(
             material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
             ..Default::default()
         })
-        .insert(BirdsEyeCameraTarget)
+        .insert(OrbitCameraTarget)
         .insert(Name::new("Target"));
 
     //X axis
@@ -104,6 +105,8 @@ fn setup_environment(
         transform: Transform::from_xyz(4.0, 8.0, 4.0),
         ..Default::default()
     });
+
+    config.active = true;
 }
 
 fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {

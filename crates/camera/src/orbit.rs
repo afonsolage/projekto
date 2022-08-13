@@ -4,13 +4,13 @@ use std::f32::consts::PI;
 
 use bevy::ecs::schedule::ShouldRun;
 
-/// Adds [`BirdsEyeCameraPlugin`] resource and internals systems gated by [`is_active`] run criteria
+/// Adds [`OrbitCameraPlugin`] resource and internals systems gated by [`is_active`] run criteria
 /// grouped on [`CameraUpdate`] system set.
-pub struct BirdsEyeCameraPlugin;
+pub struct OrbitCameraPlugin;
 
-impl Plugin for BirdsEyeCameraPlugin {
+impl Plugin for OrbitCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<BirdsEyeCameraConfig>().add_system_set(
+        app.init_resource::<OrbitCameraConfig>().add_system_set(
             SystemSet::new()
                 .with_run_criteria(is_active)
                 .with_system(target_moved)
@@ -29,27 +29,27 @@ pub struct CameraUpdate;
 /// There can be only one Entity with this component.
 #[derive(Component, Reflect, Default)]
 #[reflect(Component)]
-pub struct BirdsEyeCamera;
+pub struct OrbitCamera;
 
 /// Component used to tag which entity this camera will orbit around.
 /// There can be only one Entity with this component.
 #[derive(Component, Reflect, Default)]
 #[reflect(Component)]
-pub struct BirdsEyeCameraTarget;
+pub struct OrbitCameraTarget;
 
-/// Key bindings used internal systems to rotate camera around target.
+/// Key bindings used internal systems to orbit camera around target.
 #[derive(Debug)]
 pub struct KeyBindings {
-    /// Rotate left key binding, defaults to [`KeyCode::Left`].
+    /// Orbit left key binding, defaults to [`KeyCode::Left`].
     pub left: KeyCode,
 
-    /// Rotate right key binding, defaults to [`KeyCode::Right`].
+    /// Orbit right key binding, defaults to [`KeyCode::Right`].
     pub right: KeyCode,
 
-    /// Rotate up key binding, defaults to [`KeyCode::Up`].
+    /// RotaOrbitte up key binding, defaults to [`KeyCode::Up`].
     pub up: KeyCode,
 
-    /// Rotate down key binding, defaults to [`KeyCode::Down`].
+    /// Orbit down key binding, defaults to [`KeyCode::Down`].
     pub down: KeyCode,
 
     /// Zoom into the target key binding, defaults to [`KeyCode::PageUp`].
@@ -72,9 +72,9 @@ impl Default for KeyBindings {
     }
 }
 
-/// Allows to configure [`BirdsEyeCamera`] behavior.
+/// Allows to configure [`OrbitCamera`] behavior.
 #[derive(Debug)]
-pub struct BirdsEyeCameraConfig {
+pub struct OrbitCameraConfig {
     /// Enable or disable internal systems. This flag is used by [`is_active`] run criteria.
     pub active: bool,
 
@@ -104,9 +104,9 @@ pub struct BirdsEyeCameraConfig {
     pub bindings: KeyBindings,
 }
 
-impl Default for BirdsEyeCameraConfig {
+impl Default for OrbitCameraConfig {
     fn default() -> Self {
-        BirdsEyeCameraConfig {
+        OrbitCameraConfig {
             active: false,
 
             radial_distance: 10.0,
@@ -124,8 +124,8 @@ impl Default for BirdsEyeCameraConfig {
     }
 }
 
-/// Returns [`ShouldRun::Yes`] when [`BirdsEyeCameraConfig::active`] is true.
-pub fn is_active(config: Res<BirdsEyeCameraConfig>) -> ShouldRun {
+/// Returns [`ShouldRun::Yes`] when [`OrbitCameraConfig::active`] is true.
+pub fn is_active(config: Res<OrbitCameraConfig>) -> ShouldRun {
     if config.active {
         ShouldRun::Yes
     } else {
@@ -133,22 +133,22 @@ pub fn is_active(config: Res<BirdsEyeCameraConfig>) -> ShouldRun {
     }
 }
 
-/// Calculates the spheric rotation around the target using [`BirdsEyeCameraConfig`] settings.
+/// Calculates the spheric rotation around the target using [`OrbitCameraConfig`] settings.
 ///
 /// This systems is guarded by [`is_active`] run criteria.
 ///
-/// This does nothing if the [`Transform`] of an [`Entity`] with [`BirdsEyeCameraTarget`] is not [`Changed`].
+/// This does nothing if the [`Transform`] of an [`Entity`] with [`OrbitCameraTarget`] is not [`Changed`].
 fn target_moved(
-    config: Res<BirdsEyeCameraConfig>,
+    config: Res<OrbitCameraConfig>,
     target: Query<
         &Transform,
         (
-            With<BirdsEyeCameraTarget>,
+            With<OrbitCameraTarget>,
             Changed<Transform>,
-            Without<BirdsEyeCamera>,
+            Without<OrbitCamera>,
         ),
     >,
-    mut q: Query<&mut Transform, With<BirdsEyeCamera>>,
+    mut q: Query<&mut Transform, With<OrbitCamera>>,
 ) {
     let target = match target.get_single() {
         Ok(t) => t,
@@ -165,15 +165,15 @@ fn target_moved(
     }
 }
 
-/// Calculates the spheric rotation around the target using [`BirdsEyeCameraConfig`] settings.
+/// Calculates the spheric rotation around the target using [`OrbitCameraConfig`] settings.
 ///
 /// This systems is guarded by [`is_active`] run criteria.
 ///
-/// This system does nothing if the [`BirdsEyeCameraConfig`] is not [`Changed`].
+/// This system does nothing if the [`OrbitCameraConfig`] is not [`Changed`].
 fn settings_changed(
-    config: Res<BirdsEyeCameraConfig>,
-    target: Query<&Transform, (With<BirdsEyeCameraTarget>, Without<BirdsEyeCamera>)>,
-    mut q: Query<&mut Transform, With<BirdsEyeCamera>>,
+    config: Res<OrbitCameraConfig>,
+    target: Query<&Transform, (With<OrbitCameraTarget>, Without<OrbitCamera>)>,
+    mut q: Query<&mut Transform, With<OrbitCamera>>,
 ) {
     if config.is_changed() == false {
         return;
@@ -197,7 +197,7 @@ fn settings_changed(
 fn look_and_move_around(
     camera_transform: &mut Transform,
     target: Vec3,
-    config: &BirdsEyeCameraConfig,
+    config: &OrbitCameraConfig,
 ) {
     camera_transform.translation = spherical_to_cartesian(
         config.radial_distance,
@@ -219,14 +219,14 @@ fn spherical_to_cartesian(radius: f32, polar: f32, azimuth: f32, center: Vec3) -
     ) + center
 }
 
-/// Move camera around using [`BirdsEyeCameraConfig`] configuration settings.
+/// Move camera around using [`OrbitCameraConfig`] configuration settings.
 /// This system is gated by [`is_active`] run criteria.
 ///
-/// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on [`BirdsEyeCameraConfig`]
+/// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on [`OrbitCameraConfig`]
 fn move_camera(
     input: Res<Input<KeyCode>>,
     time: Res<Time>,
-    mut config: ResMut<BirdsEyeCameraConfig>,
+    mut config: ResMut<OrbitCameraConfig>,
 ) {
     let mut delta = Vec3::ZERO;
 

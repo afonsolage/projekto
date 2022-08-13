@@ -17,7 +17,7 @@ use debug::DebugPlugin;
 
 mod world;
 use projekto_camera::{
-    birds_eye::{BirdsEyeCamera, BirdsEyeCameraTarget},
+    orbit::{OrbitCamera, OrbitCameraTarget},
     CameraPlugin,
 };
 use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
@@ -58,7 +58,7 @@ fn setup(
     // camera
     commands
         .spawn_bundle(Camera3dBundle::default())
-        .insert(BirdsEyeCamera)
+        .insert(OrbitCamera)
         .insert(Name::new("Main Camera"))
         .insert(LandscapeCenter)
         .insert(TerraformationCenter);
@@ -75,7 +75,7 @@ fn setup(
             material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
             ..Default::default()
         })
-        .insert(BirdsEyeCameraTarget);
+        .insert(OrbitCameraTarget);
 
     //X axis
     commands.spawn_bundle(PbrBundle {
