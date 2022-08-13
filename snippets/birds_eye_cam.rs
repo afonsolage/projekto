@@ -1,14 +1,18 @@
-use bevy::{prelude::*, window::close_on_esc};
+use bevy::{prelude::*, window};
 use bevy_inspector_egui::WorldInspectorPlugin;
-use projekto_camera::{birds_eye::BirdsEyeCameraTarget, CameraPlugin, MainCamera};
+use projekto_camera::{
+    birds_eye::{BirdsEyeCamera, BirdsEyeCameraConfig, BirdsEyeCameraTarget},
+    CameraPlugin,
+};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(WorldInspectorPlugin::default())
         .add_plugin(CameraPlugin)
-        // .add_system(close_on_esc)
+        .add_system(window::close_on_esc)
         .add_system(move_target)
+        .add_system(move_camera)
         .add_startup_system(setup_environment)
         .run();
 }
@@ -18,11 +22,57 @@ fn move_target(
     time: Res<Time>,
     mut q: Query<&mut Transform, With<BirdsEyeCameraTarget>>,
 ) {
-    if let Ok(mut transform) = q.get_single_mut() {
-        let input_vec = calc_input_vector(&input);
+    let input_vec = calc_input_vector(&input);
+    if input_vec == Vec3::ZERO {
+        return;
+    }
 
+    if let Ok(mut transform) = q.get_single_mut() {
         transform.translation += input_vec * time.delta_seconds() * 5.0;
     }
+}
+
+fn move_camera(
+    input: Res<Input<KeyCode>>,
+    time: Res<Time>,
+    mut config: ResMut<BirdsEyeCameraConfig>,
+) {
+    let mut delta = Vec3::ZERO;
+
+    if input.pressed(KeyCode::Right) {
+        delta.x = -config.rotate_speed * time.delta_seconds();
+    } else if input.pressed(KeyCode::Left) {
+        delta.x = config.rotate_speed * time.delta_seconds();
+    }
+
+    if input.pressed(KeyCode::Up) {
+        delta.y = config.rotate_speed * time.delta_seconds();
+    } else if input.pressed(KeyCode::Down) {
+        delta.y = -config.rotate_speed * time.delta_seconds();
+    }
+
+    if input.pressed(KeyCode::PageUp) {
+        delta.z = -config.zoom_speed * time.delta_seconds();
+    } else if input.pressed(KeyCode::PageDown) {
+        delta.z = config.zoom_speed * time.delta_seconds();
+    }
+
+    if delta == Vec3::ZERO {
+        return;
+    }
+
+    config.azimuthal_angle += delta.x;
+    config.polar_angle += delta.y;
+    config.radial_distance += delta.z;
+
+    use std::f32::consts;
+
+    // config.azimuthal_angle = config.azimuthal_angle.clamp(0.0, consts::TAU);
+    config.polar_angle = config.polar_angle.clamp(
+        0.0 + consts::FRAC_PI_8,
+        consts::FRAC_PI_2 - consts::FRAC_PI_8,
+    );
+    config.radial_distance = config.radial_distance.clamp(1.0, 30.0);
 }
 
 fn setup_environment(
@@ -33,13 +83,14 @@ fn setup_environment(
     // camera
     commands
         .spawn_bundle(Camera3dBundle { ..default() })
-        .insert(MainCamera)
-        .insert(Transform::from_xyz(5.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y));
+        .insert(BirdsEyeCamera)
+        // .insert(Transform::from_xyz(5.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y))
+        ;
 
     // target
     commands
         .spawn_bundle(PbrBundle {
-            transform: Transform::from_xyz(0.0, 5.0, 0.0),
+            transform: Transform::from_xyz(3.0, 5.0, 3.0),
             mesh: meshes.add(Mesh::from(shape::Capsule {
                 radius: 0.25,
                 depth: 1.5,

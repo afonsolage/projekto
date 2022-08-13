@@ -2,8 +2,6 @@ use std::f32::consts::{FRAC_PI_2, PI};
 
 use bevy::{ecs::schedule::ShouldRun, input::mouse::MouseMotion, prelude::*};
 
-use super::MainCamera;
-
 pub struct FlyByCameraPlugin;
 
 impl Plugin for FlyByCameraPlugin {
@@ -18,6 +16,11 @@ impl Plugin for FlyByCameraPlugin {
             );
     }
 }
+
+#[derive(Component, Reflect, Default)]
+#[reflect(Component)]
+pub struct FlyByCamera;
+
 
 pub struct FlyByCameraConfig {
     pub move_speed: f32,
@@ -53,7 +56,7 @@ fn move_camera(
     time: Res<Time>,
     input: Res<Input<KeyCode>>,
     config: Res<FlyByCameraConfig>,
-    mut q: Query<&mut Transform, With<MainCamera>>,
+    mut q: Query<&mut Transform, With<FlyByCamera>>,
 ) {
     if let Ok(mut transform) = q.get_single_mut() {
         let input_vector = calc_input_vector(&input);
@@ -80,7 +83,7 @@ fn rotate_camera(
     time: Res<Time>,
     mut motion_evt: EventReader<MouseMotion>,
     config: Res<FlyByCameraConfig>,
-    mut q: Query<&mut Transform, With<MainCamera>>,
+    mut q: Query<&mut Transform, With<FlyByCamera>>,
 ) {
     if let Ok(mut transform) = q.get_single_mut() {
         let mut delta = Vec2::ZERO;

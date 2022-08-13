@@ -4,10 +4,9 @@ use bevy::{
     prelude::*,
     render::mesh::{Indices, PrimitiveTopology},
 };
-use projekto_camera::fly_by;
+use projekto_camera::fly_by::{self, FlyByCamera};
 
 use crate::world::rendering::*;
-use projekto_camera::MainCamera;
 use projekto_core::*;
 use projekto_shaping as shaping;
 
@@ -323,7 +322,7 @@ fn generate_voxel_edges_mesh(voxels: &[IVec3]) -> (Vec<[f32; 3]>, Vec<u32>) {
 fn do_raycast(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
-    q_cam: Query<&Transform, With<MainCamera>>,
+    q_cam: Query<&Transform, With<FlyByCamera>>,
 ) {
     if !keyboard.just_pressed(KeyCode::F3) {
         return;
@@ -474,7 +473,7 @@ fn draw_raycast(
 }
 
 fn remove_voxel(
-    q_cam: Query<&Transform, With<MainCamera>>,
+    q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
     mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
     mut query: ChunkSystemRaycast,
@@ -520,7 +519,7 @@ fn remove_voxel(
 }
 
 fn add_voxel(
-    q_cam: Query<&Transform, With<MainCamera>>,
+    q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
     mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
     mut query: ChunkSystemRaycast,

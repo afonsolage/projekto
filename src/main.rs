@@ -16,7 +16,10 @@ mod debug;
 use debug::DebugPlugin;
 
 mod world;
-use projekto_camera::{CameraPlugin, MainCamera};
+use projekto_camera::{
+    birds_eye::{BirdsEyeCamera, BirdsEyeCameraTarget},
+    CameraPlugin,
+};
 use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
 
 mod ui;
@@ -55,22 +58,24 @@ fn setup(
     // camera
     commands
         .spawn_bundle(Camera3dBundle::default())
-        .insert(MainCamera)
+        .insert(BirdsEyeCamera)
         .insert(Name::new("Main Camera"))
         .insert(LandscapeCenter)
         .insert(TerraformationCenter);
 
     // focus
-    commands.spawn_bundle(PbrBundle {
-        transform: Transform::from_xyz(0.0, 20.0, 0.0),
-        mesh: meshes.add(Mesh::from(shape::Capsule {
-            radius: 0.25,
-            depth: 1.5,
-            ..default()
-        })),
-        material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
-        ..Default::default()
-    });
+    commands
+        .spawn_bundle(PbrBundle {
+            transform: Transform::from_xyz(0.0, 20.0, 0.0),
+            mesh: meshes.add(Mesh::from(shape::Capsule {
+                radius: 0.25,
+                depth: 1.5,
+                ..default()
+            })),
+            material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+            ..Default::default()
+        })
+        .insert(BirdsEyeCameraTarget);
 
     //X axis
     commands.spawn_bundle(PbrBundle {
