@@ -2,47 +2,59 @@ use std::f32::consts::PI;
 
 use bevy::{ecs::schedule::ShouldRun, prelude::*};
 
-#[cfg(feature = "flyby_controls")]
 use bevy::input::mouse::MouseMotion;
 
+/// Adds [`FlyByCameraConfig`] resource and internals systems gated by [`is_active`] run criteria
+/// grouped on [`CameraUpdate`] system set.
 pub struct FlyByCameraPlugin;
 
 impl Plugin for FlyByCameraPlugin {
     fn build(&self, app: &mut App) {
-        let camera_system_set = SystemSet::new()
-            .with_run_criteria(is_active)
-            .label(CameraUpdate);
-
-        #[cfg(feature = "flyby_controls")]
-        let camera_system_set = camera_system_set
-            .with_system(move_camera)
-            .with_system(rotate_camera);
-
-        app.add_startup_system(setup)
-            .add_system_set(camera_system_set);
+        app.init_resource::<FlyByCameraConfig>().add_system_set(
+            SystemSet::new()
+                .with_run_criteria(is_active)
+                .label(CameraUpdate)
+                .with_system(move_camera)
+                .with_system(rotate_camera),
+        );
     }
 }
 
+/// [`SystemLabel`] used by internals systems.
 #[derive(SystemLabel)]
 pub struct CameraUpdate;
 
+/// Component used to tag entity camera.
+/// There can be only one Entity with this component.
 #[derive(Component, Reflect, Default)]
 #[reflect(Component)]
 pub struct FlyByCamera;
 
-#[cfg(feature = "flyby_controls")]
+/// Key bindings used internal systems to move and rotate camera.
 #[derive(Debug)]
 pub struct KeyBindings {
+    /// Forwards move key binding, defaults to [`KeyCode::W`].
     pub forward: KeyCode,
+
+    /// Backwards move key binding, defaults to [`KeyCode::S`].
     pub backward: KeyCode,
+
+    /// Leftwards move key binding, defaults to [`KeyCode::A`].
     pub left: KeyCode,
+
+    /// Rightwards move key binding, defaults to [`KeyCode::D`].
     pub right: KeyCode,
+
+    /// Upwards move key binding, defaults to [`KeyCode::Space`].
     pub up: KeyCode,
+
+    /// Downwards move key binding, defaults to [`KeyCode::LControl`].
     pub down: KeyCode,
+
+    /// Move speed boost key binding, defaults to [`KeyCode::LShift`].
     pub boost: KeyCode,
 }
 
-#[cfg(feature = "flyby_controls")]
 impl Default for KeyBindings {
     fn default() -> Self {
         Self {
@@ -57,15 +69,22 @@ impl Default for KeyBindings {
     }
 }
 
+/// Allows to configure [`FlyByCamera`] behavior.
 #[derive(Debug)]
 pub struct FlyByCameraConfig {
+    /// Enable or disable internal systems. This flag is used by [`is_active`] run criteria.
     pub active: bool,
-    
+
+    /// Move speed in units.
     pub move_speed: f32,
+
+    /// Move speed when [`KeyBindings::boost`] is enabled
     pub move_speed_boost: f32,
+
+    /// Rotate speed in units.
     pub rotate_speed: f32,
 
-    #[cfg(feature = "flyby_controls")]
+    /// Key bindings used by camera. See [`KeyBindings`] for more info.
     pub bindings: KeyBindings,
 }
 
@@ -77,16 +96,12 @@ impl Default for FlyByCameraConfig {
             rotate_speed: PI / 25.0,
             active: false,
 
-            #[cfg(feature = "flyby_controls")]
             bindings: KeyBindings::default(),
         }
     }
 }
 
-fn setup(mut commands: Commands) {
-    commands.insert_resource(FlyByCameraConfig::default());
-}
-
+/// Returns [`ShouldRun::Yes`] when [`FlyByCameraConfig::active`] is true.
 pub fn is_active(config: Res<FlyByCameraConfig>) -> ShouldRun {
     if config.active {
         ShouldRun::Yes
@@ -95,7 +110,8 @@ pub fn is_active(config: Res<FlyByCameraConfig>) -> ShouldRun {
     }
 }
 
-#[cfg(feature = "flyby_controls")]
+/// Move camera around using [`FlyByCameraConfig`] configuration settings.
+/// This system is gated by [`is_active`] run criteria.
 fn move_camera(
     time: Res<Time>,
     input: Res<Input<KeyCode>>,
@@ -123,7 +139,8 @@ fn move_camera(
     }
 }
 
-#[cfg(feature = "flyby_controls")]
+/// Rotate camera using [`FlyByCameraConfig`] configuration settings.
+/// This system is gated by [`is_active`] run criteria.
 fn rotate_camera(
     time: Res<Time>,
     mut motion_evt: EventReader<MouseMotion>,
@@ -155,7 +172,6 @@ fn rotate_camera(
     }
 }
 
-#[cfg(feature = "flyby_controls")]
 fn calc_input_vector(input: &Res<Input<KeyCode>>, bindings: &KeyBindings) -> Vec3 {
     let mut res = Vec3::ZERO;
 

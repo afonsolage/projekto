@@ -6,6 +6,7 @@ use self::fly_by::FlyByCameraPlugin;
 pub mod birds_eye;
 pub mod fly_by;
 
+/// This is a wrapper plugin which justs adds [`FlyByCameraPlugin`] and [`BirdsEyeCameraPlugin`]
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
