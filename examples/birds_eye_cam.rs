@@ -1,7 +1,7 @@
 use bevy::{prelude::*, window};
 use bevy_inspector_egui::WorldInspectorPlugin;
 use projekto_camera::{
-    birds_eye::{BirdsEyeCamera, BirdsEyeCameraConfig, BirdsEyeCameraTarget},
+    birds_eye::{BirdsEyeCamera, BirdsEyeCameraTarget},
     CameraPlugin,
 };
 
@@ -12,7 +12,6 @@ fn main() {
         .add_plugin(CameraPlugin)
         .add_system(window::close_on_esc)
         .add_system(move_target)
-        .add_system(move_camera)
         .add_startup_system(setup_environment)
         .run();
 }
@@ -30,49 +29,6 @@ fn move_target(
     if let Ok(mut transform) = q.get_single_mut() {
         transform.translation += input_vec * time.delta_seconds() * 5.0;
     }
-}
-
-fn move_camera(
-    input: Res<Input<KeyCode>>,
-    time: Res<Time>,
-    mut config: ResMut<BirdsEyeCameraConfig>,
-) {
-    let mut delta = Vec3::ZERO;
-
-    if input.pressed(KeyCode::Right) {
-        delta.x = -config.rotate_speed * time.delta_seconds();
-    } else if input.pressed(KeyCode::Left) {
-        delta.x = config.rotate_speed * time.delta_seconds();
-    }
-
-    if input.pressed(KeyCode::Up) {
-        delta.y = config.rotate_speed * time.delta_seconds();
-    } else if input.pressed(KeyCode::Down) {
-        delta.y = -config.rotate_speed * time.delta_seconds();
-    }
-
-    if input.pressed(KeyCode::PageUp) {
-        delta.z = -config.zoom_speed * time.delta_seconds();
-    } else if input.pressed(KeyCode::PageDown) {
-        delta.z = config.zoom_speed * time.delta_seconds();
-    }
-
-    if delta == Vec3::ZERO {
-        return;
-    }
-
-    config.azimuthal_angle += delta.x;
-    config.polar_angle += delta.y;
-    config.radial_distance += delta.z;
-
-    use std::f32::consts;
-
-    // config.azimuthal_angle = config.azimuthal_angle.clamp(0.0, consts::TAU);
-    config.polar_angle = config.polar_angle.clamp(
-        0.0 + consts::FRAC_PI_8,
-        consts::FRAC_PI_2 - consts::FRAC_PI_8,
-    );
-    config.radial_distance = config.radial_distance.clamp(1.0, 30.0);
 }
 
 fn setup_environment(

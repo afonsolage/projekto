@@ -67,6 +67,10 @@ opt-level = 3
 name = "main"
 path = "src/main.rs"
 
-[[bin]]
+[[example]]
 name = "birds_eye_cam"
-path = "snippets/birds_eye_cam.rs"
+path = "examples/birds_eye_cam.rs"
+
+[[example]]
+name = "swap_cam"
+path = "examples/swap_cam.rs"

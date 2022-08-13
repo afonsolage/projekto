@@ -7,3 +7,9 @@ readme = "README.md"
 
 [dependencies]
 bevy = { version = "0.8", default-features = false }
+
+
+[features]
+default = ["flyby_controls", "birdseye_controls"]
+flyby_controls = []
+birdseye_controls = []
