@@ -156,7 +156,7 @@ fn target_moved(
             return;
         }
         Err(QuerySingleError::MultipleEntities(_)) => {
-            panic!("Multiple birds eye camera target detected.");
+            panic!("Multiple orbit camera target detected.");
         }
     };
 
@@ -185,7 +185,7 @@ fn settings_changed(
             return;
         }
         Err(QuerySingleError::MultipleEntities(_)) => {
-            panic!("Multiple birds eye camera target detected.");
+            panic!("Multiple orbit camera target detected.");
         }
     };
 

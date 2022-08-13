@@ -13,17 +13,20 @@ use bevy_inspector_egui;
 mod macros;
 
 mod debug;
+use camera_controller::CameraControllerPlugin;
 use debug::DebugPlugin;
 
 mod world;
 use projekto_camera::{
     orbit::{OrbitCamera, OrbitCameraTarget},
-    CameraPlugin,
+    CameraPlugin, fly_by::FlyByCamera,
 };
 use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
 
 mod ui;
 use ui::UiPlugin;
+
+mod camera_controller;
 
 fn main() {
     // env_logger::init();
@@ -42,6 +45,7 @@ fn main() {
     .add_plugin(CameraPlugin)
     .add_plugin(WorldPlugin)
     .add_plugin(UiPlugin)
+    .add_plugin(CameraControllerPlugin)
     .add_startup_system(setup);
 
     #[cfg(feature = "inspector")]
@@ -59,9 +63,8 @@ fn setup(
     commands
         .spawn_bundle(Camera3dBundle::default())
         .insert(OrbitCamera)
-        .insert(Name::new("Main Camera"))
-        .insert(LandscapeCenter)
-        .insert(TerraformationCenter);
+        .insert(FlyByCamera)
+        .insert(Name::new("Main Camera"));
 
     // focus
     commands
@@ -75,6 +78,8 @@ fn setup(
             material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
             ..Default::default()
         })
+        .insert(TerraformationCenter)
+        .insert(LandscapeCenter)
         .insert(OrbitCameraTarget);
 
     //X axis
