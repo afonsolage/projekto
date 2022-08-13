@@ -1,15 +1,28 @@
 use bevy::{prelude::*, window::close_on_esc};
 use bevy_inspector_egui::WorldInspectorPlugin;
-use projekto_camera::{CameraPlugin, MainCamera};
+use projekto_camera::{birds_eye::BirdsEyeCameraTarget, CameraPlugin, MainCamera};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(WorldInspectorPlugin::default())
         .add_plugin(CameraPlugin)
-        .add_system(close_on_esc)
+        // .add_system(close_on_esc)
+        .add_system(move_target)
         .add_startup_system(setup_environment)
         .run();
+}
+
+fn move_target(
+    input: Res<Input<KeyCode>>,
+    time: Res<Time>,
+    mut q: Query<&mut Transform, With<BirdsEyeCameraTarget>>,
+) {
+    if let Ok(mut transform) = q.get_single_mut() {
+        let input_vec = calc_input_vector(&input);
+
+        transform.translation += input_vec * time.delta_seconds() * 5.0;
+    }
 }
 
 fn setup_environment(
@@ -24,16 +37,19 @@ fn setup_environment(
         .insert(Transform::from_xyz(5.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y));
 
     // target
-    commands.spawn_bundle(PbrBundle {
-        transform: Transform::from_xyz(0.0, 5.0, 0.0),
-        mesh: meshes.add(Mesh::from(shape::Capsule {
-            radius: 0.25,
-            depth: 1.5,
-            ..default()
-        })),
-        material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
-        ..Default::default()
-    });
+    commands
+        .spawn_bundle(PbrBundle {
+            transform: Transform::from_xyz(0.0, 5.0, 0.0),
+            mesh: meshes.add(Mesh::from(shape::Capsule {
+                radius: 0.25,
+                depth: 1.5,
+                ..default()
+            })),
+            material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+            ..Default::default()
+        })
+        .insert(BirdsEyeCameraTarget)
+        .insert(Name::new("Target"));
 
     //X axis
     commands.spawn_bundle(PbrBundle {
@@ -81,4 +97,34 @@ fn setup_environment(
         transform: Transform::from_xyz(4.0, 8.0, 4.0),
         ..Default::default()
     });
+}
+
+fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {
+    let mut res = Vec3::ZERO;
+
+    if input.pressed(KeyCode::W) {
+        res.z += 1.0
+    }
+
+    if input.pressed(KeyCode::S) {
+        res.z -= 1.0
+    }
+
+    if input.pressed(KeyCode::D) {
+        res.x += 1.0
+    }
+
+    if input.pressed(KeyCode::A) {
+        res.x -= 1.0
+    }
+
+    if input.pressed(KeyCode::Space) {
+        res.y += 1.0
+    }
+
+    if input.pressed(KeyCode::LControl) {
+        res.y -= 1.0
+    }
+
+    res
 }

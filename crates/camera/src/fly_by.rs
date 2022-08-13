@@ -9,7 +9,7 @@ pub struct FlyByCameraPlugin;
 impl Plugin for FlyByCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup)
-            .add_system(grab_mouse)
+            // .add_system(grab_mouse)
             .add_system_set(
                 SystemSet::new()
                     .with_run_criteria(is_active)
@@ -106,33 +106,33 @@ fn rotate_camera(
     }
 }
 
-fn grab_mouse(
-    mut windows: ResMut<Windows>,
-    mouse_btn: Res<Input<MouseButton>>,
-    key_btn: Res<Input<KeyCode>>,
-    mut config: ResMut<FlyByCameraConfig>,
-    #[cfg(feature = "inspector")] egui_context: Option<ResMut<EguiContext>>,
-) {
-    #[cfg(feature = "inspector")]
-    if let Some(mut context) = egui_context {
-        let ctx = context.ctx_mut();
-        if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
-            return;
-        }
-    }
+// fn grab_mouse(
+//     mut windows: ResMut<Windows>,
+//     mouse_btn: Res<Input<MouseButton>>,
+//     key_btn: Res<Input<KeyCode>>,
+//     mut config: ResMut<FlyByCameraConfig>,
+//     #[cfg(feature = "inspector")] egui_context: Option<ResMut<EguiContext>>,
+// ) {
+//     #[cfg(feature = "inspector")]
+//     if let Some(mut context) = egui_context {
+//         let ctx = context.ctx_mut();
+//         if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
+//             return;
+//         }
+//     }
 
-    if let Some(window) = windows.get_primary_mut() {
-        if window.cursor_visible() && mouse_btn.just_pressed(MouseButton::Left) {
-            window.set_cursor_visibility(false);
-            window.set_cursor_lock_mode(true);
-            config.active = true;
-        } else if !window.cursor_visible() && key_btn.just_pressed(KeyCode::Escape) {
-            window.set_cursor_visibility(true);
-            window.set_cursor_lock_mode(false);
-            config.active = false;
-        }
-    }
-}
+//     if let Some(window) = windows.get_primary_mut() {
+//         if window.cursor_visible() && mouse_btn.just_pressed(MouseButton::Left) {
+//             window.set_cursor_visibility(false);
+//             window.set_cursor_lock_mode(true);
+//             config.active = true;
+//         } else if !window.cursor_visible() && key_btn.just_pressed(KeyCode::Escape) {
+//             window.set_cursor_visibility(true);
+//             window.set_cursor_lock_mode(false);
+//             config.active = false;
+//         }
+//     }
+// }
 
 fn calc_forward_vector(t: &Transform) -> Vec3 {
     t.rotation.mul_vec3(Vec3::Z).normalize() * -1.0
