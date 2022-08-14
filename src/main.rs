@@ -4,7 +4,9 @@
 #![feature(test)]
 #![feature(once_cell)]
 
-use bevy::{prelude::*, render::texture::ImageSettings, window::PresentMode};
+use bevy::{
+    asset::AssetServerSettings, prelude::*, render::texture::ImageSettings, window::PresentMode,
+};
 
 #[cfg(feature = "inspector")]
 use bevy_inspector_egui;
@@ -43,6 +45,10 @@ fn main() {
     .insert_resource(Msaa { samples: 4 })
     // This may cause problems later on. Ideally this setup should be done per image
     .insert_resource(ImageSettings::default_nearest())
+    .insert_resource(AssetServerSettings {
+        watch_for_changes: true,
+        ..default()
+    })
     .add_plugins(DefaultPlugins)
     .add_plugin(DebugPlugin)
     .add_plugin(CameraPlugin)

@@ -53,6 +53,7 @@ dev = [
      "bevy/bevy_winit",
      "bevy/bevy_render",
      "bevy/png",
+     "bevy/filesystem_watcher",
 ]
 
 perf_counter = ["dep:once_cell"]

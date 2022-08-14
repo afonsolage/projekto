@@ -2,7 +2,9 @@ use bevy::{
     ecs::{query::QuerySingleError, schedule::ShouldRun},
     prelude::*,
 };
-use projekto_camera::orbit::OrbitCamera;
+use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
+
+use crate::world::rendering::{ChunkMaterial, ChunkMaterialHandle};
 pub struct CharacterControllerPlugin;
 
 impl Plugin for CharacterControllerPlugin {
@@ -13,6 +15,7 @@ impl Plugin for CharacterControllerPlugin {
                     .with_run_criteria(is_active)
                     .with_system(move_character)
                     .with_system(sync_rotation)
+                    .with_system(update_clip_height)
                     .label(CharacterUpdate),
             );
     }
@@ -38,8 +41,11 @@ impl Default for CharacterControllerConfig {
     }
 }
 
-fn is_active(config: Res<CharacterControllerConfig>) -> ShouldRun {
-    if config.active {
+fn is_active(
+    char_config: Res<CharacterControllerConfig>,
+    cam_config: Res<OrbitCameraConfig>,
+) -> ShouldRun {
+    if char_config.active && cam_config.active {
         ShouldRun::Yes
     } else {
         ShouldRun::No
@@ -131,4 +137,24 @@ fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {
     }
 
     res
+}
+
+fn update_clip_height(
+    handle: Res<ChunkMaterialHandle>,
+    mut materials: ResMut<Assets<ChunkMaterial>>,
+    mut last_height: Local<f32>,
+    q: Query<&Transform, (With<CharacterController>, Changed<Transform>)>,
+) {
+    let transform = match q.get_single() {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+
+    if transform.translation.y.floor() != *last_height {
+        *last_height = transform.translation.y.floor();
+
+        if let Some(mut material) = materials.get_mut(&handle.0) {
+            material.clip_height = *last_height;
+        }
+    }
 }

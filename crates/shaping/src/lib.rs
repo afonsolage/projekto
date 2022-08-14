@@ -255,7 +255,7 @@ All generated indices will be relative to a triangle list.
 fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
     let mut vertices = vec![];
     let kinds_descs = voxel::KindsDescs::get();
-    let tile_texture_size = 1.0 / kinds_descs.count_tiles() as f32;
+    let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
 
     for face in faces {
         let normal = face.side.normal();
@@ -294,7 +294,7 @@ fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
             (0.0, 0.0).into(),
         ];
 
-        let light_fraction = 1.0 / voxel::Light::MAX_NATURAL_INTENSITY as f32;
+        let light_fraction =(voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
 
         for (i, v) in faces_vertices.into_iter().enumerate() {
             vertices.push(VoxelVertex {

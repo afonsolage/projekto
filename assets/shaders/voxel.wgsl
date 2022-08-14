@@ -18,6 +18,7 @@ struct VertexOutput {
 
 struct MaterialData {
     tile_texture_size: f32,
+    clip_height: f32,
 };
 
 @group(1) @binding(0)
@@ -32,14 +33,43 @@ var<uniform> material_data: MaterialData;
 @group(2) @binding(0)
 var<uniform> mesh: Mesh;
 
+let clipped_vertex: vec3<f32> = vec3<f32>(-2.0, -2.0, -2.0);
+let clipped_light: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
+let clipped_tile_coord_start: vec2<f32> = vec2<f32>(0.0, 0.0);
+
 @vertex
-fn vertex(vertex: Vertex) -> VertexOutput {
+fn vertex(
+    vertex: Vertex, 
+    @builtin(vertex_index) vertex_index: u32
+) -> VertexOutput {
     var out: VertexOutput;
 
-    out.clip_position = view.view_proj * mesh.model * vec4<f32>(vertex.position, 1.0);
-    out.light_intensity = vertex.light;
+    var clip_height = material_data.clip_height;
+
+    var position = vertex.position;
+    var light_intensity = vertex.light;
+    var tile_coord_start = vertex.tile_coord_start;
+
+    if vertex.normal.y > 0.0 && vertex.position.y >= clip_height {
+        position.y = clip_height;
+        light_intensity = clipped_light;
+        tile_coord_start = clipped_tile_coord_start;
+    } else if vertex.normal.y < 0.0 && vertex.position.y >= clip_height {
+        position = clipped_vertex;
+    } else {
+        var vertex_index_mod = vertex_index % u32(4);
+
+        if vertex.normal.y == 0.0 && 
+            (vertex.position.y > clip_height ||
+                vertex.position.y == clip_height && vertex_index_mod < u32(2)) {
+            position = clipped_vertex;
+        }
+    }
+
+    out.clip_position = view.view_proj * mesh.model * vec4<f32>(position, 1.0);
+    out.light_intensity = light_intensity;
     out.uv = vertex.uv;
-    out.tile_coord_start = vertex.tile_coord_start;
+    out.tile_coord_start = tile_coord_start;
 
     return out;
 }

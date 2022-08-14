@@ -15,6 +15,8 @@ pub struct ChunkMaterial {
     pub texture: Handle<Image>,
     #[uniform(2)]
     pub tile_texture_size: f32,
+    #[uniform(2)]
+    pub clip_height: f32,
 }
 
 impl ChunkMaterial {

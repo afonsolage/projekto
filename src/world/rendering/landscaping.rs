@@ -44,6 +44,7 @@ fn setup_resources(
 ) {
     trace_system_run!();
     let material = materials.add(ChunkMaterial {
+        clip_height: f32::MAX,
         tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
         texture: kinds_res.atlas.clone(),
     });
