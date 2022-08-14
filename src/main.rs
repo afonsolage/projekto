@@ -14,12 +14,14 @@ mod macros;
 
 mod debug;
 use camera_controller::CameraControllerPlugin;
+use character_controller::{CharacterController, CharacterControllerPlugin};
 use debug::DebugPlugin;
 
 mod world;
 use projekto_camera::{
+    fly_by::FlyByCamera,
     orbit::{OrbitCamera, OrbitCameraTarget},
-    CameraPlugin, fly_by::FlyByCamera,
+    CameraPlugin,
 };
 use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
 
@@ -27,6 +29,7 @@ mod ui;
 use ui::UiPlugin;
 
 mod camera_controller;
+mod character_controller;
 
 fn main() {
     // env_logger::init();
@@ -46,6 +49,7 @@ fn main() {
     .add_plugin(WorldPlugin)
     .add_plugin(UiPlugin)
     .add_plugin(CameraControllerPlugin)
+    .add_plugin(CharacterControllerPlugin)
     .add_startup_system(setup);
 
     #[cfg(feature = "inspector")]
@@ -64,6 +68,9 @@ fn setup(
         .spawn_bundle(Camera3dBundle::default())
         .insert(OrbitCamera)
         .insert(FlyByCamera)
+        .insert(
+            Transform::from_xyz(8.660, 25.0, 0.0).looking_at(Vec3::new(0.0, 20.0, 0.0), Vec3::Y),
+        )
         .insert(Name::new("Main Camera"));
 
     // focus
@@ -80,7 +87,8 @@ fn setup(
         })
         .insert(TerraformationCenter)
         .insert(LandscapeCenter)
-        .insert(OrbitCameraTarget);
+        .insert(OrbitCameraTarget)
+        .insert(CharacterController);
 
     //X axis
     commands.spawn_bundle(PbrBundle {

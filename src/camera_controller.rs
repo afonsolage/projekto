@@ -13,7 +13,7 @@ impl Plugin for CameraControllerPlugin {
 }
 
 fn setup_camera(mut orbit_config: ResMut<OrbitCameraConfig>, mut flyby_config: ResMut<FlyByCameraConfig>) {
-    orbit_config.rotate_speed = 1.0;
+    orbit_config.key_rotate_speed = 1.0;
     flyby_config.rotate_speed = 1.0;
 }
 
