@@ -1,4 +1,8 @@
-use bevy::{ecs::query::QuerySingleError, prelude::*};
+use bevy::{
+    ecs::query::QuerySingleError,
+    input::mouse::{MouseMotion, MouseWheel},
+    prelude::*,
+};
 
 use std::f32::consts::PI;
 
@@ -15,7 +19,8 @@ impl Plugin for OrbitCameraPlugin {
                 .with_run_criteria(is_active)
                 .with_system(target_moved)
                 .with_system(settings_changed)
-                .with_system(move_camera)
+                .with_system(move_camera_keycode)
+                .with_system(move_camera_mouse)
                 .label(CameraUpdate),
         );
     }
@@ -94,14 +99,39 @@ pub struct OrbitCameraConfig {
     /// Rotation, in radius, around the azimuthal angle (up-down) of the target.
     pub azimuthal_angle: f32,
 
-    /// Rotation speed in units.
-    pub rotate_speed: f32,
+    /// Rotation speed in units when using keys.
+    pub key_rotate_speed: f32,
 
-    /// Zoom speed in units.
-    pub zoom_speed: f32,
+    /// Zoom speed in units when using keys.
+    pub key_zoom_speed: f32,
 
     /// Key bindings used by camera. See [`KeyBindings`] for more info.
-    pub bindings: KeyBindings,
+    pub key_bindings: KeyBindings,
+
+    /// Rotation speed in units when using mouse.
+    pub mouse_rotate_speed: f32,
+
+    /// Zoom speed in units when using mouse.
+    pub mouse_zoom_speed: f32,
+}
+
+impl OrbitCameraConfig {
+    fn apply_delta(&mut self, delta: Vec3) {
+        self.azimuthal_angle += delta.x;
+        self.polar_angle += delta.y;
+        self.radial_distance += delta.z;
+
+        use std::f32::consts;
+
+        self.polar_angle = self.polar_angle.clamp(
+            0.0 + consts::FRAC_PI_8,
+            consts::FRAC_PI_2 - consts::FRAC_PI_8,
+        );
+
+        self.radial_distance = self
+            .radial_distance
+            .clamp(self.min_distance, self.max_distance);
+    }
 }
 
 impl Default for OrbitCameraConfig {
@@ -116,10 +146,12 @@ impl Default for OrbitCameraConfig {
             polar_angle: std::f32::consts::FRAC_PI_6,
             azimuthal_angle: 0.0,
 
-            rotate_speed: PI / 5.0,
-            zoom_speed: 5.0,
+            key_rotate_speed: PI / 5.0,
+            key_zoom_speed: 5.0,
+            key_bindings: KeyBindings::default(),
 
-            bindings: KeyBindings::default(),
+            mouse_rotate_speed: PI / 5.0,
+            mouse_zoom_speed: 50.0,
         }
     }
 }
@@ -219,51 +251,65 @@ fn spherical_to_cartesian(radius: f32, polar: f32, azimuth: f32, center: Vec3) -
     ) + center
 }
 
-/// Move camera around using [`OrbitCameraConfig`] configuration settings.
+/// Move camera around using key binds in[`OrbitCameraConfig`] configuration settings.
 /// This system is gated by [`is_active`] run criteria.
 ///
 /// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on [`OrbitCameraConfig`]
-fn move_camera(
+fn move_camera_keycode(
     input: Res<Input<KeyCode>>,
     time: Res<Time>,
     mut config: ResMut<OrbitCameraConfig>,
 ) {
     let mut delta = Vec3::ZERO;
 
-    if input.pressed(config.bindings.right) {
-        delta.x = -config.rotate_speed * time.delta_seconds();
-    } else if input.pressed(config.bindings.left) {
-        delta.x = config.rotate_speed * time.delta_seconds();
+    if input.pressed(config.key_bindings.right) {
+        delta.x = -config.key_rotate_speed * time.delta_seconds();
+    } else if input.pressed(config.key_bindings.left) {
+        delta.x = config.key_rotate_speed * time.delta_seconds();
     }
 
-    if input.pressed(config.bindings.up) {
-        delta.y = config.rotate_speed * time.delta_seconds();
-    } else if input.pressed(config.bindings.down) {
-        delta.y = -config.rotate_speed * time.delta_seconds();
+    if input.pressed(config.key_bindings.up) {
+        delta.y = config.key_rotate_speed * time.delta_seconds();
+    } else if input.pressed(config.key_bindings.down) {
+        delta.y = -config.key_rotate_speed * time.delta_seconds();
     }
 
-    if input.pressed(config.bindings.zoom_in) {
-        delta.z = -config.zoom_speed * time.delta_seconds();
-    } else if input.pressed(config.bindings.zoom_out) {
-        delta.z = config.zoom_speed * time.delta_seconds();
+    if input.pressed(config.key_bindings.zoom_in) {
+        delta.z = -config.key_zoom_speed * time.delta_seconds();
+    } else if input.pressed(config.key_bindings.zoom_out) {
+        delta.z = config.key_zoom_speed * time.delta_seconds();
     }
 
-    if delta == Vec3::ZERO {
-        return;
+    if delta != Vec3::ZERO {
+        config.apply_delta(delta);
+    }
+}
+
+/// Move camera around using mouse.
+/// This system is gated by [`is_active`] run criteria.
+///
+/// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on [`OrbitCameraConfig`]
+fn move_camera_mouse(
+    input: Res<Input<MouseButton>>,
+    mut mouse_move: EventReader<MouseMotion>,
+    mut mouse_wheel: EventReader<MouseWheel>,
+    time: Res<Time>,
+    mut config: ResMut<OrbitCameraConfig>,
+) {
+    let mut delta = Vec3::ZERO;
+
+    if input.pressed(MouseButton::Right) {
+        for evt in mouse_move.iter() {
+            delta.x += evt.delta.x * time.delta_seconds() * config.mouse_rotate_speed;
+            delta.y += evt.delta.y * time.delta_seconds() * config.mouse_rotate_speed;
+        }
     }
 
-    config.azimuthal_angle += delta.x;
-    config.polar_angle += delta.y;
-    config.radial_distance += delta.z;
+    for evt in mouse_wheel.iter() {
+        delta.z -= evt.y * time.delta_seconds() * config.mouse_zoom_speed;
+    }
 
-    use std::f32::consts;
-
-    config.polar_angle = config.polar_angle.clamp(
-        0.0 + consts::FRAC_PI_8,
-        consts::FRAC_PI_2 - consts::FRAC_PI_8,
-    );
-
-    config.radial_distance = config
-        .radial_distance
-        .clamp(config.min_distance, config.max_distance);
+    if delta != Vec3::ZERO {
+        config.apply_delta(delta);
+    }
 }
