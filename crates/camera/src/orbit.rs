@@ -96,6 +96,12 @@ pub struct OrbitCameraConfig {
     /// Rotation, in radius, around the polar angle (left-right) of the target.
     pub polar_angle: f32,
 
+    /// Minium polar angle to keep when orbiting downwards.
+    pub min_polar_angle: f32,
+
+    /// Maxium polar angle to keep when orbiting downwards.
+    pub max_polar_angle: f32,
+
     /// Rotation, in radius, around the azimuthal angle (up-down) of the target.
     pub azimuthal_angle: f32,
 
@@ -121,12 +127,9 @@ impl OrbitCameraConfig {
         self.polar_angle += delta.y;
         self.radial_distance += delta.z;
 
-        use std::f32::consts;
-
-        self.polar_angle = self.polar_angle.clamp(
-            0.0 + consts::FRAC_PI_8,
-            consts::FRAC_PI_2 - consts::FRAC_PI_8,
-        );
+        self.polar_angle = self
+            .polar_angle
+            .clamp(self.min_polar_angle, self.max_polar_angle);
 
         self.radial_distance = self
             .radial_distance
@@ -143,7 +146,10 @@ impl Default for OrbitCameraConfig {
             min_distance: 3.0,
             max_distance: 30.0,
 
-            polar_angle: std::f32::consts::FRAC_PI_6,
+            polar_angle: std::f32::consts::FRAC_PI_4,
+            min_polar_angle: std::f32::consts::FRAC_PI_4,
+            max_polar_angle: std::f32::consts::FRAC_PI_4,
+
             azimuthal_angle: 0.0,
 
             key_rotate_speed: PI / 5.0,
