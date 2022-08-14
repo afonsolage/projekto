@@ -13,6 +13,9 @@ mod meshing;
 pub use material::ChunkMaterial;
 pub use material::ChunkMaterialHandle;
 
+#[derive(Component)]
+pub struct LandscapeCenter;
+
 pub struct PipelinePlugin;
 impl Plugin for PipelinePlugin {
     fn build(&self, app: &mut App) {

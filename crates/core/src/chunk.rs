@@ -16,8 +16,8 @@ pub const Z_END: i32 = (Z_AXIS_SIZE - 1) as i32;
 
 pub const BUFFER_SIZE: usize = X_AXIS_SIZE * Z_AXIS_SIZE * Y_AXIS_SIZE;
 
-const X_SHIFT: usize = (Z_AXIS_SIZE.log2() + Z_SHIFT as u32) as usize;
-const Z_SHIFT: usize = Y_AXIS_SIZE.log2() as usize;
+const X_SHIFT: usize = (Z_AXIS_SIZE.ilog2() + Z_SHIFT as u32) as usize;
+const Z_SHIFT: usize = Y_AXIS_SIZE.ilog2() as usize;
 const Y_SHIFT: usize = 0;
 
 const X_MASK: usize = (X_AXIS_SIZE - 1) << X_SHIFT;

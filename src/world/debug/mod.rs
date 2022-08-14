@@ -4,8 +4,9 @@ use bevy::{
     prelude::*,
     render::mesh::{Indices, PrimitiveTopology},
 };
+use projekto_camera::fly_by::{self, FlyByCamera};
 
-use crate::{fly_by_camera::FlyByCamera, world::rendering::*};
+use crate::world::rendering::*;
 use projekto_core::*;
 use projekto_shaping as shaping;
 
@@ -23,15 +24,19 @@ impl Plugin for WireframeDebugPlugin {
             .add_startup_system(setup_wireframe_shader)
             .add_asset::<WireframeMaterial>()
             .add_plugin(MaterialPlugin::<WireframeMaterial>::default())
+            .add_system_set(
+                SystemSet::new()
+                    .with_run_criteria(fly_by::is_active)
+                    .with_system(do_raycast)
+                    .with_system(remove_voxel)
+                    .with_system(add_voxel),
+            )
             .add_system(toggle_mesh_wireframe)
             .add_system(toggle_chunk_voxels_wireframe)
             .add_system(toggle_landscape_pause)
             .add_system(draw_voxels)
-            .add_system(do_raycast)
             .add_system(draw_raycast)
-            .add_system(check_raycast_intersections)
-            .add_system(remove_voxel)
-            .add_system(add_voxel);
+            .add_system(check_raycast_intersections);
     }
 }
 
@@ -317,17 +322,13 @@ fn generate_voxel_edges_mesh(voxels: &[IVec3]) -> (Vec<[f32; 3]>, Vec<u32>) {
 fn do_raycast(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
-    q_cam: Query<(&Transform, &FlyByCamera)>,
+    q_cam: Query<&Transform, With<FlyByCamera>>,
 ) {
     if !keyboard.just_pressed(KeyCode::F3) {
         return;
     }
 
-    if let Ok((transform, camera)) = q_cam.get_single() {
-        if !camera.active {
-            return;
-        }
-
+    if let Ok(transform) = q_cam.get_single() {
         let raycast = RaycastDebug {
             origin: transform.translation,
             dir: transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0,
@@ -472,7 +473,7 @@ fn draw_raycast(
 }
 
 fn remove_voxel(
-    q_cam: Query<(&Transform, &FlyByCamera)>,
+    q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
     mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
     mut query: ChunkSystemRaycast,
@@ -507,11 +508,7 @@ fn remove_voxel(
             return;
         }
 
-        if let Ok((transform, camera)) = q_cam.get_single() {
-            if !camera.active {
-                return;
-            }
-
+        if let Ok(transform) = q_cam.get_single() {
             let origin = transform.translation;
             let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
             let range = 100.0;
@@ -522,7 +519,7 @@ fn remove_voxel(
 }
 
 fn add_voxel(
-    q_cam: Query<(&Transform, &FlyByCamera)>,
+    q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
     mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
     mut query: ChunkSystemRaycast,
@@ -564,11 +561,7 @@ fn add_voxel(
             return;
         }
 
-        if let Ok((transform, camera)) = q_cam.get_single() {
-            if !camera.active {
-                return;
-            }
-
+        if let Ok(transform) = q_cam.get_single() {
             let origin = transform.translation;
             let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
             let range = 100.0;

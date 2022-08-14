@@ -12,17 +12,24 @@ use bevy_inspector_egui;
 #[macro_use]
 mod macros;
 
-mod fly_by_camera;
-use fly_by_camera::FlyByCameraPlugin;
-
 mod debug;
+use camera_controller::CameraControllerPlugin;
+use character_controller::{CharacterController, CharacterControllerPlugin};
 use debug::DebugPlugin;
 
 mod world;
-use world::WorldPlugin;
+use projekto_camera::{
+    fly_by::FlyByCamera,
+    orbit::{OrbitCamera, OrbitCameraTarget},
+    CameraPlugin,
+};
+use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
 
 mod ui;
 use ui::UiPlugin;
+
+mod camera_controller;
+mod character_controller;
 
 fn main() {
     // env_logger::init();
@@ -38,9 +45,11 @@ fn main() {
     .insert_resource(ImageSettings::default_nearest())
     .add_plugins(DefaultPlugins)
     .add_plugin(DebugPlugin)
-    .add_plugin(FlyByCameraPlugin)
+    .add_plugin(CameraPlugin)
     .add_plugin(WorldPlugin)
     .add_plugin(UiPlugin)
+    .add_plugin(CameraControllerPlugin)
+    .add_plugin(CharacterControllerPlugin)
     .add_startup_system(setup);
 
     #[cfg(feature = "inspector")]
@@ -54,12 +63,32 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // cube
-    commands.spawn_bundle(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Cube { size: 0.1 })),
-        material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
-        ..Default::default()
-    });
+    // camera
+    commands
+        .spawn_bundle(Camera3dBundle::default())
+        .insert(OrbitCamera)
+        .insert(FlyByCamera)
+        .insert(
+            Transform::from_xyz(8.660, 25.0, 0.0).looking_at(Vec3::new(0.0, 20.0, 0.0), Vec3::Y),
+        )
+        .insert(Name::new("Main Camera"));
+
+    // focus
+    commands
+        .spawn_bundle(PbrBundle {
+            transform: Transform::from_xyz(0.0, 20.0, 0.0),
+            mesh: meshes.add(Mesh::from(shape::Capsule {
+                radius: 0.25,
+                depth: 1.5,
+                ..default()
+            })),
+            material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+            ..Default::default()
+        })
+        .insert(TerraformationCenter)
+        .insert(LandscapeCenter)
+        .insert(OrbitCameraTarget)
+        .insert(CharacterController);
 
     //X axis
     commands.spawn_bundle(PbrBundle {
