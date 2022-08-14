@@ -157,7 +157,7 @@ impl Default for OrbitCameraConfig {
             key_bindings: KeyBindings::default(),
 
             mouse_rotate_speed: PI / 5.0,
-            mouse_zoom_speed: 50.0,
+            mouse_zoom_speed: 500.0,
         }
     }
 }
