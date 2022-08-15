@@ -66,8 +66,13 @@ fn vertex(
     // 3 = LEFT-BACK
 
     // Top Face
-    if vertex.normal.y > 0.0 && vertex.position.y >= clip_height {
-        position = clipped_vertex;
+    if vertex.normal.y > 0.0 {
+        if vertex.position.y == clip_height {
+            light_intensity = clipped_light;
+            tile_coord_start = clipped_tile_coord_start;
+        } else if vertex.position.y > clip_height {
+            position = clipped_vertex;
+        }
     } else if vertex.normal.y < 0.0 && vertex.position.y >= clip_height {
         // Always clip bottom vertices.
         // TODO: Don't sent bottom faces to shader.
