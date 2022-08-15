@@ -154,7 +154,7 @@ fn update_clip_height(
         *last_height = transform.translation.y.floor();
 
         if let Some(mut material) = materials.get_mut(&handle.0) {
-            material.clip_height = *last_height;
+            material.clip_height = *last_height + 2.0;
         }
     }
 }

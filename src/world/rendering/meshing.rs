@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use bevy::{
     prelude::*,
-    render::mesh::{Indices, PrimitiveTopology},
+    render::mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
 };
 use projekto_core::voxel::VoxelVertex;
 
@@ -70,6 +70,7 @@ fn generate_mesh(vertices: &Vec<VoxelVertex>) -> Mesh {
     let mut uvs: Vec<[f32; 2]> = vec![];
     let mut tile_coord_start: Vec<[f32; 2]> = vec![];
     let mut lights: Vec<[f32; 3]> = vec![];
+    let mut occlusions: Vec<[u8; 4]> = vec![];
 
     let vertex_count = vertices.len();
 
@@ -79,6 +80,7 @@ fn generate_mesh(vertices: &Vec<VoxelVertex>) -> Mesh {
         uvs.push(vertex.uv.into());
         tile_coord_start.push(vertex.tile_coord_start.into());
         lights.push(vertex.light.into());
+        occlusions.push(vertex.occlusion);
     }
 
     mesh.set_indices(Some(Indices::U32(shaping::compute_indices(vertex_count))));
@@ -87,5 +89,9 @@ fn generate_mesh(vertices: &Vec<VoxelVertex>) -> Mesh {
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_attribute(ChunkMaterial::ATTRIBUTE_TILE_COORD_START, tile_coord_start);
     mesh.insert_attribute(ChunkMaterial::ATTRIBUTE_LIGHT, lights);
+    mesh.insert_attribute(
+        ChunkMaterial::ATTRIBUTE_OCCLUSION,
+        VertexAttributeValues::Uint8x4(occlusions),
+    );
     mesh
 }

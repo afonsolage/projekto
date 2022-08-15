@@ -319,6 +319,12 @@ pub(super) fn merge(
                 side,
                 kind,
                 light: smooth_light.get(side),
+                occlusion: [
+                    occlusion.get(v1).raw(),
+                    occlusion.get(v2).raw(),
+                    occlusion.get(v3).raw(),
+                    occlusion.get(v4).raw(),
+                ],
             })
         }
     }
@@ -330,7 +336,7 @@ mod tests {
     use bevy_utils::default;
 
     use super::*;
-    
+
     #[test]
     fn merge_right_faces() {
         /*

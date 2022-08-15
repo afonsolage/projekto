@@ -7,6 +7,7 @@ struct Vertex {
     @location(2) uv: vec2<f32>,
     @location(3) tile_coord_start: vec2<f32>,
     @location(4) light: vec3<f32>,
+    @location(5) occlusion: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -33,9 +34,16 @@ var<uniform> material_data: MaterialData;
 @group(2) @binding(0)
 var<uniform> mesh: Mesh;
 
-let clipped_vertex: vec3<f32> = vec3<f32>(-2.0, -2.0, -2.0);
+let clipped_vertex: vec4<f32> = vec4<f32>(-2.0, -2.0, -2.0, -2.0);
 let clipped_light: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
 let clipped_tile_coord_start: vec2<f32> = vec2<f32>(0.0, 0.0);
+
+let right_side_mask: u32 = 1u;
+let left_side_mask: u32 = 2u;
+let up_side_mask: u32 = 4u;
+let down_side_mask: u32 = 8u;
+let front_side_mask: u32 = 16u;
+let back_side_mask: u32 = 32u;
 
 @vertex
 fn vertex(
@@ -46,27 +54,30 @@ fn vertex(
 
     var clip_height = material_data.clip_height;
 
-    var position = vertex.position;
+    var position = vec4<f32>(vertex.position, 1.0);
     var light_intensity = vertex.light;
     var tile_coord_start = vertex.tile_coord_start;
 
-    if vertex.normal.y > 0.0 && vertex.position.y >= clip_height {
-        position.y = clip_height;
-        light_intensity = clipped_light;
-        tile_coord_start = clipped_tile_coord_start;
-    } else if vertex.normal.y < 0.0 && vertex.position.y >= clip_height {
-        position = clipped_vertex;
-    } else {
-        var vertex_index_mod = vertex_index % u32(4);
+    var face_vertex_idx = vertex_index % u32(4);
+    var occlusion = vertex.occlusion[face_vertex_idx];
+    // 0 = LEFT-FRONT
+    // 1 = RIGHT-FRONT
+    // 2 = RIGHT-BACK
+    // 3 = LEFT-BACK
 
-        if vertex.normal.y == 0.0 && 
-            (vertex.position.y > clip_height ||
-                vertex.position.y == clip_height && vertex_index_mod < u32(2)) {
-            position = clipped_vertex;
-        }
+    // Top Face
+    if vertex.normal.y > 0.0 && vertex.position.y >= clip_height {
+        position = clipped_vertex;
+    } else if vertex.normal.y < 0.0 && vertex.position.y >= clip_height {
+        // Always clip bottom vertices.
+        // TODO: Don't sent bottom faces to shader.
+        position = clipped_vertex;
+    } else if vertex.normal.y == 0.0 && vertex.position.y > clip_height {
+        // Clip non-top faces
+        position.y = clip_height;
     }
 
-    out.clip_position = view.view_proj * mesh.model * vec4<f32>(position, 1.0);
+    out.clip_position = view.view_proj * mesh.model * position;
     out.light_intensity = light_intensity;
     out.uv = vertex.uv;
     out.tile_coord_start = tile_coord_start;

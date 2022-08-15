@@ -25,6 +25,9 @@ impl ChunkMaterial {
 
     pub const ATTRIBUTE_LIGHT: MeshVertexAttribute =
         MeshVertexAttribute::new("Light", 66439, VertexFormat::Float32x3);
+
+    pub const ATTRIBUTE_OCCLUSION: MeshVertexAttribute =
+        MeshVertexAttribute::new("Occlusion", 66440, VertexFormat::Uint8x4);
 }
 impl Material for ChunkMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -47,6 +50,7 @@ impl Material for ChunkMaterial {
             Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
             ChunkMaterial::ATTRIBUTE_TILE_COORD_START.at_shader_location(3),
             ChunkMaterial::ATTRIBUTE_LIGHT.at_shader_location(4),
+            ChunkMaterial::ATTRIBUTE_OCCLUSION.at_shader_location(5),
         ])?;
         descriptor.vertex.buffers = vec![vertex_layout];
         Ok(())
