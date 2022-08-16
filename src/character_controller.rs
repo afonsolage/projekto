@@ -3,6 +3,7 @@ use bevy::{
     prelude::*,
 };
 use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
+use projekto_core::chunk;
 
 use crate::world::rendering::{ChunkMaterial, ChunkMaterialHandle};
 pub struct CharacterControllerPlugin;
@@ -154,7 +155,22 @@ fn update_clip_height(
         *last_height = transform.translation.y.floor();
 
         if let Some(mut material) = materials.get_mut(&handle.0) {
-            material.clip_height = *last_height + 2.0;
+            let (origin, map) = calc_clip_map(transform.translation);
+            material.clip_map_origin = origin;
+            material.clip_map = map;
         }
     }
+}
+
+fn calc_clip_map(position: Vec3) -> (Vec2, [Vec4; chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE]) {
+    let offset = Vec2::new(
+        chunk::X_AXIS_SIZE as f32 / 2.0,
+        chunk::Z_AXIS_SIZE as f32 / 2.0,
+    );
+    let origin = Vec2::new(position.x, position.z) - offset;
+
+    (
+        origin,
+        [Vec4::splat(position.y.floor()); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE],
+    )
 }

@@ -39,12 +39,13 @@ struct LandscapeMeta {
 
 fn setup_resources(
     mut commands: Commands,
-    mut materials: ResMut<Assets<ChunkMaterial>>,
+    mut normal_materials: ResMut<Assets<ChunkMaterial>>,
     kinds_res: Res<KindsAtlasRes>,
 ) {
     trace_system_run!();
-    let material = materials.add(ChunkMaterial {
-        clip_height: f32::MAX,
+    let material = normal_materials.add(ChunkMaterial {
+        clip_map_origin: Vec2::new(f32::MAX, f32::MAX),
+        clip_map: [Vec4::splat(f32::MAX); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE],
         tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
         texture: kinds_res.atlas.clone(),
     });

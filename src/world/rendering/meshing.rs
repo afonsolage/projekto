@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use bevy::{
     prelude::*,
-    render::mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
+    render::mesh::{Indices, PrimitiveTopology},
 };
 use projekto_core::voxel::VoxelVertex;
 
@@ -89,9 +89,5 @@ fn generate_mesh(vertices: &Vec<VoxelVertex>) -> Mesh {
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_attribute(ChunkMaterial::ATTRIBUTE_TILE_COORD_START, tile_coord_start);
     mesh.insert_attribute(ChunkMaterial::ATTRIBUTE_LIGHT, lights);
-    mesh.insert_attribute(
-        ChunkMaterial::ATTRIBUTE_OCCLUSION,
-        VertexAttributeValues::Uint8x4(occlusions),
-    );
     mesh
 }

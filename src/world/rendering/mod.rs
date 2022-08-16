@@ -6,8 +6,8 @@ use super::terraformation::prelude::*;
 
 pub use landscaping::LandscapeConfig;
 
-mod material;
 mod landscaping;
+mod material;
 mod meshing;
 
 pub use material::ChunkMaterial;
