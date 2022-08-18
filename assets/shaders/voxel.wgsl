@@ -7,7 +7,7 @@ struct Vertex {
     @location(2) uv: vec2<f32>,
     @location(3) tile_coord_start: vec2<f32>,
     @location(4) light: vec3<f32>,
-    // @location(5) occlusion: vec4<u32>,
+    @location(5) voxel: u32,
 };
 
 struct VertexOutput {
@@ -21,7 +21,6 @@ struct MaterialData {
     tile_texture_size: f32,
     clip_map_origin: vec2<f32>,
     clip_map: array<vec4<f32>,256>,
-    // clip_height: f32,
 };
 
 @group(1) @binding(0)
@@ -50,11 +49,6 @@ let clipped_tile_coord_start: vec2<f32> = vec2<f32>(0.0, 0.0);
 let no_clip_height: f32 = 9999.0;
 let chunk_axis_size: vec2<u32> = vec2<u32>(16u, 16u);
 
-//(116, 116) -> (115, 115)
-//(150, 150) -> (150, 150) - (100, 100) -> |(50, 50)| > (16, 16) -> false
-//(95, 95) -> (95, 95) - (100, 100) -> |(-5, -5)| > (16, 16) -> true
-//(110, 110) -> (110, 110) - (100, 100) -> |(10, 10)| > (16, 16) -> true
-
 fn is_on_clip_map_bounds(position: vec2<f32>) -> bool {
     if (position.x >= 0.0 && position.x < f32(chunk_axis_size.x) && position.y >= 0.0 && position.y < f32(chunk_axis_size.y)) {
         return true;
@@ -63,15 +57,24 @@ fn is_on_clip_map_bounds(position: vec2<f32>) -> bool {
     }
 }
 
-fn calc_clip_height(vertex: Vertex) -> f32 {
-    var vertex_world_pos = vec4<f32>(vertex.position, 1.0) * mesh.model;
-    var vertex_clip_map_pos = vertex_world_pos.xz - material_data.clip_map_origin;
+fn to_world(position: vec3<f32>) -> vec4<f32> {
+    return mesh.model * vec4<f32>(position, 1.0);
+}
 
-    if (is_on_clip_map_bounds(vertex_clip_map_pos) == false) {
+fn unpack_voxel(packed: u32) -> vec3<f32> {
+    return unpack4x8unorm(packed).xyz * 255.0;
+}
+
+fn calc_clip_height(vertex: Vertex, vertex_index: u32) -> f32 {
+    let voxel = unpack_voxel(vertex.voxel);
+    var voxel_world_pos = to_world(voxel);
+    var voxel_clip_map_pos = voxel_world_pos.xz - material_data.clip_map_origin;
+
+    if (is_on_clip_map_bounds(voxel_clip_map_pos) == false) {
         return no_clip_height;
     }
 
-    var clip_map_index = u32(vertex_clip_map_pos.x) * chunk_axis_size.y + u32(vertex_clip_map_pos.y);
+    var clip_map_index = u32(voxel_clip_map_pos.x) * chunk_axis_size.y + u32(voxel_clip_map_pos.y);
     return material_data.clip_map[clip_map_index].x;
 }
 
@@ -85,29 +88,50 @@ fn vertex(
     var position = vec4<f32>(vertex.position, 1.0);
     var light_intensity = vertex.light;
     var tile_coord_start = vertex.tile_coord_start;
+    var should_clip = false;
 
-    var clip_height = calc_clip_height(vertex);
-    // var face_vertex_idx = vertex_index % u32(4);
-    // var occlusion = vertex.occlusion[face_vertex_idx];
+    let clip_height = 255;//calc_clip_height(vertex, vertex_index);
+    let voxel = unpack_voxel(vertex.voxel);
 
-    // Top Face
-    if (vertex.normal.y > 0.0) {
-        if (vertex.position.y == clip_height) {
-            light_intensity = clipped_light;
-            tile_coord_start = clipped_tile_coord_start;
-        } else if (vertex.position.y > clip_height) {
-            position = clipped_vertex;
-        }
-    } else if (vertex.normal.y < 0.0 && vertex.position.y >= clip_height) {
-        // Always clip bottom vertices.
-        // TODO: Don't sent bottom faces to shader.
-        position = clipped_vertex;
-    } else if (vertex.normal.y == 0.0 && vertex.position.y > clip_height) {
-        // Clip non-top faces
-        position.y = clip_height;
+    let voxel = unpack_voxel(vertex.voxel);
+    var voxel_world_pos = to_world(voxel);
+    var voxel_clip_map_pos = voxel_world_pos.xz - material_data.clip_map_origin;
+
+    if (voxel_world_pos.x == -17.0 && voxel_world_pos.z == 17.0) {
+        light_intensity = vec3<f32>(0.0, 0.0, 0.0);
     }
 
-    out.clip_position = view.view_proj * mesh.model * position;
+    if (is_on_clip_map_bounds(voxel_clip_map_pos)) {
+        light_intensity = vec3<f32>(0.0, 0.0, 0.0);
+    }
+
+    // Top Face
+    // if (vertex.normal.y > 0.0) {
+    //     if (voxel.y == clip_height) {
+    //         light_intensity = clipped_light;
+    //         tile_coord_start = clipped_tile_coord_start;
+    //     } else if (voxel.y > clip_height) {
+    //         should_clip = true;
+    //     }
+    // } else if (vertex.normal.y < 0.0 && voxel.y >= clip_height) {
+    //     // Always clip bottom vertices.
+    //     // TODO: Don't sent bottom faces to shader.
+    //     should_clip = true;
+    // } else if (vertex.normal.y == 0.0) {
+    //     // Clip non-top faces 
+    //     if (voxel.y == clip_height + 1.0 && vertex.position.y > clip_height + 1.0) {
+    //         position.y = clip_height;
+    //     } else if (voxel.y > clip_height + 1.0) {
+    //         should_clip = true;
+    //     }
+    // }
+
+    if (should_clip) {
+        out.clip_position = clipped_vertex;
+    } else {
+        out.clip_position = view.view_proj * mesh.model * position ;
+    }
+
     out.light_intensity = light_intensity;
     out.uv = vertex.uv;
     out.tile_coord_start = tile_coord_start;

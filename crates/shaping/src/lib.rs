@@ -303,7 +303,7 @@ fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
                 uv: tile_uv[i],
                 tile_coord_start,
                 light: Vec3::splat(face.light[i] * light_fraction),
-                occlusion: face.occlusion,
+                voxel: face.voxel[i],
             });
         }
     }
