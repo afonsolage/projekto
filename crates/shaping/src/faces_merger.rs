@@ -19,7 +19,7 @@ fn should_skip_voxel(
 ) -> bool {
     kind.is_none()
         || merged[chunk::to_index(voxel)]
-        || (occlusion.get(voxel).is_occluded(side) && side != voxel::Side::Up)
+        || occlusion.get(voxel).is_occluded(side)
 }
 
 /**

@@ -48,6 +48,7 @@ fn setup_resources(
         clip_map: [Vec4::splat(f32::MAX); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE],
         tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
         texture: kinds_res.atlas.clone(),
+        clip_height: f32::MAX,
     });
 
     commands.insert_resource(ChunkMaterialHandle(material));

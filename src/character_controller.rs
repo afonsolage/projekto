@@ -143,7 +143,7 @@ fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {
 fn update_clip_height(
     handle: Res<ChunkMaterialHandle>,
     mut materials: ResMut<Assets<ChunkMaterial>>,
-    mut last_height: Local<f32>,
+    mut last_position: Local<IVec3>,
     q: Query<&Transform, (With<CharacterController>, Changed<Transform>)>,
 ) {
     let transform = match q.get_single() {
@@ -151,13 +151,14 @@ fn update_clip_height(
         Err(_) => return,
     };
 
-    if transform.translation.y.floor() != *last_height {
-        *last_height = transform.translation.y.floor();
+    if projekto_core::math::floor(transform.translation) != *last_position {
+        *last_position = projekto_core::math::floor(transform.translation);
 
         if let Some(mut material) = materials.get_mut(&handle.0) {
             let (origin, map) = calc_clip_map(transform.translation);
             material.clip_map_origin = origin;
             material.clip_map = map;
+            material.clip_height = last_position.y as f32;
         }
     }
 }

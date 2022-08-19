@@ -15,12 +15,15 @@ struct VertexOutput {
     @location(0) light_intensity: vec3<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) tile_coord_start: vec2<f32>,
+    @location(3) world_normal: vec3<f32>,
+    @location(4) world_pos: vec3<f32>,
 };
 
 struct MaterialData {
     tile_texture_size: f32,
     clip_map_origin: vec2<f32>,
     clip_map: array<vec4<f32>,256>,
+    clip_height: f32,
 };
 
 @group(1) @binding(0)
@@ -65,16 +68,22 @@ fn unpack_voxel(packed: u32) -> vec3<f32> {
     return unpack4x8unorm(packed).xyz * 255.0;
 }
 
+fn is_on_clip_map(position: vec4<f32>) -> bool {
+    var voxel_clip_map_pos = position.xz - material_data.clip_map_origin;
+    return is_on_clip_map_bounds(voxel_clip_map_pos);
+}
+
 fn calc_clip_height(vertex: Vertex, vertex_index: u32) -> f32 {
     let voxel = unpack_voxel(vertex.voxel);
     var voxel_world_pos = to_world(voxel);
-    var voxel_clip_map_pos = voxel_world_pos.xz - material_data.clip_map_origin;
 
-    if (is_on_clip_map_bounds(voxel_clip_map_pos) == false) {
+    if (is_on_clip_map(voxel_world_pos) == false) {
         return no_clip_height;
     }
 
+    var voxel_clip_map_pos = voxel_world_pos.xz - material_data.clip_map_origin;
     var clip_map_index = u32(voxel_clip_map_pos.x) * chunk_axis_size.y + u32(voxel_clip_map_pos.y);
+
     return material_data.clip_map[clip_map_index].x;
 }
 
@@ -90,38 +99,44 @@ fn vertex(
     var tile_coord_start = vertex.tile_coord_start;
     var should_clip = false;
 
-    let clip_height = 255;//calc_clip_height(vertex, vertex_index);
+    let clip_height = calc_clip_height(vertex, vertex_index) - 1.0;
     let voxel = unpack_voxel(vertex.voxel);
 
-    let voxel = unpack_voxel(vertex.voxel);
-    var voxel_world_pos = to_world(voxel);
-    var voxel_clip_map_pos = voxel_world_pos.xz - material_data.clip_map_origin;
+    let on_map = is_on_clip_map(to_world(voxel));
 
-    if (voxel_world_pos.x == -17.0 && voxel_world_pos.z == 17.0) {
-        light_intensity = vec3<f32>(0.0, 0.0, 0.0);
-    }
+    // let voxel = unpack_voxel(vertex.voxel);
+    // var voxel_world_pos = to_world(voxel);
+    // var voxel_clip_map_pos = voxel_world_pos.xz - material_data.clip_map_origin;
 
-    if (is_on_clip_map_bounds(voxel_clip_map_pos)) {
-        light_intensity = vec3<f32>(0.0, 0.0, 0.0);
-    }
+    // if (voxel_world_pos.x == -17.0 && voxel_world_pos.z == 17.0) {
+    //     light_intensity = vec3<f32>(0.0, 0.0, 0.0);
+    // }
+
+    // if (is_on_clip_map_bounds(voxel_clip_map_pos)) {
+    //     light_intensity = vec3<f32>(0.0, 0.0, 0.0);
+    // }
 
     // Top Face
-    // if (vertex.normal.y > 0.0) {
-    //     if (voxel.y == clip_height) {
-    //         light_intensity = clipped_light;
-    //         tile_coord_start = clipped_tile_coord_start;
-    //     } else if (voxel.y > clip_height) {
-    //         should_clip = true;
-    //     }
-    // } else if (vertex.normal.y < 0.0 && voxel.y >= clip_height) {
-    //     // Always clip bottom vertices.
-    //     // TODO: Don't sent bottom faces to shader.
-    //     should_clip = true;
-    // } else if (vertex.normal.y == 0.0) {
+    if (vertex.normal.y > 0.0) {
+        if (voxel.y == clip_height) {
+            light_intensity = clipped_light;
+            tile_coord_start = clipped_tile_coord_start;
+        } else if (on_map == true && voxel.y > clip_height) {
+            should_clip = true;
+        } 
+        // else if (on_map == false) {
+        //     position.y = material_data.clip_height;
+        //     light_intensity = clipped_light;
+        //     tile_coord_start = clipped_tile_coord_start;
+        // }
+    } else if (vertex.normal.y < 0.0 && voxel.y >= clip_height) {
+        // Always clip bottom vertices.
+        // TODO: Don't sent bottom faces to shader.
+        should_clip = true;
+    } 
+    // else if (vertex.normal.y == 0.0) {
     //     // Clip non-top faces 
-    //     if (voxel.y == clip_height + 1.0 && vertex.position.y > clip_height + 1.0) {
-    //         position.y = clip_height;
-    //     } else if (voxel.y > clip_height + 1.0) {
+    //     if (on_map == false || (on_map && true && voxel.y - 1.0 >= clip_height)) {
     //         should_clip = true;
     //     }
     // }
@@ -135,6 +150,8 @@ fn vertex(
     out.light_intensity = light_intensity;
     out.uv = vertex.uv;
     out.tile_coord_start = tile_coord_start;
+    out.world_normal = vertex.normal;
+    out.world_pos = (mesh.model * position).xyz;
 
     return out;
 }
@@ -143,12 +160,18 @@ struct FragmentInput {
     @location(0) light_intensity: vec3<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) tile_coord_start: vec2<f32>,
+    @location(3) world_normal: vec3<f32>,
+    @location(4) world_pos: vec3<f32>,
 };
 
 @fragment
 fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
+    let d = length(in.world_pos - view.world_position);
+
     let tiled_coord = in.uv % material_data.tile_texture_size;
-    let color = textureSample(atlas_texture, atlas_sampler, in.tile_coord_start + tiled_coord);
+    var color = textureSample(atlas_texture, atlas_sampler, in.tile_coord_start + tiled_coord);
+
+    color.a = 1.0;//clamp(d, 0.0, 1.0);
 
     return color * vec4<f32>(in.light_intensity, 1.0);
 }

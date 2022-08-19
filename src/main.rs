@@ -39,7 +39,7 @@ fn main() {
     let mut app = App::new();
 
     app.insert_resource(WindowDescriptor {
-        present_mode: PresentMode::AutoVsync,
+        present_mode: PresentMode::AutoNoVsync,
         ..Default::default()
     })
     .insert_resource(Msaa { samples: 4 })
@@ -56,7 +56,7 @@ fn main() {
     .add_plugin(UiPlugin)
     .add_plugin(CameraControllerPlugin)
     .add_plugin(CharacterControllerPlugin)
-    .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
+    // .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
     .add_startup_system(setup);
 
     #[cfg(feature = "inspector")]
@@ -65,15 +65,15 @@ fn main() {
     app.run();
 }
 
-fn limit_fps(time: Res<Time>) {
-    let target_fps = 60.0f32;
-    let frame_time = target_fps.recip();
+// fn limit_fps(time: Res<Time>) {
+//     let target_fps = 60.0f32;
+//     let frame_time = target_fps.recip();
 
-    let sleep = frame_time - time.delta_seconds();
-    if sleep > f32::EPSILON {
-        std::thread::sleep(std::time::Duration::from_secs_f32(sleep));
-    }
-}
+//     let sleep = frame_time - time.delta_seconds();
+//     if sleep > f32::EPSILON {
+//         std::thread::sleep(std::time::Duration::from_secs_f32(sleep));
+//     }
+// }
 
 fn setup(
     mut commands: Commands,
