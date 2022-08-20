@@ -11,7 +11,7 @@ use projekto_core::{chunk, voxel};
 
 use crate::world::{
     rendering::{ChunkEntityMap, ChunkLocal, ChunkMaterial},
-    terraformation::prelude::WorldRes,
+    terraformation::prelude::WorldRes, debug::DrawVoxels,
 };
 pub struct CharacterControllerPlugin;
 
@@ -288,13 +288,6 @@ fn update_view_frustum(
                 continue;
             }
 
-            // let light = chunk.lights.get(voxel);
-
-            // if light.get(voxel::LightTy::Natural) == voxel::Light::MAX_NATURAL_INTENSITY {
-            //     // This means it's an outside voxel, so skip it since there is no roof on top.
-            //     continue;
-            // }
-
             flooded_voxels.push(next_voxel);
             queue.push_back(next_voxel);
             walked.insert(next_voxel.as_ivec3());
@@ -312,7 +305,13 @@ fn update_chunk_material(
     chunk_map: Res<ChunkEntityMap>,
     mut materials: ResMut<Assets<ChunkMaterial>>,
     mut flooded: Local<Vec<Handle<ChunkMaterial>>>,
+    mut commands: Commands,
+    mut meta: Local<Option<Entity>>,
 ) {
+    if meta.is_none() {
+        *meta = Some(commands.spawn().id());
+    }
+
     match voxels {
         ViewFrustumChain::DoNothing => return,
         ViewFrustumChain::RevertMaterial => {
@@ -324,9 +323,18 @@ fn update_chunk_material(
                     material.clip_height = f32::MAX;
                 }
             }
+
+            commands.entity(meta.unwrap()).insert(DrawVoxels::default());
         },
         ViewFrustumChain::ClipMaterial(height, voxels_world) => {
             trace!("Clip!");
+
+            commands.entity(meta.unwrap()).insert(DrawVoxels {
+                color: "pink".into(),
+                voxels: voxels_world.iter().map(Vec3::as_ivec3).collect(),
+                offset: voxels_world[0],
+            });
+
             let chunk_voxels = voxels_world
                 .into_iter()
                 .map(|world| (chunk::to_local(world), voxel::to_local(world)))

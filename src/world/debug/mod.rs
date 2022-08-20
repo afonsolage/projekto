@@ -268,7 +268,7 @@ fn draw_voxels(
 ) {
     for (e, draw_voxels) in q.iter() {
         if draw_voxels.voxels.is_empty() {
-            debug!("Skipping draw voxels due to empty voxel list");
+            commands.entity(e).insert(Handle::<Mesh>::default());
             continue;
         }
 
