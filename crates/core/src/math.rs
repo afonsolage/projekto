@@ -36,11 +36,28 @@ pub fn abs_min_element(vec: Vec3) -> Vec3Element {
     }
 }
 
+pub fn abs_max_element(vec: Vec3) -> Vec3Element {
+    let vec = vec.abs();
+
+    if vec.x > vec.y && vec.x > vec.z {
+        Vec3Element::X
+    } else if vec.y > vec.x && vec.y > vec.z {
+        Vec3Element::Y
+    } else {
+        Vec3Element::Z
+    }
+}
+
 pub fn pack(x: u8, y: u8, z: u8, w: u8) -> u32 {
-    x as u32
-        | ((y as u32) << 8)
-        | ((z as u32) << 16)
-        | ((w as u32) << 24)
+    x as u32 | ((y as u32) << 8) | ((z as u32) << 16) | ((w as u32) << 24)
+}
+
+pub fn to_dir(world_dir: Vec3) -> IVec3 {
+    match abs_max_element(world_dir) {
+        Vec3Element::X => IVec3::X * world_dir.x.signum() as i32,
+        Vec3Element::Y => IVec3::Y * world_dir.x.signum() as i32,
+        Vec3Element::Z => IVec3::Z * world_dir.x.signum() as i32,
+    }
 }
 
 #[inline]
@@ -75,7 +92,7 @@ mod tests {
     fn pack() {
         let packed = super::pack(0, 0, 0, 0);
         assert_eq!(packed, 0);
-        
+
         let packed = super::pack(1, 0, 0, 0);
         assert_eq!(packed, 1);
 

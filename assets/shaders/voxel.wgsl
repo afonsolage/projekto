@@ -99,7 +99,7 @@ fn vertex(
     var tile_coord_start = vertex.tile_coord_start;
     var should_clip = false;
 
-    let clip_height = calc_clip_height(vertex, vertex_index) - 1.0;
+    let clip_height = 255.0;//calc_clip_height(vertex, vertex_index) - 1.0;
     let voxel = unpack_voxel(vertex.voxel);
 
     let on_map = is_on_clip_map(to_world(voxel));

@@ -105,7 +105,22 @@ fn setup(
         .insert(TerraformationCenter)
         .insert(LandscapeCenter)
         .insert(OrbitCameraTarget)
-        .insert(CharacterController);
+        .insert(CharacterController)
+        .with_children(|p| {
+            p.spawn_bundle(PbrBundle {
+                mesh: meshes.add(Mesh::from(shape::Box {
+                    min_x: 0.0,
+                    max_x: 0.05,
+                    min_y: 0.0,
+                    max_y: 0.05,
+                    min_z: 0.0,
+                    max_z: -0.5,
+                })),
+                material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
+                transform: Transform::from_xyz(0.0, 1.0, 0.0),
+                ..Default::default()
+            });
+        });
 
     //X axis
     commands.spawn_bundle(PbrBundle {
