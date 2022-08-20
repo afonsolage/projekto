@@ -85,15 +85,13 @@ fn setup(
         .spawn_bundle(Camera3dBundle::default())
         .insert(OrbitCamera)
         .insert(FlyByCamera)
-        .insert(
-            Transform::from_xyz(8.660, 25.0, 0.0).looking_at(Vec3::new(0.0, 20.0, 0.0), Vec3::Y),
-        )
+        .insert(Transform::from_xyz(0.0, 15.0, 5.0).looking_at(Vec3::new(2.0, 13.0, 7.0), Vec3::Y))
         .insert(Name::new("Main Camera"));
 
     // focus
     commands
         .spawn_bundle(PbrBundle {
-            transform: Transform::from_xyz(0.0, 20.0, 0.0),
+            transform: Transform::from_xyz(2.0, 13.0, 7.0),
             mesh: meshes.add(Mesh::from(shape::Capsule {
                 radius: 0.25,
                 depth: 1.5,
@@ -102,6 +100,7 @@ fn setup(
             material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
             ..Default::default()
         })
+        .insert(Name::new("Character"))
         .insert(TerraformationCenter)
         .insert(LandscapeCenter)
         .insert(OrbitCameraTarget)
@@ -117,7 +116,6 @@ fn setup(
                     max_z: -0.5,
                 })),
                 material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
-                transform: Transform::from_xyz(0.0, 1.0, 0.0),
                 ..Default::default()
             });
         });

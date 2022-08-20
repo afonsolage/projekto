@@ -1,4 +1,4 @@
-use bevy_math::{IVec3, Vec3};
+use bevy_math::{IVec2, IVec3, Vec3};
 //de::DeserializeOwned,
 use serde::{Deserialize, Serialize};
 
@@ -181,6 +181,11 @@ impl ChunkLight {
 #[inline]
 pub fn to_index(local: IVec3) -> usize {
     (local.x << X_SHIFT | local.y << Y_SHIFT | local.z << Z_SHIFT) as usize
+}
+
+#[inline]
+pub fn to_index_2d(local: IVec2) -> usize {
+    (local.x << Z_AXIS_SIZE.ilog2() | local.y << Y_SHIFT) as usize
 }
 
 fn from_index(index: usize) -> IVec3 {
@@ -377,7 +382,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn to_xyz() {
+    fn from_index() {
         assert_eq!(IVec3::new(0, 0, 0), super::from_index(0));
         assert_eq!(IVec3::new(0, 1, 0), super::from_index(1));
         assert_eq!(IVec3::new(0, 2, 0), super::from_index(2));
@@ -458,6 +463,17 @@ mod tests {
             super::to_index((1, 2, 1).into()),
             super::Y_AXIS_SIZE * super::Z_AXIS_SIZE + super::Y_AXIS_SIZE + 2
         );
+    }
+
+    #[test]
+    fn to_index_2d() {
+        assert_eq!(super::to_index_2d((0, 0).into()), 0);
+        assert_eq!(super::to_index_2d((0, 1).into()), 1);
+        assert_eq!(super::to_index_2d((0, 2).into()), 2);
+
+        assert_eq!(super::to_index_2d((1, 0).into()), super::Z_AXIS_SIZE);
+        assert_eq!(super::to_index_2d((1, 1).into()), super::Z_AXIS_SIZE + 1);
+        assert_eq!(super::to_index_2d((1, 2).into()), super::Z_AXIS_SIZE + 2);
     }
 
     #[test]

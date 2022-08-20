@@ -2,16 +2,18 @@ use std::collections::VecDeque;
 
 use bevy::{
     ecs::{query::QuerySingleError, schedule::ShouldRun},
+    math::Vec3Swizzles,
     prelude::*,
-    utils::{HashMap, HashSet},
+    utils::HashSet,
 };
 use bevy_inspector_egui::{Inspectable, InspectorPlugin};
 use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
-use projekto_core::{chunk, voxel};
+use projekto_core::{chunk, voxel, landscape};
 
 use crate::world::{
-    rendering::{ChunkEntityMap, ChunkLocal, ChunkMaterial},
-    terraformation::prelude::WorldRes, debug::DrawVoxels,
+    debug::DrawVoxels,
+    rendering::{ChunkMaterial, ChunkMaterialHandle},
+    terraformation::prelude::WorldRes,
 };
 pub struct CharacterControllerPlugin;
 
@@ -161,8 +163,6 @@ fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {
 }
 
 fn update_character_position(
-    // handle: Res<ChunkMaterialHandle>,
-    // mut materials: ResMut<Assets<ChunkMaterial>>,
     mut position: ResMut<CharacterPosition>,
     q: Query<&Transform, (With<CharacterController>, Changed<Transform>)>,
 ) {
@@ -173,10 +173,6 @@ fn update_character_position(
 
     if projekto_core::math::floor(transform.translation) != **position {
         **position = projekto_core::math::floor(transform.translation);
-
-        // if let Some(mut material) = materials.get_mut(&handle.0) {
-        //     material.clip_height = position.y as f32;
-        // }
     }
 }
 
@@ -301,31 +297,30 @@ fn update_view_frustum(
 
 fn update_chunk_material(
     In(voxels): In<ViewFrustumChain>,
-    q_chunk: Query<&Handle<ChunkMaterial>, With<ChunkLocal>>,
-    chunk_map: Res<ChunkEntityMap>,
+    chunk_material_handle: Res<ChunkMaterialHandle>,
+    mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<ChunkMaterial>>,
-    mut flooded: Local<Vec<Handle<ChunkMaterial>>>,
     mut commands: Commands,
     mut meta: Local<Option<Entity>>,
 ) {
     if meta.is_none() {
-        *meta = Some(commands.spawn().id());
+        *meta = Some(commands.spawn().insert(Visibility {is_visible: false}).id());
     }
 
     match voxels {
         ViewFrustumChain::DoNothing => return,
         ViewFrustumChain::RevertMaterial => {
             trace!("Revert!");
-            for handle in flooded.drain(..) {
-                if let Some(mut material) = materials.get_mut(&handle) {
-                    material.clip_map = default_clip_map();
-                    material.clip_map_origin = Vec2::ZERO;
-                    material.clip_height = f32::MAX;
-                }
+            if let Some(material) = materials.get_mut(&chunk_material_handle) 
+                && let Some(image) = images.get_mut(&material.clip_map) {
+                material.clip_map_origin = Vec2::ZERO;
+                material.clip_height = f32::MAX;
+
+                image.data.fill(0);
             }
 
             commands.entity(meta.unwrap()).insert(DrawVoxels::default());
-        },
+        }
         ViewFrustumChain::ClipMaterial(height, voxels_world) => {
             trace!("Clip!");
 
@@ -335,39 +330,46 @@ fn update_chunk_material(
                 offset: voxels_world[0],
             });
 
-            let chunk_voxels = voxels_world
-                .into_iter()
-                .map(|world| (chunk::to_local(world), voxel::to_local(world)))
-                .fold(HashMap::new(), |mut map, (local, voxel)| {
-                    map.entry(local).or_insert(vec![]).push(voxel);
-                    map
-                });
-
-            for (local, voxels) in chunk_voxels {
-                if let Some(e) = chunk_map.get(&local) 
-                    && let Ok(handle) = q_chunk.get(*e) 
-                    && let Some(mut material) = materials.get_mut(handle) {
-
-                    let chunk_world = chunk::to_world(local);
-
+            if let Some(material) = materials.get_mut(&chunk_material_handle)
+                && let Some(image) = images.get_mut(&material.clip_map) {
                     material.clip_height = height;
-                    material.clip_map_origin = Vec2::new(chunk_world.x, chunk_world.z);
 
-                    let mut clip_heights = default_clip_map();
-                    voxels
-                        .into_iter()
-                        .map(|v| v.x as usize * chunk::Z_AXIS_SIZE + v.z as usize)
-                        .for_each(|idx| clip_heights[idx] = IVec4::splat(1));
+                    let len = image.data.len();
+                    let mut data = vec![0; len];
 
-                    material.clip_map = clip_heights;
+                    for voxel in voxels_world {
+                        let idx = pack_landscape_coords(voxel.xz());
+                        data[idx] = 1;
+                    }
 
-                    flooded.push(handle.clone());
-                }
+                    image.data = data;
             }
-        },
+        }
     }
 }
 
-fn default_clip_map<T: Default + Copy>() -> [T; chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE] {
-    [T::default(); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE]
+const X_AXIS: usize = landscape::HORIZONTAL_RADIUS * chunk::Z_AXIS_SIZE;
+fn pack_landscape_coords(coords: Vec2) -> usize {
+    coords.x as usize * X_AXIS + coords.y as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pack_landscape_coords() {
+        assert_eq!(super::pack_landscape_coords(Vec2::new(0.0, 0.0)), 0);
+        assert_eq!(super::pack_landscape_coords(Vec2::new(0.0, 1.0)), 1);
+        assert_eq!(super::pack_landscape_coords(Vec2::new(0.0, 2.0)), 2);
+        assert_eq!(super::pack_landscape_coords(Vec2::new(0.0, 3.0)), 3);
+
+        assert_eq!(super::pack_landscape_coords(Vec2::new(1.0, 0.0)), super::X_AXIS);
+        assert_eq!(super::pack_landscape_coords(Vec2::new(2.0, 0.0)), 2 * super::X_AXIS);
+        assert_eq!(super::pack_landscape_coords(Vec2::new(3.0, 0.0)), 3 * super::X_AXIS);
+
+        assert_eq!(super::pack_landscape_coords(Vec2::new(1.0, 1.0)), super::X_AXIS + 1);
+        assert_eq!(super::pack_landscape_coords(Vec2::new(2.0, 2.0)), 2 * super::X_AXIS + 2);
+        assert_eq!(super::pack_landscape_coords(Vec2::new(3.0, 3.0)), 3 * super::X_AXIS + 3);
+    }
 }

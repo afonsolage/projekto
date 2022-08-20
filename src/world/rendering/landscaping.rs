@@ -1,5 +1,6 @@
 use bevy::{
     prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     utils::{HashMap, HashSet},
 };
 use projekto_core::{chunk, landscape, query, voxel};
@@ -39,16 +40,31 @@ struct LandscapeMeta {
 
 fn setup_resources(
     mut commands: Commands,
-    mut normal_materials: ResMut<Assets<ChunkMaterial>>,
+    mut materials: ResMut<Assets<ChunkMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     kinds_res: Res<KindsAtlasRes>,
 ) {
     trace_system_run!();
-    let material = normal_materials.add(ChunkMaterial {
-        clip_map_origin: Vec2::new(f32::MAX, f32::MAX),
-        clip_map: [Default::default(); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE],
-        tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
+
+    const WIDTH: usize = landscape::HORIZONTAL_RADIUS * chunk::X_AXIS_SIZE;
+    const HEIGHT: usize = landscape::HORIZONTAL_RADIUS * chunk::Z_AXIS_SIZE;
+    let clip_map = images.add(Image::new(
+        Extent3d {
+            width: (WIDTH * HEIGHT) as u32,
+            height: 1u32,
+            ..Default::default()
+        },
+        TextureDimension::D1,
+        vec![u8::MAX; WIDTH * HEIGHT],
+        TextureFormat::R8Uint,
+    ));
+
+    let material = materials.add(ChunkMaterial {
         texture: kinds_res.atlas.clone(),
+        tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
+        clip_map_origin: Vec2::ZERO,
         clip_height: f32::MAX,
+        clip_map: clip_map,
     });
 
     commands.insert_resource(ChunkMaterialHandle(material));
@@ -73,7 +89,6 @@ fn update_landscape(
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
     material: Res<ChunkMaterialHandle>,
-    mut materials: ResMut<Assets<ChunkMaterial>>,
     time: Res<Time>,              // TODO: Change this to a Run Criteria later on
     config: Res<LandscapeConfig>, // TODO: Change this to a Run Criteria later on
     world_res: Res<WorldRes>,     // TODO: Change this to a Run Criteria later on
@@ -120,11 +135,6 @@ fn update_landscape(
             debug!("Spawning {} chunks", spawn.len());
         }
 
-        let cloned_material = materials
-            .get(&material.0)
-            .expect("Material should already exists")
-            .clone();
-
         for &local in spawn.into_iter() {
             // Spawn chunks
 
@@ -132,7 +142,7 @@ fn update_landscape(
                 .spawn_bundle(ChunkBundle {
                     local: ChunkLocal(local),
                     mesh_bundle: MaterialMeshBundle {
-                        material: materials.add(cloned_material.clone()),
+                        material: material.clone(),
                         transform: Transform::from_translation(chunk::to_world(local)),
                         ..Default::default()
                     },

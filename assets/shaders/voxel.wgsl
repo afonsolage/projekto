@@ -22,7 +22,6 @@ struct VertexOutput {
 struct MaterialData {
     tile_texture_size: f32,
     clip_map_origin: vec2<f32>,
-    clip_map: array<vec4<u32>,256>,
     clip_height: f32,
 };
 
@@ -35,6 +34,9 @@ var atlas_sampler: sampler;
 @group(1) @binding(2)
 var<uniform> material_data: MaterialData;
 
+@group(1) @binding(3)
+var clip_map: texture_1d<u32>;
+
 @group(2) @binding(0)
 var<uniform> mesh: Mesh;
 
@@ -42,15 +44,9 @@ let clipped_vertex: vec4<f32> = vec4<f32>(-2.0, -2.0, -2.0, -2.0);
 let clipped_light: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
 let clipped_tile_coord_start: vec2<f32> = vec2<f32>(0.0, 0.0);
 
-// let right_side_mask: u32 = 1u;
-// let left_side_mask: u32 = 2u;
-// let up_side_mask: u32 = 4u;
-// let down_side_mask: u32 = 8u;
-// let front_side_mask: u32 = 16u;
-// let back_side_mask: u32 = 32u;
-
 let NO_CLIP: f32 = 9999.0;
-let CHUNK_SIZE: vec3<u32> = vec3<u32>(16u, 256u, 16u);
+let CLIP_AXIS_SIZE: u32 = 64u;
+let CLIP_SIZE: u32 = 4096u;
 
 fn to_world(position: vec3<f32>) -> vec4<f32> {
     return mesh.model * vec4<f32>(position, 1.0);
@@ -60,35 +56,29 @@ fn unpack_voxel(packed: u32) -> vec3<f32> {
     return unpack4x8unorm(packed).xyz * 255.0;
 }
 
-fn to_2d_index(voxel: vec2<f32>) -> u32 {
-    return u32(voxel.x) * CHUNK_SIZE.z + u32(voxel.y);
+fn get_voxel_index(voxel: vec3<f32>) -> u32 {
+    let world = to_world(voxel);
+    return u32(world.x) * CLIP_AXIS_SIZE + u32(world.z);
+}
+
+fn get_voxel_clip_data(voxel: vec3<f32>) -> u32 {
+    let index = i32(get_voxel_index(voxel));
+    if (index < 0 || index >= i32(CLIP_SIZE)) {
+        return 0u;
+    } else {
+        return textureLoad(clip_map, index, 1).w;
+    }
 }
 
 fn is_clipped(vertex: Vertex) -> bool {
     let voxel = unpack_voxel(vertex.voxel);
-
-    let index = to_2d_index(voxel.xz);
-
-    return material_data.clip_map[index].x >= 1u;
-}
-
-fn is_on_chunk_bounds(voxel: vec3<f32>) -> bool {
-    return voxel.x >= 0.0 && voxel.x < f32(CHUNK_SIZE.x)
-        && voxel.y >= 0.0 && voxel.y < f32(CHUNK_SIZE.y)
-        && voxel.z >= 0.0 && voxel.z < f32(CHUNK_SIZE.z);
+    return get_voxel_clip_data(voxel) >= 1u;
 }
 
 fn is_neighbor_clipped(vertex: Vertex) -> bool {
     let voxel = unpack_voxel(vertex.voxel);
     let neighbor = voxel + vertex.normal;
-
-    if (is_on_chunk_bounds(neighbor)) {
-        let index = to_2d_index(neighbor.xz);
-
-        return material_data.clip_map[index].x >= 1u;
-    }
-
-    return false;
+    return get_voxel_clip_data(neighbor) >= 1u;
 }
 
 @vertex
@@ -109,22 +99,20 @@ fn vertex(
             // Top Face
             if (vertex.normal.y > 0.0) {
                 if (voxel.y == material_data.clip_height) {
-                    light_intensity = clipped_light;
-                    tile_coord_start = clipped_tile_coord_start;
+                    // light_intensity = clipped_light;
+                    // tile_coord_start = clipped_tile_coord_start;
                 } else if (voxel.y > material_data.clip_height) {
                     should_clip = true;
                 }
-            }
-            else if (vertex.normal.y == 0.0) {
+            } else if (vertex.normal.y == 0.0) {
                 // Clip non-top faces 
-                if (voxel.y >= material_data.clip_height) {
+                if (voxel.y > material_data.clip_height) {
                     should_clip = true;
                 }
             }
-        } if (is_neighbor_clipped(vertex) && voxel.y <= material_data.clip_height) {
-
         } else {
-            should_clip = true;
+            // should_clip = true;
+            light_intensity = vec3<f32>(0.0);
         }
     }
     if (should_clip) {
