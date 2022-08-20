@@ -31,7 +31,7 @@ pub struct EvtChunkMeshDirty(pub IVec3);
 #[derive(Component)]
 pub struct ChunkLocal(pub IVec3);
 
-#[derive(Component)]
+#[derive(Component, Deref, DerefMut)]
 pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
 
 #[derive(Bundle)]

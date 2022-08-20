@@ -3,15 +3,14 @@ use std::collections::VecDeque;
 use bevy::{
     ecs::{query::QuerySingleError, schedule::ShouldRun},
     prelude::*,
-    utils::HashSet,
+    utils::{HashMap, HashSet},
 };
 use bevy_inspector_egui::{Inspectable, InspectorPlugin};
 use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
 use projekto_core::{chunk, voxel};
 
 use crate::world::{
-    debug::{DrawVoxels, RaycastDebug},
-    rendering::{ChunkMaterial, ChunkMaterialHandle},
+    rendering::{ChunkEntityMap, ChunkLocal, ChunkMaterial},
     terraformation::prelude::WorldRes,
 };
 pub struct CharacterControllerPlugin;
@@ -27,7 +26,11 @@ impl Plugin for CharacterControllerPlugin {
                     .with_system(move_character)
                     .with_system(sync_rotation)
                     .with_system(update_character_position.label(CharacterPositionUpdate))
-                    .with_system(update_view_frustum.after(CharacterPositionUpdate))
+                    .with_system(
+                        update_view_frustum
+                            .chain(update_chunk_material)
+                            .after(CharacterPositionUpdate),
+                    )
                     .label(CharacterUpdate),
             );
     }
@@ -158,8 +161,8 @@ fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {
 }
 
 fn update_character_position(
-    handle: Res<ChunkMaterialHandle>,
-    mut materials: ResMut<Assets<ChunkMaterial>>,
+    // handle: Res<ChunkMaterialHandle>,
+    // mut materials: ResMut<Assets<ChunkMaterial>>,
     mut position: ResMut<CharacterPosition>,
     q: Query<&Transform, (With<CharacterController>, Changed<Transform>)>,
 ) {
@@ -171,46 +174,47 @@ fn update_character_position(
     if projekto_core::math::floor(transform.translation) != **position {
         **position = projekto_core::math::floor(transform.translation);
 
-        if let Some(mut material) = materials.get_mut(&handle.0) {
-            let (origin, map) = calc_clip_map(transform.translation);
-            material.clip_map_origin = origin;
-            material.clip_map = map;
-            material.clip_height = position.y as f32;
-        }
+        // if let Some(mut material) = materials.get_mut(&handle.0) {
+        //     material.clip_height = position.y as f32;
+        // }
     }
 }
 
-fn calc_clip_map(position: Vec3) -> (Vec2, [Vec4; chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE]) {
-    let offset = Vec2::new(
-        chunk::X_AXIS_SIZE as f32 / 2.0,
-        chunk::Z_AXIS_SIZE as f32 / 2.0,
-    );
-    let origin = Vec2::new(position.x, position.z) - offset;
+// fn calc_clip_map(position: Vec3) -> (Vec2, [Vec4; chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE]) {
+//     let offset = Vec2::new(
+//         chunk::X_AXIS_SIZE as f32 / 2.0,
+//         chunk::Z_AXIS_SIZE as f32 / 2.0,
+//     );
+//     let origin = Vec2::new(position.x, position.z) - offset;
 
-    (
-        origin,
-        [Vec4::splat(position.y.floor()); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE],
-    )
+//     (
+//         origin,
+//         [Vec4::splat(position.y.floor()); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE],
+//     )
+// }
+
+enum ViewFrustumChain {
+    DoNothing,
+    ClipMaterial(f32, Vec<Vec3>),
+    RevertMaterial,
 }
 
 fn update_view_frustum(
     world_res: Res<WorldRes>,
     position: Res<CharacterPosition>,
     q: Query<&Transform, With<CharacterController>>,
-    mut debug: Local<Option<(Entity, Entity, Entity)>>,
-    mut commands: Commands,
-) {
-    if position.is_changed() == false || world_res.is_ready() == false {
-        return;
+    mut meta: Local<bool>,
+) -> ViewFrustumChain {
+    if position.is_changed() == false && *meta == false {
+        return ViewFrustumChain::DoNothing;
     }
 
-    if debug.is_none() {
-        *debug = Some((
-            commands.spawn().insert(Name::new("Raycast Front")).id(),
-            commands.spawn().insert(Name::new("Raycast Up")).id(),
-            commands.spawn().insert(Name::new("Flood Fill")).id(),
-        ));
+    if world_res.is_ready() == false {
+        *meta = true;
+        return ViewFrustumChain::DoNothing;
     }
+
+    *meta = false;
 
     let forward = projekto_core::math::to_dir(q.single().forward());
     let front_world = (forward + **position).as_vec3();
@@ -224,38 +228,26 @@ fn update_view_frustum(
             "Unable to update view frustum. Chunk not found at {:?}",
             local
         );
-        return;
+        return ViewFrustumChain::RevertMaterial;
     };
 
     let front_voxel = voxel::to_local(front_world);
-
     let front = chunk.kinds.get_absolute(front_voxel).unwrap_or_default();
-
-    commands.entity(debug.unwrap().0).insert(RaycastDebug {
-        origin: position.as_vec3() + Vec3::splat(0.5),
-        dir: forward.as_vec3(),
-        range: 1.0,
-    });
-
-    let above_voxel = voxel::to_local(position.as_vec3() + Vec3::Y);
-
-    commands.entity(debug.unwrap().1).insert(RaycastDebug {
-        origin: position.as_vec3() + Vec3::splat(0.5),
-        dir: Vec3::Y,
-        range: 1.0,
-    });
 
     if front.is_opaque() == true {
         // Facing a wall. Does nothing
-        return;
+        trace!("Facing wall");
+        return ViewFrustumChain::RevertMaterial;
     }
 
+    let above_voxel = voxel::to_local(position.as_vec3() + Vec3::Y);
     let above = chunk.kinds.get_absolute(above_voxel).unwrap_or_default();
 
     // TODO: Check many blocks using view frustum
     if above.is_opaque() == false {
         // We aren't inside any building. Skip
-        return;
+        trace!("Not under roof");
+        return ViewFrustumChain::RevertMaterial;
     }
 
     info!(
@@ -272,7 +264,7 @@ fn update_view_frustum(
     while let Some(voxel_world) = queue.pop_front() {
         for side in voxel::SIDES {
             // Let's work with X, Z axis only for now.
-            if matches!(side, voxel::Side::Up | voxel::Side::Down) {
+            if matches!(side, voxel::Side::Up) {
                 continue;
             }
             let next_voxel = voxel_world + side.dir().as_vec3();
@@ -296,12 +288,12 @@ fn update_view_frustum(
                 continue;
             }
 
-            let light = chunk.lights.get(voxel);
+            // let light = chunk.lights.get(voxel);
 
-            if light.get(voxel::LightTy::Natural) == voxel::Light::MAX_NATURAL_INTENSITY {
-                // This means it's an outside voxel, so skip it since there is no roof on top.
-                continue;
-            }
+            // if light.get(voxel::LightTy::Natural) == voxel::Light::MAX_NATURAL_INTENSITY {
+            //     // This means it's an outside voxel, so skip it since there is no roof on top.
+            //     continue;
+            // }
 
             flooded_voxels.push(next_voxel);
             queue.push_back(next_voxel);
@@ -311,18 +303,63 @@ fn update_view_frustum(
 
     info!("Flooded: {} voxels.", flooded_voxels.len());
 
-    if flooded_voxels.len() == 0 {
-        commands
-            .entity(debug.unwrap().2)
-            .insert(DrawVoxels::default());
-    } else if flooded_voxels.len() > 0 {
-        let offset = flooded_voxels[0];
-        let draw_voxels = DrawVoxels {
-            color: "pink".into(),
-            voxels: flooded_voxels.into_iter().map(|v| v.as_ivec3()).collect(),
-            offset,
-        };
+    ViewFrustumChain::ClipMaterial(position.y as f32, flooded_voxels)
+}
 
-        commands.entity(debug.unwrap().2).insert(draw_voxels);
+fn update_chunk_material(
+    In(voxels): In<ViewFrustumChain>,
+    q_chunk: Query<&Handle<ChunkMaterial>, With<ChunkLocal>>,
+    chunk_map: Res<ChunkEntityMap>,
+    mut materials: ResMut<Assets<ChunkMaterial>>,
+    mut flooded: Local<Vec<Handle<ChunkMaterial>>>,
+) {
+    match voxels {
+        ViewFrustumChain::DoNothing => return,
+        ViewFrustumChain::RevertMaterial => {
+            trace!("Revert!");
+            for handle in flooded.drain(..) {
+                if let Some(mut material) = materials.get_mut(&handle) {
+                    material.clip_map = default_clip_map();
+                    material.clip_map_origin = Vec2::ZERO;
+                    material.clip_height = f32::MAX;
+                }
+            }
+        },
+        ViewFrustumChain::ClipMaterial(height, voxels_world) => {
+            trace!("Clip!");
+            let chunk_voxels = voxels_world
+                .into_iter()
+                .map(|world| (chunk::to_local(world), voxel::to_local(world)))
+                .fold(HashMap::new(), |mut map, (local, voxel)| {
+                    map.entry(local).or_insert(vec![]).push(voxel);
+                    map
+                });
+
+            for (local, voxels) in chunk_voxels {
+                if let Some(e) = chunk_map.get(&local) 
+                    && let Ok(handle) = q_chunk.get(*e) 
+                    && let Some(mut material) = materials.get_mut(handle) {
+
+                    let chunk_world = chunk::to_world(local);
+
+                    material.clip_height = height;
+                    material.clip_map_origin = Vec2::new(chunk_world.x, chunk_world.z);
+
+                    let mut clip_heights = default_clip_map();
+                    voxels
+                        .into_iter()
+                        .map(|v| v.x as usize * chunk::Z_AXIS_SIZE + v.z as usize)
+                        .for_each(|idx| clip_heights[idx] = IVec4::splat(1));
+
+                    material.clip_map = clip_heights;
+
+                    flooded.push(handle.clone());
+                }
+            }
+        },
     }
+}
+
+fn default_clip_map<T: Default + Copy>() -> [T; chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE] {
+    [T::default(); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE]
 }

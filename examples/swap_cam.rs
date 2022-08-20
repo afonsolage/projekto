@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 
 use bevy::{ecs::system::SystemParam, prelude::*};
 use projekto_camera::{
-    orbit::{OrbitCamera, OrbitCameraConfig, OrbitCameraTarget},
     fly_by::{FlyByCamera, FlyByCameraConfig},
+    orbit::{OrbitCamera, OrbitCameraConfig, OrbitCameraTarget},
     CameraPlugin,
 };
 

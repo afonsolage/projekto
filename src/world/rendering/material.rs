@@ -18,7 +18,7 @@ pub struct ChunkMaterial {
     #[uniform(2)]
     pub clip_map_origin: Vec2,
     #[uniform(2)]
-    pub clip_map: [Vec4; 256],
+    pub clip_map: [IVec4; 256],
     #[uniform(2)]
     pub clip_height: f32,
 }

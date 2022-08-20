@@ -45,7 +45,7 @@ fn setup_resources(
     trace_system_run!();
     let material = normal_materials.add(ChunkMaterial {
         clip_map_origin: Vec2::new(f32::MAX, f32::MAX),
-        clip_map: [Vec4::splat(f32::MAX); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE],
+        clip_map: [Default::default(); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE],
         tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
         texture: kinds_res.atlas.clone(),
         clip_height: f32::MAX,
@@ -73,6 +73,7 @@ fn update_landscape(
     mut commands: Commands,
     mut entity_map: ResMut<ChunkEntityMap>,
     material: Res<ChunkMaterialHandle>,
+    mut materials: ResMut<Assets<ChunkMaterial>>,
     time: Res<Time>,              // TODO: Change this to a Run Criteria later on
     config: Res<LandscapeConfig>, // TODO: Change this to a Run Criteria later on
     world_res: Res<WorldRes>,     // TODO: Change this to a Run Criteria later on
@@ -119,13 +120,19 @@ fn update_landscape(
             debug!("Spawning {} chunks", spawn.len());
         }
 
+        let cloned_material = materials
+            .get(&material.0)
+            .expect("Material should already exists")
+            .clone();
+
         for &local in spawn.into_iter() {
             // Spawn chunks
+
             let entity = commands
                 .spawn_bundle(ChunkBundle {
                     local: ChunkLocal(local),
                     mesh_bundle: MaterialMeshBundle {
-                        material: material.0.clone(),
+                        material: materials.add(cloned_material.clone()),
                         transform: Transform::from_translation(chunk::to_world(local)),
                         ..Default::default()
                     },

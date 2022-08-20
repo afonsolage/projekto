@@ -1,5 +1,5 @@
 use bevy_math::{IVec3, Vec3};
-//de::DeserializeOwned, 
+//de::DeserializeOwned,
 use serde::{Deserialize, Serialize};
 
 use crate::{math, query};

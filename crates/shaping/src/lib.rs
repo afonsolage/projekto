@@ -262,8 +262,7 @@ fn generate_faces(
 
             let kind = chunk.kinds.get(voxel);
 
-            if kind.is_none() || (occlusion.get(voxel).is_occluded(side))
-            {
+            if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
                 continue;
             }
 

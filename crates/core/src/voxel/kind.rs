@@ -126,7 +126,7 @@ impl KindsDescs {
         if KINDS_DESCS.get().is_none() {
             return Self::init(format!("{}/voxels/kind.ron", env!("ASSETS_PATH")));
         }
-        
+
         KINDS_DESCS
             .get()
             .expect("KindsDescs should be initialized before used")

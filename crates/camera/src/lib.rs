@@ -3,8 +3,8 @@ use orbit::OrbitCameraPlugin;
 
 use self::fly_by::FlyByCameraPlugin;
 
-pub mod orbit;
 pub mod fly_by;
+pub mod orbit;
 
 /// This is a wrapper plugin which justs adds [`FlyByCameraPlugin`] and [`OrbitCameraPlugin`]
 pub struct CameraPlugin;
