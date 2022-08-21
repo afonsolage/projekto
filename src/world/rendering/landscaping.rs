@@ -65,6 +65,7 @@ fn setup_resources(
         clip_map_origin: Vec2::ZERO,
         clip_height: f32::MAX,
         clip_map: clip_map,
+        show_back_faces: false,
     });
 
     commands.insert_resource(ChunkMaterialHandle(material));

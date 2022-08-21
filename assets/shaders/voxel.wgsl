@@ -94,29 +94,48 @@ fn vertex(
     var tile_coord_start = vertex.tile_coord_start;
     var should_clip = false;
 
-    let voxel = unpack_voxel(vertex.voxel);
-    // let voxel = to_world(voxel);
     if (material_data.clip_height < NO_CLIP) {
-        if (is_clipped(vertex) == false || (is_neighbor_clipped(vertex) == false && vertex.normal.y == 0.0)) {
-            // Top Face
-            if (vertex.normal.y > 0.0) {
-                if (voxel.y == material_data.clip_height) {
-                } else if (voxel.y > material_data.clip_height) {
-                    should_clip = true;
-                }
-            } else if (vertex.normal.y == 0.0) {
-                // Clip non-top faces 
-                if (voxel.y > material_data.clip_height) {
-                    should_clip = true;
-                }
-            }
-        } else if (vertex.normal.y > 0.0) {
+        let voxel = unpack_voxel(vertex.voxel);
+        let neighbor = voxel + vertex.normal;
+
+        let neighbor_clip_height = f32(get_voxel_clip_data(neighbor));
+        let voxel_clip_height = f32(get_voxel_clip_data(voxel));
+
+        if (voxel.y <= neighbor_clip_height) {
+            // Don't clip
+        } else if (vertex.normal.y > 0.0 && voxel_clip_height == 0.0) {
+            light_intensity = clipped_light;
+            tile_coord_start = clipped_tile_coord_start;
+            position.y = material_data.clip_height + 1.0;
+        } else if (vertex.normal.y > 0.0 && voxel_clip_height != material_data.clip_height) {
             light_intensity = clipped_light;
             tile_coord_start = clipped_tile_coord_start;
             position.y = material_data.clip_height + 1.0;
         } else {
             should_clip = true;
         }
+
+
+        // if (is_clipped(vertex) == false || (is_neighbor_clipped(vertex) == false && vertex.normal.y == 0.0)) {
+        //     // Top Face
+        //     if (vertex.normal.y > 0.0) {
+        //         if (voxel.y == material_data.clip_height) {
+        //         } else if (voxel.y > material_data.clip_height) {
+        //             should_clip = true;
+        //         }
+        //     } else if (vertex.normal.y == 0.0) {
+        //         // Clip non-top faces 
+        //         if (voxel.y > material_data.clip_height) {
+        //             should_clip = true;
+        //         }
+        //     }
+        // } else if (vertex.normal.y > 0.0) {
+        //     light_intensity = clipped_light;
+        //     tile_coord_start = clipped_tile_coord_start;
+        //     position.y = material_data.clip_height + 1.0;
+        // } else {
+        //     should_clip = true;
+        // }
     }
     if (should_clip) {
         out.clip_position = clipped_vertex;

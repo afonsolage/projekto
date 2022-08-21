@@ -327,6 +327,7 @@ fn update_chunk_material(
                 && let Some(image) = images.get_mut(&material.clip_map) {
                 material.clip_map_origin = Vec2::ZERO;
                 material.clip_height = f32::MAX;
+                material.show_back_faces = false;
 
                 image.data.fill(0);
             }
@@ -353,6 +354,7 @@ fn update_chunk_material(
 
                     material.clip_height = clip_height;
                     material.clip_map_origin = clip_origin;
+                    material.show_back_faces = true;
 
                     let len = image.data.len();
                     let mut data = vec![0; len];
@@ -364,10 +366,10 @@ fn update_chunk_material(
                         }
 
                         let idx = pack_landscape_coords((voxel.xz() - clip_origin).as_ivec2());
-                        data[idx] = ((voxel.y / clip_height) * 255.0) as u8;
+                        if voxel.y > data[idx] as f32 {
+                            data[idx] = voxel.y as u8;
+                        }
                     }
-
-                    data[0] = 1;
 
                     image.data = data;
             }

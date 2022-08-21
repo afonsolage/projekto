@@ -7,7 +7,7 @@ use bevy::render::render_resource::{
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
     BufferInitDescriptor, BufferUsages, OwnedBindingResource, PreparedBindGroup,
     SamplerBindingType, ShaderRef, ShaderStages, ShaderType, TextureSampleType,
-    TextureViewDimension, VertexFormat,
+    TextureViewDimension, VertexFormat, Face,
 };
 use bevy::render::renderer::RenderDevice;
 use bevy::render::texture::FallbackImage;
@@ -30,6 +30,8 @@ pub struct ChunkMaterial {
     pub clip_height: f32,
     // #[texture(3)]
     pub clip_map: Handle<Image>,
+
+    pub show_back_faces: bool,
 }
 
 #[derive(ShaderType)]
@@ -88,12 +90,21 @@ impl Material for ChunkMaterial {
             ChunkMaterial::ATTRIBUTE_VOXEL.at_shader_location(5),
         ])?;
         descriptor.vertex.buffers = vec![vertex_layout];
+
+        let show_back_face = _key.bind_group_data;
+
+        if show_back_face {
+            descriptor.primitive.cull_mode = None;
+        } else {
+            descriptor.primitive.cull_mode = Some(Face::Back);
+        }
+
         Ok(())
     }
 }
 
 impl AsBindGroup for ChunkMaterial {
-    type Data = ();
+    type Data = bool;
 
     fn as_bind_group(
         &self,
@@ -151,7 +162,7 @@ impl AsBindGroup for ChunkMaterial {
         Ok(PreparedBindGroup {
             bindings,
             bind_group,
-            data: (),
+            data: self.show_back_faces,
         })
     }
 

@@ -224,7 +224,7 @@ fn show_chunk_material_clip_map(
     let mut data = vec![];
 
     for b in clip_map_data {
-        // let b = if b == 1 { 255 } else { b };
+        let b = if b > 0 { 255 } else { b };
 
         data.push(b);
         data.push(b);
@@ -232,20 +232,28 @@ fn show_chunk_material_clip_map(
         data.push(255);
     }
 
-    let image = Image::new(
-        Extent3d {
-            width: WIDTH as u32,
-            height: HEIGHT as u32,
-            ..Default::default()
-        },
-        TextureDimension::D2,
-        data,
-        TextureFormat::Bgra8UnormSrgb,
-    );
+    let is_visible = data.iter().max().unwrap_or(&0u8) > &0u8;
 
-    commands
-        .entity(meta.unwrap())
-        .insert(UiImage(images.add(image)));
+    if !is_visible {
+        commands
+            .entity(meta.unwrap())
+            .insert(Visibility { is_visible });
+    } else {
+        let image = Image::new(
+            Extent3d {
+                width: WIDTH as u32,
+                height: HEIGHT as u32,
+                ..Default::default()
+            },
+            TextureDimension::D2,
+            data,
+            TextureFormat::Bgra8UnormSrgb,
+        );
+
+        commands
+            .entity(meta.unwrap())
+            .insert(UiImage(images.add(image)));
+    }
 }
 
 #[cfg(feature = "mem_alloc")]
