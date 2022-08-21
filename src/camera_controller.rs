@@ -17,6 +17,7 @@ fn setup_camera(
     mut flyby_config: ResMut<FlyByCameraConfig>,
 ) {
     orbit_config.key_rotate_speed = 1.0;
+    orbit_config.max_polar_angle = std::f32::consts::FRAC_PI_2 - 0.001;
     flyby_config.rotate_speed = 1.0;
 }
 
