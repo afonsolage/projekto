@@ -249,10 +249,10 @@ fn update_view_frustum(
     }
 
     let above_voxel = voxel::to_local(position.as_vec3() + Vec3::Y);
-    let above = chunk.kinds.get_absolute(above_voxel).unwrap_or_default();
+    let above = chunk.lights.get_absolute(above_voxel).unwrap_or_default();
 
     // TODO: Check many blocks using view frustum
-    if above.is_opaque() == false {
+    if above.get(voxel::LightTy::Natural) == voxel::Light::MAX_NATURAL_INTENSITY {
         // We aren't inside any building. Skip
         trace!("Not under roof");
         return ViewFrustumChain::RevertMaterial;
