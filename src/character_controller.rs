@@ -22,6 +22,9 @@ impl Plugin for CharacterControllerPlugin {
         app.init_resource::<CharacterControllerConfig>()
             .init_resource::<CharacterPosition>()
             .add_plugin(InspectorPlugin::<CharacterPosition>::new())
+            .init_resource::<ChunkMaterialImage>()
+            .register_type::<ChunkMaterialImage>()
+            .add_system(sync_material_image)
             .add_system_set(
                 SystemSet::new()
                     .with_run_criteria(is_active)
@@ -58,6 +61,15 @@ impl Default for CharacterControllerConfig {
             active: true,
             move_speed: 10.0,
         }
+    }
+}
+
+#[derive(Default, Debug, Reflect, Deref, DerefMut)]
+pub struct ChunkMaterialImage(pub Handle<Image>);
+
+fn sync_material_image(material: Res<ChunkMaterialHandle>, materials: Res<Assets<ChunkMaterial>>, mut image_handle: ResMut<ChunkMaterialImage>) {
+    if material.is_changed() {
+        **image_handle = materials.get(&material).unwrap().clip_map.clone();
     }
 }
 
@@ -191,7 +203,7 @@ fn update_character_position(
 
 enum ViewFrustumChain {
     DoNothing,
-    ClipMaterial(f32, Vec<Vec3>),
+    ClipMaterial(IVec3, Vec<Vec3>),
     RevertMaterial,
 }
 
@@ -292,7 +304,7 @@ fn update_view_frustum(
 
     info!("Flooded: {} voxels.", flooded_voxels.len());
 
-    ViewFrustumChain::ClipMaterial(position.y as f32, flooded_voxels)
+    ViewFrustumChain::ClipMaterial(**position, flooded_voxels)
 }
 
 fn update_chunk_material(
@@ -321,26 +333,41 @@ fn update_chunk_material(
 
             commands.entity(meta.unwrap()).insert(DrawVoxels::default());
         }
-        ViewFrustumChain::ClipMaterial(height, voxels_world) => {
+        ViewFrustumChain::ClipMaterial(char_pos, voxels_world) => {
             trace!("Clip!");
 
             commands.entity(meta.unwrap()).insert(DrawVoxels {
                 color: "pink".into(),
                 voxels: voxels_world.iter().map(Vec3::as_ivec3).collect(),
                 offset: voxels_world[0],
+                visible: false,
             });
 
             if let Some(material) = materials.get_mut(&chunk_material_handle)
                 && let Some(image) = images.get_mut(&material.clip_map) {
-                    material.clip_height = height;
+                    let char_chunk = chunk::to_local(char_pos.as_vec3());
+                    let left_bottom_chunk = char_chunk - IVec3::splat(landscape::HORIZONTAL_RADIUS as i32);
+                    
+                    let clip_origin = chunk::to_world(left_bottom_chunk).xz();
+                    let clip_height = char_pos.y as f32;
+
+                    material.clip_height = clip_height;
+                    material.clip_map_origin = clip_origin;
 
                     let len = image.data.len();
                     let mut data = vec![0; len];
 
+                    
                     for voxel in voxels_world {
-                        let idx = pack_landscape_coords(voxel.xz());
-                        data[idx] = 1;
+                        if voxel.y > clip_height {
+                            continue;
+                        }
+
+                        let idx = pack_landscape_coords((voxel.xz() - clip_origin).as_ivec2());
+                        data[idx] = ((voxel.y / clip_height) * 255.0) as u8;
                     }
+
+                    data[0] = 1;
 
                     image.data = data;
             }
@@ -348,8 +375,16 @@ fn update_chunk_material(
     }
 }
 
-const X_AXIS: usize = landscape::HORIZONTAL_RADIUS * chunk::Z_AXIS_SIZE;
-fn pack_landscape_coords(coords: Vec2) -> usize {
+const X_AXIS: usize = landscape::HORIZONTAL_SIZE * chunk::Z_AXIS_SIZE;
+fn pack_landscape_coords(coords: IVec2) -> usize {
+    debug_assert!({
+        if coords.x >= 0 && coords.x < X_AXIS as i32 && coords.y >= 0 && coords.y < X_AXIS as i32 {
+            true
+        } else {
+            println!("Invalid {:?}", coords);
+            false
+        }
+    });
     coords.x as usize * X_AXIS + coords.y as usize
 }
 
@@ -359,17 +394,17 @@ mod tests {
 
     #[test]
     fn pack_landscape_coords() {
-        assert_eq!(super::pack_landscape_coords(Vec2::new(0.0, 0.0)), 0);
-        assert_eq!(super::pack_landscape_coords(Vec2::new(0.0, 1.0)), 1);
-        assert_eq!(super::pack_landscape_coords(Vec2::new(0.0, 2.0)), 2);
-        assert_eq!(super::pack_landscape_coords(Vec2::new(0.0, 3.0)), 3);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(0, 0)), 0);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(0, 1)), 1);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(0, 2)), 2);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(0, 3)), 3);
 
-        assert_eq!(super::pack_landscape_coords(Vec2::new(1.0, 0.0)), super::X_AXIS);
-        assert_eq!(super::pack_landscape_coords(Vec2::new(2.0, 0.0)), 2 * super::X_AXIS);
-        assert_eq!(super::pack_landscape_coords(Vec2::new(3.0, 0.0)), 3 * super::X_AXIS);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(1, 0)), super::X_AXIS);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(2, 0)), 2 * super::X_AXIS);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(3, 0)), 3 * super::X_AXIS);
 
-        assert_eq!(super::pack_landscape_coords(Vec2::new(1.0, 1.0)), super::X_AXIS + 1);
-        assert_eq!(super::pack_landscape_coords(Vec2::new(2.0, 2.0)), 2 * super::X_AXIS + 2);
-        assert_eq!(super::pack_landscape_coords(Vec2::new(3.0, 3.0)), 3 * super::X_AXIS + 3);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(1, 1)), super::X_AXIS + 1);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(2, 2)), 2 * super::X_AXIS + 2);
+        assert_eq!(super::pack_landscape_coords(IVec2::new(3, 3)), 3 * super::X_AXIS + 3);
     }
 }

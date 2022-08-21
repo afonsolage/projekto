@@ -45,8 +45,8 @@ let clipped_light: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
 let clipped_tile_coord_start: vec2<f32> = vec2<f32>(0.0, 0.0);
 
 let NO_CLIP: f32 = 9999.0;
-let CLIP_AXIS_SIZE: u32 = 64u;
-let CLIP_SIZE: u32 = 4096u;
+let CLIP_AXIS_SIZE: u32 = 144u;
+let CLIP_SIZE: u32 = 20736u;
 
 fn to_world(position: vec3<f32>) -> vec4<f32> {
     return mesh.model * vec4<f32>(position, 1.0);
@@ -58,7 +58,8 @@ fn unpack_voxel(packed: u32) -> vec3<f32> {
 
 fn get_voxel_index(voxel: vec3<f32>) -> u32 {
     let world = to_world(voxel);
-    return u32(world.x) * CLIP_AXIS_SIZE + u32(world.z);
+    let landscape = world.xz - material_data.clip_map_origin;
+    return u32(landscape.x) * CLIP_AXIS_SIZE + u32(landscape.y);
 }
 
 fn get_voxel_clip_data(voxel: vec3<f32>) -> u32 {
@@ -66,19 +67,19 @@ fn get_voxel_clip_data(voxel: vec3<f32>) -> u32 {
     if (index < 0 || index >= i32(CLIP_SIZE)) {
         return 0u;
     } else {
-        return textureLoad(clip_map, index, 1).w;
+        return textureLoad(clip_map, index, 0).x;
     }
 }
 
 fn is_clipped(vertex: Vertex) -> bool {
     let voxel = unpack_voxel(vertex.voxel);
-    return get_voxel_clip_data(voxel) >= 1u;
+    return get_voxel_clip_data(voxel) == 0u;
 }
 
 fn is_neighbor_clipped(vertex: Vertex) -> bool {
     let voxel = unpack_voxel(vertex.voxel);
     let neighbor = voxel + vertex.normal;
-    return get_voxel_clip_data(neighbor) >= 1u;
+    return get_voxel_clip_data(neighbor) == 0u;
 }
 
 @vertex
@@ -94,8 +95,9 @@ fn vertex(
     var should_clip = false;
 
     let voxel = unpack_voxel(vertex.voxel);
+    // let voxel = to_world(voxel);
     if (material_data.clip_height < NO_CLIP) {
-        if (is_clipped(vertex)) {
+        if (is_clipped(vertex) == false || is_neighbor_clipped(vertex) == false) {
             // Top Face
             if (vertex.normal.y > 0.0) {
                 if (voxel.y == material_data.clip_height) {
@@ -111,8 +113,7 @@ fn vertex(
                 }
             }
         } else {
-            // should_clip = true;
-            light_intensity = vec3<f32>(0.0);
+            should_clip = true;
         }
     }
     if (should_clip) {

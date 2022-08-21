@@ -46,8 +46,8 @@ fn setup_resources(
 ) {
     trace_system_run!();
 
-    const WIDTH: usize = landscape::HORIZONTAL_RADIUS * chunk::X_AXIS_SIZE;
-    const HEIGHT: usize = landscape::HORIZONTAL_RADIUS * chunk::Z_AXIS_SIZE;
+    const WIDTH: usize = landscape::HORIZONTAL_SIZE * chunk::X_AXIS_SIZE;
+    const HEIGHT: usize = landscape::HORIZONTAL_SIZE * chunk::Z_AXIS_SIZE;
     let clip_map = images.add(Image::new(
         Extent3d {
             width: (WIDTH * HEIGHT) as u32,
@@ -55,7 +55,7 @@ fn setup_resources(
             ..Default::default()
         },
         TextureDimension::D1,
-        vec![u8::MAX; WIDTH * HEIGHT],
+        vec![0; WIDTH * HEIGHT],
         TextureFormat::R8Uint,
     ));
 

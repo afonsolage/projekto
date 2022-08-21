@@ -16,7 +16,7 @@ use bevy::{pbr::MaterialPipeline, reflect::TypeUuid, render::mesh::MeshVertexAtt
 #[derive(Reflect, Component, Debug, Deref, DerefMut)]
 pub struct ChunkMaterialHandle(pub Handle<ChunkMaterial>);
 
-#[derive(Debug, Clone, TypeUuid)]
+#[derive(Debug, Clone, TypeUuid, Reflect)]
 #[uuid = "f690fd1e-d5d8-45ab-8225-97e2a3f056e0"]
 pub struct ChunkMaterial {
     // #[texture(0)]

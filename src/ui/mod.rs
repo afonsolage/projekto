@@ -1,10 +1,12 @@
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     time::FixedTimestep,
 };
+use projekto_core::{chunk, landscape};
 
-use crate::world::terraformation::prelude::*;
+use crate::{character_controller::ChunkMaterialImage, world::terraformation::prelude::*};
 
 // use bevy_egui::{egui, EguiContext, EguiPlugin};
 
@@ -24,6 +26,7 @@ impl Plugin for UiPlugin {
             .add_system_set(
                 SystemSet::new()
                     .with_run_criteria(FixedTimestep::step(0.5))
+                    .with_system(show_chunk_material_clip_map)
                     .with_system(update_fps_text_system)
                     .with_system(update_batch_cmd_text_system), // .with_system(update_meshing_text_system),
             );
@@ -180,6 +183,69 @@ fn update_batch_cmd_text_system(
     if let Ok(mut t) = q.get_single_mut() {
         t.sections[0].value = format!("Genesis: {}", *batch_res);
     }
+}
+
+fn show_chunk_material_clip_map(
+    mut commands: Commands,
+    clip_map: Res<ChunkMaterialImage>,
+    mut images: ResMut<Assets<Image>>,
+    mut meta: Local<Option<Entity>>,
+) {
+    if meta.is_none() {
+        *meta = Some(
+            commands
+                .spawn_bundle(ImageBundle {
+                    style: Style {
+                        position: UiRect {
+                            bottom: Val::Px(20.0),
+                            left: Val::Px(15.0),
+                            ..Default::default()
+                        },
+                        size: Size::new(Val::Px(200.0), Val::Px(200.0)),
+                        position_type: PositionType::Absolute,
+                        ..default()
+                    },
+
+                    ..default()
+                })
+                .insert(Name::new("Clip Map"))
+                .id(),
+        );
+    }
+
+    const WIDTH: usize = landscape::HORIZONTAL_SIZE * chunk::X_AXIS_SIZE;
+    const HEIGHT: usize = landscape::HORIZONTAL_SIZE * chunk::Z_AXIS_SIZE;
+
+    let clip_map_data = match images.get(&clip_map) {
+        Some(img) => img.data.clone(),
+        None => return,
+    };
+
+    let mut data = vec![];
+
+    for b in clip_map_data {
+        // let b = if b == 1 { 255 } else { b };
+
+        data.push(b);
+        data.push(b);
+        data.push(b);
+        data.push(255);
+    }
+
+    let image = Image::new(
+        Extent3d {
+            width: WIDTH as u32,
+            height: HEIGHT as u32,
+            ..Default::default()
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Bgra8UnormSrgb,
+    );
+
+    commands
+        .entity(meta.unwrap())
+        .insert(UiImage(images.add(image)));
 }
 
 #[cfg(feature = "mem_alloc")]

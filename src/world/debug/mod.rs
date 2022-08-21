@@ -73,6 +73,7 @@ pub struct DrawVoxels {
     pub color: String,
     pub voxels: Vec<IVec3>,
     pub offset: Vec3,
+    pub visible: bool,
 }
 
 // Systems
@@ -292,6 +293,9 @@ fn draw_voxels(
             transform: Transform::from_translation(
                 first_voxel.as_vec3() * -1.0 + draw_voxels.offset,
             ),
+            visibility: Visibility {
+                is_visible: draw_voxels.visible,
+            },
             ..Default::default()
         });
     }
@@ -414,6 +418,7 @@ fn check_raycast_intersections(
                             color: "pink".into(),
                             offset,
                             voxels,
+                            visible: true,
                         });
                     });
             }

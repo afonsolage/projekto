@@ -19,7 +19,9 @@ pub struct LandscapeCenter;
 pub struct PipelinePlugin;
 impl Plugin for PipelinePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(LandscapingPlugin).add_plugin(MeshingPlugin);
+        app.register_type::<ChunkMaterial>()
+            .add_plugin(LandscapingPlugin)
+            .add_plugin(MeshingPlugin);
     }
 }
 
