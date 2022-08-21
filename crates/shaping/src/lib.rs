@@ -4,6 +4,7 @@ use bevy_utils::HashSet;
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use itertools::Itertools;
 
+use light_smoother::ChunkSmoothLight;
 use projekto_core::chunk::{ChunkKind, ChunkLight};
 use projekto_core::voxel::{self, ChunkFacesOcclusion, FacesOcclusion};
 
@@ -13,7 +14,7 @@ use projekto_core::{
     VoxWorld,
 };
 
-mod faces_merger;
+// mod faces_merger;
 mod light_propagator;
 mod light_smoother;
 
@@ -208,7 +209,7 @@ fn generate_internals<'a>(world: &mut VoxWorld, locals: impl Iterator<Item = &'a
         if occlusion.is_fully_occluded() {
             chunk.vertices = vec![];
         } else {
-            let faces = faces_merger::merge(occlusion, smooth_light, chunk);
+            let faces = generate_faces(occlusion, smooth_light, chunk);
             chunk.vertices = generate_vertices(faces);
         }
     }
@@ -245,6 +246,47 @@ fn faces_occlusion(chunk: &Chunk) -> ChunkFacesOcclusion {
     occlusion
 }
 
+fn generate_faces(
+    occlusion: ChunkFacesOcclusion,
+    chunk_smooth_light: ChunkSmoothLight,
+    chunk: &Chunk,
+) -> Vec<VoxelFace> {
+    let mut faces_vertices = vec![];
+
+    for voxel in chunk::voxels() {
+        for side in voxel::SIDES {
+            // Since this is a top-down game, we don't need down face at all
+            if side == voxel::Side::Down {
+                continue;
+            }
+
+            let kind = chunk.kinds.get(voxel);
+
+            if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
+                continue;
+            }
+
+            let smooth_light = chunk_smooth_light.get(voxel);
+
+            let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
+            faces_vertices.push(VoxelFace {
+                vertices: [v1, v2, v3, v4],
+                side,
+                kind,
+                light: smooth_light.get(side),
+                voxel: [
+                    projekto_core::math::pack(v1.x as u8, v1.y as u8, v1.z as u8, 0),
+                    projekto_core::math::pack(v2.x as u8, v2.y as u8, v2.z as u8, 0),
+                    projekto_core::math::pack(v3.x as u8, v3.y as u8, v3.z as u8, 0),
+                    projekto_core::math::pack(v4.x as u8, v4.y as u8, v4.z as u8, 0),
+                ],
+            });
+        }
+    }
+
+    faces_vertices
+}
+
 /**
 Generates vertices data from a given [`VoxelFace`] list.
 
@@ -255,7 +297,7 @@ All generated indices will be relative to a triangle list.
 fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
     let mut vertices = vec![];
     let kinds_descs = voxel::KindsDescs::get();
-    let tile_texture_size = 1.0 / kinds_descs.count_tiles() as f32;
+    let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
 
     for face in faces {
         let normal = face.side.normal();
@@ -294,7 +336,7 @@ fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
             (0.0, 0.0).into(),
         ];
 
-        let light_fraction = 1.0 / voxel::Light::MAX_NATURAL_INTENSITY as f32;
+        let light_fraction = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
 
         for (i, v) in faces_vertices.into_iter().enumerate() {
             vertices.push(VoxelVertex {
@@ -303,6 +345,7 @@ fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
                 uv: tile_uv[i],
                 tile_coord_start,
                 light: Vec3::splat(face.light[i] * light_fraction),
+                voxel: face.voxel[i],
             });
         }
     }

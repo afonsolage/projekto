@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-mod debug;
+pub(crate) mod debug;
 pub mod rendering;
 
 pub mod terraformation;

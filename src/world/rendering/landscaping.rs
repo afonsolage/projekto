@@ -1,5 +1,6 @@
 use bevy::{
     prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     utils::{HashMap, HashSet},
 };
 use projekto_core::{chunk, landscape, query, voxel};
@@ -40,12 +41,31 @@ struct LandscapeMeta {
 fn setup_resources(
     mut commands: Commands,
     mut materials: ResMut<Assets<ChunkMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     kinds_res: Res<KindsAtlasRes>,
 ) {
     trace_system_run!();
+
+    const WIDTH: usize = landscape::HORIZONTAL_SIZE * chunk::X_AXIS_SIZE;
+    const HEIGHT: usize = landscape::HORIZONTAL_SIZE * chunk::Z_AXIS_SIZE;
+    let clip_map = images.add(Image::new(
+        Extent3d {
+            width: (WIDTH * HEIGHT) as u32,
+            height: 1u32,
+            ..Default::default()
+        },
+        TextureDimension::D1,
+        vec![0; WIDTH * HEIGHT],
+        TextureFormat::R8Uint,
+    ));
+
     let material = materials.add(ChunkMaterial {
-        tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
         texture: kinds_res.atlas.clone(),
+        tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
+        clip_map_origin: Vec2::ZERO,
+        clip_height: f32::MAX,
+        clip_map: clip_map,
+        show_back_faces: false,
     });
 
     commands.insert_resource(ChunkMaterialHandle(material));
@@ -118,11 +138,12 @@ fn update_landscape(
 
         for &local in spawn.into_iter() {
             // Spawn chunks
+
             let entity = commands
                 .spawn_bundle(ChunkBundle {
                     local: ChunkLocal(local),
                     mesh_bundle: MaterialMeshBundle {
-                        material: material.0.clone(),
+                        material: material.clone(),
                         transform: Transform::from_translation(chunk::to_world(local)),
                         ..Default::default()
                     },

@@ -21,6 +21,8 @@ pub struct WireframeDebugPlugin;
 impl Plugin for WireframeDebugPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DebugWireframeStateRes::default())
+            .register_type::<DrawVoxels>()
+            .register_type::<RaycastDebug>()
             .add_startup_system(setup_wireframe_shader)
             .add_asset::<WireframeMaterial>()
             .add_plugin(MaterialPlugin::<WireframeMaterial>::default())
@@ -56,21 +58,22 @@ struct WireframeDraw {
     original_material: Handle<ChunkMaterial>,
 }
 
-#[derive(Component, Debug)]
-struct RaycastDebug {
-    origin: Vec3,
-    dir: Vec3,
-    range: f32,
+#[derive(Component, Debug, Reflect)]
+pub struct RaycastDebug {
+    pub origin: Vec3,
+    pub dir: Vec3,
+    pub range: f32,
 }
 
 #[derive(Component)]
 struct RaycastDebugNoPoint;
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Reflect)]
 pub struct DrawVoxels {
-    color: String,
-    voxels: Vec<IVec3>,
-    offset: Vec3,
+    pub color: String,
+    pub voxels: Vec<IVec3>,
+    pub offset: Vec3,
+    pub visible: bool,
 }
 
 // Systems
@@ -262,11 +265,11 @@ fn draw_voxels(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Res<WireframeMaterialsMap>,
-    q: Query<(Entity, &DrawVoxels), Added<DrawVoxels>>,
+    q: Query<(Entity, &DrawVoxels), Changed<DrawVoxels>>,
 ) {
     for (e, draw_voxels) in q.iter() {
         if draw_voxels.voxels.is_empty() {
-            debug!("Skipping draw voxels due to empty voxel list");
+            commands.entity(e).insert(Handle::<Mesh>::default());
             continue;
         }
 
@@ -276,8 +279,8 @@ fn draw_voxels(
         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
 
         //Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![0f32; vertices.len()]);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0f32; vertices.len()]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0; 3]; vertices.len()]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0; 2]; vertices.len()]);
 
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
         mesh.set_indices(Some(Indices::U32(indices)));
@@ -290,6 +293,9 @@ fn draw_voxels(
             transform: Transform::from_translation(
                 first_voxel.as_vec3() * -1.0 + draw_voxels.offset,
             ),
+            visibility: Visibility {
+                is_visible: draw_voxels.visible,
+            },
             ..Default::default()
         });
     }
@@ -412,6 +418,7 @@ fn check_raycast_intersections(
                             color: "pink".into(),
                             offset,
                             voxels,
+                            visible: true,
                         });
                     });
             }
@@ -444,7 +451,7 @@ fn draw_raycast(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Res<WireframeMaterialsMap>,
-    q: Query<(Entity, &RaycastDebug), Without<Handle<Mesh>>>,
+    q: Query<(Entity, &RaycastDebug), Changed<RaycastDebug>>,
 ) {
     for (e, raycast) in q.iter() {
         let end = raycast.dir * raycast.range;
@@ -455,8 +462,8 @@ fn draw_raycast(
         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
 
         //Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![0f32; vertices.len()]);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![0f32; vertices.len()]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0; 3]; vertices.len()]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0; 2]; vertices.len()]);
 
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
         mesh.set_indices(Some(Indices::U32(indices)));

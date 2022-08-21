@@ -17,7 +17,9 @@ fn should_skip_voxel(
     kind: voxel::Kind,
     occlusion: &ChunkFacesOcclusion,
 ) -> bool {
-    kind.is_none() || merged[chunk::to_index(voxel)] || occlusion.get(voxel).is_occluded(side)
+    kind.is_none()
+        || merged[chunk::to_index(voxel)]
+        || occlusion.get(voxel).is_occluded(side)
 }
 
 /**
@@ -319,6 +321,12 @@ pub(super) fn merge(
                 side,
                 kind,
                 light: smooth_light.get(side),
+                voxel: [
+                    projekto_core::math::pack(v1.x as u8, v1.y as u8, v1.z as u8, 0),
+                    projekto_core::math::pack(v2.x as u8, v2.y as u8, v2.z as u8, 0),
+                    projekto_core::math::pack(v3.x as u8, v3.y as u8, v3.z as u8, 0),
+                    projekto_core::math::pack(v4.x as u8, v4.y as u8, v4.z as u8, 0),
+                ],
             })
         }
     }
@@ -330,7 +338,7 @@ mod tests {
     use bevy_utils::default;
 
     use super::*;
-    
+
     #[test]
     fn merge_right_faces() {
         /*

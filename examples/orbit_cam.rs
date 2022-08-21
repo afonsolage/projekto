@@ -1,7 +1,7 @@
 use bevy::{prelude::*, window};
 use bevy_inspector_egui::WorldInspectorPlugin;
 use projekto_camera::{
-    orbit::{OrbitCamera, OrbitCameraTarget, OrbitCameraConfig},
+    orbit::{OrbitCamera, OrbitCameraConfig, OrbitCameraTarget},
     CameraPlugin,
 };
 

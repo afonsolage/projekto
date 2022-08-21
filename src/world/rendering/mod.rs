@@ -6,8 +6,8 @@ use super::terraformation::prelude::*;
 
 pub use landscaping::LandscapeConfig;
 
-mod material;
 mod landscaping;
+mod material;
 mod meshing;
 
 pub use material::ChunkMaterial;
@@ -19,7 +19,9 @@ pub struct LandscapeCenter;
 pub struct PipelinePlugin;
 impl Plugin for PipelinePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(LandscapingPlugin).add_plugin(MeshingPlugin);
+        app.register_type::<ChunkMaterial>()
+            .add_plugin(LandscapingPlugin)
+            .add_plugin(MeshingPlugin);
     }
 }
 
@@ -31,7 +33,7 @@ pub struct EvtChunkMeshDirty(pub IVec3);
 #[derive(Component)]
 pub struct ChunkLocal(pub IVec3);
 
-#[derive(Component)]
+#[derive(Component, Deref, DerefMut)]
 pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
 
 #[derive(Bundle)]

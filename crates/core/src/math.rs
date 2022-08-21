@@ -1,4 +1,4 @@
-use bevy_math::{Vec3, IVec3};
+use bevy_math::{IVec3, Vec3};
 
 pub fn floor(vec: Vec3) -> IVec3 {
     IVec3::new(
@@ -36,6 +36,30 @@ pub fn abs_min_element(vec: Vec3) -> Vec3Element {
     }
 }
 
+pub fn abs_max_element(vec: Vec3) -> Vec3Element {
+    let vec = vec.abs();
+
+    if vec.x > vec.y && vec.x > vec.z {
+        Vec3Element::X
+    } else if vec.y > vec.x && vec.y > vec.z {
+        Vec3Element::Y
+    } else {
+        Vec3Element::Z
+    }
+}
+
+pub fn pack(x: u8, y: u8, z: u8, w: u8) -> u32 {
+    x as u32 | ((y as u32) << 8) | ((z as u32) << 16) | ((w as u32) << 24)
+}
+
+pub fn to_dir(world_dir: Vec3) -> IVec3 {
+    match abs_max_element(world_dir) {
+        Vec3Element::X => IVec3::X * world_dir.x.signum() as i32,
+        Vec3Element::Y => IVec3::Y * world_dir.x.signum() as i32,
+        Vec3Element::Z => IVec3::Z * world_dir.x.signum() as i32,
+    }
+}
+
 #[inline]
 pub fn to_unit_dir(dir: IVec3) -> Vec<IVec3> {
     let mut result = vec![];
@@ -63,6 +87,30 @@ pub fn to_unit_dir(dir: IVec3) -> Vec<IVec3> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn pack() {
+        let packed = super::pack(0, 0, 0, 0);
+        assert_eq!(packed, 0);
+
+        let packed = super::pack(1, 0, 0, 0);
+        assert_eq!(packed, 1);
+
+        let packed = super::pack(0, 1, 0, 0);
+        assert_eq!(packed, 0xFF + 1);
+
+        let packed = super::pack(0, 0, 1, 0);
+        assert_eq!(packed, 0xFFFF + 1);
+
+        let packed = super::pack(0, 0, 0, 1);
+        assert_eq!(packed, 0xFFFFFF + 1);
+
+        let packed = super::pack(1, 1, 1, 1);
+        assert_eq!(packed, 0x01_01_01_01);
+
+        let packed = super::pack(1, 2, 3, 4);
+        assert_eq!(packed, 0x04_03_02_01);
+    }
 
     #[test]
     fn floor() {

@@ -171,6 +171,10 @@ impl FacesOcclusion {
             self.0 &= !mask;
         }
     }
+
+    pub fn raw(&self) -> u8 {
+        self.0
+    }
 }
 
 impl From<[bool; 6]> for FacesOcclusion {
@@ -201,7 +205,7 @@ pub struct VoxelFace {
     pub side: Side,
     pub kind: Kind,
     pub light: [f32; 4],
-    //TODO: color
+    pub voxel: [u32; 4],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -211,6 +215,7 @@ pub struct VoxelVertex {
     pub uv: Vec2,
     pub tile_coord_start: Vec2,
     pub light: Vec3,
+    pub voxel: u32,
     //TODO: color
 }
 
