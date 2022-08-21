@@ -40,13 +40,20 @@ var clip_map: texture_1d<u32>;
 @group(2) @binding(0)
 var<uniform> mesh: Mesh;
 
-let clipped_vertex: vec4<f32> = vec4<f32>(-2.0, -2.0, -2.0, -2.0);
-let clipped_light: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
-let clipped_tile_coord_start: vec2<f32> = vec2<f32>(0.0, 0.0);
+let CLIPPED_VERTEX: vec4<f32> = vec4<f32>(-2.0, -2.0, -2.0, -2.0);
+let CLIPPED_LIGHT: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
+let CLIPPED_TILE_COORD_START: vec2<f32> = vec2<f32>(0.0, 0.0);
 
 let NO_CLIP: f32 = 9999.0;
 let CLIP_AXIS_SIZE: u32 = 144u;
 let CLIP_SIZE: u32 = 20736u;
+
+let UP: vec3<f32> = vec3<f32>(0.0, 1.0, 0.0);
+let DOWN: vec3<f32> = vec3<f32>(0.0, -1.0, 0.0);
+let RIGHT: vec3<f32> = vec3<f32>(1.0, 0.0, 0.0);
+let LEFT: vec3<f32> = vec3<f32>(-1.0, 0.0, 0.0);
+let FRONT: vec3<f32> = vec3<f32>(0.0, 0.0, 1.0);
+let BACK: vec3<f32> = vec3<f32>(0.0, 0.0, -1.0);
 
 fn to_world(position: vec3<f32>) -> vec4<f32> {
     return mesh.model * vec4<f32>(position, 1.0);
@@ -71,21 +78,38 @@ fn get_voxel_clip_data(voxel: vec3<f32>) -> u32 {
     }
 }
 
-fn is_clipped(vertex: Vertex) -> bool {
-    let voxel = unpack_voxel(vertex.voxel);
-    return get_voxel_clip_data(voxel) == 0u;
+fn is_top_face(vertex: Vertex) -> bool {
+    return vertex.normal.y > 0.0;
 }
 
-fn is_neighbor_clipped(vertex: Vertex) -> bool {
-    let voxel = unpack_voxel(vertex.voxel);
-    let neighbor = voxel + vertex.normal;
-    return get_voxel_clip_data(neighbor) == 0u;
+fn is_side_face(vertex: Vertex) -> bool {
+    return vertex.normal.y == 0.0;
+}
+
+fn get_side_clip(voxel: vec3<f32>) -> u32 {
+    let clip = get_voxel_clip_data(voxel + RIGHT);
+    if (clip > 0u) {
+        return clip;
+    }
+    let clip = get_voxel_clip_data(voxel + LEFT);
+    if (clip > 0u) {
+        return clip;
+    }
+    let clip = get_voxel_clip_data(voxel + FRONT);
+    if (clip > 0u) {
+        return clip;
+    }
+    let clip = get_voxel_clip_data(voxel + BACK);
+    if (clip > 0u) {
+        return clip;
+    } else {
+        return 0u;
+    }
 }
 
 @vertex
 fn vertex(
     vertex: Vertex,
-    // @builtin(vertex_index) vertex_index: u32
 ) -> VertexOutput {
     var out: VertexOutput;
 
@@ -101,44 +125,45 @@ fn vertex(
         let neighbor_clip_height = f32(get_voxel_clip_data(neighbor));
         let voxel_clip_height = f32(get_voxel_clip_data(voxel));
 
-        if (voxel.y <= neighbor_clip_height) {
-            // Don't clip
-        } else if (vertex.normal.y > 0.0 && voxel_clip_height == 0.0) {
-            light_intensity = clipped_light;
-            tile_coord_start = clipped_tile_coord_start;
-            position.y = material_data.clip_height + 1.0;
-        } else if (vertex.normal.y > 0.0 && voxel_clip_height != material_data.clip_height) {
-            light_intensity = clipped_light;
-            tile_coord_start = clipped_tile_coord_start;
-            position.y = material_data.clip_height + 1.0;
+        if (is_top_face(vertex)) {
+            // If the top voxel is equals or bellow the clipping, do nothing
+            if (voxel.y <= voxel_clip_height) {
+                //Do nothing
+
+            // If current voxel isn't on line on sight but is on the side of a voxel, which is on line of sight.
+            } else if (voxel_clip_height == 0.0 && get_side_clip(voxel) > 0u) {
+                light_intensity = CLIPPED_LIGHT;
+                tile_coord_start = CLIPPED_TILE_COORD_START;
+                position.y = material_data.clip_height + 1.0;
+
+            // If there is some visible voxel bellow it
+            } else if (voxel_clip_height > 0.0 && voxel_clip_height < material_data.clip_height) {
+                light_intensity = CLIPPED_LIGHT;
+                tile_coord_start = CLIPPED_TILE_COORD_START;
+                position.y = material_data.clip_height + 1.0;
+
+            // If current voxel isn't on light on sight and isn't on the side of a voxel which is
+            } else if (voxel_clip_height > 0.0) {
+                should_clip = true;
+
+            // Just clip everything else
+            } else {
+                light_intensity = CLIPPED_LIGHT;
+                tile_coord_start = CLIPPED_TILE_COORD_START;
+                position.y = material_data.clip_height + 1.0;
+            }
+        } else if (is_side_face(vertex)) {
+            // Only clip side faces that isn't on line of sight
+            if (voxel.y > voxel_clip_height && voxel.y > neighbor_clip_height) {
+                should_clip = true;
+            }
         } else {
             should_clip = true;
         }
-
-
-        // if (is_clipped(vertex) == false || (is_neighbor_clipped(vertex) == false && vertex.normal.y == 0.0)) {
-        //     // Top Face
-        //     if (vertex.normal.y > 0.0) {
-        //         if (voxel.y == material_data.clip_height) {
-        //         } else if (voxel.y > material_data.clip_height) {
-        //             should_clip = true;
-        //         }
-        //     } else if (vertex.normal.y == 0.0) {
-        //         // Clip non-top faces 
-        //         if (voxel.y > material_data.clip_height) {
-        //             should_clip = true;
-        //         }
-        //     }
-        // } else if (vertex.normal.y > 0.0) {
-        //     light_intensity = clipped_light;
-        //     tile_coord_start = clipped_tile_coord_start;
-        //     position.y = material_data.clip_height + 1.0;
-        // } else {
-        //     should_clip = true;
-        // }
     }
+
     if (should_clip) {
-        out.clip_position = clipped_vertex;
+        out.clip_position = CLIPPED_VERTEX;
     } else {
         out.clip_position = view.view_proj * mesh.model * position ;
     }

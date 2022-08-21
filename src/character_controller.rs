@@ -249,6 +249,7 @@ fn update_view_frustum(
     }
 
     let above_voxel = voxel::to_local(position.as_vec3() + Vec3::Y);
+    // TODO: Check on correct chunk
     let above = chunk.lights.get_absolute(above_voxel).unwrap_or_default();
 
     // TODO: Check many blocks using view frustum
