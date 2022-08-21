@@ -365,9 +365,12 @@ fn update_chunk_material(
                             continue;
                         }
 
-                        let idx = pack_landscape_coords((voxel.xz() - clip_origin).as_ivec2());
-                        if voxel.y > data[idx] as f32 {
-                            data[idx] = voxel.y as u8;
+                        let coords = (voxel.xz() - clip_origin).as_ivec2();
+                        if is_on_landscape_bounds(coords) {
+                            let idx = pack_landscape_coords(coords);
+                            if voxel.y > data[idx] as f32 {
+                                data[idx] = voxel.y as u8;
+                            }
                         }
                     }
 
@@ -378,15 +381,12 @@ fn update_chunk_material(
 }
 
 const X_AXIS: usize = landscape::HORIZONTAL_SIZE * chunk::Z_AXIS_SIZE;
+
+fn is_on_landscape_bounds(coords: IVec2) -> bool {
+    coords.x >= 0 && coords.x < X_AXIS as i32 && coords.y >= 0 && coords.y < X_AXIS as i32
+}
+
 fn pack_landscape_coords(coords: IVec2) -> usize {
-    debug_assert!({
-        if coords.x >= 0 && coords.x < X_AXIS as i32 && coords.y >= 0 && coords.y < X_AXIS as i32 {
-            true
-        } else {
-            println!("Invalid {:?}", coords);
-            false
-        }
-    });
     coords.x as usize * X_AXIS + coords.y as usize
 }
 
