@@ -227,7 +227,6 @@ fn update_view_frustum(
 
     if front.is_opaque() == true {
         // Facing a wall. Does nothing
-        trace!("Facing wall");
         return ViewFrustumChain::RevertMaterial;
     }
 
@@ -240,7 +239,6 @@ fn update_view_frustum(
     // TODO: Check many blocks using view frustum
     if above.get(voxel::LightTy::Natural) == voxel::Light::MAX_NATURAL_INTENSITY {
         // We aren't inside any building. Skip
-        trace!("Not under roof");
         return ViewFrustumChain::RevertMaterial;
     }
 
@@ -288,16 +286,22 @@ fn update_chunk_material(
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<ChunkMaterial>>,
     mut commands: Commands,
-    mut meta: Local<Option<Entity>>,
+    mut debug_entity: Local<Option<Entity>>,
+    mut clipped: Local<bool>,
 ) {
-    if meta.is_none() {
-        *meta = Some(commands.spawn().insert(Visibility {is_visible: false}).id());
+    if debug_entity.is_none() {
+        *debug_entity = Some(commands.spawn().insert(Visibility {is_visible: false}).id());
     }
 
     match voxels {
         ViewFrustumChain::DoNothing => return,
         ViewFrustumChain::RevertMaterial => {
+            if *clipped == false {
+                return;
+            }
+
             trace!("Revert!");
+
             if let Some(material) = materials.get_mut(&chunk_material_handle) 
                 && let Some(image) = images.get_mut(&material.clip_map) {
                 material.clip_map_origin = Vec2::ZERO;
@@ -307,12 +311,14 @@ fn update_chunk_material(
                 image.data.fill(0);
             }
 
-            commands.entity(meta.unwrap()).insert(DrawVoxels::default());
+            commands.entity(debug_entity.unwrap()).insert(DrawVoxels::default());
         }
         ViewFrustumChain::ClipMaterial(char_pos, voxels_world) => {
             trace!("Clip!");
 
-            commands.entity(meta.unwrap()).insert(DrawVoxels {
+            *clipped = true;
+
+            commands.entity(debug_entity.unwrap()).insert(DrawVoxels {
                 color: "pink".into(),
                 voxels: voxels_world.iter().map(Vec3::as_ivec3).collect(),
                 offset: voxels_world[0],

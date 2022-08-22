@@ -106,9 +106,6 @@ impl BatchChunkCmdRes {
     fn swap_and_clone(&mut self) -> Vec<ChunkCmd> {
         // Since the running buffer is always cleared when the batch is finished, this swap has no side-effects
         std::mem::swap(&mut self.running, &mut self.pending);
-
-        debug!("Running: {:?}", Self::count_chunk_cmd(&self.running));
-
         self.running.clone()
     }
 
@@ -116,7 +113,6 @@ impl BatchChunkCmdRes {
     Clears the running buffer
     */
     fn finished(&mut self) -> Vec<ChunkCmd> {
-        debug!("Finished!");
         std::mem::take(&mut self.running)
     }
 
@@ -245,6 +241,8 @@ fn collect_completed_task_results(
     if let Some(ref mut task) = **running_task {
         // Check if task has finished
         if let Some((world, updated_list)) = future::block_on(future::poll_once(task)) {
+            debug!("Completed task. Updated chunks: {}", updated_list.len());
+
             // Dispatch all events generated from this batch
             updated_list
                 .into_iter()
@@ -278,13 +276,15 @@ fn dispatch_task(
         return;
     }
     let commands = batch_res.swap_and_clone();
+    let commands = optimize_commands(&world_res, commands);
 
     if !commands.is_empty() {
         let world = world_res.take();
-        let commands = optimize_commands(&world, commands);
 
         **running_task =
             Some(AsyncComputeTaskPool::get().spawn(task::process_batch(world, commands)));
+    } else {
+        batch_res.finished();
     }
 }
 

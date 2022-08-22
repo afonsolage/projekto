@@ -1,8 +1,11 @@
 use bevy::{prelude::*, utils::HashSet};
 
+use itertools::Itertools;
 use projekto_core::{chunk, query};
 
-use super::{prelude::BatchChunkCmdRes, TerraformationCenter, TerraformationConfig, genesis::ChunkKindRes};
+use super::{
+    genesis::ChunkKindRes, prelude::BatchChunkCmdRes, TerraformationCenter, TerraformationConfig,
+};
 
 pub(super) struct LandscapingPlugin;
 
@@ -51,14 +54,21 @@ fn update_landscape(
         let visible_range = query::range_inclusive(begin, end).collect::<HashSet<_>>();
         let existing_chunks = HashSet::from_iter(kinds.list_chunks().into_iter());
 
-        visible_range
+        let load = visible_range
             .iter()
             .filter(|&i| !existing_chunks.contains(i))
-            .for_each(|v| batch.load(*v));
+            .collect_vec();
 
-        existing_chunks
+        let unload = existing_chunks
             .iter()
             .filter(|&i| !visible_range.contains(i))
-            .for_each(|v| batch.unload(*v));
+            .collect_vec();
+
+        if load.len() > 0 || unload.len() > 0 {
+            trace!("Requesting load: {}, unload: {}", load.len(), unload.len());
+        }
+
+        load.into_iter().for_each(|&v| batch.load(v));
+        unload.into_iter().for_each(|&v| batch.unload(v));
     }
 }

@@ -34,6 +34,13 @@ pub(super) async fn process_batch(
 
     let (load, unload, update) = split_commands(commands);
 
+    trace!(
+        "Processing batch - Load: {}, Unload: {}, Update: {}",
+        load.len(),
+        unload.len(),
+        update.len()
+    );
+
     unload_chunks(&mut world, &unload);
 
     let not_found = load_chunks(&mut world, load).await;
