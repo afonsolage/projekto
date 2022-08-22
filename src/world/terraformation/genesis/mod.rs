@@ -111,6 +111,10 @@ impl BatchChunkCmdRes {
         self.running.clone()
     }
 
+    fn has_pending_cmds(&self) -> bool {
+        self.pending.len() > 0
+    }
+
     /**
     Clears the running buffer
     */
@@ -203,6 +207,12 @@ impl Deref for WorldRes {
 #[derive(Default, Deref, DerefMut)]
 struct RunningTask(pub Option<Task<TaskResult>>);
 
+impl RunningTask {
+    fn is_running(&self) -> bool {
+        self.is_some()
+    }
+}
+
 #[derive(SystemParam)]
 struct ChunkResources<'w, 's> {
     kind: ResMut<'w, ChunkKindRes>,
@@ -277,10 +287,10 @@ fn dispatch_task(
     mut batch_res: ResMut<BatchChunkCmdRes>,
     mut world_res: ResMut<WorldRes>,
 ) {
-    if running_task.is_some() {
-        // Wait for current task to finish
+    if running_task.is_running() || batch_res.has_pending_cmds() == false {
         return;
     }
+    
     let commands = batch_res.swap_and_clone();
     let commands = optimize_commands(&world_res, commands);
 
