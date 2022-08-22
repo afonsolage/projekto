@@ -8,7 +8,9 @@ use projekto_core::voxel::VoxelVertex;
 
 use projekto_shaping as shaping;
 
-use super::{ChunkEntityMap, ChunkMaterial, EvtChunkMeshDirty, WorldRes};
+use crate::world::terraformation::prelude::ChunkVertexRes;
+
+use super::{ChunkEntityMap, ChunkMaterial, EvtChunkMeshDirty};
 
 pub(super) struct MeshingPlugin;
 
@@ -26,7 +28,7 @@ struct MeshGenerationMeta {
 fn mesh_generation_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    vox_world: Res<WorldRes>,
+    vertices: Res<ChunkVertexRes>,
     entity_map: Res<ChunkEntityMap>,
     mut reader: EventReader<EvtChunkMeshDirty>,
     mut meta: Local<MeshGenerationMeta>,
@@ -35,20 +37,11 @@ fn mesh_generation_system(
 
     meta.pending_chunks.extend(reader.iter().map(|evt| evt.0));
 
-    if !vox_world.is_ready() {
-        return;
-    }
-
     let limit = usize::min(meta.pending_chunks.len(), 1);
 
-    let chunks = meta
-        .pending_chunks
-        .drain(..limit)
-        .filter_map(|evt| vox_world.get(evt).map(|c| (evt, &c.vertices)))
-        .collect::<Vec<_>>();
-
-    for (local, vertices) in chunks {
-        if let Some(&e) = entity_map.0.get(&local) {
+    for local in meta.pending_chunks.drain(..limit) {
+        if let Some(&e) = entity_map.0.get(&local) 
+            && let Some(vertices) = vertices.get(local) {
             debug_assert!(!vertices.is_empty());
 
             let mesh = generate_mesh(vertices);

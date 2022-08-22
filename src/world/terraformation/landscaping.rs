@@ -3,8 +3,7 @@ use bevy::{prelude::*, utils::HashSet};
 use projekto_core::{chunk, query};
 
 use super::{
-    prelude::{BatchChunkCmdRes, WorldRes},
-    TerraformationCenter, TerraformationConfig,
+    genesis::BatchChunkCmdRes, genesis::ChunkKindRes, TerraformationCenter, TerraformationConfig,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -23,16 +22,12 @@ struct UpdateLandscapeMeta {
 fn update_landscape(
     time: Res<Time>,
     config: Res<TerraformationConfig>,
-    world_res: Res<WorldRes>,
+    kinds: Res<ChunkKindRes>,
     mut meta: Local<UpdateLandscapeMeta>,
     mut batch: ResMut<BatchChunkCmdRes>,
     q: Query<&Transform, With<TerraformationCenter>>,
 ) {
     let mut _perf = perf_fn!();
-
-    if !world_res.is_ready() {
-        return;
-    }
 
     let center = match q.get_single() {
         Ok(t) => chunk::to_local(t.translation),
@@ -56,16 +51,16 @@ fn update_landscape(
         let end = center + radius;
 
         let visible_range = query::range_inclusive(begin, end).collect::<HashSet<_>>();
-        let existing_chunks = HashSet::from_iter(world_res.list_chunks().into_iter());
+        let existing_chunks = HashSet::from_iter(kinds.list_chunks().into_iter());
 
         visible_range
             .iter()
             .filter(|&i| !existing_chunks.contains(i))
-            .for_each(|v| batch.load(*v));
+            .for_each(|&v| batch.load(v));
 
         existing_chunks
             .iter()
             .filter(|&i| !visible_range.contains(i))
-            .for_each(|v| batch.unload(*v));
+            .for_each(|&v| batch.unload(v));
     }
 }

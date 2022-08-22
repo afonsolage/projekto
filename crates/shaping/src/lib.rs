@@ -620,24 +620,28 @@ mod tests {
                     normal,
                     position: (0.0, 1.0, 1.0).into(),
                     uv: (0.0, 0.2).into(),
+                    tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
                 VoxelVertex {
                     normal,
                     position: (1.0, 1.0, 1.0).into(),
                     uv: (0.1, 0.2).into(),
+                    tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
                 VoxelVertex {
                     normal,
                     position: (1.0, 1.0, -1.0).into(),
                     uv: (0.1, 0.0).into(),
+                    tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
                 VoxelVertex {
                     normal,
                     position: (0.0, 1.0, -1.0).into(),
                     uv: (0.0, 0.0).into(),
+                    tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
             ]

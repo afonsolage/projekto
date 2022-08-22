@@ -11,7 +11,7 @@ bevy_utils = "0.8"
 bevy_log = "0.8"
 serde = "1.0"
 once_cell = "1.13.0"
-ron = "0.7"
+ron = "0.8.0"
 
 [dev-dependencies]
 rand = "0.8.5"

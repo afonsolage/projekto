@@ -3,6 +3,7 @@
 #![feature(int_log)]
 #![feature(test)]
 #![feature(once_cell)]
+#![feature(is_some_with)]
 
 use bevy::{
     asset::AssetServerSettings, prelude::*, render::texture::ImageSettings, window::PresentMode,

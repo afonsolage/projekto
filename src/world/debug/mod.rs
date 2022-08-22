@@ -1,9 +1,10 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use bevy::{
     prelude::*,
     render::mesh::{Indices, PrimitiveTopology},
 };
+use itertools::Itertools;
 use projekto_camera::fly_by::{self, FlyByCamera};
 
 use crate::world::rendering::*;
@@ -86,52 +87,45 @@ fn toggle_landscape_pause(keyboard: Res<Input<KeyCode>>, mut config: ResMut<Land
     config.paused = !config.paused;
 }
 
+#[derive(Component)]
+struct WireframeVoxels;
+
 fn toggle_chunk_voxels_wireframe(
     mut commands: Commands,
     keyboard: Res<Input<KeyCode>>,
     mut wireframe_state: ResMut<DebugWireframeStateRes>,
-    mut chunk_query: ChunkSystemQuery,
-    q_chunks: Query<(Entity, &ChunkLocal)>,
-    q_draws: Query<(Entity, &Parent), With<DrawVoxels>>,
+    kinds: Res<ChunkKindRes>,
+    chunk_map: Res<ChunkEntityMap>,
+    q_draws: Query<Entity, (With<DrawVoxels>, With<WireframeVoxels>)>,
 ) {
-    if chunk_query.is_waiting() {
-        if let Some(chunks) = chunk_query.fetch() {
-            for (e, local) in q_chunks.iter() {
-                let chunk = match chunks.get(&local.0) {
-                    Some(c) => c,
-                    None => continue,
-                };
+    if !keyboard.just_pressed(KeyCode::F2) {
+        return;
+    }
 
-                let voxels = chunk::voxels()
-                    .filter(|&v| !chunk.get(v).is_none())
-                    .collect();
+    wireframe_state.show_voxel = !wireframe_state.show_voxel;
 
-                commands.entity(e).with_children(|c| {
-                    c.spawn().insert(DrawVoxels {
-                        color: "gray".into(),
-                        voxels,
-                        ..Default::default()
-                    });
-                });
-            }
+    if !wireframe_state.show_voxel {
+        for e in q_draws.iter() {
+            // Remove only entities with DrawVoxels and with a Chunk as a parent
+            commands.entity(e).despawn();
         }
     } else {
-        if !keyboard.just_pressed(KeyCode::F2) {
-            return;
-        }
+        for (local, kinds) in kinds.iter() {
+            if let Some(&entity) = chunk_map.get(&local) {
+                let voxels = chunk::voxels()
+                    .filter(|&v| kinds.get(v).is_none() == false)
+                    .collect_vec();
 
-        wireframe_state.show_voxel = !wireframe_state.show_voxel;
-
-        if !wireframe_state.show_voxel {
-            for (e, parent) in q_draws.iter() {
-                // Remove only entities with DrawVoxels and with a Chunk as a parent
-                if q_chunks.iter().any(|(c_e, _)| c_e.eq(&parent.get())) {
-                    commands.entity(e).despawn();
-                }
+                commands.entity(entity).with_children(|c| {
+                    c.spawn()
+                        .insert(DrawVoxels {
+                            color: "gray".into(),
+                            voxels,
+                            ..Default::default()
+                        })
+                        .insert(WireframeVoxels);
+                });
             }
-        } else {
-            let chunks = q_chunks.iter().map(|(_, c)| c.0).collect();
-            chunk_query.query(chunks);
         }
     }
 }
@@ -345,107 +339,43 @@ fn do_raycast(
     }
 }
 
-#[derive(Default)]
-struct CheckRaycastIntersectionsSystemMeta {
-    req_entity: Option<Entity>,
-    pending: VecDeque<Entity>,
-}
-
-impl CheckRaycastIntersectionsSystemMeta {
-    fn reset(&mut self) {
-        self.req_entity = None;
-    }
-}
-
 fn check_raycast_intersections(
-    mut meta: Local<CheckRaycastIntersectionsSystemMeta>,
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut chunk_raycast: ChunkSystemRaycast,
-    added_q: Query<Entity, (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
-    raycast_q: Query<&RaycastDebug, Without<RaycastDebugNoPoint>>,
+    added_q: Query<(Entity, &RaycastDebug), (Added<RaycastDebug>, Without<RaycastDebugNoPoint>)>,
+    kinds: Res<ChunkKindRes>,
 ) {
-    for e in added_q.iter() {
-        meta.pending.push_back(e);
-    }
+    for (e, raycast) in &added_q {
+        // Get only world position of raycast
+        let voxels = query::raycast(raycast.origin, raycast.dir, raycast.range)
+            .into_iter()
+            .map(|(_, voxel_hits)| voxel_hits)
+            .flatten()
+            .map(|hit| hit.position)
+            .filter(|&w| kinds.get_at_world(w).is_some_and(|k| k.is_none() == false))
+            .map(|v| v.as_ivec3())
+            .collect();
 
-    if chunk_raycast.is_waiting() {
-        if let Some(result) = chunk_raycast.fetch() {
-            let hits = result.hits();
-
-            for (chunk_hit, voxels_hit) in hits.iter() {
-                let chunk = match result.chunks.get(&chunk_hit.local) {
-                    Some(c) => c,
-                    None => continue,
-                };
-
-                if voxels_hit.is_empty() {
-                    warn!(
-                        "Raycast returned empty voxels list at {:?}",
-                        &chunk_hit.local
-                    );
-                    continue;
-                }
-
-                let mut voxels = vec![];
-                for voxel_hit in voxels_hit.iter() {
-                    if chunk.get(voxel_hit.local).is_none() {
-                        continue;
-                    }
-
-                    add_debug_ball(&mut commands, &mut meshes, voxel_hit.position);
-
-                    commands
-                        .spawn()
-                        .insert(RaycastDebug {
-                            origin: voxel_hit.position,
-                            dir: voxel_hit.normal.as_vec3(),
-                            range: 0.08,
-                        })
-                        .insert(RaycastDebugNoPoint);
-
-                    voxels.push(voxel_hit.local);
-                }
-
-                let offset = (result.origin
-                    - (chunk::to_world(chunk_hit.local) + voxels_hit[0].local.as_vec3()))
-                    * -1.0;
-
-                commands
-                    .entity(meta.req_entity.unwrap())
-                    .with_children(|c| {
-                        c.spawn().insert(DrawVoxels {
-                            color: "pink".into(),
-                            offset,
-                            voxels,
-                            visible: true,
-                        });
-                    });
-            }
-
-            meta.reset();
-        }
-    } else if let Some(next) = meta.pending.pop_front() {
-        if let Ok(debug_raycast) = raycast_q.get(next) {
-            meta.req_entity = Some(next);
-            chunk_raycast.raycast(debug_raycast.origin, debug_raycast.dir, debug_raycast.range);
-        }
+        commands.entity(e).insert(DrawVoxels {
+            color: "pink".into(),
+            voxels,
+            ..Default::default()
+        });
     }
 }
 
-fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, position: Vec3) {
-    let mesh = Mesh::from(shape::UVSphere {
-        radius: 0.01,
-        sectors: 10,
-        stacks: 10,
-    });
+// fn add_debug_ball(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, position: Vec3) {
+//     let mesh = Mesh::from(shape::UVSphere {
+//         radius: 0.01,
+//         sectors: 10,
+//         stacks: 10,
+//     });
 
-    commands.spawn_bundle(PbrBundle {
-        mesh: meshes.add(mesh),
-        transform: Transform::from_translation(position),
-        ..Default::default()
-    });
-}
+//     commands.spawn_bundle(PbrBundle {
+//         mesh: meshes.add(mesh),
+//         transform: Transform::from_translation(position),
+//         ..Default::default()
+//     });
+// }
 
 fn draw_raycast(
     mut commands: Commands,
@@ -483,44 +413,31 @@ fn remove_voxel(
     q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
     mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
-    mut query: ChunkSystemRaycast,
+    kinds: Res<ChunkKindRes>,
 ) {
-    if query.is_waiting() {
-        if let Some(result) = query.fetch() {
-            let hit_results = result.hits();
+    if !mouse_input.just_pressed(MouseButton::Right) {
+        return;
+    }
 
-            for (chunk_hit, voxels_hit) in hit_results {
-                let chunk = match result.chunks.get(&chunk_hit.local) {
-                    Some(c) => c,
-                    None => continue,
-                };
+    if let Ok(transform) = q_cam.get_single() {
+        let origin = transform.translation;
+        let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
+        let range = 100.0;
 
-                for voxel_hit in voxels_hit {
-                    if chunk.get(voxel_hit.local).is_none() {
-                        continue;
-                    }
+        let world_hit = query::raycast(origin, dir, range)
+            .into_iter()
+            .map(|(_, voxel_hits)| voxel_hits)
+            .flatten()
+            .map(|hit| hit.position)
+            .filter(|&w| kinds.get_at_world(w).is_some_and(|k| k.is_none() == false))
+            .next();
 
-                    debug!("Hit voxel at {:?} {:?}", chunk_hit.local, voxel_hit.local);
-                    set_voxel_writer.send(CmdChunkUpdate(
-                        chunk_hit.local,
-                        vec![(voxel_hit.local, voxel::Kind::none())],
-                    ));
+        if let Some(world) = world_hit {
+            let local = chunk::to_local(world);
+            let voxel = voxel::to_local(world);
 
-                    return;
-                }
-            }
-        }
-    } else {
-        if !mouse_input.just_pressed(MouseButton::Right) {
-            return;
-        }
-
-        if let Ok(transform) = q_cam.get_single() {
-            let origin = transform.translation;
-            let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
-            let range = 100.0;
-
-            query.raycast(origin, dir, range);
+            debug!("Hit voxel at {:?} {:?}", local, voxel);
+            set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, voxel::Kind::none())]));
         }
     }
 }
@@ -529,51 +446,31 @@ fn add_voxel(
     q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
     mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
-    mut query: ChunkSystemRaycast,
+    kinds: Res<ChunkKindRes>,
 ) {
-    if query.is_waiting() {
-        if let Some(result) = query.fetch() {
-            let hit_results = result.hits();
+    if !mouse_input.just_pressed(MouseButton::Right) {
+        return;
+    }
 
-            for (chunk_hit, voxels_hit) in hit_results {
-                let chunk = match result.chunks.get(&chunk_hit.local) {
-                    Some(c) => c,
-                    None => continue,
-                };
+    if let Ok(transform) = q_cam.get_single() {
+        let origin = transform.translation;
+        let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
+        let range = 100.0;
 
-                for voxel_hit in voxels_hit {
-                    if chunk.get(voxel_hit.local).is_none() {
-                        continue;
-                    }
+        let world_hit = query::raycast(origin, dir, range)
+            .into_iter()
+            .map(|(_, voxel_hits)| voxel_hits)
+            .flatten()
+            .map(|hit| hit.position)
+            .filter(|&w| kinds.get_at_world(w).is_some_and(|k| k.is_none() == false))
+            .next();
 
-                    debug!("Hit voxel at {:?} {:?}", chunk_hit.local, voxel_hit.local);
-                    let voxel = voxel_hit.local + voxel_hit.normal;
+        if let Some(world) = world_hit {
+            let local = chunk::to_local(world);
+            let voxel = voxel::to_local(world);
 
-                    let (local, voxel) = if chunk::is_within_bounds(voxel) {
-                        (chunk_hit.local, voxel)
-                    } else {
-                        let neighbor_local = chunk_hit.local + chunk_hit.normal;
-                        let (_, neighbor_voxel) = chunk::overlap_voxel(voxel);
-                        (neighbor_local, neighbor_voxel)
-                    };
-
-                    set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, voxel::Kind::id(4))]));
-
-                    return;
-                }
-            }
-        }
-    } else {
-        if !mouse_input.just_pressed(MouseButton::Left) {
-            return;
-        }
-
-        if let Ok(transform) = q_cam.get_single() {
-            let origin = transform.translation;
-            let dir = transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0;
-            let range = 100.0;
-
-            query.raycast(origin, dir, range);
+            debug!("Hit voxel at {:?} {:?}", local, voxel);
+            set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, voxel::Kind::id(4))]));
         }
     }
 }

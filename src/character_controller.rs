@@ -12,8 +12,7 @@ use projekto_core::{chunk, voxel, landscape};
 
 use crate::world::{
     debug::DrawVoxels,
-    rendering::{ChunkMaterial, ChunkMaterialHandle},
-    terraformation::prelude::WorldRes,
+    rendering::{ChunkMaterial, ChunkMaterialHandle}, terraformation::prelude::{ChunkKindRes, ChunkLightRes},
 };
 pub struct CharacterControllerPlugin;
 
@@ -208,61 +207,40 @@ enum ViewFrustumChain {
 }
 
 fn update_view_frustum(
-    world_res: Res<WorldRes>,
+    kinds: Res<ChunkKindRes>,
+    lights: Res<ChunkLightRes>,
     position: Res<CharacterPosition>,
     q: Query<&Transform, With<CharacterController>>,
-    mut meta: Local<bool>,
 ) -> ViewFrustumChain {
-    if position.is_changed() == false && *meta == false {
+    if position.is_changed() == false {
         return ViewFrustumChain::DoNothing;
     }
 
-    if world_res.is_ready() == false {
-        *meta = true;
-        return ViewFrustumChain::DoNothing;
-    }
-
-    *meta = false;
-
+    // Use normalized direction to avoid diagonal voxels
     let forward = projekto_core::math::to_dir(q.single().forward());
     let front_world = (forward + **position).as_vec3();
 
-    let local = chunk::to_local(front_world);
-
-    let chunk = if let Some(chunk) = world_res.get(local) {
-        chunk
-    } else {
-        warn!(
-            "Unable to update view frustum. Chunk not found at {:?}",
-            local
-        );
-        return ViewFrustumChain::RevertMaterial;
+    let front = match kinds.get_at_world(front_world) {
+        Some(k) => k,
+        None => return ViewFrustumChain::DoNothing,
     };
-
-    let front_voxel = voxel::to_local(front_world);
-    let front = chunk.kinds.get_absolute(front_voxel).unwrap_or_default();
 
     if front.is_opaque() == true {
         // Facing a wall. Does nothing
-        trace!("Facing wall");
         return ViewFrustumChain::RevertMaterial;
     }
 
-    let above_voxel = voxel::to_local(position.as_vec3() + Vec3::Y);
-    // TODO: Check on correct chunk
-    let above = chunk.lights.get_absolute(above_voxel).unwrap_or_default();
+    let above_world = position.as_vec3() + Vec3::Y;
+    let above = match lights.get_at_world(above_world) {
+        Some(l) => l,
+        None => return ViewFrustumChain::DoNothing,
+    };
 
     // TODO: Check many blocks using view frustum
     if above.get(voxel::LightTy::Natural) == voxel::Light::MAX_NATURAL_INTENSITY {
         // We aren't inside any building. Skip
-        trace!("Not under roof");
         return ViewFrustumChain::RevertMaterial;
     }
-
-    info!(
-        "Update view frustum. Voxel: {:?} - {:?}",
-        front_voxel, above
-    );
 
     let mut queue = VecDeque::new();
     queue.push_back(front_world);
@@ -282,16 +260,10 @@ fn update_view_frustum(
                 continue;
             }
 
-            let chunk_local = chunk::to_local(next_voxel);
-            let voxel = voxel::to_local(next_voxel);
-
-            let chunk = if let Some(chunk) = world_res.get(chunk_local) {
-                chunk
-            } else {
-                continue;
+            let kind = match kinds.get_at_world(next_voxel) {
+                Some(k) => k,
+                None => continue,
             };
-
-            let kind = chunk.kinds.get(voxel);
 
             if kind.is_opaque() {
                 continue;
@@ -314,16 +286,22 @@ fn update_chunk_material(
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<ChunkMaterial>>,
     mut commands: Commands,
-    mut meta: Local<Option<Entity>>,
+    mut debug_entity: Local<Option<Entity>>,
+    mut clipped: Local<bool>,
 ) {
-    if meta.is_none() {
-        *meta = Some(commands.spawn().insert(Visibility {is_visible: false}).id());
+    if debug_entity.is_none() {
+        *debug_entity = Some(commands.spawn().insert(Visibility {is_visible: false}).id());
     }
 
     match voxels {
         ViewFrustumChain::DoNothing => return,
         ViewFrustumChain::RevertMaterial => {
+            if *clipped == false {
+                return;
+            }
+
             trace!("Revert!");
+
             if let Some(material) = materials.get_mut(&chunk_material_handle) 
                 && let Some(image) = images.get_mut(&material.clip_map) {
                 material.clip_map_origin = Vec2::ZERO;
@@ -333,12 +311,14 @@ fn update_chunk_material(
                 image.data.fill(0);
             }
 
-            commands.entity(meta.unwrap()).insert(DrawVoxels::default());
+            commands.entity(debug_entity.unwrap()).insert(DrawVoxels::default());
         }
         ViewFrustumChain::ClipMaterial(char_pos, voxels_world) => {
             trace!("Clip!");
 
-            commands.entity(meta.unwrap()).insert(DrawVoxels {
+            *clipped = true;
+
+            commands.entity(debug_entity.unwrap()).insert(DrawVoxels {
                 color: "pink".into(),
                 voxels: voxels_world.iter().map(Vec3::as_ivec3).collect(),
                 offset: voxels_world[0],
