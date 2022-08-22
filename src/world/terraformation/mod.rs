@@ -15,7 +15,6 @@ pub mod prelude {
     // pub use super::terraforming::ChunkSystemRaycast;
     pub use super::CmdChunkUpdate;
 }
-
 pub struct TerraformationPlugin;
 
 impl Plugin for TerraformationPlugin {
@@ -53,3 +52,4 @@ fn process_update_chunks(
         batch.update(*local, voxels.clone());
     }
 }
+
