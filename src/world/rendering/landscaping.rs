@@ -7,12 +7,11 @@ use projekto_core::{chunk, landscape, query, voxel};
 
 use crate::world::{
     rendering::{ChunkMaterial, ChunkMaterialHandle},
-    terraformation::prelude::KindsAtlasRes,
+    terraformation::prelude::{ChunkKindRes, KindsAtlasRes},
 };
 
 use super::{
     ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated, LandscapeCenter,
-    WorldRes,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -92,14 +91,14 @@ fn update_landscape(
     material: Res<ChunkMaterialHandle>,
     time: Res<Time>,              // TODO: Change this to a Run Criteria later on
     config: Res<LandscapeConfig>, // TODO: Change this to a Run Criteria later on
-    world_res: Res<WorldRes>,     // TODO: Change this to a Run Criteria later on
+    kinds: Res<ChunkKindRes>,
     mut meta: ResMut<LandscapeMeta>,
     mut writer: EventWriter<EvtChunkMeshDirty>,
     center_query: Query<&Transform, With<LandscapeCenter>>,
 ) {
     let mut _perf = perf_fn!();
 
-    if config.paused || !world_res.is_ready() {
+    if config.paused {
         return;
     }
 
@@ -129,7 +128,7 @@ fn update_landscape(
         let spawn = visible_locals
             .iter()
             .filter(|&i| !existing_locals.contains(i))
-            .filter(|&&i| world_res.exists(i))
+            .filter(|&&i| kinds.exists(i))
             .collect::<Vec<_>>();
 
         if spawn.len() > 0 {

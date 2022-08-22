@@ -8,11 +8,13 @@ mod terraforming;
 
 pub mod prelude {
     pub use super::genesis::BatchChunkCmdRes;
+    pub use super::genesis::ChunkKindRes;
+    pub use super::genesis::ChunkLightRes;
+    pub use super::genesis::ChunkVertexRes;
     pub use super::genesis::EvtChunkUpdated;
     pub use super::genesis::KindsAtlasRes;
-    pub use super::genesis::WorldRes;
-    pub use super::terraforming::ChunkSystemQuery;
-    pub use super::terraforming::ChunkSystemRaycast;
+    // pub use super::terraforming::ChunkSystemQuery;
+    // pub use super::terraforming::ChunkSystemRaycast;
     pub use super::terraforming::CmdChunkUpdate;
 }
 
