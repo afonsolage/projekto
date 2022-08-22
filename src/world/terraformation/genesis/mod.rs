@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
     reflect::TypeUuid,
     tasks::{AsyncComputeTaskPool, Task},
-    utils::HashMap,
+    utils::{HashMap, HashSet},
 };
 use futures_lite::future;
 
@@ -19,6 +19,8 @@ mod resources;
 mod task;
 
 pub use resources::*;
+
+use self::task::TaskResult;
 
 const CACHE_PATH: &str = "cache/chunks/";
 const CACHE_EXT: &str = "bin";
@@ -112,8 +114,8 @@ impl BatchChunkCmdRes {
     /**
     Clears the running buffer
     */
-    fn finished(&mut self) -> Vec<ChunkCmd> {
-        std::mem::take(&mut self.running)
+    fn finished(&mut self) {
+        self.running.clear()
     }
 
     /**
@@ -199,7 +201,7 @@ impl Deref for WorldRes {
 }
 
 #[derive(Default, Deref, DerefMut)]
-struct RunningTask(pub Option<Task<(VoxWorld, Vec<IVec3>)>>);
+struct RunningTask(pub Option<Task<TaskResult>>);
 
 #[derive(SystemParam)]
 struct ChunkResources<'w, 's> {
@@ -240,28 +242,32 @@ fn collect_completed_task_results(
 ) {
     if let Some(ref mut task) = **running_task {
         // Check if task has finished
-        if let Some((world, updated_list)) = future::block_on(future::poll_once(task)) {
+        if let Some(TaskResult {
+            world,
+            loaded,
+            unloaded,
+            updated,
+        }) = future::block_on(future::poll_once(task))
+        {
+            unloaded
+                .into_iter()
+                .for_each(|local| chunk_resources.remove(local));
+
+            let mut updated_list = HashSet::new();
+            updated_list.extend(loaded);
+            updated_list.extend(updated);
+
             debug!("Completed task. Updated chunks: {}", updated_list.len());
 
-            // Dispatch all events generated from this batch
-            updated_list
-                .into_iter()
-                .for_each(|local| updated_writer.send(EvtChunkUpdated(local)));
-
-            // Update chunk resources with the outcome of task
-            let finished = batch_res.finished();
-            for cmd in finished {
-                match cmd {
-                    ChunkCmd::Load(local) | ChunkCmd::Update(local, _) => {
-                        chunk_resources.set(local, world.get(local).unwrap())
-                    }
-                    ChunkCmd::Unload(i) => chunk_resources.remove(i),
-                }
-            }
+            updated_list.into_iter().for_each(|local| {
+                updated_writer.send(EvtChunkUpdated(local));
+                chunk_resources.set(local, world.get(local).unwrap());
+            });
 
             // Give back the VoxWorld to WorldRes
             **running_task = None;
             world_res.set(world);
+            batch_res.finished();
         }
     }
 }
@@ -287,59 +293,6 @@ fn dispatch_task(
         batch_res.finished();
     }
 }
-
-/**
- * System which process pending commands and updates the world.
- *
- * Since there can be only one copy of World at any given time, when this system process commands
- * it takes ownership of the [`VoxWorld`] from [`WorldRes`] until all the batch is processed.
- *
- * This can take several frames.
- */
-// fn update_world_system(
-//     mut batch_res: ResMut<BatchChunkCmdRes>,
-//     mut meta: Local<RunningTask>,
-//     mut world_res: ResMut<WorldRes>,
-//     mut updated_writer: EventWriter<EvtChunkUpdated>,
-// ) {
-//     let mut _perf = perf_fn!();
-
-//     if let Some(ref mut task) = meta.running_task {
-//         perf_scope!(_perf);
-
-//         // Check if task has finished
-//         if let Some((world, updated_list)) = future::block_on(future::poll_once(task)) {
-//             // Dispatch all events generated from this batch
-//             updated_list
-//                 .into_iter()
-//                 .for_each(|local| updated_writer.send(EvtChunkUpdated(local)));
-
-//             // Give back the VoxWorld to WorldRes
-//             meta.running_task = None;
-//             world_res.set(world);
-//             batch_res.finished();
-//         }
-//     } else if batch_res.has_pending_commands() {
-//         perf_scope!(_perf);
-
-//         let world = world_res.take();
-//         let batch = batch_res.swap_and_clone();
-
-//         let task_pool = AsyncComputeTaskPool::get();
-//         meta.running_task = Some(task_pool.spawn(process_batch(world, batch)));
-//     }
-
-//     assert_ne!(
-//         meta.running_task.is_none(),
-//         !world_res.is_ready(),
-//         "The world should exists only in one place at any given time"
-//     );
-//     assert_ne!(
-//         meta.running_task.is_some(),
-//         world_res.is_ready(),
-//         "The world should exists only in one place at any given time"
-//     );
-// }
 
 /**
 This functions optimize the command list removing duplicated commands or commands that nullifies each other.

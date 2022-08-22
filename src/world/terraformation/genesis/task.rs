@@ -19,6 +19,13 @@ use crate::world::terraformation::VoxelUpdateList;
 
 use super::ChunkCmd;
 
+pub(super) struct TaskResult {
+    pub world: VoxWorld,
+    pub loaded: Vec<IVec3>,
+    pub unloaded: Vec<IVec3>,
+    pub updated: Vec<IVec3>,
+}
+
 /**
 Process a batch a list of [`ChunkCmd`]. This function takes ownership of [`VoxWorld`] since it needs to do modification on world.
 
@@ -26,10 +33,7 @@ This function triggers [`recompute_chunks`] whenever a new chunk is generated or
 
 ***Returns*** the [`VoxWorld`] ownership and a list of updated chunks.
  */
-pub(super) async fn process_batch(
-    mut world: VoxWorld,
-    commands: Vec<ChunkCmd>,
-) -> (VoxWorld, Vec<IVec3>) {
+pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> TaskResult {
     let mut _perf = perf_fn!();
 
     let (load, unload, update) = split_commands(commands);
@@ -43,7 +47,7 @@ pub(super) async fn process_batch(
 
     unload_chunks(&mut world, &unload);
 
-    let not_found = load_chunks(&mut world, load).await;
+    let not_found = load_chunks(&mut world, load.clone()).await;
 
     let mut updated = generate_chunks(&mut world, not_found)
         .into_iter()
@@ -56,7 +60,12 @@ pub(super) async fn process_batch(
     // let dirty_chunks = dirty_chunks.into_iter().collect::<Vec<_>>();
     // let updated = recompute_chunks(&mut world, kinds_descs, dirty_chunks);
 
-    (world, updated.into_iter().collect())
+    TaskResult {
+        world,
+        loaded: load,
+        unloaded: unload,
+        updated: updated.into_iter().collect(),
+    }
 }
 
 /**
