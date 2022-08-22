@@ -6,7 +6,7 @@ use bevy::{
 };
 use projekto_core::{chunk, landscape};
 
-use crate::{character_controller::ChunkMaterialImage, world::terraformation::prelude::*};
+use crate::character_controller::ChunkMaterialImage;
 
 // use bevy_egui::{egui, EguiContext, EguiPlugin};
 
@@ -20,15 +20,13 @@ impl Plugin for UiPlugin {
             // .add_plugin(EguiPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin::default())
             .add_startup_system(setup_fps_text)
-            .add_startup_system(setup_batch_cmd_text)
             // .add_startup_system(setup_meshing_text)
             // .add_system(cmd_window)
             .add_system_set(
                 SystemSet::new()
                     .with_run_criteria(FixedTimestep::step(0.5))
                     .with_system(show_chunk_material_clip_map)
-                    .with_system(update_fps_text_system)
-                    .with_system(update_batch_cmd_text_system), // .with_system(update_meshing_text_system),
+                    .with_system(update_fps_text_system),
             );
 
         #[cfg(feature = "mem_alloc")]
@@ -38,28 +36,6 @@ impl Plugin for UiPlugin {
             );
     }
 }
-
-// #[derive(Default)]
-// struct CmdWindowMeta {
-//     cmd: String,
-// }
-
-// fn cmd_window(
-//     egui_context: Res<EguiContext>,
-//     mut meta: Local<CmdWindowMeta>,
-//     mut writer: EventWriter<DebugCmd>,
-// ) {
-//     egui::Window::new("Commands").show(egui_context.ctx(), |ui| {
-//         if ui.text_edit_singleline(&mut meta.cmd).lost_focus() {
-//             if meta.cmd.is_empty() {
-//                 return;
-//             }
-
-//             writer.send(DebugCmd(meta.cmd.clone()));
-//             meta.cmd.clear();
-//         }
-//     });
-// }
 
 #[derive(Component)]
 struct FpsCounterTag;
@@ -101,87 +77,6 @@ fn update_fps_text_system(
                 t.sections[0].value = format!("{:.0}", avg);
             }
         }
-    }
-}
-
-// #[derive(Component)]
-// struct MeshingCounterTag;
-// fn setup_meshing_text(mut commands: Commands, asset_server: Res<AssetServer>) {
-//     let font = asset_server.load("fonts/cFiraSans-Bold.ttf");
-
-//     commands
-//         .spawn_bundle(TextBundle {
-//             style: Style {
-//                 align_self: AlignSelf::FlexEnd,
-//                 position_type: PositionType::Absolute,
-//                 position: Rect {
-//                     top: Val::Px(30.0),
-//                     right: Val::Px(15.0),
-//                     ..Default::default()
-//                 },
-//                 ..Default::default()
-//             },
-//             text: Text::with_section(
-//                 "",
-//                 TextStyle {
-//                     font,
-//                     font_size: 25.0,
-//                     color: Color::YELLOW_GREEN,
-//                 },
-//                 Default::default(),
-//             ),
-//             ..Default::default()
-//         })
-//         .insert(MeshingCounterTag);
-// }
-
-// fn update_meshing_text_system(
-//     meshing_res: Option<Res<MeshGenerationCounter>>,
-//     mut q: Query<&mut Text, With<MeshingCounterTag>>,
-// ) {
-//     if let Ok(mut t) = q.get_single_mut() {
-//         if let Some(meshing_counter) = meshing_res {
-//             t.sections[0].value = format!("Meshing Tasks: {}", meshing_counter.task_counter);
-//         }
-//     }
-// }
-
-#[derive(Component)]
-struct BatchCmdCounterTag;
-fn setup_batch_cmd_text(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
-
-    commands
-        .spawn_bundle(TextBundle {
-            style: Style {
-                align_self: AlignSelf::FlexEnd,
-                position_type: PositionType::Absolute,
-                position: UiRect {
-                    top: Val::Px(5.0),
-                    right: Val::Px(15.0),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            text: Text::from_section(
-                "",
-                TextStyle {
-                    font,
-                    font_size: 25.0,
-                    color: Color::YELLOW_GREEN,
-                },
-            ),
-            ..Default::default()
-        })
-        .insert(BatchCmdCounterTag);
-}
-
-fn update_batch_cmd_text_system(
-    batch_res: Res<BatchChunkCmdRes>,
-    mut q: Query<&mut Text, With<BatchCmdCounterTag>>,
-) {
-    if let Ok(mut t) = q.get_single_mut() {
-        t.sections[0].value = format!("Genesis: {}", *batch_res);
     }
 }
 

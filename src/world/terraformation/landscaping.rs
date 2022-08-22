@@ -4,7 +4,7 @@ use itertools::Itertools;
 use projekto_core::{chunk, query};
 
 use super::{
-    genesis::ChunkKindRes, prelude::BatchChunkCmdRes, TerraformationCenter, TerraformationConfig,
+    genesis::BatchChunkCmdRes, genesis::ChunkKindRes, TerraformationCenter, TerraformationConfig,
 };
 
 pub(super) struct LandscapingPlugin;

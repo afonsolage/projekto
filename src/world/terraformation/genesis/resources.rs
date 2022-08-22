@@ -66,11 +66,3 @@ pub(super) mod impls {
         }
     }
 }
-
-impl<T> From<Vec<(IVec3, T)>> for ChunkWorldRes<T> {
-    fn from(v: Vec<(IVec3, T)>) -> Self {
-        Self {
-            map: HashMap::from_iter(v),
-        }
-    }
-}
