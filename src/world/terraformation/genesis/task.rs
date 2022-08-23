@@ -5,7 +5,7 @@ use std::{
 
 use bevy::{
     prelude::{trace, warn, IVec3},
-    tasks::IoTaskPool,
+    tasks::{IoTaskPool, Task},
     utils::{HashMap, HashSet},
 };
 use itertools::Itertools;
@@ -26,15 +26,13 @@ pub(super) struct TaskResult {
     pub updated: Vec<IVec3>,
 }
 
-/**
-Process a batch a list of [`ChunkCmd`]. This function takes ownership of [`VoxWorld`] since it needs to do modification on world.
-
-This function triggers [`recompute_chunks`] whenever a new chunk is generated or is updated.
-
-***Returns*** the [`VoxWorld`] ownership and a list of updated chunks.
- */
+/// Process a batch a list of [`ChunkCmd`]. This function takes ownership of [`VoxWorld`] since it needs to do modification on world.
+///
+/// This function triggers [`recompute_chunks`] whenever a new chunk is generated or is updated.
+///
+/// ***Returns*** the [`VoxWorld`] ownership and a list of updated chunks.
 pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> TaskResult {
-    let mut _perf = perf_fn!();
+    perf_fn_scope!();
 
     let (load, unload, update) = split_commands(commands);
 
@@ -47,18 +45,39 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
 
     unload_chunks(&mut world, &unload);
 
-    let not_found = load_chunks(&mut world, load.clone()).await;
+    let (not_found, load_task) = load_chunks(&load);
 
-    let mut updated = generate_chunks(&mut world, not_found)
-        .into_iter()
+    let new_chunks = generate_chunks(not_found);
+
+    // Get all chunks surrounding newly created chunks, so they can be updated
+    let dirty = new_chunks
+        .iter()
+        .flat_map(|(local, _)| {
+            voxel::SIDES
+                .iter()
+                .map(move |s| s.dir() + *local)
+                .chain(std::iter::once(*local))
+        })
         .collect::<HashSet<_>>();
 
-    trace!("Generation completed! {} chunks updated.", updated.len());
+    trace!("Generation completed! {} chunks updated.", dirty.len());
 
-    updated.extend(update_chunks(&mut world, &update));
 
-    // let dirty_chunks = dirty_chunks.into_iter().collect::<Vec<_>>();
-    // let updated = recompute_chunks(&mut world, kinds_descs, dirty_chunks);
+    let loaded_chunks = if load_task.is_some() {
+        load_task.unwrap().await
+    } else {
+        vec![]
+    };
+
+    // Add both loaded and new chunks to world before updating chunks
+    loaded_chunks
+        .into_iter()
+        .chain(new_chunks)
+        .for_each(|(local, chunk)| world.add(local, chunk));
+
+    let updated = shaping::update_chunk(&mut world, &update);
+
+    //
 
     TaskResult {
         world,
@@ -68,48 +87,19 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
     }
 }
 
-/**
-Applies on the given [`VoxWorld`] a voxel modification list [`VoxelUpdateList`]
+// /// Applies on the given [`VoxWorld`] a voxel modification list [`VoxelUpdateList`]
+// ///
+// /// ***Returns*** A list of chunks locals that are dirty due to voxel modifications. This is usually neighboring chunks where voxel was updated
+// fn update_chunks(world: &mut VoxWorld, update_list: &[(IVec3, VoxelUpdateList)]) -> Vec<IVec3> {
+//     perf_fn_scope!();
 
-***Returns*** A list of chunks locals that are dirty due to voxel modifications. This is usually neighboring chunks where voxel was updated
- */
-fn update_chunks(world: &mut VoxWorld, update_list: &[(IVec3, VoxelUpdateList)]) -> Vec<IVec3> {
-    perf_fn_scope!();
+//     let updated_chunks = recompute_map.into_iter().collect::<Vec<_>>();
+//     shaping::update_chunk_internals(world, &updated_chunks)
+// }
 
-    let mut recompute_map = HashMap::default();
+/// Remove from [`VoxWorld`] all chunks on the given list.
 
-    // Apply modifications and keep track of what chunks needs to be recomputed
-    for (local, voxels) in update_list {
-        if let Some(chunk) = world.get_mut(*local) {
-            recompute_map.insert(*local, voxels.iter().cloned().collect());
-
-            trace!("Updating chunk {} values {:?}", local, voxels);
-
-            for &(voxel, kind) in voxels {
-                chunk.kinds.set(voxel, kind);
-
-                // If this updates happens at the edge of chunk, mark neighbors chunk as dirty, since this will likely affect'em
-                recompute_map.extend(
-                    chunk::neighboring(*local, voxel)
-                        .into_iter()
-                        // There is no voxel to update, just recompute neighbor internals
-                        .map(|neighbor_local| (neighbor_local, vec![])),
-                );
-            }
-        } else {
-            warn!("Failed to set voxel. Chunk {} wasn't found.", local);
-        }
-    }
-
-    let updated_chunks = recompute_map.into_iter().collect::<Vec<_>>();
-    recompute_chunks_internals(world, &updated_chunks)
-}
-
-/**
-Remove from [`VoxWorld`] all chunks on the given list.
-
-***Returns*** A list of chunks locals that are dirty due to neighboring chunks removal.
- */
+/// ***Returns*** A list of chunks locals that are dirty due to neighboring chunks removal.
 fn unload_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
     let mut dirty_chunks = HashSet::default();
 
@@ -124,107 +114,82 @@ fn unload_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
     dirty_chunks
 }
 
-/**
-Load from cache into [`VoxWorld`] all chunks on the given list.
-
-***Returns*** A list of chunks locals which doesn't exists on cache.
- */
-async fn load_chunks(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVec3> {
-    let loaded_chunks = IoTaskPool::get()
-        .spawn(async move {
-            locals
-                .iter()
-                .map(|local| {
-                    let path = local_path(*local);
-                    if path.exists() {
-                        (*local, Some(load_chunk(&path)))
-                    } else {
-                        (*local, None)
-                    }
-                })
-                .collect_vec()
-        })
-        .await;
-
-    loaded_chunks
-        .into_iter()
-        .filter_map(|(local, chunk)| {
-            if let Some(chunk) = chunk {
-                world.add(local, chunk);
-                None
+/// Spawn a task on [`IoTaskPool`] which will load all existing chunks.
+///
+/// Chunks that doesn't exists on cache (cache miss) will be returned.
+///
+/// ***Returns*** A list of chunks locals which doesn't exists on cache and an optional task running on [`IoTaskPool`] loading chunks.
+fn load_chunks(locals: &Vec<IVec3>) -> (Vec<IVec3>, Option<Task<Vec<(IVec3, Chunk)>>>) {
+    let (exists, not_exists): (Vec<_>, Vec<_>) = locals
+        .iter()
+        .map(|v| (v, local_path(v)))
+        .map(|(v, path)| {
+            if path.exists() {
+                (Some(v), None)
             } else {
-                Some(local)
+                (None, Some(v))
             }
         })
-        .collect()
+        .unzip();
+
+    let to_load = exists.into_iter().filter_map(|o| o).copied().collect_vec();
+    let load_task = if to_load.is_empty() {
+        None
+    } else {
+        Some(IoTaskPool::get().spawn(async move {
+            let result = to_load
+                .into_iter()
+                .map(|local| (local, load_chunk(&local_path(&local))))
+                .collect_vec();
+
+            trace!("Loading compled. {} chunks loaded.", result.len());
+
+            result
+        }))
+    };
+
+    let not_found = not_exists
+        .into_iter()
+        .filter_map(|o| o)
+        .copied()
+        .collect_vec();
+
+    (not_found, load_task)
 }
 
-/**
-Refresh chunks internal data due to change in the chunk itself or neighborhood.
+/// Update chunk internal data like light.
+/// ***Returns*** A list of chunks that needs to be recomputed.
+// fn update_chunks_internals(
+//     world: &mut VoxWorld,
+//     update: &[(IVec3, VoxelUpdateList)],
+// ) -> Vec<IVec3> {
+//     perf_fn_scope!();
 
-***Returns*** A list of chunks locals that was refreshed.
- */
-fn recompute_chunks_internals(
-    world: &mut VoxWorld,
-    update: &[(IVec3, VoxelUpdateList)],
-) -> Vec<IVec3> {
-    perf_fn_scope!();
+//     let locals = shaping::recompute_chunks_internals(world, update);
 
-    let locals = shaping::recompute_chunks_internals(world, update);
+//     // // TODO: Find a way to only saving chunks which was really updated.
+//     // for &local in locals.iter() {
+//     //     let path = local_path(local);
+//     //     save_chunk(&path, world.get(local).unwrap());
+//     // }
 
-    // TODO: Find a way to only saving chunks which was really updated.
-    for &local in locals.iter() {
-        let path = local_path(local);
-        save_chunk(&path, world.get(local).unwrap());
-    }
+//     locals
+// }
 
-    locals
-}
-
-/**
-Refresh chunks internal data due to change in the neighborhood. At moment this function only refresh neighborhood data.
-
-***Returns*** A list of chunks locals that was refreshed.
- */
-fn compute_chunks_internals(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVec3> {
-    perf_fn_scope!();
-
-    let locals = shaping::compute_chunks_internals(world, locals);
-
-    trace!("Saving {} chunks on disk!", locals.len());
-
-    // TODO: Find a way to only saving chunks which was really updated.
-    for local in locals.iter() {
-        if let Some(chunk) = world.get(*local) {
-            let path = local_path(*local);
-            save_chunk(&path, chunk);
-        }
-    }
-
-    locals
-}
-
-fn generate_chunks(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVec3> {
+/// Generate new chunks on given locals.
+///
+/// This function will do its best to calculate the values and propagation between the newly created chunks.
+///
+/// ***Returns*** a list of newly created chunks and their locals
+fn generate_chunks(locals: Vec<IVec3>) -> Vec<(IVec3, Chunk)> {
     trace!("Generating {} chunks.", locals.len());
 
-    // Before doing anything else, all generated chunks have to be added to world.
-    locals.iter().for_each(|&local| {
-        world.add(local, shaping::generate_chunk(local));
-    });
-
-    // Mark all generated chunks and it's surround as dirty
-    let dirty_chunks = locals
+    let new_chunks = locals
         .iter()
-        .flat_map(|&local| {
-            voxel::SIDES
-                .iter()
-                .map(move |s| s.dir() + local)
-                .chain(std::iter::once(local))
-        })
-        .unique()
-        .collect();
+        .map(|&local| (local, shaping::generate_chunk(local)))
+        .collect_vec();
 
-    compute_chunks_internals(world, dirty_chunks)
+    shaping::build_chunk_internals(new_chunks)
 }
 
 /**
@@ -291,13 +256,13 @@ fn load_chunk(path: &Path) -> Chunk {
     }
 }
 
-fn local_path(local: IVec3) -> PathBuf {
+fn local_path(local: &IVec3) -> PathBuf {
     PathBuf::from(super::CACHE_PATH)
         .with_file_name(format_local(local))
         .with_extension(super::CACHE_EXT)
 }
 
-fn format_local(local: IVec3) -> String {
+fn format_local(local: &IVec3) -> String {
     local
         .to_string()
         .chars()

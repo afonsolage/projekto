@@ -39,7 +39,7 @@ projekto_core = { path = "crates/core", features = ["auto_load_kinds_descs"] }
 [features]
 default = [
      "dev",
-     "perf_counter",
+     # "perf_counter",
      "inspector",
      # "serde_ron",
      # "mem_alloc",

@@ -45,6 +45,18 @@ pub fn propagate_natural_light_on_new_chunk(world: &mut VoxWorld, locals: &[IVec
     let _ = propagator.finish();
 }
 
+pub fn propagate_light_to_neighborhood(world: &mut VoxWorld, locals: &[IVec3]) -> Vec<IVec3> {
+    let mut propagator = Propagator::new(world, LightTy::Artificial);
+    propagator.propagate_light_to_neighborhood(locals);
+    let mut dirty_chunks = propagator.finish();
+
+    let mut propagator = Propagator::new(world, LightTy::Natural);
+    propagator.propagate_light_to_neighborhood(locals);
+    dirty_chunks.extend(propagator.finish());
+
+    dirty_chunks.into_iter().unique().collect()
+}
+
 /// Helper struct, used to simplify and optimize propagation process.
 struct Propagator<'a> {
     world: &'a mut VoxWorld,
@@ -92,8 +104,8 @@ impl<'a> Propagator<'a> {
             "This function should be used only natural light propagation"
         );
 
-        self.propagate_natural_light_top_down(locals);
-        self.propagate_natural_light_neighborhood(locals);
+        self.propagate_light_on_top(locals);
+        self.propagate_light_to_neighborhood(locals);
     }
 
     /// Propagate light on queued chunks and voxels.
@@ -119,9 +131,8 @@ impl<'a> Propagator<'a> {
         }
     }
 
-    /// Propagates natural light across neighborhood.
-    /// This function must be called after natural internal propagation, since it will check edge chunks only.
-    fn propagate_natural_light_neighborhood(&mut self, locals: &[IVec3]) {
+    /// Propagates light across neighborhood.
+    fn propagate_light_to_neighborhood(&mut self, locals: &[IVec3]) {
         trace!(
             "Preparing to propagate natural light to neighbors of {} chunks",
             locals.len()
@@ -150,10 +161,12 @@ impl<'a> Propagator<'a> {
         self.propagate_light(false);
     }
 
-    /// Propagate initial top-down natural light across all given chunks.
-    /// This function propagate the natural light from the top-most voxels downwards.
+    /// Propagate light on top of the chunk.
+    /// 
+    /// This function is intended to propagate the natural light from the top-most voxels downwards.
+    /// 
     /// This function only propagate internally, does not spread the light to neighbors.
-    fn propagate_natural_light_top_down(&mut self, locals: &[IVec3]) {
+    fn propagate_light_on_top(&mut self, locals: &[IVec3]) {
         let top_voxels = (0..=chunk::X_END)
             .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
             .collect_vec();

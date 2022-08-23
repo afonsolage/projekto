@@ -37,6 +37,10 @@ impl VoxWorld {
     pub fn exists(&self, local: IVec3) -> bool {
         self.chunks.contains_key(&local)
     }
+
+    pub fn extract(self) -> Vec<(IVec3, Chunk)> {
+        self.chunks.into_iter().collect()
+    }
 }
 
 #[cfg(test)]

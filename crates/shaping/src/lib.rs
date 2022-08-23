@@ -1,6 +1,6 @@
-use bevy_log::trace;
+use bevy_log::{trace, warn};
 use bevy_math::{IVec3, Vec3};
-use bevy_utils::HashSet;
+use bevy_utils::{HashMap, HashSet};
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use itertools::Itertools;
 
@@ -137,57 +137,73 @@ pub fn generate_chunk(local: IVec3) -> Chunk {
     }
 }
 
-/**
- Compute chunk internal data like light, occlusion and vertices.
+/// Build chunk internal data without using chunks existing into the world.
+/// This is need in order to increase parallelism.
+///
+/// This function creates a temporary world with all newly created chunks to spread information between them.
+/// That way when those chunks are added to main world, most data between them was propagated already.
+///
+/// ***Returns*** returns back the same list given
+pub fn build_chunk_internals(chunks: Vec<(IVec3, Chunk)>) -> Vec<(IVec3, Chunk)> {
+    trace!("Building chunk internals {}", chunks.len());
 
- This function should be called when a new chunk is generated.
+    let locals = chunks.iter().map(|(local, _)| *local).collect_vec();
 
- **Returns** a list of chunks which chunk was computed.
-*/
-pub fn compute_chunks_internals(world: &mut VoxWorld, locals: Vec<IVec3>) -> Vec<IVec3> {
-    // Keeps only existing chunks
-    let locals = locals
+    let mut world = VoxWorld::default();
+
+    chunks
         .into_iter()
-        .filter(|&l| world.exists(l))
-        .collect_vec();
+        .for_each(|(local, chunk)| world.add(local, chunk));
 
-    trace!("Computing {} chunks internals", locals.len());
+    light_propagator::propagate_natural_light_on_new_chunk(&mut world, &locals);
 
-    update_kind_neighborhoods(world, locals.iter());
-    light_propagator::propagate_natural_light_on_new_chunk(world, &locals);
-
-    generate_internals(world, locals.iter());
-
-    locals
+    world.extract()
 }
 
-/**
- Recompute chunk kind neighborhood and vertices.
-
- This function should be called whenever the chunk has changed and needs to update it's internal state.
-
- **Returns** a list of chunks which was recomputed.
-*/
-pub fn recompute_chunks_internals(
+/// Applies a list of voxel kind update on the given world.
+///
+/// **Returns** a list of dirty chunk with has been modified and needs to regenerate vertices.
+pub fn update_chunk(
     world: &mut VoxWorld,
     update: &[(IVec3, Vec<(IVec3, voxel::Kind)>)],
 ) -> Vec<IVec3> {
-    // Keeps only existing chunks
-    let valid_update = update
-        .iter()
-        .cloned()
-        .filter(|(l, _)| world.exists(*l))
-        .collect::<Vec<_>>();
+    let mut dirty = update_kind(world, update);
 
-    // Extract a list with only the chunk locals
-    let mut locals = valid_update.iter().map(|(l, _)| *l).collect::<HashSet<_>>();
-    update_kind_neighborhoods(world, locals.iter());
+    dirty.extend(light_propagator::update_light(world, &update));
 
-    locals.extend(light_propagator::update_light(world, &valid_update));
+    // TODO: Update water, stability and so one
 
-    generate_internals(world, locals.iter());
+    dirty
+}
 
-    locals.into_iter().collect()
+fn update_kind(world: &mut VoxWorld, update: &[(IVec3, Vec<(IVec3, voxel::Kind)>)]) -> Vec<IVec3> {
+    let mut dirty = HashSet::default();
+
+    for (local, voxels) in update {
+        if let Some(chunk) = world.get_mut(*local) {
+            if voxels.is_empty() {
+                continue;
+            }
+
+            dirty.insert(*local);
+
+            trace!("Updating chunk {} values {:?}", local, voxels);
+
+            for &(voxel, kind) in voxels {
+                chunk.kinds.set(voxel, kind);
+
+                // If this updates happens at the edge of chunk, mark neighbors chunk as dirty, since this will likely affect'em
+                dirty.extend(chunk::neighboring(*local, voxel));
+            }
+        } else {
+            warn!("Failed to set voxel. Chunk {} wasn't found.", local);
+        }
+    }
+
+    let dirty = dirty.into_iter().collect_vec();
+    update_kind_neighborhoods(world, dirty.iter());
+
+    dirty
 }
 
 fn generate_internals<'a>(world: &mut VoxWorld, locals: impl Iterator<Item = &'a IVec3>) {
