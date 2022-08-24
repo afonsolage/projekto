@@ -120,7 +120,9 @@ impl<'a> Propagator<'a> {
             self.dirty_chunks.push(local);
 
             // TODO: Check if it's possible to optimize this later on
-            self.update_light_chunk_neighborhood(local);
+            if !skip_neighbors {
+                self.update_light_chunk_neighborhood(local);
+            }
 
             // Apply propagation on current chunk, if exists, and get a list of propagations to be applied on neighbors.
             let neighbor_propagation = self.propagate_light_on_chunk(local, voxels, skip_neighbors);
@@ -134,7 +136,8 @@ impl<'a> Propagator<'a> {
     /// Propagates light across neighborhood.
     fn propagate_light_to_neighborhood(&mut self, locals: &[IVec3]) {
         trace!(
-            "Preparing to propagate natural light to neighbors of {} chunks",
+            "Preparing to propagate light {:?} to neighbors of {} chunks",
+            self.ty,
             locals.len()
         );
 

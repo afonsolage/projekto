@@ -45,48 +45,46 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
 
     let (not_found, load_task) = load_chunks(&load);
 
-    let new_chunks = generate_chunks(not_found);
+    let new_chunks = generate_chunks(not_found)
+        .into_iter()
+        .map(|(local, chunk)| {
+            world.add(local, chunk);
+            local
+        })
+        .collect_vec();
+
+    if let Some(tasks) = load_task {
+        for task in tasks {
+            task.await
+                .into_iter()
+                .for_each(|(local, chunk)| world.add(local, chunk));
+        }
+    }
 
     // Get all chunks surrounding newly created chunks, so they can be updated
-    let dirty_neighborhood = new_chunks
+    let dirty = new_chunks
         .iter()
-        .flat_map(|(local, _)| {
-            voxel::SIDES
-                .iter()
-                .map(move |s| s.dir() + *local)
-                .chain(std::iter::once(*local))
-        })
-        .collect::<HashSet<_>>();
+        .flat_map(|local| voxel::SIDES.iter().map(move |s| s.dir() + *local))
+        .filter(|local| new_chunks.contains(local) == false)
+        .filter(|local| world.exists(*local))
+        .unique()
+        .collect_vec();
 
-    trace!(
-        "Generation completed! {} chunks dirty.",
-        dirty_neighborhood.len()
-    );
+    trace!("Generation completed! {} chunks dirty.", dirty.len());
 
-    let loaded_chunks = if load_task.is_some() {
-        load_task.unwrap().await
-    } else {
+    let mut gen_vertices_list = if dirty.len() == 0 {
         vec![]
+    } else {
+        // Update dirty chunks
+        shaping::update_chunk_neighborhood(&mut world, &dirty)
     };
 
-    // Add both loaded and new chunks
-    loaded_chunks
-        .into_iter()
-        .chain(new_chunks)
-        .for_each(|(local, chunk)| world.add(local, chunk));
-
-    // Update dirty chunks
-    let dirty = dirty_neighborhood
-        .into_iter()
-        .filter(|&l| world.exists(l))
-        .collect_vec();
-    let mut updated = shaping::update_chunk_neighborhood(&mut world, &dirty);
-
-    updated.extend(shaping::update_chunks(&mut world, &update));
+    gen_vertices_list.extend(shaping::update_chunks(&mut world, &update));
+    gen_vertices_list.extend(new_chunks);
 
     // Compute chunk vertices
-    let updated = updated.into_iter().unique().collect_vec();
-    shaping::generate_chunk_vertices(&world, &updated)
+    let locals = gen_vertices_list.into_iter().unique().collect_vec();
+    shaping::generate_chunk_vertices(&world, &locals)
         .into_iter()
         .for_each(|(local, vertices)| {
             world
@@ -95,13 +93,17 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
                 .vertices = vertices
         });
 
-    let world = save_chunks(world, &updated).await;
+    let world = if locals.len() > 0 {
+        save_chunks(world, &locals).await
+    } else {
+        world
+    };
 
     TaskResult {
         world,
         loaded: load,
         unloaded: unload,
-        updated: updated.into_iter().collect(),
+        updated: locals.into_iter().collect(),
     }
 }
 
@@ -143,7 +145,7 @@ fn unload_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
 /// Chunks that doesn't exists on cache (cache miss) will be returned.
 ///
 /// ***Returns*** A list of chunks locals which doesn't exists on cache and an optional task running on [`IoTaskPool`] loading chunks.
-fn load_chunks(locals: &Vec<IVec3>) -> (Vec<IVec3>, Option<Task<Vec<(IVec3, Chunk)>>>) {
+fn load_chunks(locals: &Vec<IVec3>) -> (Vec<IVec3>, Option<Vec<Task<Vec<(IVec3, Chunk)>>>>) {
     let (exists, not_exists): (Vec<_>, Vec<_>) = locals
         .iter()
         .map(|v| (v, local_path(v)))
@@ -160,16 +162,20 @@ fn load_chunks(locals: &Vec<IVec3>) -> (Vec<IVec3>, Option<Task<Vec<(IVec3, Chun
     let load_task = if to_load.is_empty() {
         None
     } else {
-        Some(IoTaskPool::get().spawn(async move {
-            let result = to_load
-                .into_iter()
-                .map(|local| (local, load_chunk(&local_path(&local))))
-                .collect_vec();
+        let mut tasks = vec![];
 
-            trace!("Loading compled. {} chunks loaded.", result.len());
+        for locals in split_locals_by_cores(&to_load) {
+            let task = IoTaskPool::get().spawn(async move {
+                locals
+                    .into_iter()
+                    .map(|local| (local, load_chunk(&local_path(&local))))
+                    .collect_vec()
+            });
 
-            result
-        }))
+            tasks.push(task);
+        }
+
+        Some(tasks)
     };
 
     let not_found = not_exists
@@ -185,22 +191,13 @@ fn load_chunks(locals: &Vec<IVec3>) -> (Vec<IVec3>, Option<Task<Vec<(IVec3, Chun
 ///
 ///
 async fn save_chunks(world: VoxWorld, locals: &[IVec3]) -> VoxWorld {
-    let parallel_tasks = IoTaskPool::get().thread_num();
-    let chunk_split = locals.len() / parallel_tasks;
-
-    let locals_split = locals
-        .iter()
-        .copied()
-        .chunks(chunk_split)
-        .into_iter()
-        .map(|c| c.collect_vec())
-        .collect_vec();
+    trace!("Saving {} chunks on disk", locals.len(),);
 
     let mut tasks = vec![];
 
     let arc_world = Arc::new(world);
 
-    for locals in locals_split {
+    for locals in split_locals_by_cores(locals) {
         let wd = arc_world.clone();
         let task = IoTaskPool::get().spawn(async move {
             for local in locals {
@@ -214,7 +211,24 @@ async fn save_chunks(world: VoxWorld, locals: &[IVec3]) -> VoxWorld {
         task.await;
     }
 
+    trace!("Save completed!");
+
     Arc::try_unwrap(arc_world).expect("There should be no tasks running at this point")
+}
+
+fn split_locals_by_cores(locals: &[IVec3]) -> Vec<Vec<IVec3>> {
+    debug_assert!(locals.len() > 0);
+
+    let parallel_tasks = IoTaskPool::get().thread_num();
+    let chunk_split = locals.len() / parallel_tasks;
+
+    locals
+        .iter()
+        .copied()
+        .chunks(chunk_split)
+        .into_iter()
+        .map(|c| c.collect_vec())
+        .collect_vec()
 }
 
 /**
@@ -342,7 +356,7 @@ mod tests {
 
         create_chunk_on_disk(&path, &chunk);
 
-        let (dirty_chunks, task) = super::load_chunks(&vec![local]);
+        let (dirty_chunks, tasks) = super::load_chunks(&vec![local]);
 
         assert_eq!(
             dirty_chunks.len(),
@@ -350,9 +364,10 @@ mod tests {
             "The chunk already exists, so no dirty chunks"
         );
 
-        assert!(task.is_some(), "A valid task should be returned");
+        assert!(tasks.is_some(), "A valid task should be returned");
 
-        let chunks = block_on(task.unwrap());
+        let task = tasks.unwrap().remove(0);
+        let chunks = block_on(task);
         assert!(
             chunks.iter().find(|(l, _)| *l == local).is_some(),
             "Chunk should be added to world"

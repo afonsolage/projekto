@@ -86,13 +86,13 @@ fn setup(
         .spawn_bundle(Camera3dBundle::default())
         .insert(OrbitCamera)
         .insert(FlyByCamera)
-        .insert(Transform::from_xyz(0.0, 15.0, 5.0).looking_at(Vec3::new(2.0, 13.0, 7.0), Vec3::Y))
+        .insert(Transform::from_xyz(0.0, 22.0, 5.0).looking_at(Vec3::new(2.0, 20.0, 7.0), Vec3::Y))
         .insert(Name::new("Main Camera"));
 
     // focus
     commands
         .spawn_bundle(PbrBundle {
-            transform: Transform::from_xyz(2.0, 13.0, 7.0),
+            transform: Transform::from_xyz(2.0, 20.0, 7.0),
             mesh: meshes.add(Mesh::from(shape::Capsule {
                 radius: 0.25,
                 depth: 1.5,
