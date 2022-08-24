@@ -217,10 +217,8 @@ async fn save_chunks(world: VoxWorld, locals: &[IVec3]) -> VoxWorld {
 }
 
 fn split_locals_by_cores(locals: &[IVec3]) -> Vec<Vec<IVec3>> {
-    debug_assert!(locals.len() > 0);
-
     let parallel_tasks = IoTaskPool::get().thread_num();
-    let chunk_split = locals.len() / parallel_tasks;
+    let chunk_split = usize::clamp(locals.len() / parallel_tasks, 1, locals.len());
 
     locals
         .iter()
