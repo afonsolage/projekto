@@ -76,10 +76,11 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
         .for_each(|(local, chunk)| world.add(local, chunk));
 
     // Update dirty chunks
-    let mut updated = shaping::update_chunk_neighborhood(
-        &mut world,
-        &dirty_neighborhood.into_iter().collect_vec(),
-    );
+    let dirty = dirty_neighborhood
+        .into_iter()
+        .filter(|&l| world.exists(l))
+        .collect_vec();
+    let mut updated = shaping::update_chunk_neighborhood(&mut world, &dirty);
 
     updated.extend(shaping::update_chunks(&mut world, &update));
 
