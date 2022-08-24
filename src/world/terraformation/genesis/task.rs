@@ -46,6 +46,7 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
     let (not_found, load_task) = load_chunks(&load);
 
     let new_chunks = generate_chunks(not_found)
+        .await
         .into_iter()
         .map(|(local, chunk)| {
             world.add(local, chunk);
@@ -112,7 +113,11 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
 /// This function will do its best to calculate the values and propagation between the newly created chunks.
 ///
 /// ***Returns*** a list of newly created chunks and their locals
-fn generate_chunks(locals: Vec<IVec3>) -> Vec<(IVec3, Chunk)> {
+async fn generate_chunks(locals: Vec<IVec3>) -> Vec<(IVec3, Chunk)> {
+    if locals.is_empty() {
+        return vec![];
+    }
+
     trace!("Generating {} chunks.", locals.len());
 
     let new_chunks = locals
@@ -120,7 +125,7 @@ fn generate_chunks(locals: Vec<IVec3>) -> Vec<(IVec3, Chunk)> {
         .map(|&local| (local, shaping::generate_chunk(local)))
         .collect_vec();
 
-    shaping::build_chunk_internals(new_chunks)
+    shaping::build_chunk_internals(new_chunks).await
 }
 
 /// Remove from [`VoxWorld`] all chunks on the given list.

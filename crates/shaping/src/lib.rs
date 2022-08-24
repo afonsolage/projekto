@@ -1,5 +1,6 @@
 use bevy_log::{trace, warn};
 use bevy_math::{IVec3, Vec3};
+use bevy_tasks::AsyncComputeTaskPool;
 use bevy_utils::HashSet;
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use itertools::Itertools;
@@ -144,7 +145,7 @@ pub fn generate_chunk(local: IVec3) -> Chunk {
 /// That way when those chunks are added to main world, most data between them was propagated already.
 ///
 /// ***Returns*** returns back the same list given
-pub fn build_chunk_internals(chunks: Vec<(IVec3, Chunk)>) -> Vec<(IVec3, Chunk)> {
+pub async fn build_chunk_internals(chunks: Vec<(IVec3, Chunk)>) -> Vec<(IVec3, Chunk)> {
     trace!("Building chunk internals {}", chunks.len());
 
     let locals = chunks.iter().map(|(local, _)| *local).collect_vec();
@@ -156,7 +157,43 @@ pub fn build_chunk_internals(chunks: Vec<(IVec3, Chunk)>) -> Vec<(IVec3, Chunk)>
         .for_each(|(local, chunk)| world.add(local, chunk));
 
     update_kind_neighborhoods(&mut world, &locals);
-    light_propagator::propagate_natural_light_on_new_chunk(&mut world, &locals);
+
+    let parallel_tasks = AsyncComputeTaskPool::get().thread_num();
+    let chunk_split = usize::clamp(locals.len() / parallel_tasks, 1, locals.len());
+    let mut tasks = vec![];
+
+    for chunks in world
+        .extract()
+        .into_iter()
+        .chunks(chunk_split)
+        .into_iter()
+        .map(|c| c.collect_vec())
+    {
+        let mut inner_world = VoxWorld::default();
+        chunks
+            .into_iter()
+            .for_each(|(local, chunk)| inner_world.add(local, chunk));
+
+        let task = AsyncComputeTaskPool::get().spawn(async move {
+            let locals = inner_world.list_chunks();
+            light_propagator::propagate_natural_light_on_new_chunk(&mut inner_world, &locals);
+            inner_world
+        });
+
+        tasks.push(task);
+    }
+
+    let mut world = VoxWorld::default();
+
+    for task in tasks {
+        for (local, chunk) in task.await.extract() {
+            world.add(local, chunk);
+        }
+    }
+
+    assert_eq!(world.list_chunks().len(), locals.len());
+
+    light_propagator::propagate_light_to_neighborhood(&mut world, &locals);
 
     world.extract()
 }
@@ -407,6 +444,7 @@ fn update_kind_neighborhoods<'a>(world: &mut VoxWorld, locals: &[IVec3]) {
 
 #[cfg(test)]
 mod tests {
+    use futures_lite::future::block_on;
     use projekto_core::voxel::{Light, LightTy};
 
     use super::*;
@@ -425,6 +463,7 @@ mod tests {
     }
 
     fn create_test_world() -> VoxWorld {
+        AsyncComputeTaskPool::init(|| Default::default());
         /*
                            Chunk               Neighbor
                         +----+----+        +----+----+----+
@@ -498,10 +537,10 @@ mod tests {
         // world.add((0, 0, 0).into(), chunk);
         // world.add((1, 0, 0).into(), neighbor);
 
-        let chunks = super::build_chunk_internals(vec![
+        let chunks = block_on(super::build_chunk_internals(vec![
             ((0, 0, 0).into(), chunk),
             ((1, 0, 0).into(), neighbor),
-        ]);
+        ]));
 
         let world = chunks
             .into_iter()

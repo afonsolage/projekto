@@ -41,7 +41,7 @@ pub fn update_light(
 /// After that, all light values are propagated from a chunk to another one.
 pub fn propagate_natural_light_on_new_chunk(world: &mut VoxWorld, locals: &[IVec3]) {
     let mut propagator = Propagator::new(world, LightTy::Natural);
-    propagator.propagate_natural_light_on_new_chunks(locals);
+    propagator.propagate_light_on_top(locals);
     let _ = propagator.finish();
 }
 
@@ -93,19 +93,6 @@ impl<'a> Propagator<'a> {
         }
 
         dirty_chunks
-    }
-
-    /// Propagate light on newly generated chunks in an optimized way.
-    fn propagate_natural_light_on_new_chunks(&mut self, locals: &[IVec3]) {
-        trace!("Propagating natural light on new {} chunks", locals.len());
-
-        debug_assert!(
-            self.ty == LightTy::Natural,
-            "This function should be used only natural light propagation"
-        );
-
-        self.propagate_light_on_top(locals);
-        self.propagate_light_to_neighborhood(locals);
     }
 
     /// Propagate light on queued chunks and voxels.
@@ -587,7 +574,7 @@ mod tests {
         world.add((0, 0, 0).into(), chunk);
 
         let mut propagator = Propagator::new(&mut world, LightTy::Natural);
-        propagator.propagate_natural_light_on_new_chunks(&[(0, 0, 0).into()]);
+        propagator.propagate_light_on_top(&[(0, 0, 0).into()]);
 
         world
     }
@@ -995,15 +982,11 @@ mod tests {
         world.add((0, 0, 0).into(), chunk);
         world.add((1, 0, 0).into(), neighbor);
 
-        super::super::update_kind_neighborhoods(
-            &mut world,
-            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
-        );
+        let locals = vec![(0, 0, 0).into(), (1, 0, 0).into()];
+        super::super::update_kind_neighborhoods(&mut world, &locals);
 
-        super::propagate_natural_light_on_new_chunk(
-            &mut world,
-            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
-        );
+        super::propagate_natural_light_on_new_chunk(&mut world, &locals);
+        super::propagate_light_to_neighborhood(&mut world, &locals);
 
         assert_eq!(
             world
@@ -1162,14 +1145,11 @@ mod tests {
         world.add((0, 0, 0).into(), chunk);
         world.add((1, 0, 0).into(), neighbor);
 
-        super::super::update_kind_neighborhoods(
-            &mut world,
-            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
-        );
-        super::propagate_natural_light_on_new_chunk(
-            &mut world,
-            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
-        );
+        let locals = vec![(0, 0, 0).into(), (1, 0, 0).into()];
+        super::super::update_kind_neighborhoods(&mut world, &locals);
+        super::propagate_natural_light_on_new_chunk(&mut world, &locals);
+
+        super::propagate_light_to_neighborhood(&mut world, &locals);
 
         assert_eq!(
             world
@@ -1386,7 +1366,7 @@ mod tests {
         world.add((0, 0, 0).into(), chunk);
 
         let mut propagator = Propagator::new(&mut world, LightTy::Natural);
-        propagator.propagate_natural_light_on_new_chunks(&[(0, 0, 0).into()]);
+        propagator.propagate_light_on_top(&[(0, 0, 0).into()]);
 
         let chunk = world.get((0, 0, 0).into()).unwrap();
 
@@ -1673,12 +1653,11 @@ mod tests {
         world.add((0, 0, 0).into(), chunk);
         world.add((1, 0, 0).into(), neighbor);
 
-        super::super::update_kind_neighborhoods(&mut world, &[(0, 0, 0).into(), (1, 0, 0).into()]);
+        let locals = [(0, 0, 0).into(), (1, 0, 0).into()];
 
-        super::propagate_natural_light_on_new_chunk(
-            &mut world,
-            &[(0, 0, 0).into(), (1, 0, 0).into()],
-        );
+        super::super::update_kind_neighborhoods(&mut world, &locals);
+        super::propagate_natural_light_on_new_chunk(&mut world, &locals);
+        super::propagate_light_to_neighborhood(&mut world, &locals);
 
         let chunk_expected = [
             ((15, 11, 0).into(), 15),
