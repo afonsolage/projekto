@@ -3,7 +3,7 @@ use bevy_utils::HashMap;
 
 use super::chunk::Chunk;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct VoxWorld {
     chunks: HashMap<IVec3, Chunk>,
     //Vertices
@@ -36,6 +36,10 @@ impl VoxWorld {
 
     pub fn exists(&self, local: IVec3) -> bool {
         self.chunks.contains_key(&local)
+    }
+
+    pub fn extract(self) -> Vec<(IVec3, Chunk)> {
+        self.chunks.into_iter().collect()
     }
 }
 
