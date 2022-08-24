@@ -138,26 +138,28 @@ pub fn generate_chunk(local: IVec3) -> Chunk {
     }
 }
 
-/// Build chunk internal data without using chunks existing into the world.
+/// Build chunk internal data without using world.
 /// This is need in order to increase parallelism.
 ///
-/// This function creates a temporary world with all newly created chunks to spread information between them.
-/// That way when those chunks are added to main world, most data between them was propagated already.
+/// This function split the natural light propagation across tasks on [`AsyncComputeTaskPool`].
+/// Each task has it's own world, due to how [`light_propagator`] works.
 ///
-/// ***Returns*** returns back the same list given
+/// ***Returns*** returns back the same list given, but with propagated data.
 pub async fn build_chunk_internals(chunks: Vec<(IVec3, Chunk)>) -> Vec<(IVec3, Chunk)> {
     trace!("Building chunk internals {}", chunks.len());
 
     let locals = chunks.iter().map(|(local, _)| *local).collect_vec();
 
+    // VoxWorld is just a map, so it's cheap to create.
     let mut world = VoxWorld::default();
-
     chunks
         .into_iter()
         .for_each(|(local, chunk)| world.add(local, chunk));
 
     update_kind_neighborhoods(&mut world, &locals);
 
+    // Split the chunks into many worlds, based on number of threads available.
+    // Since this propagation is internal only, doesn't uses neighbor, it's safe to split chunks in many worlds.
     let parallel_tasks = AsyncComputeTaskPool::get().thread_num();
     let chunk_split = usize::clamp(locals.len() / parallel_tasks, 1, locals.len());
     let mut tasks = vec![];
@@ -184,7 +186,7 @@ pub async fn build_chunk_internals(chunks: Vec<(IVec3, Chunk)>) -> Vec<(IVec3, C
     }
 
     let mut world = VoxWorld::default();
-
+    // Gather all chunks into a new world again
     for task in tasks {
         for (local, chunk) in task.await.extract() {
             world.add(local, chunk);
@@ -193,6 +195,7 @@ pub async fn build_chunk_internals(chunks: Vec<(IVec3, Chunk)>) -> Vec<(IVec3, C
 
     assert_eq!(world.list_chunks().len(), locals.len());
 
+    // Propagate light across neighborhood. All chunks needs to be on same world.
     light_propagator::propagate_light_to_neighborhood(&mut world, &locals);
 
     world.extract()
@@ -214,11 +217,21 @@ pub fn update_chunks(
     dirty.into_iter().unique().collect_vec()
 }
 
-pub fn update_chunk_neighborhood(world: &mut VoxWorld, dirty: &[IVec3]) -> Vec<IVec3> {
+/// Update neighborhood data and propagate data across neighbors.
+/// 
+/// This function should be called whenever a chunk has it's neighbor updated.
+/// 
+/// Returns a list of dirty chunks, which needs to have their vertices recomputed.
+pub fn update_neighborhood(world: &mut VoxWorld, dirty: &[IVec3]) -> Vec<IVec3> {
     update_kind_neighborhoods(world, dirty);
     light_propagator::propagate_light_to_neighborhood(world, dirty)
 }
 
+/// Apply a given list of update [`voxel::Kind`] on chunks.
+/// 
+/// This function also update neighborhood to keep it in sync.
+/// 
+/// Return a list of chunks which was updated, either direct on indirect (it's neighbor has been changed).
 fn update_kind(world: &mut VoxWorld, update: &[(IVec3, Vec<(IVec3, voxel::Kind)>)]) -> Vec<IVec3> {
     let mut dirty = HashSet::default();
 
@@ -249,6 +262,7 @@ fn update_kind(world: &mut VoxWorld, update: &[(IVec3, Vec<(IVec3, voxel::Kind)>
     dirty
 }
 
+/// Generate the final list of vertices of the given chunks.
 pub fn generate_chunk_vertices(
     world: &VoxWorld,
     locals: &[IVec3],

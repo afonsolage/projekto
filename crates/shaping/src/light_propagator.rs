@@ -37,14 +37,18 @@ pub fn update_light(
 /// For chunks that already has light values, use [`update_light`] instead.
 /// This function won't remove any light.
 ///
-/// The way this function works is by first propagating all lights internally on all given chunks, without neighbor propagation.
-/// After that, all light values are propagated from a chunk to another one.
+/// This function assumes all natural light is on the top of chunk and will propagate downwards and internal only: Won't spread to neighbors.
 pub fn propagate_natural_light_on_new_chunk(world: &mut VoxWorld, locals: &[IVec3]) {
     let mut propagator = Propagator::new(world, LightTy::Natural);
     propagator.propagate_light_on_top(locals);
     let _ = propagator.finish();
 }
 
+/// Propagate light from the given locals to their neighbors.
+/// 
+/// This function does two passes, first [`LightTy::Artificial`] and then [`LightTy::Natural`].
+/// 
+/// Returns a list of chunks that has been changed.
 pub fn propagate_light_to_neighborhood(world: &mut VoxWorld, locals: &[IVec3]) -> Vec<IVec3> {
     let mut propagator = Propagator::new(world, LightTy::Artificial);
     propagator.propagate_light_to_neighborhood(locals);

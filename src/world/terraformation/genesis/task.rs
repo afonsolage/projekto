@@ -43,6 +43,7 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
 
     unload_chunks(&mut world, &unload);
 
+    // The loading may take a while, so do in another task.
     let (not_found, load_task) = load_chunks(&load);
 
     let new_chunks = generate_chunks(not_found)
@@ -62,7 +63,7 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
         }
     }
 
-    // Get all chunks surrounding newly created chunks, so they can be updated
+    // Get all chunks surrounding newly created chunks, so they can be refreshed
     let dirty = new_chunks
         .iter()
         .flat_map(|local| voxel::SIDES.iter().map(move |s| s.dir() + *local))
@@ -76,8 +77,7 @@ pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) 
     let mut gen_vertices_list = if dirty.len() == 0 {
         vec![]
     } else {
-        // Update dirty chunks
-        shaping::update_chunk_neighborhood(&mut world, &dirty)
+        shaping::update_neighborhood(&mut world, &dirty)
     };
 
     gen_vertices_list.extend(shaping::update_chunks(&mut world, &update));
