@@ -1,0 +1,29 @@
+[package]
+name = "projekto_genesis"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+projekto_core = { path = "../core" }
+projekto_shaping = { path = "../shaping" }
+
+bevy_utils = "0.8"
+bevy_log = "0.8"
+bevy_math = "0.8"
+bevy_ecs = "0.8"
+bevy_tasks = "0.8"
+bevy_app = "0.8"
+bevy_derive = "0.8"
+bevy_reflect = "0.8"
+
+futures-lite = "1.12"
+itertools = "0.10"
+
+# Used on chunk save/load
+bincode = "1.3"
+lz4_flex = "0.9"
+
+[dev-dependencies]
+projekto_core = { path = "../core", features = ["auto_load_kinds_descs"] }

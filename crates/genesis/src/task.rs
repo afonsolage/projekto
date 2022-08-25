@@ -4,16 +4,14 @@ use std::{
     sync::Arc,
 };
 
-use bevy::{
-    prelude::{trace, warn, IVec3},
-    tasks::{IoTaskPool, Task},
-    utils::HashSet,
-};
+use bevy_log::{trace, warn};
+use bevy_math::IVec3;
+use bevy_tasks::{IoTaskPool, Task};
+use bevy_utils::HashSet;
+
 use itertools::Itertools;
 use projekto_core::{chunk::Chunk, voxel, VoxWorld};
 use projekto_shaping as shaping;
-
-use crate::world::terraformation::VoxelUpdateList;
 
 use super::ChunkCmd;
 
@@ -30,8 +28,6 @@ pub(super) struct TaskResult {
 ///
 /// ***Returns*** the [`VoxWorld`] ownership and a list of updated chunks.
 pub(super) async fn process_batch(mut world: VoxWorld, commands: Vec<ChunkCmd>) -> TaskResult {
-    perf_fn_scope!();
-
     let (load, unload, update) = split_commands(commands);
 
     trace!(
@@ -238,8 +234,6 @@ fn split_locals_by_cores(locals: &[IVec3]) -> Vec<Vec<IVec3>> {
  Saves the given [`Chunk`] on disk at [`Path`].
 */
 fn save_chunk(path: &Path, chunk: &Chunk) {
-    perf_fn_scope!();
-
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -261,8 +255,6 @@ fn save_chunk(path: &Path, chunk: &Chunk) {
 }
 
 fn load_chunk(path: &Path) -> Chunk {
-    perf_fn_scope!();
-
     let mut file = std::fs::OpenOptions::new()
         .read(true)
         .open(path)
@@ -282,9 +274,19 @@ fn load_chunk(path: &Path) -> Chunk {
 }
 
 fn local_path(local: &IVec3) -> PathBuf {
-    PathBuf::from(super::CACHE_PATH)
-        .with_file_name(format_local(local))
-        .with_extension(super::CACHE_EXT)
+    #[cfg(test)]
+    {
+        std::env::temp_dir()
+            .with_file_name(format_local(local))
+            .with_extension(super::CACHE_EXT)
+    }
+
+    #[cfg(not(test))]
+    {
+        PathBuf::from(super::CACHE_PATH)
+            .with_file_name(format_local(local))
+            .with_extension(super::CACHE_EXT)
+    }
 }
 
 fn format_local(local: &IVec3) -> String {
@@ -306,9 +308,11 @@ Utility function that splits the given list of [`ChunkCmd`] into individual cmd 
  */
 fn split_commands(
     commands: Vec<ChunkCmd>,
-) -> (Vec<IVec3>, Vec<IVec3>, Vec<(IVec3, VoxelUpdateList)>) {
-    perf_fn_scope!();
-
+) -> (
+    Vec<IVec3>,
+    Vec<IVec3>,
+    Vec<(IVec3, Vec<(IVec3, voxel::Kind)>)>,
+) {
     let mut load = vec![];
     let mut unload = vec![];
     let mut update = vec![];
@@ -442,25 +446,19 @@ mod tests {
             .open(&temp_file)
             .unwrap();
 
-        #[cfg(feature = "serde_ron")]
-        let cache_loaded: ChunkCache = ron::de::from_reader(file).unwrap();
+        let mut compressed = Vec::new();
+        file.read_to_end(&mut compressed).unwrap();
+        let uncompressed = lz4_flex::decompress_size_prepended(&compressed).unwrap();
+        let loaded_chunk = bincode::deserialize::<Chunk>(&uncompressed).unwrap();
+        assert_eq!(chunk, loaded_chunk);
 
-        #[cfg(not(feature = "serde_ron"))]
-        {
-            let mut compressed = Vec::new();
-            file.read_to_end(&mut compressed).unwrap();
-            let uncompressed = lz4_flex::decompress_size_prepended(&compressed).unwrap();
-            let loaded_chunk = bincode::deserialize::<Chunk>(&uncompressed).unwrap();
-            assert_eq!(chunk, loaded_chunk);
-
-            assert_eq!(
-                chunk
-                    .kinds
-                    .neighborhood
-                    .get(voxel::Side::Right, (0, 0, 0).into()),
-                Some(1.into())
-            );
-        }
+        assert_eq!(
+            chunk
+                .kinds
+                .neighborhood
+                .get(voxel::Side::Right, (0, 0, 0).into()),
+            Some(1.into())
+        );
     }
 
     fn create_chunk_on_disk(path: &Path, chunk: &Chunk) {

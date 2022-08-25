@@ -1,12 +1,14 @@
-use std::{marker::PhantomData, ops::Deref};
+use std::marker::PhantomData;
 
-use bevy::{
-    ecs::system::SystemParam,
-    prelude::*,
-    reflect::TypeUuid,
-    tasks::{AsyncComputeTaskPool, Task},
-    utils::{HashMap, HashSet},
-};
+use bevy_app::{Plugin, App, CoreStage};
+use bevy_derive::{Deref, DerefMut};
+use bevy_ecs::{system::{SystemParam, ResMut}, schedule::{SystemSet, SystemLabel}, prelude::EventWriter};
+use bevy_log::debug;
+use bevy_math::IVec3;
+use bevy_reflect::Reflect;
+use bevy_tasks::{AsyncComputeTaskPool, Task};
+use bevy_utils::{HashMap, HashSet};
+
 use futures_lite::future;
 
 use projekto_core::{
@@ -25,15 +27,16 @@ use self::task::TaskResult;
 const CACHE_PATH: &str = "cache/chunks/";
 const CACHE_EXT: &str = "bin";
 
-pub(super) struct GenesisPlugin;
+pub struct GenesisPlugin;
 
 impl Plugin for GenesisPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EvtChunkUpdated>()
+        app.init_resource::<GenesisCommandBuffer>()
             .init_resource::<RunningTask>()
             .init_resource::<ChunkKindRes>()
             .init_resource::<ChunkLightRes>()
             .init_resource::<ChunkVertexRes>()
+            .insert_resource(WorldRes(Some(Default::default())))
             .add_system_set_to_stage(
                 CoreStage::PreUpdate,
                 SystemSet::new()
@@ -46,7 +49,9 @@ impl Plugin for GenesisPlugin {
                     .with_system(dispatch_task)
                     .label(GenesisLabel::Dispatch),
             )
-            .add_startup_system_to_stage(StartupStage::PreStartup, setup_resources);
+            .add_startup_system(init_cache);
+
+        events::register(app);
     }
 }
 
@@ -61,45 +66,35 @@ pub enum GenesisLabel {
     Dispatch,
 }
 
-#[derive(TypeUuid, Debug)]
-#[uuid = "e6edff2a-e204-497f-999c-bdebd1f92f62"]
-pub struct KindsAtlasRes {
-    pub atlas: Handle<Image>,
+pub mod events {
+    use bevy_app::App;
+    use bevy_math::IVec3;
+
+    #[derive(Debug, Default)]
+    pub struct ChunkUpdated(pub IVec3);
+
+    pub(super) fn register(app: &mut App) {
+        app.add_event::<ChunkUpdated>();
+    }
 }
 
-pub struct EvtChunkUpdated(pub IVec3);
-
-fn setup_resources(mut commands: Commands, asset_server: Res<AssetServer>) {
-    trace_system_run!();
-
+fn init_cache() {
     if !std::path::Path::new(CACHE_PATH).exists() {
         std::fs::create_dir_all(CACHE_PATH).unwrap();
     }
-
-    let vox_world = VoxWorld::default();
-    commands.insert_resource(WorldRes(Some(vox_world)));
-
-    let kinds_path = format!("{}{}", env!("ASSETS_PATH"), "/voxels/kind.ron");
-    let descs = voxel::KindsDescs::init(kinds_path);
-
-    let atlas = asset_server.load(&descs.atlas_path);
-
-    commands.insert_resource(KindsAtlasRes { atlas });
-
-    commands.insert_resource(BatchChunkCmdRes::default());
 }
 
-/**
-Hold chunk commands to be processed in batch.
-Internally uses a double buffered list of commands to keep track of what is running and what is pending.
-*/
+/// Hold chunk commands to be processed in batch.
+/// Internally uses a double buffered list of commands to keep track of what is running and what is pending.
+///
+/// This command buffer handles duplicated commands. See [`optimize_commands`] for more.
 #[derive(Default)]
-pub struct BatchChunkCmdRes {
+pub struct GenesisCommandBuffer {
     pending: Vec<ChunkCmd>,
     running: Vec<ChunkCmd>,
 }
 
-impl BatchChunkCmdRes {
+impl GenesisCommandBuffer {
     /**
     Swap the running and pending buffers
 
@@ -154,14 +149,14 @@ impl BatchChunkCmdRes {
     }
 }
 
-impl std::fmt::Display for BatchChunkCmdRes {
+impl std::fmt::Debug for GenesisCommandBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (pending_load, pending_unload, pending_update) = Self::count_chunk_cmd(&self.pending);
         let (running_load, running_unload, running_update) = Self::count_chunk_cmd(&self.running);
 
         write!(
             f,
-            "Running LD: {} UL: {} UP: {} | Pending LD: {} UL: {} UP: {}",
+            "Running (LD: {} UL: {} UP: {}) | Pending (LD: {} UL: {} UP: {})",
             running_load,
             running_unload,
             running_update,
@@ -179,6 +174,7 @@ enum ChunkCmd {
     Update(IVec3, Vec<(IVec3, voxel::Kind)>),
 }
 
+#[derive(Default, Debug)]
 struct WorldRes(Option<VoxWorld>);
 
 impl WorldRes {
@@ -196,11 +192,13 @@ impl WorldRes {
     }
 }
 
-impl Deref for WorldRes {
+impl std::ops::Deref for WorldRes {
     type Target = VoxWorld;
 
     fn deref(&self) -> &Self::Target {
-        self.0.as_ref().expect("WorldRes should be ready")
+        self.0
+            .as_ref()
+            .expect("You can't use WorldRes while there is a task running")
     }
 }
 
@@ -246,8 +244,8 @@ impl<'w, 's> ChunkResources<'w, 's> {
 fn collect_completed_task_results(
     mut running_task: ResMut<RunningTask>,
     mut world_res: ResMut<WorldRes>,
-    mut batch_res: ResMut<BatchChunkCmdRes>,
-    mut updated_writer: EventWriter<EvtChunkUpdated>,
+    mut batch_res: ResMut<GenesisCommandBuffer>,
+    mut updated_writer: EventWriter<events::ChunkUpdated>,
     mut chunk_resources: ChunkResources,
 ) {
     if let Some(ref mut task) = **running_task {
@@ -270,7 +268,7 @@ fn collect_completed_task_results(
             debug!("Completed task. Updated chunks: {}", updated_list.len());
 
             updated_list.into_iter().for_each(|local| {
-                updated_writer.send(EvtChunkUpdated(local));
+                updated_writer.send(events::ChunkUpdated(local));
                 chunk_resources.set(local, world.get(local).unwrap());
             });
 
@@ -284,13 +282,13 @@ fn collect_completed_task_results(
 
 fn dispatch_task(
     mut running_task: ResMut<RunningTask>,
-    mut batch_res: ResMut<BatchChunkCmdRes>,
+    mut batch_res: ResMut<GenesisCommandBuffer>,
     mut world_res: ResMut<WorldRes>,
 ) {
     if running_task.is_running() || batch_res.has_pending_cmds() == false {
         return;
     }
-    
+
     let commands = batch_res.swap_and_clone();
     let commands = optimize_commands(&world_res, commands);
 
@@ -308,14 +306,14 @@ fn dispatch_task(
 This functions optimize the command list removing duplicated commands or commands that nullifies each other.
 
 **Rules**
- 1. Skips any duplicated commands (*Load* -> *Load*, *Update* -> *Update*, *Unload* -> *Unload*).
+ 1. Skips any duplicated commands of type *Load* and *Unload*.
  2. Skips *Load* and remove existing *Unload* cmd when chunk exists already.
  3. Skips *Unload* and remove existing *Load* cmd when chunk doesn't exists already.
  4. Skips *Unload* when chunk doesn't exists already.
  5. Skips *Load* when chunk exists already.
  6. Skips *Update* if the chunk doesn't exists already.
  7. Replaces *Update* by *Unload* if the chunk exists already.
- 8. Replaces *Update* by *Load* if the chunk doesn't exists already. [Removed]
+ 8. Merges any duplicated *Update* keeping the last value.
  9. Skips *Update* if there is an *Unload* cmd already.
 
 **This functions does preserves the insertion order**
@@ -323,8 +321,6 @@ This functions optimize the command list removing duplicated commands or command
 **Returns** an optimized command list
 */
 fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd> {
-    perf_fn_scope!();
-
     let mut map = HashMap::<IVec3, (u32, ChunkCmd)>::new();
 
     // Used to preserve command insertion order
@@ -394,16 +390,28 @@ fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd>
 
                 debug_assert!(existing.is_none(), "This should never happens, since all existing cases should be handled by above match");
             }
-            ChunkCmd::Update(local, _) => {
+            ChunkCmd::Update(local, ref new_voxels) => {
                 if world.get(local).is_none() {
                     // Rule 6
                     continue;
                 }
 
-                if let Some((_, existing_cmd)) = map.get(&local) {
+                if let Some((existing_order, existing_cmd)) = map.get(&local).cloned() {
                     match existing_cmd {
-                        ChunkCmd::Update(_, _) => continue, // Rule 1. TODO: Maybe merge update data in the future?
-                        ChunkCmd::Unload(_) => continue,    // Rule 9.
+                        ChunkCmd::Update(_, voxels) => {
+                            // Rule 8
+                            let mut existing_voxels = voxels.into_iter().collect::<HashMap<_, _>>();
+                            existing_voxels.extend(new_voxels.into_iter());
+                            map.insert(
+                                local,
+                                (
+                                    existing_order,
+                                    ChunkCmd::Update(local, existing_voxels.into_iter().collect()),
+                                ),
+                            );
+                            continue;
+                        }
+                        ChunkCmd::Unload(_) => continue, // Rule 9.
                         _ => {
                             panic!("Undefined behavior for {:?} and {:?}", cmd, existing_cmd);
                         }
@@ -536,6 +544,39 @@ mod tests {
         let optimized = super::optimize_commands(&world, cmds.clone());
 
         assert_eq!(optimized, vec![ChunkCmd::Unload((1, 1, 1).into())]);
+    }
+
+    #[test]
+    fn optimize_commands_rule_8() {
+        let cmds = vec![
+            ChunkCmd::Update(
+                (1, 1, 1).into(),
+                vec![((0, 0, 0).into(), 0.into()), ((1, 0, 0).into(), 0.into())],
+            ),
+            ChunkCmd::Update(
+                (1, 1, 1).into(),
+                vec![((0, 0, 0).into(), 1.into()), ((2, 0, 0).into(), 0.into())],
+            ),
+        ];
+        let mut world = VoxWorld::default();
+        world.add((1, 1, 1).into(), Default::default());
+
+        let optimized = super::optimize_commands(&world, cmds.clone());
+
+        let voxels = match optimized[0] {
+            ChunkCmd::Update(_, ref v) => v,
+            _ => unreachable!(),
+        };
+
+        assert_eq!(voxels.len(), 3);
+        assert_eq!(
+            voxels
+                .into_iter()
+                .find(|(v, _)| *v == (0, 0, 0).into())
+                .expect("Should exists the updated voxel")
+                .1,
+            1.into()
+        );
     }
 
     #[test]

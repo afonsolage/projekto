@@ -12,9 +12,6 @@ use bevy::{
 #[cfg(feature = "inspector")]
 use bevy_inspector_egui;
 
-#[macro_use]
-mod macros;
-
 mod debug;
 use camera_controller::CameraControllerPlugin;
 use character_controller::{CharacterController, CharacterControllerPlugin};

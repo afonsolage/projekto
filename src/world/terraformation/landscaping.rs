@@ -1,10 +1,9 @@
 use bevy::{prelude::*, utils::HashSet};
 
 use projekto_core::{chunk, query};
+use projekto_genesis::{ChunkKindRes, GenesisCommandBuffer};
 
-use super::{
-    genesis::BatchChunkCmdRes, genesis::ChunkKindRes, TerraformationCenter, TerraformationConfig,
-};
+use super::{TerraformationCenter, TerraformationConfig};
 
 pub(super) struct LandscapingPlugin;
 
@@ -24,11 +23,9 @@ fn update_landscape(
     config: Res<TerraformationConfig>,
     kinds: Res<ChunkKindRes>,
     mut meta: Local<UpdateLandscapeMeta>,
-    mut batch: ResMut<BatchChunkCmdRes>,
+    mut cmd_buffer: ResMut<GenesisCommandBuffer>,
     q: Query<&Transform, With<TerraformationCenter>>,
 ) {
-    let mut _perf = perf_fn!();
-
     let center = match q.get_single() {
         Ok(t) => chunk::to_local(t.translation),
         Err(_) => return,
@@ -37,7 +34,6 @@ fn update_landscape(
     meta.next_sync -= time.delta_seconds();
 
     if center != meta.last_pos || meta.next_sync < 0.0 {
-        perf_scope!(_perf);
         meta.next_sync = 1.0;
         meta.last_pos = center;
 
@@ -56,11 +52,11 @@ fn update_landscape(
         visible_range
             .iter()
             .filter(|&i| !existing_chunks.contains(i))
-            .for_each(|&v| batch.load(v));
+            .for_each(|&v| cmd_buffer.load(v));
 
         existing_chunks
             .iter()
             .filter(|&i| !visible_range.contains(i))
-            .for_each(|&v| batch.unload(v));
+            .for_each(|&v| cmd_buffer.unload(v));
     }
 }

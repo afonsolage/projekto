@@ -6,9 +6,8 @@ use bevy::{
 };
 use projekto_core::voxel::VoxelVertex;
 
+use projekto_genesis::ChunkVertexRes;
 use projekto_shaping as shaping;
-
-use crate::world::terraformation::prelude::ChunkVertexRes;
 
 use super::{ChunkEntityMap, ChunkMaterial, EvtChunkMeshDirty};
 
@@ -33,8 +32,6 @@ fn mesh_generation_system(
     mut reader: EventReader<EvtChunkMeshDirty>,
     mut meta: Local<MeshGenerationMeta>,
 ) {
-    let mut _perf = perf_fn!();
-
     meta.pending_chunks.extend(reader.iter().map(|evt| evt.0));
 
     let limit = usize::min(meta.pending_chunks.len(), 1);

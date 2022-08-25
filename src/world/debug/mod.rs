@@ -6,14 +6,13 @@ use bevy::{
 };
 use itertools::Itertools;
 use projekto_camera::fly_by::{self, FlyByCamera};
+use projekto_genesis::{ChunkKindRes, GenesisCommandBuffer};
 
 use crate::world::rendering::*;
 use projekto_core::*;
 use projekto_shaping as shaping;
 
 use self::wireframe::WireframeMaterial;
-
-use crate::world::terraformation::prelude::*;
 
 mod wireframe;
 
@@ -412,7 +411,7 @@ fn draw_raycast(
 fn remove_voxel(
     q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
-    mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
+    mut cmd_buffer: ResMut<GenesisCommandBuffer>,
     kinds: Res<ChunkKindRes>,
 ) {
     if !mouse_input.just_pressed(MouseButton::Right) {
@@ -437,7 +436,7 @@ fn remove_voxel(
             let voxel = voxel::to_local(world);
 
             debug!("Hit voxel at {:?} {:?}", local, voxel);
-            set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, voxel::Kind::none())]));
+            cmd_buffer.update(local, vec![(voxel, voxel::Kind::none())]);
         }
     }
 }
@@ -445,7 +444,7 @@ fn remove_voxel(
 fn add_voxel(
     q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
-    mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
+    mut cmd_buffer: ResMut<GenesisCommandBuffer>,
     kinds: Res<ChunkKindRes>,
 ) {
     if !mouse_input.just_pressed(MouseButton::Right) {
@@ -470,7 +469,7 @@ fn add_voxel(
             let voxel = voxel::to_local(world);
 
             debug!("Hit voxel at {:?} {:?}", local, voxel);
-            set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, voxel::Kind::id(4))]));
+            cmd_buffer.update(local, vec![(voxel, voxel::Kind::id(4))]);
         }
     }
 }

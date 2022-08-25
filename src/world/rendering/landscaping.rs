@@ -4,15 +4,14 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use projekto_core::{chunk, landscape, query, voxel};
+use projekto_genesis::{events::ChunkUpdated, ChunkKindRes};
 
 use crate::world::{
     rendering::{ChunkMaterial, ChunkMaterialHandle},
-    terraformation::prelude::{ChunkKindRes, KindsAtlasRes},
+    KindsAtlasRes,
 };
 
-use super::{
-    ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated, LandscapeCenter,
-};
+use super::{ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, LandscapeCenter};
 
 pub(super) struct LandscapingPlugin;
 
@@ -43,8 +42,6 @@ fn setup_resources(
     mut images: ResMut<Assets<Image>>,
     kinds_res: Res<KindsAtlasRes>,
 ) {
-    trace_system_run!();
-
     const WIDTH: usize = landscape::HORIZONTAL_SIZE * chunk::X_AXIS_SIZE;
     const HEIGHT: usize = landscape::HORIZONTAL_SIZE * chunk::Z_AXIS_SIZE;
     let clip_map = images.add(Image::new(
@@ -96,8 +93,6 @@ fn update_landscape(
     mut writer: EventWriter<EvtChunkMeshDirty>,
     center_query: Query<&Transform, With<LandscapeCenter>>,
 ) {
-    let mut _perf = perf_fn!();
-
     if config.paused {
         return;
     }
@@ -110,7 +105,6 @@ fn update_landscape(
     meta.next_sync -= time.delta_seconds();
 
     if center != meta.last_pos || meta.next_sync < 0.0 {
-        perf_scope!(_perf);
         meta.next_sync = 1.0;
         meta.last_pos = center;
 
@@ -173,16 +167,12 @@ fn update_landscape(
 }
 
 fn process_chunk_updated_events(
-    mut reader: EventReader<EvtChunkUpdated>,
+    mut reader: EventReader<ChunkUpdated>,
     mut writer: EventWriter<EvtChunkMeshDirty>,
     entity_map: Res<ChunkEntityMap>,
 ) {
-    let mut _perf = perf_fn!();
-
-    for EvtChunkUpdated(chunk_local) in reader.iter() {
+    for ChunkUpdated(chunk_local) in reader.iter() {
         if entity_map.0.get(chunk_local).is_some() {
-            trace_system_run!(chunk_local);
-            perf_scope!(_perf);
             writer.send(EvtChunkMeshDirty(*chunk_local));
         }
     }
@@ -197,8 +187,8 @@ mod test {
     #[test]
     fn update_chunks() {
         // Arrange
-        let mut added_events = Events::<EvtChunkUpdated>::default();
-        added_events.send(EvtChunkUpdated((1, 2, 3).into()));
+        let mut added_events = Events::<ChunkUpdated>::default();
+        added_events.send(ChunkUpdated((1, 2, 3).into()));
 
         let mut world = World::default();
         world.insert_resource(added_events);
