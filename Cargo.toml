@@ -10,20 +10,14 @@ default-run = "main"
 members = ["crates/*"]
 
 [dependencies]
-bevy = { version = "0.8", default-features = false }
-env_logger = "0.9"
-
-serde = "1"
-ron = "0.8.0"
-futures-lite = "1.12"
-
-itertools = "0.10"
-
-# Projekto dependencies
 projekto_core = { path = "crates/core" }
 projekto_shaping = { path = "crates/shaping" }
 projekto_camera = { path = "crates/camera" }
 projekto_genesis = { path = "crates/genesis" }
+
+bevy = { version = "0.8", default-features = false }
+
+itertools = "0.10"
 
 # Used by inspector
 bevy-inspector-egui = { version = "0.12", optional = true }
@@ -53,7 +47,6 @@ dev = [
 
 inspector = ["dep:bevy-inspector-egui", "dep:bevy_egui"]
 mem_alloc = []
-serde_ron = []
 
 [profile.dev.package."*"]
 opt-level = 3
