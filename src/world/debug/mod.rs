@@ -412,7 +412,7 @@ fn draw_raycast(
 fn remove_voxel(
     q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
-    mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
+    mut cmd_buffer: ResMut<GenesisCommandBuffer>,
     kinds: Res<ChunkKindRes>,
 ) {
     if !mouse_input.just_pressed(MouseButton::Right) {
@@ -437,7 +437,7 @@ fn remove_voxel(
             let voxel = voxel::to_local(world);
 
             debug!("Hit voxel at {:?} {:?}", local, voxel);
-            set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, voxel::Kind::none())]));
+            cmd_buffer.update(local, vec![(voxel, voxel::Kind::none())]);
         }
     }
 }
@@ -445,7 +445,7 @@ fn remove_voxel(
 fn add_voxel(
     q_cam: Query<&Transform, With<FlyByCamera>>,
     mouse_input: Res<Input<MouseButton>>,
-    mut set_voxel_writer: EventWriter<CmdChunkUpdate>,
+    mut cmd_buffer: ResMut<GenesisCommandBuffer>,
     kinds: Res<ChunkKindRes>,
 ) {
     if !mouse_input.just_pressed(MouseButton::Right) {
@@ -470,7 +470,7 @@ fn add_voxel(
             let voxel = voxel::to_local(world);
 
             debug!("Hit voxel at {:?} {:?}", local, voxel);
-            set_voxel_writer.send(CmdChunkUpdate(local, vec![(voxel, voxel::Kind::id(4))]));
+            cmd_buffer.update(local, vec![(voxel, voxel::Kind::id(4))]);
         }
     }
 }

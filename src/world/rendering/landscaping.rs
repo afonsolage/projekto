@@ -7,12 +7,11 @@ use projekto_core::{chunk, landscape, query, voxel};
 
 use crate::world::{
     rendering::{ChunkMaterial, ChunkMaterialHandle},
-    terraformation::prelude::{ChunkKindRes, KindsAtlasRes},
+    terraformation::prelude::{events::ChunkUpdated, ChunkKindRes},
+    KindsAtlasRes,
 };
 
-use super::{
-    ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, EvtChunkUpdated, LandscapeCenter,
-};
+use super::{ChunkBundle, ChunkEntityMap, ChunkLocal, EvtChunkMeshDirty, LandscapeCenter};
 
 pub(super) struct LandscapingPlugin;
 
@@ -173,16 +172,14 @@ fn update_landscape(
 }
 
 fn process_chunk_updated_events(
-    mut reader: EventReader<EvtChunkUpdated>,
+    mut reader: EventReader<ChunkUpdated>,
     mut writer: EventWriter<EvtChunkMeshDirty>,
     entity_map: Res<ChunkEntityMap>,
 ) {
     let mut _perf = perf_fn!();
 
-    for EvtChunkUpdated(chunk_local) in reader.iter() {
+    for ChunkUpdated(chunk_local) in reader.iter() {
         if entity_map.0.get(chunk_local).is_some() {
-            trace_system_run!(chunk_local);
-            perf_scope!(_perf);
             writer.send(EvtChunkMeshDirty(*chunk_local));
         }
     }
@@ -197,8 +194,8 @@ mod test {
     #[test]
     fn update_chunks() {
         // Arrange
-        let mut added_events = Events::<EvtChunkUpdated>::default();
-        added_events.send(EvtChunkUpdated((1, 2, 3).into()));
+        let mut added_events = Events::<ChunkUpdated>::default();
+        added_events.send(ChunkUpdated((1, 2, 3).into()));
 
         let mut world = World::default();
         world.insert_resource(added_events);

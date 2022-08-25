@@ -3,7 +3,8 @@ use bevy::{prelude::*, utils::HashSet};
 use projekto_core::{chunk, query};
 
 use super::{
-    genesis::BatchChunkCmdRes, genesis::ChunkKindRes, TerraformationCenter, TerraformationConfig,
+    genesis::ChunkKindRes, genesis::GenesisCommandBuffer, TerraformationCenter,
+    TerraformationConfig,
 };
 
 pub(super) struct LandscapingPlugin;
@@ -24,7 +25,7 @@ fn update_landscape(
     config: Res<TerraformationConfig>,
     kinds: Res<ChunkKindRes>,
     mut meta: Local<UpdateLandscapeMeta>,
-    mut batch: ResMut<BatchChunkCmdRes>,
+    mut cmd_buffer: ResMut<GenesisCommandBuffer>,
     q: Query<&Transform, With<TerraformationCenter>>,
 ) {
     let mut _perf = perf_fn!();
@@ -56,11 +57,11 @@ fn update_landscape(
         visible_range
             .iter()
             .filter(|&i| !existing_chunks.contains(i))
-            .for_each(|&v| batch.load(v));
+            .for_each(|&v| cmd_buffer.load(v));
 
         existing_chunks
             .iter()
             .filter(|&i| !visible_range.contains(i))
-            .for_each(|&v| batch.unload(v));
+            .for_each(|&v| cmd_buffer.unload(v));
     }
 }

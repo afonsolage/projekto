@@ -2,8 +2,6 @@ use bevy::{prelude::*, utils::HashMap};
 
 use self::{landscaping::LandscapingPlugin, meshing::MeshingPlugin};
 
-use super::terraformation::prelude::*;
-
 pub use landscaping::LandscapeConfig;
 
 mod landscaping;
