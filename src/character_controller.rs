@@ -9,10 +9,11 @@ use bevy::{
 use bevy_inspector_egui::{Inspectable, InspectorPlugin};
 use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
 use projekto_core::{chunk, voxel, landscape};
+use projekto_genesis::{ChunkKindRes, ChunkLightRes};
 
 use crate::world::{
     debug::DrawVoxels,
-    rendering::{ChunkMaterial, ChunkMaterialHandle}, terraformation::prelude::{ChunkKindRes, ChunkLightRes},
+    rendering::{ChunkMaterial, ChunkMaterialHandle},
 };
 pub struct CharacterControllerPlugin;
 

@@ -6,14 +6,13 @@ use bevy::{
 };
 use itertools::Itertools;
 use projekto_camera::fly_by::{self, FlyByCamera};
+use projekto_genesis::{ChunkKindRes, GenesisCommandBuffer};
 
 use crate::world::rendering::*;
 use projekto_core::*;
 use projekto_shaping as shaping;
 
 use self::wireframe::WireframeMaterial;
-
-use crate::world::terraformation::prelude::*;
 
 mod wireframe;
 

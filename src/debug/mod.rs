@@ -1,8 +1,5 @@
 use bevy::{app::AppExit, prelude::*};
 
-#[cfg(feature = "perf_counter")]
-pub mod perf;
-
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {

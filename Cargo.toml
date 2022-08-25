@@ -15,18 +15,15 @@ env_logger = "0.9"
 
 serde = "1"
 ron = "0.8.0"
-bincode = "1.3"
 futures-lite = "1.12"
-lz4_flex = "0.9"
+
 itertools = "0.10"
 
 # Projekto dependencies
 projekto_core = { path = "crates/core" }
 projekto_shaping = { path = "crates/shaping" }
 projekto_camera = { path = "crates/camera" }
-
-# Used by perf_counter
-once_cell = { version = "1.8", optional = true }
+projekto_genesis = { path = "crates/genesis" }
 
 # Used by inspector
 bevy-inspector-egui = { version = "0.12", optional = true }
@@ -39,15 +36,13 @@ projekto_core = { path = "crates/core", features = ["auto_load_kinds_descs"] }
 [features]
 default = [
      "dev",
-     # "perf_counter",
      "inspector",
-     # "serde_ron",
      # "mem_alloc",
 ]
 
 # Only enable used bevy features, to reduce clean compile time.
 dev = [
-     "bevy/dynamic",     # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
+     "bevy/dynamic",            # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
      "bevy/bevy_asset",
      "bevy/bevy_scene",
      "bevy/bevy_winit",
@@ -56,7 +51,6 @@ dev = [
      "bevy/filesystem_watcher",
 ]
 
-perf_counter = ["dep:once_cell"]
 inspector = ["dep:bevy-inspector-egui", "dep:bevy_egui"]
 mem_alloc = []
 serde_ron = []

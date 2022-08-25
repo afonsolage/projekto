@@ -1,11 +1,9 @@
 use bevy::{prelude::*, utils::HashSet};
 
 use projekto_core::{chunk, query};
+use projekto_genesis::{ChunkKindRes, GenesisCommandBuffer};
 
-use super::{
-    genesis::ChunkKindRes, genesis::GenesisCommandBuffer, TerraformationCenter,
-    TerraformationConfig,
-};
+use super::{TerraformationCenter, TerraformationConfig};
 
 pub(super) struct LandscapingPlugin;
 
@@ -28,8 +26,6 @@ fn update_landscape(
     mut cmd_buffer: ResMut<GenesisCommandBuffer>,
     q: Query<&Transform, With<TerraformationCenter>>,
 ) {
-    let mut _perf = perf_fn!();
-
     let center = match q.get_single() {
         Ok(t) => chunk::to_local(t.translation),
         Err(_) => return,
@@ -38,7 +34,6 @@ fn update_landscape(
     meta.next_sync -= time.delta_seconds();
 
     if center != meta.last_pos || meta.next_sync < 0.0 {
-        perf_scope!(_perf);
         meta.next_sync = 1.0;
         meta.last_pos = center;
 
