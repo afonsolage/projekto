@@ -35,6 +35,7 @@ default = [
      # "mem_alloc",
 ]
 
+
 # Only enable used bevy features, to reduce clean compile time.
 dev = [
      "bevy/dynamic",            # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
@@ -44,6 +45,7 @@ dev = [
      "bevy/bevy_render",
      "bevy/png",
      "bevy/filesystem_watcher",
+     "bevy/x11"
 ]
 
 inspector = ["dep:bevy-inspector-egui", "dep:bevy_egui"]
