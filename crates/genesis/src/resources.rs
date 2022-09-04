@@ -7,11 +7,11 @@ use projekto_core::{
 
 /// Read-only resource for each chunk.
 ///
-/// All instances of this struct always has the same amount of items which is the number of existing chunks.
-/// Each chunk is indexed by it's unique local position.
+/// All instances of this struct always has the same amount of items which is the number of existing
+/// chunks. Each chunk is indexed by it's unique local position.
 ///
-/// This resource is automatically updated at the beginning of each frame, on [`super::GenesisLabel::Collect`].
-///
+/// This resource is automatically updated at the beginning of each frame, on
+/// [`super::GenesisLabel::Collect`].
 #[derive(Default, Debug)]
 pub struct ChunkWorldRes<T> {
     map: HashMap<IVec3, T>,

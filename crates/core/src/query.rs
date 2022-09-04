@@ -2,9 +2,8 @@ use bevy_math::{IVec3, Vec3};
 
 use crate::{chunk, math, voxel};
 
-/**
-An interator which produced a finite number of [`IVec3`] ranging from `begin` until `end` exclusive
-*/
+/// An interator which produced a finite number of [`IVec3`] ranging from `begin` until `end`
+/// exclusive
 pub struct RangeIterator {
     begin: IVec3,
     end: IVec3,
@@ -42,9 +41,8 @@ pub fn range(begin: IVec3, end: IVec3) -> impl Iterator<Item = IVec3> {
     }
 }
 
-/**
-An iterator which produced a finite number of [`IVec3`] ranging from `begin` until `end` inclusive
-*/
+/// An iterator which produced a finite number of [`IVec3`] ranging from `begin` until `end`
+/// inclusive
 pub struct RangeInclusiveIterator {
     begin: IVec3,
     end: IVec3,

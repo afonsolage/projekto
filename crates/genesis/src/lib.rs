@@ -1,8 +1,12 @@
 use std::marker::PhantomData;
 
-use bevy_app::{Plugin, App, CoreStage};
+use bevy_app::{App, CoreStage, Plugin};
 use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::{system::{SystemParam, ResMut}, schedule::{SystemSet, SystemLabel}, prelude::EventWriter};
+use bevy_ecs::{
+    prelude::EventWriter,
+    schedule::{SystemLabel, SystemSet},
+    system::{ResMut, SystemParam},
+};
 use bevy_log::debug;
 use bevy_math::IVec3;
 use bevy_reflect::Reflect;
@@ -85,7 +89,8 @@ fn init_cache() {
 }
 
 /// Hold chunk commands to be processed in batch.
-/// Internally uses a double buffered list of commands to keep track of what is running and what is pending.
+/// Internally uses a double buffered list of commands to keep track of what is running and what is
+/// pending.
 ///
 /// This command buffer handles duplicated commands. See [`optimize_commands`] for more.
 #[derive(Default)]
@@ -95,50 +100,41 @@ pub struct GenesisCommandBuffer {
 }
 
 impl GenesisCommandBuffer {
-    /**
-    Swap the running and pending buffers
-
-    Returns a clone of the running buffer
-     */
+    /// Swap the running and pending buffers
+    ///
+    /// Returns a clone of the running buffer
     fn swap_and_clone(&mut self) -> Vec<ChunkCmd> {
-        // Since the running buffer is always cleared when the batch is finished, this swap has no side-effects
+        // Since the running buffer is always cleared when the batch is finished, this swap has no
+        // side-effects
         std::mem::swap(&mut self.running, &mut self.pending);
         self.running.clone()
     }
 
     fn has_pending_cmds(&self) -> bool {
-        self.pending.len() > 0
+        !self.pending.is_empty()
     }
 
-    /**
-    Clears the running buffer
-    */
+    /// Clears the running buffer
     fn finished(&mut self) {
         self.running.clear()
     }
 
-    /**
-    Adds a load command to the batch
-     */
+    /// Adds a load command to the batch
     pub fn load(&mut self, local: IVec3) {
         self.pending.push(ChunkCmd::Load(local));
     }
 
-    /**
-    Adds an unload command to the batch
-     */
+    /// Adds an unload command to the batch
     pub fn unload(&mut self, local: IVec3) {
         self.pending.push(ChunkCmd::Unload(local));
     }
 
-    /**
-    Adds an update command to the batch
-     */
+    /// Adds an update command to the batch
     pub fn update(&mut self, local: IVec3, voxels: Vec<(IVec3, voxel::Kind)>) {
         self.pending.push(ChunkCmd::Update(local, voxels));
     }
 
-    fn count_chunk_cmd(vec: &Vec<ChunkCmd>) -> (i32, i32, i32) {
+    fn count_chunk_cmd(vec: &[ChunkCmd]) -> (i32, i32, i32) {
         vec.iter()
             .map(|c| match &c {
                 ChunkCmd::Load(_) => (1, 0, 0),
@@ -285,7 +281,7 @@ fn dispatch_task(
     mut batch_res: ResMut<GenesisCommandBuffer>,
     mut world_res: ResMut<WorldRes>,
 ) {
-    if running_task.is_running() || batch_res.has_pending_cmds() == false {
+    if running_task.is_running() || !batch_res.has_pending_cmds() {
         return;
     }
 
@@ -302,24 +298,23 @@ fn dispatch_task(
     }
 }
 
-/**
-This functions optimize the command list removing duplicated commands or commands that nullifies each other.
-
-**Rules**
- 1. Skips any duplicated commands of type *Load* and *Unload*.
- 2. Skips *Load* and remove existing *Unload* cmd when chunk exists already.
- 3. Skips *Unload* and remove existing *Load* cmd when chunk doesn't exists already.
- 4. Skips *Unload* when chunk doesn't exists already.
- 5. Skips *Load* when chunk exists already.
- 6. Skips *Update* if the chunk doesn't exists already.
- 7. Replaces *Update* by *Unload* if the chunk exists already.
- 8. Merges any duplicated *Update* keeping the last value.
- 9. Skips *Update* if there is an *Unload* cmd already.
-
-**This functions does preserves the insertion order**
-
-**Returns** an optimized command list
-*/
+/// This functions optimize the command list removing duplicated commands or commands that nullifies
+/// each other.
+///
+/// Rules**
+/// 1. Skips any duplicated commands of type *Load* and *Unload*.
+/// 2. Skips *Load* and remove existing *Unload* cmd when chunk exists already.
+/// 3. Skips *Unload* and remove existing *Load* cmd when chunk doesn't exists already.
+/// 4. Skips *Unload* when chunk doesn't exists already.
+/// 5. Skips *Load* when chunk exists already.
+/// 6. Skips *Update* if the chunk doesn't exists already.
+/// 7. Replaces *Update* by *Unload* if the chunk exists already.
+/// 8. Merges any duplicated *Update* keeping the last value.
+/// 9. Skips *Update* if there is an *Unload* cmd already.
+///
+/// This functions does preserves the insertion order**
+///
+/// Returns** an optimized command list
 fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd> {
     let mut map = HashMap::<IVec3, (u32, ChunkCmd)>::new();
 
@@ -401,7 +396,7 @@ fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd>
                         ChunkCmd::Update(_, voxels) => {
                             // Rule 8
                             let mut existing_voxels = voxels.into_iter().collect::<HashMap<_, _>>();
-                            existing_voxels.extend(new_voxels.into_iter());
+                            existing_voxels.extend(new_voxels.iter());
                             map.insert(
                                 local,
                                 (
@@ -462,7 +457,7 @@ mod tests {
         ];
         let world = VoxWorld::default();
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         assert_eq!(
             optimized,
@@ -483,7 +478,7 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((1, 1, 1).into(), Default::default());
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         assert_eq!(optimized, vec![]);
     }
@@ -496,7 +491,7 @@ mod tests {
         ];
         let world = VoxWorld::default();
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         assert_eq!(optimized, vec![]);
     }
@@ -506,7 +501,7 @@ mod tests {
         let cmds = vec![ChunkCmd::Unload((1, 1, 1).into())];
         let world = VoxWorld::default();
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         assert_eq!(optimized, vec![]);
     }
@@ -517,7 +512,7 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((1, 1, 1).into(), Default::default());
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         assert_eq!(optimized, vec![]);
     }
@@ -527,7 +522,7 @@ mod tests {
         let cmds = vec![ChunkCmd::Update((1, 1, 1).into(), vec![])];
         let world = VoxWorld::default();
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         assert_eq!(optimized, vec![]);
     }
@@ -541,7 +536,7 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((1, 1, 1).into(), Default::default());
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         assert_eq!(optimized, vec![ChunkCmd::Unload((1, 1, 1).into())]);
     }
@@ -561,7 +556,7 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((1, 1, 1).into(), Default::default());
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         let voxels = match optimized[0] {
             ChunkCmd::Update(_, ref v) => v,
@@ -571,7 +566,7 @@ mod tests {
         assert_eq!(voxels.len(), 3);
         assert_eq!(
             voxels
-                .into_iter()
+                .iter()
                 .find(|(v, _)| *v == (0, 0, 0).into())
                 .expect("Should exists the updated voxel")
                 .1,
@@ -588,7 +583,7 @@ mod tests {
         let mut world = VoxWorld::default();
         world.add((1, 1, 1).into(), Default::default());
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         assert_eq!(optimized, vec![ChunkCmd::Unload((1, 1, 1).into())]);
     }
@@ -620,7 +615,7 @@ mod tests {
         world.add((1, 5, 1).into(), Default::default());
         world.add((1, 6, 1).into(), Default::default());
 
-        let optimized = super::optimize_commands(&world, cmds.clone());
+        let optimized = super::optimize_commands(&world, cmds);
 
         assert_eq!(
             optimized,

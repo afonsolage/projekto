@@ -110,9 +110,9 @@ fn toggle_chunk_voxels_wireframe(
         }
     } else {
         for (local, kinds) in kinds.iter() {
-            if let Some(&entity) = chunk_map.get(&local) {
+            if let Some(&entity) = chunk_map.get(local) {
                 let voxels = chunk::voxels()
-                    .filter(|&v| kinds.get(v).is_none() == false)
+                    .filter(|&v| !kinds.get(v).is_none())
                     .collect_vec();
 
                 commands.entity(entity).with_children(|c| {
@@ -195,7 +195,7 @@ fn toggle_mesh_wireframe(
                 ))));
                 wireframe_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices.clone());
 
-                //Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
+                // Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
                 wireframe_mesh.insert_attribute(
                     Mesh::ATTRIBUTE_NORMAL,
                     vec![[0.0, 0.0, 0.0]; vertices.len()],
@@ -211,7 +211,7 @@ fn toggle_mesh_wireframe(
 
                 commands
                     .entity(e)
-                    .insert(wireframe_mesh_handle) //The new wireframe mesh
+                    .insert(wireframe_mesh_handle) // The new wireframe mesh
                     .insert(wireframe_draw)
                     .insert(materials.0.get("white").unwrap().clone())
                     .remove::<Handle<ChunkMaterial>>();
@@ -271,7 +271,7 @@ fn draw_voxels(
 
         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
 
-        //Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
+        // Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0; 3]; vertices.len()]);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0; 2]; vertices.len()]);
 
@@ -331,7 +331,7 @@ fn do_raycast(
         let raycast = RaycastDebug {
             origin: transform.translation,
             dir: transform.rotation.mul_vec3(Vec3::Z).normalize() * -1.0,
-            range: 100.0, //TODO: Change this later
+            range: 100.0, // TODO: Change this later
         };
 
         commands.spawn().insert(raycast);
@@ -347,10 +347,9 @@ fn check_raycast_intersections(
         // Get only world position of raycast
         let voxels = query::raycast(raycast.origin, raycast.dir, raycast.range)
             .into_iter()
-            .map(|(_, voxel_hits)| voxel_hits)
-            .flatten()
+            .flat_map(|(_, voxel_hits)| voxel_hits)
             .map(|hit| hit.position)
-            .filter(|&w| kinds.get_at_world(w).is_some_and(|k| k.is_none() == false))
+            .filter(|&w| kinds.get_at_world(w).is_some_and(|k| !k.is_none()))
             .map(|v| v.as_ivec3())
             .collect();
 
@@ -390,7 +389,7 @@ fn draw_raycast(
 
         let mut mesh = Mesh::new(PrimitiveTopology::LineList);
 
-        //Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
+        // Remove this when https://github.com/bevyengine/bevy/issues/5147 gets fixed
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0; 3]; vertices.len()]);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0; 2]; vertices.len()]);
 
@@ -425,11 +424,9 @@ fn remove_voxel(
 
         let world_hit = query::raycast(origin, dir, range)
             .into_iter()
-            .map(|(_, voxel_hits)| voxel_hits)
-            .flatten()
+            .flat_map(|(_, voxel_hits)| voxel_hits)
             .map(|hit| hit.position)
-            .filter(|&w| kinds.get_at_world(w).is_some_and(|k| k.is_none() == false))
-            .next();
+            .find(|&w| kinds.get_at_world(w).is_some_and(|k| !k.is_none()));
 
         if let Some(world) = world_hit {
             let local = chunk::to_local(world);
@@ -458,11 +455,9 @@ fn add_voxel(
 
         let world_hit = query::raycast(origin, dir, range)
             .into_iter()
-            .map(|(_, voxel_hits)| voxel_hits)
-            .flatten()
+            .flat_map(|(_, voxel_hits)| voxel_hits)
             .map(|hit| hit.position)
-            .filter(|&w| kinds.get_at_world(w).is_some_and(|k| k.is_none() == false))
-            .next();
+            .find(|&w| kinds.get_at_world(w).is_some_and(|k| !k.is_none()));
 
         if let Some(world) = world_hit {
             let local = chunk::to_local(world);

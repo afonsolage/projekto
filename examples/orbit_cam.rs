@@ -59,7 +59,7 @@ fn setup_environment(
         .insert(OrbitCameraTarget)
         .insert(Name::new("Target"));
 
-    //X axis
+    // X axis
     commands.spawn_bundle(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Box {
             min_x: 0.0,
@@ -73,7 +73,7 @@ fn setup_environment(
         ..Default::default()
     });
 
-    //Y axis
+    // Y axis
     commands.spawn_bundle(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Box {
             min_x: 0.0,
@@ -87,7 +87,7 @@ fn setup_environment(
         ..Default::default()
     });
 
-    //Z axis
+    // Z axis
     commands.spawn_bundle(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Box {
             min_x: 0.0,

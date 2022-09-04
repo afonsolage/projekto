@@ -175,7 +175,9 @@ pub fn is_active(config: Res<OrbitCameraConfig>) -> ShouldRun {
 ///
 /// This systems is guarded by [`is_active`] run criteria.
 ///
-/// This does nothing if the [`Transform`] of an [`Entity`] with [`OrbitCameraTarget`] is not [`Changed`].
+/// This does nothing if the [`Transform`] of an [`Entity`] with [`OrbitCameraTarget`] is not
+/// [`Changed`].
+
 fn target_moved(
     config: Res<OrbitCameraConfig>,
     target: Query<
@@ -213,7 +215,7 @@ fn settings_changed(
     target: Query<&Transform, (With<OrbitCameraTarget>, Without<OrbitCamera>)>,
     mut q: Query<&mut Transform, With<OrbitCamera>>,
 ) {
-    if config.is_changed() == false {
+    if !config.is_changed() {
         return;
     }
 
@@ -260,7 +262,8 @@ fn spherical_to_cartesian(radius: f32, polar: f32, azimuth: f32, center: Vec3) -
 /// Move camera around using key binds in[`OrbitCameraConfig`] configuration settings.
 /// This system is gated by [`is_active`] run criteria.
 ///
-/// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on [`OrbitCameraConfig`]
+/// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on
+/// [`OrbitCameraConfig`]
 fn move_camera_keycode(
     input: Res<Input<KeyCode>>,
     time: Res<Time>,
@@ -294,7 +297,8 @@ fn move_camera_keycode(
 /// Move camera around using mouse.
 /// This system is gated by [`is_active`] run criteria.
 ///
-/// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on [`OrbitCameraConfig`]
+/// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on
+/// [`OrbitCameraConfig`]
 fn move_camera_mouse(
     input: Res<Input<MouseButton>>,
     mut mouse_move: EventReader<MouseMotion>,

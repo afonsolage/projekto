@@ -1,5 +1,5 @@
 use bevy_math::{IVec2, IVec3, Vec3};
-//de::DeserializeOwned,
+// de::DeserializeOwned,
 use serde::{Deserialize, Serialize};
 
 use crate::{math, query};
@@ -321,7 +321,7 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
             Side::Back => pos.z == Z_END as i32,
         };
 
-        if check == false {
+        if !check {
             panic!("Invalid {pos}");
         }
 
@@ -490,8 +490,8 @@ mod tests {
                 (random::<f32>() * MAG) as i32 * if random::<bool>() { -1 } else { 1 },
             );
 
-            // To world just convert from local chunk coordinates (1, 2, -1) to world coordinates (16, 32, -16)
-            // assuming AXIS_SIZE = 16
+            // To world just convert from local chunk coordinates (1, 2, -1) to world coordinates
+            // (16, 32, -16) assuming AXIS_SIZE = 16
             assert_eq!(
                 base.as_vec3()
                     * Vec3::new(X_AXIS_SIZE as f32, Y_AXIS_SIZE as f32, Z_AXIS_SIZE as f32),
@@ -523,8 +523,8 @@ mod tests {
                 (random::<f32>() * MAG) as i32 * if random::<bool>() { -1 } else { 1 },
             );
 
-            // This fragment is just used to check if rounding will be correct, since it should not affect
-            // the overall chunk local position
+            // This fragment is just used to check if rounding will be correct, since it should not
+            // affect the overall chunk local position
             let frag = Vec3::new(
                 random::<f32>() * (X_AXIS_SIZE - 1) as f32,
                 random::<f32>() * (Y_AXIS_SIZE - 1) as f32,
@@ -537,8 +537,8 @@ mod tests {
                 (base.z * Z_AXIS_SIZE as i32) as f32 + frag.z,
             );
 
-            // To local convert from world chunk coordinates (15.4, 1.1, -0.5) to local coordinates (1, 0, -1)
-            // assuming AXIS_SIZE = 16
+            // To local convert from world chunk coordinates (15.4, 1.1, -0.5) to local coordinates
+            // (1, 0, -1) assuming AXIS_SIZE = 16
             assert_eq!(base, super::to_local(world));
         }
     }
@@ -553,7 +553,7 @@ mod tests {
             assert!(pos.y >= 0 && pos.y < super::Y_AXIS_SIZE as i32);
             assert!(pos.z >= 0 && pos.z < super::Z_AXIS_SIZE as i32);
 
-            if first == None {
+            if first.is_none() {
                 first = Some(pos);
             }
             last = pos;

@@ -8,8 +8,7 @@ mod landscaping;
 mod material;
 mod meshing;
 
-pub use material::ChunkMaterial;
-pub use material::ChunkMaterialHandle;
+pub use material::{ChunkMaterial, ChunkMaterialHandle};
 
 #[derive(Component)]
 pub struct LandscapeCenter;
@@ -23,9 +22,7 @@ impl Plugin for PipelinePlugin {
     }
 }
 
-/**
- This event is raised whenever a chunk mesh needs to be redrawn
-*/
+/// This event is raised whenever a chunk mesh needs to be redrawn
 pub struct EvtChunkMeshDirty(pub IVec3);
 
 #[derive(Component)]

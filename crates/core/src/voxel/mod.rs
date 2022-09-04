@@ -1,21 +1,16 @@
-use bevy_math::IVec3;
-use bevy_math::Vec2;
-use bevy_math::Vec3;
-use serde::Deserialize;
-use serde::Serialize;
+use bevy_math::{IVec3, Vec2, Vec3};
+use serde::{Deserialize, Serialize};
 
-use crate::chunk::ChunkStorage;
-use crate::math;
+use crate::{chunk::ChunkStorage, math};
 
-use super::chunk;
-use super::chunk::ChunkStorageType;
+use super::{chunk, chunk::ChunkStorageType};
 
 mod kind;
 pub use kind::*;
 
 pub const SIDE_COUNT: usize = 6;
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum LightTy {
     Natural,
     Artificial,
@@ -37,7 +32,7 @@ impl LightTy {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Light(u8);
 
 impl Light {
@@ -69,15 +64,15 @@ impl From<u8> for Light {
     }
 }
 
-impl Into<u8> for Light {
-    fn into(self) -> u8 {
-        self.0
+impl From<Light> for u8 {
+    fn from(val: Light) -> Self {
+        val.0
     }
 }
 
 impl ChunkStorageType for Light {}
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default)]
 pub enum Side {
     #[default]
     Right = 0,
@@ -140,7 +135,7 @@ impl Side {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Deserialize, Serialize)]
 pub struct FacesOcclusion(u8);
 
 const FULL_OCCLUDED_MASK: u8 = 0b0011_1111;
@@ -216,7 +211,7 @@ pub struct VoxelVertex {
     pub tile_coord_start: Vec2,
     pub light: Vec3,
     pub voxel: u32,
-    //TODO: color
+    // TODO: color
 }
 
 pub fn to_local(world: Vec3) -> IVec3 {
@@ -381,14 +376,16 @@ mod tests {
                 if random::<bool>() { 1.0 } else { -1.0 },
             );
 
-            // Generate some floating number between 0.0 and 0.9 just to simulate the fraction of world coordinates
+            // Generate some floating number between 0.0 and 0.9 just to simulate the fraction of
+            // world coordinates
             let frag = Vec3::new(
                 random::<f32>() * 0.9,
                 random::<f32>() * 0.9,
                 random::<f32>() * 0.9,
             );
 
-            // Compute a valid world coordinates using the base voxel, the sign and the floating number
+            // Compute a valid world coordinates using the base voxel, the sign and the floating
+            // number
             let world = Vec3::new(
                 ((random::<f32>() * MAG * sign.x) as i32 * chunk::X_AXIS_SIZE as i32 + base.x)
                     as f32,

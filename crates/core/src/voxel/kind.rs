@@ -93,8 +93,7 @@ impl KindsDescs {
             .descriptions
             .iter()
             .find(|k| k.id == face.kind.0)
-            .map(|desc| desc)
-            .expect(format!("Unable to find kind description for face {:?}", face).as_str());
+            .unwrap_or_else(|| panic!("Unable to find kind description for face {:?}", face));
 
         match kind_desc.sides {
             KindSidesDesc::None => panic!("{} kind should not be rendered.", face.kind.0),
@@ -117,8 +116,8 @@ impl KindsDescs {
         }
     }
 
-    /// On the first call, this functions reads the ron file and load the [`KindsDescs`] struct from it.
-    /// The reading operation is thread-blocking.
+    /// On the first call, this functions reads the ron file and load the [`KindsDescs`] struct from
+    /// it. The reading operation is thread-blocking.
     /// This function should be first called on a controlled context to avoid blocking.
     /// Subsequent calls just get a static reference from loaded struct.
     pub fn get() -> &'static Self {
@@ -154,7 +153,7 @@ impl KindsDescs {
 /// Kind id reference.
 /// This function uses [`KindsDescs`] to determine how this kind should behave.
 /// May panic if current kind id doesn't exists on [`KindsDescs`].
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
 impl From<u16> for Kind {
@@ -163,9 +162,9 @@ impl From<u16> for Kind {
     }
 }
 
-impl Into<u16> for Kind {
-    fn into(self) -> u16 {
-        self.0
+impl From<Kind> for u16 {
+    fn from(val: Kind) -> Self {
+        val.0
     }
 }
 
@@ -180,6 +179,7 @@ impl Kind {
         Kind(0)
     }
 
+    // TODO: Find better name, since this is similar to Option<T>::is_none
     /// Checks if current kind is the None [`Kind`], which has id 0.
     pub fn is_none(&self) -> bool {
         self.0 == 0
@@ -187,21 +187,16 @@ impl Kind {
 
     /// Checks if current kind is [`KindLightDesc::Opaque`].
     pub fn is_opaque(&self) -> bool {
-        match self.desc().light {
-            KindLightDesc::Opaque => true,
-            _ => false,
-        }
+        matches!(self.desc().light, KindLightDesc::Opaque)
     }
 
     /// Checks if current kind is [`KindLightDesc::Emitter`].
     pub fn is_light_emitter(&self) -> bool {
-        match self.desc().light {
-            KindLightDesc::Emitter(_) => true,
-            _ => false,
-        }
+        matches!(self.desc().light, KindLightDesc::Emitter(_))
     }
 
-    /// **Returns** the light intensity emitted by this kind or zero if it isn't a [`KindLightDesc::Emitter`]
+    /// **Returns** the light intensity emitted by this kind or zero if it isn't a
+    /// [`KindLightDesc::Emitter`]
     pub fn light_emission(&self) -> u8 {
         match self.desc().light {
             KindLightDesc::Emitter(intensity) => intensity,
@@ -215,7 +210,7 @@ impl Kind {
 
         match depth {
             depth if depth == 0 => Kind(2),
-            depth if depth >= -3 && depth <= -1 => Kind(1),
+            depth if (-3..=-1).contains(&depth) => Kind(1),
             _ => Kind(3),
         }
     }

@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 #![feature(int_log)]
 #![feature(test)]
 #![feature(once_cell)]
@@ -6,9 +7,6 @@
 use bevy::{
     asset::AssetServerSettings, prelude::*, render::texture::ImageSettings, window::PresentMode,
 };
-
-#[cfg(feature = "inspector")]
-use bevy_inspector_egui;
 
 mod debug;
 use camera_controller::CameraControllerPlugin;
@@ -116,7 +114,7 @@ fn setup(
             });
         });
 
-    //X axis
+    // X axis
     commands.spawn_bundle(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Box {
             min_x: 0.0,
@@ -130,7 +128,7 @@ fn setup(
         ..Default::default()
     });
 
-    //Y axis
+    // Y axis
     commands.spawn_bundle(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Box {
             min_x: 0.0,
@@ -144,7 +142,7 @@ fn setup(
         ..Default::default()
     });
 
-    //Z axis
+    // Z axis
     commands.spawn_bundle(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Box {
             min_x: 0.0,

@@ -217,7 +217,7 @@ fn update_view_frustum(
     position: Res<CharacterPosition>,
     q: Query<&Transform, With<CharacterController>>,
 ) -> ViewFrustumChain {
-    if position.is_changed() == false {
+    if !position.is_changed() {
         return ViewFrustumChain::DoNothing;
     }
 
@@ -230,7 +230,7 @@ fn update_view_frustum(
         None => return ViewFrustumChain::DoNothing,
     };
 
-    if front.is_opaque() == true {
+    if front.is_opaque() {
         // Facing a wall. Does nothing
         return ViewFrustumChain::RevertMaterial;
     }
@@ -304,9 +304,9 @@ fn update_chunk_material(
     }
 
     match voxels {
-        ViewFrustumChain::DoNothing => return,
+        ViewFrustumChain::DoNothing => (),
         ViewFrustumChain::RevertMaterial => {
-            if *clipped == false {
+            if !*clipped {
                 return;
             }
 

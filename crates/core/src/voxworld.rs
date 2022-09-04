@@ -6,9 +6,9 @@ use super::chunk::Chunk;
 #[derive(Default, Clone, Debug)]
 pub struct VoxWorld {
     chunks: HashMap<IVec3, Chunk>,
-    //Vertices
-    //Fluids
-    //so on
+    // Vertices
+    // Fluids
+    // so on
 }
 
 impl VoxWorld {

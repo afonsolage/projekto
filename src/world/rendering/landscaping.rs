@@ -1,4 +1,5 @@
 use bevy::{
+    ecs::system::SystemParam,
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     utils::{HashMap, HashSet},
@@ -60,7 +61,7 @@ fn setup_resources(
         tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
         clip_map_origin: Vec2::ZERO,
         clip_height: f32::MAX,
-        clip_map: clip_map,
+        clip_map,
         show_back_faces: false,
     });
 
@@ -79,34 +80,36 @@ fn setup_resources(
     });
 }
 
-#[derive(Default)]
-struct UpdateLandscapeMeta {}
+#[derive(SystemParam)]
+struct UpdateLandscapeParams<'w, 's> {
+    kinds: Res<'w, ChunkKindRes>,
+    meta: ResMut<'w, LandscapeMeta>,
+    writer: EventWriter<'w, 's, EvtChunkMeshDirty>,
+    material: Res<'w, ChunkMaterialHandle>,
+    entity_map: ResMut<'w, ChunkEntityMap>,
+    center_query: Query<'w, 's, &'static Transform, With<LandscapeCenter>>,
+}
 
 fn update_landscape(
     mut commands: Commands,
-    mut entity_map: ResMut<ChunkEntityMap>,
-    material: Res<ChunkMaterialHandle>,
     time: Res<Time>,              // TODO: Change this to a Run Criteria later on
     config: Res<LandscapeConfig>, // TODO: Change this to a Run Criteria later on
-    kinds: Res<ChunkKindRes>,
-    mut meta: ResMut<LandscapeMeta>,
-    mut writer: EventWriter<EvtChunkMeshDirty>,
-    center_query: Query<&Transform, With<LandscapeCenter>>,
+    mut params: UpdateLandscapeParams,
 ) {
     if config.paused {
         return;
     }
 
-    let center = match center_query.get_single() {
+    let center = match params.center_query.get_single() {
         Ok(t) => chunk::to_local(t.translation),
         Err(_) => return,
     };
 
-    meta.next_sync -= time.delta_seconds();
+    params.meta.next_sync -= time.delta_seconds();
 
-    if center != meta.last_pos || meta.next_sync < 0.0 {
-        meta.next_sync = 1.0;
-        meta.last_pos = center;
+    if center != params.meta.last_pos || params.meta.next_sync < 0.0 {
+        params.meta.next_sync = 1.0;
+        params.meta.last_pos = center;
 
         let radius = IVec3::new(
             landscape::HORIZONTAL_RADIUS as i32,
@@ -117,15 +120,15 @@ fn update_landscape(
         let end = center + radius;
 
         let visible_locals = query::range_inclusive(begin, end).collect::<HashSet<_>>();
-        let existing_locals = entity_map.0.keys().copied().collect::<HashSet<_>>();
+        let existing_locals = params.entity_map.0.keys().copied().collect::<HashSet<_>>();
 
         let spawn = visible_locals
             .iter()
             .filter(|&i| !existing_locals.contains(i))
-            .filter(|&&i| kinds.exists(i))
+            .filter(|&&i| params.kinds.exists(i))
             .collect::<Vec<_>>();
 
-        if spawn.len() > 0 {
+        if !spawn.is_empty() {
             debug!("Spawning {} chunks", spawn.len());
         }
 
@@ -136,17 +139,17 @@ fn update_landscape(
                 .spawn_bundle(ChunkBundle {
                     local: ChunkLocal(local),
                     mesh_bundle: MaterialMeshBundle {
-                        material: material.clone(),
+                        material: params.material.clone(),
                         transform: Transform::from_translation(chunk::to_world(local)),
                         ..Default::default()
                     },
                 })
                 .insert(Name::new(format!("Chunk {}", local)))
                 .id();
-            entity_map.0.insert(local, entity);
-            writer.send(EvtChunkMeshDirty(local));
+            params.entity_map.0.insert(local, entity);
+            params.writer.send(EvtChunkMeshDirty(local));
 
-            commands.entity(meta.root).add_child(entity);
+            commands.entity(params.meta.root).add_child(entity);
         }
 
         let despawn = existing_locals
@@ -154,12 +157,12 @@ fn update_landscape(
             .filter(|&i| !visible_locals.contains(i))
             .collect::<Vec<_>>();
 
-        if despawn.len() > 0 {
+        if !despawn.is_empty() {
             debug!("Despawning {} chunks", despawn.len());
         }
 
         for &local in despawn.into_iter() {
-            if let Some(entity) = entity_map.0.remove(&local) {
+            if let Some(entity) = params.entity_map.0.remove(&local) {
                 commands.entity(entity).despawn_recursive();
             }
         }

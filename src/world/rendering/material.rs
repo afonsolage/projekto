@@ -1,17 +1,22 @@
-use bevy::pbr::MaterialPipelineKey;
-use bevy::prelude::*;
+use bevy::{pbr::MaterialPipelineKey, prelude::*};
 
-use bevy::render::render_asset::RenderAssets;
-use bevy::render::render_resource::{
-    encase, AsBindGroup, AsBindGroupError, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
-    BufferInitDescriptor, BufferUsages, OwnedBindingResource, PreparedBindGroup,
-    SamplerBindingType, ShaderRef, ShaderStages, ShaderType, TextureSampleType,
-    TextureViewDimension, VertexFormat, Face,
+use bevy::{
+    pbr::MaterialPipeline,
+    reflect::TypeUuid,
+    render::{
+        mesh::MeshVertexAttribute,
+        render_asset::RenderAssets,
+        render_resource::{
+            encase, AsBindGroup, AsBindGroupError, BindGroupDescriptor, BindGroupEntry,
+            BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,
+            BufferBindingType, BufferInitDescriptor, BufferUsages, Face, OwnedBindingResource,
+            PreparedBindGroup, SamplerBindingType, ShaderRef, ShaderStages, ShaderType,
+            TextureSampleType, TextureViewDimension, VertexFormat,
+        },
+        renderer::RenderDevice,
+        texture::FallbackImage,
+    },
 };
-use bevy::render::renderer::RenderDevice;
-use bevy::render::texture::FallbackImage;
-use bevy::{pbr::MaterialPipeline, reflect::TypeUuid, render::mesh::MeshVertexAttribute};
 
 #[derive(Reflect, Component, Debug, Deref, DerefMut)]
 pub struct ChunkMaterialHandle(pub Handle<ChunkMaterial>);
@@ -138,7 +143,7 @@ impl AsBindGroup for ChunkMaterial {
 
         let bind_group = render_device.create_bind_group(&BindGroupDescriptor {
             label: None,
-            layout: layout,
+            layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
