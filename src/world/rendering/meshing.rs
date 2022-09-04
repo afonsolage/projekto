@@ -37,18 +37,20 @@ fn mesh_generation_system(
     let limit = usize::min(meta.pending_chunks.len(), 1);
 
     for local in meta.pending_chunks.drain(..limit) {
-        if let Some(&e) = entity_map.0.get(&local) 
-            && let Some(vertices) = vertices.get(local) {
-            debug_assert!(!vertices.is_empty());
+        if let Some(&e) = entity_map.0.get(&local) {
+            if let Some(vertices) = vertices.get(local) {
+                debug_assert!(!vertices.is_empty());
 
-            let mesh = generate_mesh(vertices);
-            commands.entity(e).insert(meshes.add(mesh));
-        } else {
-            warn!(
-                "Skipping mesh generation since chunk {} wasn't found on entity map",
-                local
-            );
+                let mesh = generate_mesh(vertices);
+                commands.entity(e).insert(meshes.add(mesh));
+                continue;
+            }
         }
+
+        warn!(
+            "Skipping mesh generation since chunk {} wasn't found on entity map",
+            local
+        );
     }
 }
 

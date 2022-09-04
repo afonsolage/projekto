@@ -8,7 +8,7 @@ use bevy::{
 };
 use bevy_inspector_egui::{Inspectable, InspectorPlugin};
 use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
-use projekto_core::{chunk, voxel, landscape};
+use projekto_core::{chunk, landscape, voxel};
 use projekto_genesis::{ChunkKindRes, ChunkLightRes};
 
 use crate::world::{
@@ -67,7 +67,11 @@ impl Default for CharacterControllerConfig {
 #[derive(Default, Debug, Reflect, Deref, DerefMut)]
 pub struct ChunkMaterialImage(pub Handle<Image>);
 
-fn sync_material_image(material: Res<ChunkMaterialHandle>, materials: Res<Assets<ChunkMaterial>>, mut image_handle: ResMut<ChunkMaterialImage>) {
+fn sync_material_image(
+    material: Res<ChunkMaterialHandle>,
+    materials: Res<Assets<ChunkMaterial>>,
+    mut image_handle: ResMut<ChunkMaterialImage>,
+) {
     if material.is_changed() {
         **image_handle = materials.get(&material).unwrap().clip_map.clone();
     }
@@ -291,7 +295,12 @@ fn update_chunk_material(
     mut clipped: Local<bool>,
 ) {
     if debug_entity.is_none() {
-        *debug_entity = Some(commands.spawn().insert(Visibility {is_visible: false}).id());
+        *debug_entity = Some(
+            commands
+                .spawn()
+                .insert(Visibility { is_visible: false })
+                .id(),
+        );
     }
 
     match voxels {
@@ -303,16 +312,19 @@ fn update_chunk_material(
 
             trace!("Revert!");
 
-            if let Some(material) = materials.get_mut(&chunk_material_handle) 
-                && let Some(image) = images.get_mut(&material.clip_map) {
-                material.clip_map_origin = Vec2::ZERO;
-                material.clip_height = f32::MAX;
-                material.show_back_faces = false;
+            if let Some(material) = materials.get_mut(&chunk_material_handle) {
+                if let Some(image) = images.get_mut(&material.clip_map) {
+                    material.clip_map_origin = Vec2::ZERO;
+                    material.clip_height = f32::MAX;
+                    material.show_back_faces = false;
 
-                image.data.fill(0);
+                    image.data.fill(0);
+                }
             }
 
-            commands.entity(debug_entity.unwrap()).insert(DrawVoxels::default());
+            commands
+                .entity(debug_entity.unwrap())
+                .insert(DrawVoxels::default());
         }
         ViewFrustumChain::ClipMaterial(char_pos, voxels_world) => {
             trace!("Clip!");
@@ -326,11 +338,12 @@ fn update_chunk_material(
                 visible: false,
             });
 
-            if let Some(material) = materials.get_mut(&chunk_material_handle)
-                && let Some(image) = images.get_mut(&material.clip_map) {
+            if let Some(material) = materials.get_mut(&chunk_material_handle) {
+                if let Some(image) = images.get_mut(&material.clip_map) {
                     let char_chunk = chunk::to_local(char_pos.as_vec3());
-                    let left_bottom_chunk = char_chunk - IVec3::splat(landscape::HORIZONTAL_RADIUS as i32);
-                    
+                    let left_bottom_chunk =
+                        char_chunk - IVec3::splat(landscape::HORIZONTAL_RADIUS as i32);
+
                     let clip_origin = chunk::to_world(left_bottom_chunk).xz();
                     let clip_height = char_pos.y as f32;
 
@@ -341,7 +354,6 @@ fn update_chunk_material(
                     let len = image.data.len();
                     let mut data = vec![0; len];
 
-                    
                     for voxel in voxels_world {
                         if voxel.y > clip_height {
                             continue;
@@ -357,6 +369,7 @@ fn update_chunk_material(
                     }
 
                     image.data = data;
+                }
             }
         }
     }
@@ -383,12 +396,30 @@ mod tests {
         assert_eq!(super::pack_landscape_coords(IVec2::new(0, 2)), 2);
         assert_eq!(super::pack_landscape_coords(IVec2::new(0, 3)), 3);
 
-        assert_eq!(super::pack_landscape_coords(IVec2::new(1, 0)), super::X_AXIS);
-        assert_eq!(super::pack_landscape_coords(IVec2::new(2, 0)), 2 * super::X_AXIS);
-        assert_eq!(super::pack_landscape_coords(IVec2::new(3, 0)), 3 * super::X_AXIS);
+        assert_eq!(
+            super::pack_landscape_coords(IVec2::new(1, 0)),
+            super::X_AXIS
+        );
+        assert_eq!(
+            super::pack_landscape_coords(IVec2::new(2, 0)),
+            2 * super::X_AXIS
+        );
+        assert_eq!(
+            super::pack_landscape_coords(IVec2::new(3, 0)),
+            3 * super::X_AXIS
+        );
 
-        assert_eq!(super::pack_landscape_coords(IVec2::new(1, 1)), super::X_AXIS + 1);
-        assert_eq!(super::pack_landscape_coords(IVec2::new(2, 2)), 2 * super::X_AXIS + 2);
-        assert_eq!(super::pack_landscape_coords(IVec2::new(3, 3)), 3 * super::X_AXIS + 3);
+        assert_eq!(
+            super::pack_landscape_coords(IVec2::new(1, 1)),
+            super::X_AXIS + 1
+        );
+        assert_eq!(
+            super::pack_landscape_coords(IVec2::new(2, 2)),
+            2 * super::X_AXIS + 2
+        );
+        assert_eq!(
+            super::pack_landscape_coords(IVec2::new(3, 3)),
+            3 * super::X_AXIS + 3
+        );
     }
 }

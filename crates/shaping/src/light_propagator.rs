@@ -45,9 +45,9 @@ pub fn propagate_natural_light_on_new_chunk(world: &mut VoxWorld, locals: &[IVec
 }
 
 /// Propagate light from the given locals to their neighbors.
-/// 
+///
 /// This function does two passes, first [`LightTy::Artificial`] and then [`LightTy::Natural`].
-/// 
+///
 /// Returns a list of chunks that has been changed.
 pub fn propagate_light_to_neighborhood(world: &mut VoxWorld, locals: &[IVec3]) -> Vec<IVec3> {
     let mut propagator = Propagator::new(world, LightTy::Artificial);
@@ -250,9 +250,9 @@ impl<'a> Propagator<'a> {
                 let side_voxel = voxel + side.dir();
 
                 // Skip if there is no side_voxel or if it's opaque
-                if let Some(side_kind) = chunk.kinds.get_absolute(side_voxel) && !side_kind.is_opaque() {
-                } else {
-                    continue;
+                match chunk.kinds.get_absolute(side_voxel) {
+                    Some(side_voxel) if !side_voxel.is_opaque() => (),
+                    _ => continue,
                 }
 
                 let propagated_intensity =
@@ -442,17 +442,15 @@ impl<'a> Propagator<'a> {
                     } else if side_intensity >= old_intensity {
                         propagate_self.push(side_voxel);
                     }
-                } else {
-                    if let Some(neighbor_light) = chunk.lights.get_absolute(side_voxel) {
-                        let neighbor_intensity = neighbor_light.get(self.ty);
+                } else if let Some(neighbor_light) = chunk.lights.get_absolute(side_voxel) {
+                    let neighbor_intensity = neighbor_light.get(self.ty);
 
-                        let (_, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
+                    let (_, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
 
-                        if neighbor_intensity != 0 && old_intensity > neighbor_intensity {
-                            remove_neighbor[side as usize].push(neighbor_voxel);
-                        } else if neighbor_intensity >= old_intensity {
-                            propagate_neighbor[side as usize].push(voxel);
-                        }
+                    if neighbor_intensity != 0 && old_intensity > neighbor_intensity {
+                        remove_neighbor[side as usize].push(neighbor_voxel);
+                    } else if neighbor_intensity >= old_intensity {
+                        propagate_neighbor[side as usize].push(voxel);
                     }
                 }
             }
@@ -870,7 +868,6 @@ mod tests {
         assert_eq!(chunk.lights.get((1, 3, 0).into()).get(LightTy::Natural), 15);
 
         chunk.kinds.set((1, 2, 0).into(), 0.into());
-        drop(chunk);
 
         super::update_light(
             &mut world,
@@ -1016,12 +1013,8 @@ mod tests {
 
         let neighbor = world.get_mut((1, 0, 0).into()).unwrap();
         neighbor.kinds.set((0, 10, 0).into(), 0.into());
-        drop(neighbor);
 
-        super::super::update_kind_neighborhoods(
-            &mut world,
-            &vec![(0, 0, 0).into(), (1, 0, 0).into()],
-        );
+        super::super::update_kind_neighborhoods(&mut world, &[(0, 0, 0).into(), (1, 0, 0).into()]);
 
         let updated = [((1, 0, 0).into(), vec![((0, 10, 0).into(), 0.into())])];
 
@@ -1186,8 +1179,6 @@ mod tests {
             (1, 0, 0).into(),
             vec![((0, 9, 0).into(), 1.into()), ((0, 2, 0).into(), 1.into())],
         )];
-
-        drop(neighbor);
 
         //Act
         let mut propagator = Propagator::new(&mut world, LightTy::Natural);

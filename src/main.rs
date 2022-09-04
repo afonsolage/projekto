@@ -1,5 +1,3 @@
-//https://github.com/bevyengine/bevy/issues/4601
-#![allow(clippy::forget_non_drop)]
 #![feature(int_log)]
 #![feature(test)]
 #![feature(once_cell)]

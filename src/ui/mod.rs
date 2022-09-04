@@ -1,22 +1,24 @@
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     time::FixedTimestep,
 };
-use projekto_core::{chunk, landscape};
+use projekto_widgets::widget::WidgetPlugin;
 
-use crate::character_controller::ChunkMaterialImage;
+use self::console::ConsolePlugin;
 
 // use bevy_egui::{egui, EguiContext, EguiPlugin};
 
 // use crate::world::DebugCmd;
 
+mod console;
+
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app
+        app.add_plugin(WidgetPlugin)
+            .add_plugin(ConsolePlugin)
             // .add_plugin(EguiPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin::default())
             .add_startup_system(setup_fps_text)
@@ -25,7 +27,7 @@ impl Plugin for UiPlugin {
             .add_system_set(
                 SystemSet::new()
                     .with_run_criteria(FixedTimestep::step(0.5))
-                    .with_system(show_chunk_material_clip_map)
+                    // .with_system(show_chunk_material_clip_map)
                     .with_system(update_fps_text_system),
             );
 
@@ -80,76 +82,76 @@ fn update_fps_text_system(
     }
 }
 
-fn show_chunk_material_clip_map(
-    mut commands: Commands,
-    clip_map: Res<ChunkMaterialImage>,
-    mut images: ResMut<Assets<Image>>,
-    mut meta: Local<Option<Entity>>,
-) {
-    if meta.is_none() {
-        *meta = Some(
-            commands
-                .spawn_bundle(ImageBundle {
-                    style: Style {
-                        position: UiRect {
-                            bottom: Val::Px(20.0),
-                            left: Val::Px(15.0),
-                            ..Default::default()
-                        },
-                        size: Size::new(Val::Px(200.0), Val::Px(200.0)),
-                        position_type: PositionType::Absolute,
-                        ..default()
-                    },
+// fn show_chunk_material_clip_map(
+//     mut commands: Commands,
+//     clip_map: Res<ChunkMaterialImage>,
+//     mut images: ResMut<Assets<Image>>,
+//     mut meta: Local<Option<Entity>>,
+// ) {
+//     if meta.is_none() {
+//         *meta = Some(
+//             commands
+//                 .spawn_bundle(ImageBundle {
+//                     style: Style {
+//                         position: UiRect {
+//                             bottom: Val::Px(20.0),
+//                             left: Val::Px(15.0),
+//                             ..Default::default()
+//                         },
+//                         size: Size::new(Val::Px(200.0), Val::Px(200.0)),
+//                         position_type: PositionType::Absolute,
+//                         ..default()
+//                     },
 
-                    ..default()
-                })
-                .insert(Name::new("Clip Map"))
-                .id(),
-        );
-    }
+//                     ..default()
+//                 })
+//                 .insert(Name::new("Clip Map"))
+//                 .id(),
+//         );
+//     }
 
-    const WIDTH: usize = landscape::HORIZONTAL_SIZE * chunk::X_AXIS_SIZE;
-    const HEIGHT: usize = landscape::HORIZONTAL_SIZE * chunk::Z_AXIS_SIZE;
+//     const WIDTH: usize = landscape::HORIZONTAL_SIZE * chunk::X_AXIS_SIZE;
+//     const HEIGHT: usize = landscape::HORIZONTAL_SIZE * chunk::Z_AXIS_SIZE;
 
-    let clip_map_data = match images.get(&clip_map) {
-        Some(img) => img.data.clone(),
-        None => return,
-    };
+//     let clip_map_data = match images.get(&clip_map) {
+//         Some(img) => img.data.clone(),
+//         None => return,
+//     };
 
-    let mut data = vec![];
+//     let mut data = vec![];
 
-    for b in clip_map_data {
-        let b = if b > 0 { 255 } else { b };
+//     for b in clip_map_data {
+//         let b = if b > 0 { 255 } else { b };
 
-        data.push(b);
-        data.push(b);
-        data.push(b);
-        data.push(255);
-    }
+//         data.push(b);
+//         data.push(b);
+//         data.push(b);
+//         data.push(255);
+//     }
 
-    let is_visible = data.iter().max().unwrap_or(&0u8) > &0u8;
+//     let is_visible = data.iter().max().unwrap_or(&0u8) > &0u8;
 
-    if !is_visible {
-        commands
-            .entity(meta.unwrap())
-            .insert(Visibility { is_visible });
-    } else {
-        let image = Image::new(
-            Extent3d {
-                width: WIDTH as u32,
-                height: HEIGHT as u32,
-                ..Default::default()
-            },
-            TextureDimension::D2,
-            data,
-            TextureFormat::Bgra8UnormSrgb,
-        );
+//     if !is_visible {
+//         commands
+//             .entity(meta.unwrap())
+//             .insert(Visibility { is_visible });
+//     } else {
+//         let image = Image::new(
+//             Extent3d {
+//                 width: WIDTH as u32,
+//                 height: HEIGHT as u32,
+//                 ..Default::default()
+//             },
+//             TextureDimension::D2,
+//             data,
+//             TextureFormat::Bgra8UnormSrgb,
+//         );
 
-        commands
-            .entity(meta.unwrap())
-            .insert(UiImage(images.add(image)));
-    }
-}
+//         commands
+//             .entity(meta.unwrap())
+//             .insert(UiImage(images.add(image)));
+//     }
+// }
 
 #[cfg(feature = "mem_alloc")]
 mod mem_alloc {

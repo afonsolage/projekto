@@ -210,7 +210,7 @@ pub fn update_chunks(
 ) -> Vec<IVec3> {
     let mut dirty = update_kind(world, update);
 
-    dirty.extend(light_propagator::update_light(world, &update));
+    dirty.extend(light_propagator::update_light(world, update));
 
     // TODO: Update water, stability and so one
 
@@ -218,9 +218,9 @@ pub fn update_chunks(
 }
 
 /// Update neighborhood data and propagate data across neighbors.
-/// 
+///
 /// This function should be called whenever a chunk has it's neighbor updated.
-/// 
+///
 /// Returns a list of dirty chunks, which needs to have their vertices recomputed.
 pub fn update_neighborhood(world: &mut VoxWorld, dirty: &[IVec3]) -> Vec<IVec3> {
     update_kind_neighborhoods(world, dirty);
@@ -228,9 +228,9 @@ pub fn update_neighborhood(world: &mut VoxWorld, dirty: &[IVec3]) -> Vec<IVec3> 
 }
 
 /// Apply a given list of update [`voxel::Kind`] on chunks.
-/// 
+///
 /// This function also update neighborhood to keep it in sync.
-/// 
+///
 /// Return a list of chunks which was updated, either direct on indirect (it's neighbor has been changed).
 fn update_kind(world: &mut VoxWorld, update: &[(IVec3, Vec<(IVec3, voxel::Kind)>)]) -> Vec<IVec3> {
     let mut dirty = HashSet::default();
@@ -439,7 +439,7 @@ This function assumes all given chunks exists into the world and updates any nei
 
 **Panics** if a given chunk local doesn't exists
 */
-fn update_kind_neighborhoods<'a>(world: &mut VoxWorld, locals: &[IVec3]) {
+fn update_kind_neighborhoods(world: &mut VoxWorld, locals: &[IVec3]) {
     for &local in locals {
         let mut neighborhood = ChunkNeighborhood::default();
         for side in voxel::SIDES {
@@ -477,7 +477,7 @@ mod tests {
     }
 
     fn create_test_world() -> VoxWorld {
-        AsyncComputeTaskPool::init(|| Default::default());
+        AsyncComputeTaskPool::init(Default::default);
         /*
                            Chunk               Neighbor
                         +----+----+        +----+----+----+
@@ -657,7 +657,7 @@ mod tests {
             ((0, chunk::Y_END as i32, 5).into(), 3.into()),
         ];
 
-        let dirty_chunks = super::update_chunks(&mut world, &vec![(local, voxels)]);
+        let dirty_chunks = super::update_chunks(&mut world, &[(local, voxels)]);
 
         let kinds = &world.get(local).unwrap().kinds;
 
@@ -747,7 +747,7 @@ mod tests {
             world.add(pos, chunk);
         }
 
-        super::update_kind_neighborhoods(&mut world, &vec![(1, 1, 1).into()]);
+        super::update_kind_neighborhoods(&mut world, &[(1, 1, 1).into()]);
         let chunk = world.get_mut(center).unwrap();
 
         for side in voxel::SIDES {
@@ -854,10 +854,10 @@ mod tests {
         world.add((0, 0, 0).into(), center);
         world.add((0, -1, 0).into(), down);
 
-        super::update_kind_neighborhoods(&mut world, &vec![(0, 0, 0).into()]);
+        super::update_kind_neighborhoods(&mut world, &[(0, 0, 0).into()]);
 
         let center = world.get((0, 0, 0).into()).unwrap();
-        let faces_occlusion = super::faces_occlusion(&center);
+        let faces_occlusion = super::faces_occlusion(center);
 
         let faces = faces_occlusion.get((0, chunk::Y_END as i32, 0).into());
         assert_eq!(faces, [false, false, true, false, false, false].into());
