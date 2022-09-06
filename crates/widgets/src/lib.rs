@@ -6,6 +6,4 @@ pub mod input_text;
 pub mod item_list;
 pub mod widget;
 
-pub mod theme;
-
 // pub mod clip_area;

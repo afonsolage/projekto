@@ -6,4 +6,8 @@ edition = "2021"
 [dependencies]
 bevy = { version = "0.8", default-features = false }
 
+# Change this to crates.io when an updated version is published
+bevy_ecss = { git = "https://github.com/afonsolage/bevy_ecss.git" }
+
+
 bevy-ui-navigation = "0.20"
