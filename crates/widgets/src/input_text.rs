@@ -43,8 +43,8 @@ impl InputText {
 #[derive(Component, Debug, Reflect, Clone)]
 #[reflect(Component)]
 pub struct InputTextTheme {
-    pub size: Size<Val>,
-    pub border: UiRect<Val>,
+    pub size: Size,
+    pub border: UiRect,
     pub border_color: Color,
 
     pub text_font: Handle<Font>,
@@ -55,7 +55,7 @@ pub struct InputTextTheme {
     pub caret_size: f32,
     pub caret_color: Color,
 
-    pub bg_padding: UiRect<Val>,
+    pub bg_padding: UiRect,
     pub bg_color: Color,
 }
 
@@ -154,7 +154,7 @@ impl Widget for InputText {
                 text_entity: input_text,
                 caret_entity: input_caret,
                 caret_visible: false,
-                caret_timer: Timer::from_seconds(0.5, true),
+                caret_timer: Timer::from_seconds(0.5, TimerMode::Repeating),
             })
             .insert(Self::Theme::default())
             .id()
@@ -203,9 +203,11 @@ fn apply_theme(
 
         commands
             .entity(meta.text_panel_entity)
-            .insert(UiColor(theme.bg_color));
+            .insert(BackgroundColor(theme.bg_color));
 
-        commands.entity(entity).insert(UiColor(theme.border_color));
+        commands
+            .entity(entity)
+            .insert(BackgroundColor(theme.border_color));
     }
 }
 

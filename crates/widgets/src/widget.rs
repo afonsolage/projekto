@@ -24,7 +24,7 @@ impl Plugin for WidgetPlugin {
     }
 }
 
-#[derive(Default, Reflect, Debug)]
+#[derive(Default, Reflect, Debug, Resource)]
 pub struct WidgetSettings {
     pub default_font: Handle<Font>,
 }

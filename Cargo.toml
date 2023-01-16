@@ -16,13 +16,13 @@ projekto_camera = { path = "crates/camera" }
 projekto_genesis = { path = "crates/genesis" }
 projekto_widgets = { path = "crates/widgets" }
 
-bevy = { version = "0.8", default-features = false }
+bevy = { version = "0.9", default-features = false }
 
 itertools = "0.10"
 
 # Used by inspector
-bevy-inspector-egui = { version = "0.12", optional = true }
-bevy_egui = { version = "0.15", default-features = false, optional = true }
+bevy-inspector-egui = { version = "0.14", optional = true }
+bevy_egui = { version = "0.17", default-features = false, optional = true }
 
 [dev-dependencies]
 rand = "0.8"

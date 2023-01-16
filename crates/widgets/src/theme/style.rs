@@ -17,16 +17,16 @@ pub enum ThemeStyleProperty {
     AlignSelf(AlignSelf),
     AlignContent(AlignContent),
     JustifyContent(JustifyContent),
-    Position(UiRect<Val>),
-    Margin(UiRect<Val>),
-    Padding(UiRect<Val>),
-    Border(UiRect<Val>),
+    Position(UiRect),
+    Margin(UiRect),
+    Padding(UiRect),
+    Border(UiRect),
     FlexGrow(f32),
     FlexShrink(f32),
     FlexBasis(Val),
-    Size(Size<Val>),
-    MinSize(Size<Val>),
-    MaxSize(Size<Val>),
+    Size(Size),
+    MinSize(Size),
+    MaxSize(Size),
     AspectRatio(Option<f32>),
     Overflow(Overflow),
 }
@@ -157,7 +157,7 @@ impl ThemeStyler {
     }
 
     /// The position of the node as described by its Rect
-    fn with_position(self, val: UiRect<Val>) -> Self {
+    fn with_position(self, val: UiRect) -> Self {
         Self(Style {
             position: val,
             ..self.0
@@ -165,7 +165,7 @@ impl ThemeStyler {
     }
 
     /// The margin of the node
-    fn with_margin(self, val: UiRect<Val>) -> Self {
+    fn with_margin(self, val: UiRect) -> Self {
         Self(Style {
             margin: val,
             ..self.0
@@ -173,7 +173,7 @@ impl ThemeStyler {
     }
 
     /// The padding of the node
-    fn with_padding(self, val: UiRect<Val>) -> Self {
+    fn with_padding(self, val: UiRect) -> Self {
         Self(Style {
             padding: val,
             ..self.0
@@ -181,7 +181,7 @@ impl ThemeStyler {
     }
 
     /// The border of the node
-    fn with_border(self, val: UiRect<Val>) -> Self {
+    fn with_border(self, val: UiRect) -> Self {
         Self(Style {
             border: val,
             ..self.0
@@ -213,7 +213,7 @@ impl ThemeStyler {
     }
 
     /// The size of the flexbox
-    fn with_size(self, val: Size<Val>) -> Self {
+    fn with_size(self, val: Size) -> Self {
         Self(Style {
             size: val,
             ..self.0
@@ -221,7 +221,7 @@ impl ThemeStyler {
     }
 
     /// The minimum size of the flexbox
-    fn with_min_size(self, val: Size<Val>) -> Self {
+    fn with_min_size(self, val: Size) -> Self {
         Self(Style {
             min_size: val,
             ..self.0
@@ -229,7 +229,7 @@ impl ThemeStyler {
     }
 
     /// The maximum size of the flexbox
-    fn with_max_size(self, val: Size<Val>) -> Self {
+    fn with_max_size(self, val: Size) -> Self {
         Self(Style {
             max_size: val,
             ..self.0

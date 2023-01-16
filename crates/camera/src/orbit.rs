@@ -78,7 +78,7 @@ impl Default for KeyBindings {
 }
 
 /// Allows to configure [`OrbitCamera`] behavior.
-#[derive(Debug)]
+#[derive(Debug, Resource)]
 pub struct OrbitCameraConfig {
     /// Enable or disable internal systems. This flag is used by [`is_active`] run criteria.
     pub active: bool,

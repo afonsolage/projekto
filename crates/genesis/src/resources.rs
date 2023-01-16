@@ -1,3 +1,4 @@
+use bevy_ecs::system::Resource;
 use bevy_math::{IVec3, Vec3};
 use bevy_utils::hashbrown::HashMap;
 use projekto_core::{
@@ -12,7 +13,7 @@ use projekto_core::{
 ///
 /// This resource is automatically updated at the beginning of each frame, on
 /// [`super::GenesisLabel::Collect`].
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Resource)]
 pub struct ChunkWorldRes<T> {
     map: HashMap<IVec3, T>,
 }

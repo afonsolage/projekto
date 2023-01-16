@@ -70,7 +70,7 @@ impl Default for KeyBindings {
 }
 
 /// Allows to configure [`FlyByCamera`] behavior.
-#[derive(Debug)]
+#[derive(Debug, Resource)]
 pub struct FlyByCameraConfig {
     /// Enable or disable internal systems. This flag is used by [`is_active`] run criteria.
     pub active: bool,

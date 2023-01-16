@@ -43,13 +43,13 @@ impl Plugin for WireframeDebugPlugin {
 }
 
 // Resources
-#[derive(Default)]
+#[derive(Default, Resource)]
 struct DebugWireframeStateRes {
     show_voxel: bool,
     wireframe: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 struct WireframeMaterialsMap(HashMap<String, Handle<WireframeMaterial>>);
 
 #[derive(Component)]
@@ -116,13 +116,14 @@ fn toggle_chunk_voxels_wireframe(
                     .collect_vec();
 
                 commands.entity(entity).with_children(|c| {
-                    c.spawn()
-                        .insert(DrawVoxels {
+                    c.spawn((
+                        DrawVoxels {
                             color: "gray".into(),
                             voxels,
                             ..Default::default()
-                        })
-                        .insert(WireframeVoxels);
+                        },
+                        WireframeVoxels,
+                    ));
                 });
             }
         }
@@ -334,7 +335,7 @@ fn do_raycast(
             range: 100.0, // TODO: Change this later
         };
 
-        commands.spawn().insert(raycast);
+        commands.spawn(raycast);
     }
 }
 

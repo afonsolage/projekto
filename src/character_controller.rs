@@ -33,7 +33,7 @@ impl Plugin for CharacterControllerPlugin {
                     .with_system(update_character_position.label(CharacterPositionUpdate))
                     .with_system(
                         update_view_frustum
-                            .chain(update_chunk_material)
+                            .pipe(update_chunk_material)
                             .after(CharacterPositionUpdate),
                     )
                     .label(CharacterUpdate),
@@ -50,6 +50,7 @@ pub struct CharacterPositionUpdate;
 #[derive(Component, Default, Reflect)]
 pub struct CharacterController;
 
+#[derive(Resource)]
 pub struct CharacterControllerConfig {
     pub active: bool,
     pub move_speed: f32,
@@ -64,7 +65,7 @@ impl Default for CharacterControllerConfig {
     }
 }
 
-#[derive(Default, Debug, Reflect, Deref, DerefMut)]
+#[derive(Default, Debug, Reflect, Deref, DerefMut, Resource)]
 pub struct ChunkMaterialImage(pub Handle<Image>);
 
 fn sync_material_image(
@@ -77,7 +78,7 @@ fn sync_material_image(
     }
 }
 
-#[derive(Default, Debug, Reflect, Deref, DerefMut, Inspectable)]
+#[derive(Default, Debug, Reflect, Deref, DerefMut, Inspectable, Resource)]
 pub struct CharacterPosition(IVec3);
 
 fn is_active(
@@ -297,8 +298,7 @@ fn update_chunk_material(
     if debug_entity.is_none() {
         *debug_entity = Some(
             commands
-                .spawn()
-                .insert(Visibility { is_visible: false })
+                .spawn(Visibility { is_visible: false })
                 .id(),
         );
     }

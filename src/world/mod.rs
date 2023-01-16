@@ -17,7 +17,7 @@ impl Plugin for WorldPlugin {
     }
 }
 
-#[derive(TypeUuid, Debug)]
+#[derive(TypeUuid, Debug, Resource)]
 #[uuid = "e6edff2a-e204-497f-999c-bdebd1f92f62"]
 pub struct KindsAtlasRes {
     pub atlas: Handle<Image>,

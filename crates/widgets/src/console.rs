@@ -24,6 +24,7 @@ impl Plugin for ConsolePlugin {
     }
 }
 
+#[derive(Resource)]
 struct ConsoleMeta {
     entity: Entity,
     command_text: Entity,
@@ -97,7 +98,7 @@ impl Widget for Console {
                 ..default()
             },
             focus_policy: FocusPolicy::Pass,
-            color: Color::rgba(0.1, 0.1, 0.1, 0.9).into(),
+            background_color: Color::rgba(0.1, 0.1, 0.1, 0.9).into(),
             ..default()
         };
 

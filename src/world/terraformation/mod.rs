@@ -20,7 +20,7 @@ impl Plugin for TerraformationPlugin {
 #[derive(Component)]
 pub struct TerraformationCenter;
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 pub struct TerraformationConfig {
     pub horizontal_radius: u32,
 }

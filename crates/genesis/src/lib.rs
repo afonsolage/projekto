@@ -5,7 +5,7 @@ use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{
     prelude::EventWriter,
     schedule::{SystemLabel, SystemSet},
-    system::{ResMut, SystemParam},
+    system::{ResMut, SystemParam, Resource},
 };
 use bevy_log::debug;
 use bevy_math::IVec3;
@@ -93,7 +93,7 @@ fn init_cache() {
 /// pending.
 ///
 /// This command buffer handles duplicated commands. See [`optimize_commands`] for more.
-#[derive(Default)]
+#[derive(Default, Resource)]
 pub struct GenesisCommandBuffer {
     pending: Vec<ChunkCmd>,
     running: Vec<ChunkCmd>,
@@ -170,7 +170,7 @@ enum ChunkCmd {
     Update(IVec3, Vec<(IVec3, voxel::Kind)>),
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Resource)]
 struct WorldRes(Option<VoxWorld>);
 
 impl WorldRes {
@@ -198,7 +198,7 @@ impl std::ops::Deref for WorldRes {
     }
 }
 
-#[derive(Default, Deref, DerefMut)]
+#[derive(Default, Deref, DerefMut, Resource)]
 struct RunningTask(pub Option<Task<TaskResult>>);
 
 impl RunningTask {

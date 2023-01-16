@@ -26,11 +26,12 @@ impl Plugin for LandscapingPlugin {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 pub struct LandscapeConfig {
     pub paused: bool,
 }
 
+#[derive(Resource)]
 struct LandscapeMeta {
     root: Entity,
     last_pos: IVec3,
@@ -198,10 +199,9 @@ mod test {
         world.insert_resource(Events::<super::EvtChunkMeshDirty>::default());
 
         let mut entity_map = ChunkEntityMap(HashMap::default());
-        entity_map.0.insert(
-            (1, 2, 3).into(),
-            world.spawn().insert_bundle(ChunkBundle::default()).id(),
-        );
+        entity_map
+            .0
+            .insert((1, 2, 3).into(), world.spawn(ChunkBundle::default()).id());
         world.insert_resource(entity_map);
 
         let mut stage = SystemStage::parallel();

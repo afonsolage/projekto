@@ -7,13 +7,13 @@ readme = "README.md"
 
 [dependencies]
 projekto_core = {path = "../core"}
-bevy_math = "0.8"
-bevy_utils = "0.8"
-bevy_log = "0.8"
-bevy_tasks = "0.8"
+bevy_math = "0.9"
+bevy_utils = "0.9"
+bevy_log = "0.9"
+bevy_tasks = "0.9"
 futures-lite = "1.12"
 itertools = "0.10"
-bracket-noise = "0.8"
+bracket-noise = "0.8.7"
 
 
 [dev-dependencies]

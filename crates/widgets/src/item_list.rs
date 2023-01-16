@@ -26,15 +26,15 @@ impl Plugin for ItemListPlugin {
 #[derive(Component, Debug, Reflect, Clone)]
 #[reflect(Component)]
 pub struct ItemListTheme {
-    item_size: Size<Val>,
+    item_size: Size,
     item_font_size: f32,
     item_font_color: Color,
     item_font: Handle<Font>,
 
-    background_border: UiRect<Val>,
+    background_border: UiRect,
     background_color: Color,
 
-    border: UiRect<Val>,
+    border: UiRect,
     border_color: Color,
 }
 
@@ -94,7 +94,7 @@ impl Widget for ItemList {
                     ..default()
                 },
                 focus_policy: FocusPolicy::Pass,
-                color: Color::rgba(0.1, 0.1, 0.1, 0.9).into(),
+                background_color: Color::rgba(0.1, 0.1, 0.1, 0.9).into(),
                 ..default()
             })
             .insert(ItemListContainer)
@@ -109,7 +109,7 @@ impl Widget for ItemList {
                     ..default()
                 },
                 focus_policy: FocusPolicy::Pass,
-                color: Color::rgba(0.5, 0.5, 0.5, 0.1).into(),
+                background_color: Color::rgba(0.5, 0.5, 0.5, 0.1).into(),
                 ..default()
             })
             .add_child(list_bg)
@@ -194,7 +194,7 @@ fn update_item_list_max_visible_items(
 ) {
     for mut meta in &mut q {
         if let Ok(container_node) = q_containers.get(meta.container_entity) {
-            meta.max_visible_items = (container_node.size.y / ITEM_HEIGHT) as usize;
+            meta.max_visible_items = (container_node.size().y / ITEM_HEIGHT) as usize;
         }
     }
 }
@@ -246,7 +246,7 @@ fn apply_theme(
 
         commands
             .entity(meta.container_entity)
-            .insert(UiColor(theme.background_color));
-        commands.entity(entity).insert(UiColor(theme.border_color));
+            .insert(BackgroundColor(theme.background_color));
+        commands.entity(entity).insert(BackgroundColor(theme.border_color));
     }
 }

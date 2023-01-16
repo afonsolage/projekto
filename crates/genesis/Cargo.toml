@@ -9,14 +9,14 @@ readme = "README.md"
 projekto_core = { path = "../core" }
 projekto_shaping = { path = "../shaping" }
 
-bevy_utils = "0.8"
-bevy_log = "0.8"
-bevy_math = "0.8"
-bevy_ecs = "0.8"
-bevy_tasks = "0.8"
-bevy_app = "0.8"
-bevy_derive = "0.8"
-bevy_reflect = "0.8"
+bevy_utils = "0.9"
+bevy_log = "0.9"
+bevy_math = "0.9"
+bevy_ecs = "0.9"
+bevy_tasks = "0.9"
+bevy_app = "0.9"
+bevy_derive = "0.9"
+bevy_reflect = "0.9"
 
 futures-lite = "1.12"
 itertools = "0.10"

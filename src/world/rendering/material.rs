@@ -18,7 +18,7 @@ use bevy::{
     },
 };
 
-#[derive(Reflect, Component, Debug, Deref, DerefMut)]
+#[derive(Reflect, Resource, Debug, Deref, DerefMut)]
 pub struct ChunkMaterialHandle(pub Handle<ChunkMaterial>);
 
 #[derive(Debug, Clone, TypeUuid, Reflect)]

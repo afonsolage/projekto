@@ -1,12 +1,9 @@
 #![allow(clippy::type_complexity)]
-#![feature(int_log)]
 #![feature(test)]
 #![feature(once_cell)]
-#![feature(is_some_with)]
+#![feature(is_some_and)]
 
-use bevy::{
-    asset::AssetServerSettings, prelude::*, render::texture::ImageSettings, window::PresentMode,
-};
+use bevy::{prelude::*, window::PresentMode};
 
 mod debug;
 use camera_controller::CameraControllerPlugin;
@@ -32,26 +29,31 @@ fn main() {
 
     let mut app = App::new();
 
-    app.insert_resource(WindowDescriptor {
-        present_mode: PresentMode::AutoNoVsync,
-        ..Default::default()
-    })
-    .insert_resource(Msaa { samples: 4 })
-    // This may cause problems later on. Ideally this setup should be done per image
-    .insert_resource(ImageSettings::default_nearest())
-    .insert_resource(AssetServerSettings {
-        watch_for_changes: true,
-        ..default()
-    })
-    .add_plugins(DefaultPlugins)
-    .add_plugin(DebugPlugin)
-    .add_plugin(CameraPlugin)
-    .add_plugin(WorldPlugin)
-    .add_plugin(UiPlugin)
-    .add_plugin(CameraControllerPlugin)
-    .add_plugin(CharacterControllerPlugin)
-    // .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
-    .add_startup_system(setup);
+    app.insert_resource(Msaa { samples: 4 })
+        // This may cause problems later on. Ideally this setup should be done per image
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    window: WindowDescriptor {
+                        present_mode: PresentMode::AutoNoVsync,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .set(ImagePlugin::default_nearest())
+                .set(AssetPlugin {
+                    watch_for_changes: true,
+                    ..Default::default()
+                }),
+        )
+        .add_plugin(DebugPlugin)
+        .add_plugin(CameraPlugin)
+        .add_plugin(WorldPlugin)
+        .add_plugin(UiPlugin)
+        .add_plugin(CameraControllerPlugin)
+        .add_plugin(CharacterControllerPlugin)
+        // .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
+        .add_startup_system(setup);
 
     #[cfg(feature = "inspector")]
     app.add_plugin(bevy_inspector_egui::WorldInspectorPlugin::new());

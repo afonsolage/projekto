@@ -21,7 +21,7 @@ fn setup_camera(
     flyby_config.rotate_speed = 1.0;
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Resource)]
 enum CurrentCameraType {
     #[default]
     Orbit,
@@ -88,11 +88,11 @@ fn grab_mouse(
     if let Some(window) = windows.get_primary_mut() {
         if window.cursor_visible() && mouse_btn.just_pressed(MouseButton::Left) {
             window.set_cursor_visibility(false);
-            window.set_cursor_lock_mode(true);
+            window.set_cursor_grab_mode(bevy::window::CursorGrabMode::Locked);
             config.set_active(true);
         } else if !window.cursor_visible() && key_btn.just_pressed(KeyCode::Escape) {
             window.set_cursor_visibility(true);
-            window.set_cursor_lock_mode(false);
+            window.set_cursor_grab_mode(bevy::window::CursorGrabMode::None);
             config.set_active(false);
         }
     }
