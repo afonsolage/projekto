@@ -1,5 +1,3 @@
-#![feature(int_log)]
-
 pub mod chunk;
 pub mod landscape;
 pub mod math;

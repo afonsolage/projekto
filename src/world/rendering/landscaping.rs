@@ -71,7 +71,7 @@ fn setup_resources(
     commands.insert_resource(LandscapeConfig { paused: false });
 
     let root = commands
-        .spawn_bundle(SpatialBundle::default())
+        .spawn(SpatialBundle::default())
         .insert(Name::new("Landscape"))
         .id();
     commands.insert_resource(LandscapeMeta {
@@ -137,7 +137,7 @@ fn update_landscape(
             // Spawn chunks
 
             let entity = commands
-                .spawn_bundle(ChunkBundle {
+                .spawn(ChunkBundle {
                     local: ChunkLocal(local),
                     mesh_bundle: MaterialMeshBundle {
                         material: params.material.clone(),
@@ -145,7 +145,7 @@ fn update_landscape(
                         ..Default::default()
                     },
                 })
-                .insert(Name::new(format!("Chunk {}", local)))
+                .insert(Name::new(format!("Chunk {local}")))
                 .id();
             params.entity_map.0.insert(local, entity);
             params.writer.send(EvtChunkMeshDirty(local));

@@ -649,7 +649,7 @@ mod tests {
         let voxels = vec![
             ((0, 0, 0).into(), 1.into()),
             ((1, 1, 1).into(), 2.into()),
-            ((0, chunk::Y_END as i32, 5).into(), 3.into()),
+            ((0, chunk::Y_END, 5).into(), 3.into()),
         ];
 
         let dirty_chunks = super::update_chunks(&mut world, &[(local, voxels)]);
@@ -658,7 +658,7 @@ mod tests {
 
         assert_eq!(kinds.get((0, 0, 0).into()), 1.into());
         assert_eq!(kinds.get((1, 1, 1).into()), 2.into());
-        assert_eq!(kinds.get((0, chunk::Y_END as i32, 5).into()), 3.into());
+        assert_eq!(kinds.get((0, chunk::Y_END, 5).into()), 3.into());
 
         assert_eq!(dirty_chunks.len(), 1, "Should have 1 dirty chunks",);
     }
@@ -767,7 +767,7 @@ mod tests {
                                 chunk
                                     .kinds
                                     .neighborhood
-                                    .get(side, (chunk::X_END as i32, a as i32, b as i32).into()),
+                                    .get(side, (chunk::X_END, a as i32, b as i32).into()),
                                 Some((side as u16).into())
                             );
                         }
@@ -793,7 +793,7 @@ mod tests {
                                 chunk
                                     .kinds
                                     .neighborhood
-                                    .get(side, (a as i32, chunk::Y_END as i32, b as i32).into()),
+                                    .get(side, (a as i32, chunk::Y_END, b as i32).into()),
                                 Some((side as u16).into())
                             );
                         }
@@ -819,7 +819,7 @@ mod tests {
                                 chunk
                                     .kinds
                                     .neighborhood
-                                    .get(side, (a as i32, b as i32, chunk::Z_END as i32).into()),
+                                    .get(side, (a as i32, b as i32, chunk::Z_END).into()),
                                 Some((side as u16).into())
                             );
                         }
@@ -842,7 +842,7 @@ mod tests {
         let mut center = Chunk::default();
         center
             .kinds
-            .set((0, chunk::Y_END as i32, 0).into(), 1.into());
+            .set((0, chunk::Y_END, 0).into(), 1.into());
         center.kinds.set((1, 0, 1).into(), 1.into());
 
         world.add((0, 1, 0).into(), top);
@@ -854,7 +854,7 @@ mod tests {
         let center = world.get((0, 0, 0).into()).unwrap();
         let faces_occlusion = super::faces_occlusion(center);
 
-        let faces = faces_occlusion.get((0, chunk::Y_END as i32, 0).into());
+        let faces = faces_occlusion.get((0, chunk::Y_END, 0).into());
         assert_eq!(faces, [false, false, true, false, false, false].into());
 
         let faces = faces_occlusion.get((1, 0, 1).into());

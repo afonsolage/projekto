@@ -130,7 +130,7 @@ impl Side {
         } else if dir == -IVec3::Z {
             Side::Back
         } else {
-            panic!("Invalid direction received: {:?}", dir)
+            panic!("Invalid direction received: {dir:?}")
         }
     }
 }
@@ -398,9 +398,7 @@ mod tests {
             assert_eq!(
                 base,
                 super::to_local(world + frag),
-                "Failed to convert {:?} ({:?}) to local",
-                world,
-                frag
+                "Failed to convert {world:?} ({frag:?}) to local"
             );
         }
     }

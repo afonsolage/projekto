@@ -281,7 +281,7 @@ fn draw_voxels(
 
         let mesh_handle = meshes.add(mesh);
 
-        commands.entity(e).insert_bundle(MaterialMeshBundle {
+        commands.entity(e).insert(MaterialMeshBundle {
             mesh: mesh_handle,
             material: materials.0.get(&draw_voxels.color).unwrap().clone(),
             transform: Transform::from_translation(
@@ -369,7 +369,7 @@ fn check_raycast_intersections(
 //         stacks: 10,
 //     });
 
-//     commands.spawn_bundle(PbrBundle {
+//     commands.spawn(PbrBundle {
 //         mesh: meshes.add(mesh),
 //         transform: Transform::from_translation(position),
 //         ..Default::default()
@@ -399,7 +399,7 @@ fn draw_raycast(
 
         let mesh_handle = meshes.add(mesh);
 
-        commands.entity(e).insert_bundle(MaterialMeshBundle {
+        commands.entity(e).insert(MaterialMeshBundle {
             mesh: mesh_handle,
             transform: Transform::from_translation(raycast.origin),
             material: materials.0.get("pink").unwrap().clone(),

@@ -85,7 +85,7 @@ impl Widget for ItemList {
 
     fn build<L: WidgetLabel>(label: L, commands: &mut Commands) -> Entity {
         let list_bg = commands
-            .spawn_bundle(NodeBundle {
+            .spawn(NodeBundle {
                 style: Style {
                     size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
                     border: UiRect::all(Val::Px(5.0)),
@@ -101,7 +101,7 @@ impl Widget for ItemList {
             .id();
 
         commands
-            .spawn_bundle(NodeBundle {
+            .spawn(NodeBundle {
                 style: Style {
                     size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
                     border: UiRect::all(Val::Px(2.0)),
@@ -150,7 +150,7 @@ fn update_item_list_items(
                 }
                 _ => {
                     let item = commands
-                        .spawn_bundle(create_item_bundle(item.clone(), theme))
+                        .spawn(create_item_bundle(item.clone(), theme))
                         .id();
                     commands.entity(meta.container_entity).add_child(item);
                     item

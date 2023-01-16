@@ -114,12 +114,12 @@ impl Widget for InputText {
         };
 
         let input_text = commands
-            .spawn_bundle(TextBundle::from_section("", default()))
+            .spawn(TextBundle::from_section("", default()))
             .insert(InputTextDisplayText)
             .id();
 
         let input_caret = commands
-            .spawn_bundle(TextBundle::from_section("|", default()).with_style(Style {
+            .spawn(TextBundle::from_section("|", default()).with_style(Style {
                 display: Display::None,
                 ..default()
             }))
@@ -128,7 +128,7 @@ impl Widget for InputText {
             .id();
 
         let panel_bg = commands
-            .spawn_bundle(NodeBundle {
+            .spawn(NodeBundle {
                 style: Style {
                     size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
                     align_items: AlignItems::Center,
@@ -143,7 +143,7 @@ impl Widget for InputText {
             .id();
 
         commands
-            .spawn_bundle(input_panel)
+            .spawn(input_panel)
             .add_child(panel_bg)
             .insert(Name::new(label.name()))
             .insert(label)

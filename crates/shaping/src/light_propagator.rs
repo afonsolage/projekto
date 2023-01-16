@@ -776,8 +776,7 @@ mod tests {
             assert_eq!(
                 chunk.lights.get(local).get_greater_intensity(),
                 intensity,
-                "Failed at local {:?}",
-                local
+                "Failed at local {local:?}",
             );
         }
     }
@@ -1467,8 +1466,7 @@ mod tests {
             assert_eq!(
                 chunk.lights.get(local).get_greater_intensity(),
                 intensity,
-                "Failed at local {:?}",
-                local
+                "Failed at local {local:?}"
             );
         }
 
@@ -1571,8 +1569,7 @@ mod tests {
             assert_eq!(
                 chunk.lights.get(local).get_greater_intensity(),
                 intensity,
-                "Failed at local {:?}",
-                local
+                "Failed at local {local:?}",
             );
         }
     }
@@ -1671,8 +1668,7 @@ mod tests {
             assert_eq!(
                 chunk.lights.get(local).get(voxel::LightTy::Natural),
                 intensity,
-                "Failed at {:?}",
-                local
+                "Failed at {local:?}",
             );
         }
 
@@ -1694,8 +1690,7 @@ mod tests {
             assert_eq!(
                 neighbor.lights.get(local).get(voxel::LightTy::Natural),
                 intensity,
-                "Failed at {:?}",
-                local
+                "Failed at {local:?}",
             );
         }
     }

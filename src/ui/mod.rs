@@ -45,7 +45,7 @@ fn setup_fps_text(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/FiraSans-Bold.ttf");
 
     commands
-        .spawn_bundle(TextBundle {
+        .spawn(TextBundle {
             style: Style {
                 align_self: AlignSelf::FlexEnd,
                 position_type: PositionType::Absolute,
@@ -76,7 +76,7 @@ fn update_fps_text_system(
     if let Ok(mut t) = q.get_single_mut() {
         if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
             if let Some(avg) = fps.average() {
-                t.sections[0].value = format!("{:.0}", avg);
+                t.sections[0].value = format!("{avg:.0}");
             }
         }
     }
@@ -91,7 +91,7 @@ fn update_fps_text_system(
 //     if meta.is_none() {
 //         *meta = Some(
 //             commands
-//                 .spawn_bundle(ImageBundle {
+//                 .spawn(ImageBundle {
 //                     style: Style {
 //                         position: UiRect {
 //                             bottom: Val::Px(20.0),
@@ -162,9 +162,9 @@ mod mem_alloc {
     pub(super) fn setup_mem_text(mut commands: Commands, asset_server: Res<AssetServer>) {
         let font = asset_server.load("fonts/FiraSans-Bold.ttf");
 
-        commands.spawn_bundle(UiCameraBundle::default());
+        commands.spawn(UiCameraBundle::default());
         commands
-            .spawn_bundle(TextBundle {
+            .spawn(TextBundle {
                 style: Style {
                     align_self: AlignSelf::FlexEnd,
                     position_type: PositionType::Absolute,

@@ -106,7 +106,7 @@ impl Widget for Console {
         let log_items = ItemList::build(LogListLabel, commands);
 
         let entity = commands
-            .spawn_bundle(panel)
+            .spawn(panel)
             .add_child(command_text)
             .add_child(log_items)
             .insert(Name::new(label.name()))

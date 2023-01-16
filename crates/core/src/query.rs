@@ -252,7 +252,7 @@ mod test {
                 }
             }
 
-            assert_eq!(items, loop_items, "Wrong values on range {} {}", begin, end);
+            assert_eq!(items, loop_items, "Wrong values on range {begin} {end}");
         }
     }
 
@@ -289,8 +289,7 @@ mod test {
 
             assert_eq!(
                 items, loop_items,
-                "Wrong values on range {} {}",
-                begin, end_inclusive
+                "Wrong values on range {begin} {end_inclusive}"
             );
         }
     }

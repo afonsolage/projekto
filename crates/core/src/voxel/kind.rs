@@ -93,7 +93,7 @@ impl KindsDescs {
             .descriptions
             .iter()
             .find(|k| k.id == face.kind.0)
-            .unwrap_or_else(|| panic!("Unable to find kind description for face {:?}", face));
+            .unwrap_or_else(|| panic!("Unable to find kind description for face {face:?}"));
 
         match kind_desc.sides {
             KindSidesDesc::None => panic!("{} kind should not be rendered.", face.kind.0),
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn load_kind_descriptions() {
         let input_path = format!("{}/voxels/kind.ron", env!("ASSETS_PATH"));
-        let f = std::fs::File::open(&input_path).expect("Failed opening kind descriptions file");
+        let f = std::fs::File::open(input_path).expect("Failed opening kind descriptions file");
 
         let _: KindsDescs = from_reader(f).unwrap();
     }

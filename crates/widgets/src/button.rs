@@ -45,7 +45,7 @@ impl Widget for TextButton {
         config: T,
     ) -> Entity {
         let text = commands
-            .spawn_bundle(TextBundle::from_section(
+            .spawn(TextBundle::from_section(
                 label.name(),
                 TextStyle {
                     font: asset_server.load("fonts/FiraSans-Bold.ttf"),
@@ -56,7 +56,7 @@ impl Widget for TextButton {
             .id();
 
         let bg = commands
-            .spawn_bundle(NodeBundle {
+            .spawn(NodeBundle {
                 style: Style {
                     size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
                     justify_content: JustifyContent::Center,
@@ -71,7 +71,7 @@ impl Widget for TextButton {
             .id();
 
         let border = commands
-            .spawn_bundle(NodeBundle {
+            .spawn(NodeBundle {
                 style: Style {
                     size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
                     justify_content: JustifyContent::Center,
@@ -87,7 +87,7 @@ impl Widget for TextButton {
             .id();
 
         let mask = commands
-            .spawn_bundle(NodeBundle {
+            .spawn(NodeBundle {
                 style: Style {
                     size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
                     justify_content: JustifyContent::Center,
@@ -104,7 +104,7 @@ impl Widget for TextButton {
             .id();
 
         commands
-            .spawn_bundle(ButtonBundle {
+            .spawn(ButtonBundle {
                 style: Style {
                     position: UiRect::new(
                         Val::Undefined,

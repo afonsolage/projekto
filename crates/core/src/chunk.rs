@@ -314,11 +314,11 @@ impl<T: ChunkStorageType> ChunkNeighborhood<T> {
 
         let check = match &side {
             Side::Right => pos.x == 0,
-            Side::Left => pos.x == X_END as i32,
+            Side::Left => pos.x == X_END,
             Side::Up => pos.y == 0,
-            Side::Down => pos.y == Y_END as i32,
+            Side::Down => pos.y == Y_END,
             Side::Front => pos.z == 0,
-            Side::Back => pos.z == Z_END as i32,
+            Side::Back => pos.z == Z_END,
         };
 
         if !check {
@@ -651,11 +651,11 @@ mod tests {
 
                 match side {
                     Side::Right => pos.x = 0,
-                    Side::Left => pos.x = X_END as i32,
+                    Side::Left => pos.x = X_END,
                     Side::Up => pos.y = 0,
-                    Side::Down => pos.y = Y_END as i32,
+                    Side::Down => pos.y = Y_END,
                     Side::Front => pos.z = 0,
-                    Side::Back => pos.z = Z_END as i32,
+                    Side::Back => pos.z = Z_END,
                 }
 
                 // Avoid setting different values on same voxel
@@ -692,7 +692,7 @@ mod tests {
         let local = (1, 0, 1).into();
         assert!(super::is_at_bounds(local));
 
-        let local = (1, Y_END as i32, 1).into();
+        let local = (1, Y_END, 1).into();
         assert!(super::is_at_bounds(local));
 
         let local = (0, 0, 0).into();
@@ -710,10 +710,10 @@ mod tests {
         let local = (1, 2, 3).into();
         assert_eq!(super::get_boundary_dir(local), (0, 0, 0).into());
 
-        let local = (X_END as i32, 2, 3).into();
+        let local = (X_END, 2, 3).into();
         assert_eq!(super::get_boundary_dir(local), (1, 0, 0).into());
 
-        let local = (X_END as i32, Y_END as i32, Z_END as i32).into();
+        let local = (X_END, Y_END, Z_END).into();
         assert_eq!(super::get_boundary_dir(local), (1, 1, 1).into());
     }
 

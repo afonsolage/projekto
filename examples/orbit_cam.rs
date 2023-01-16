@@ -39,14 +39,14 @@ fn setup_environment(
 ) {
     // camera
     commands
-        .spawn_bundle(Camera3dBundle { ..default() })
+        .spawn(Camera3dBundle { ..default() })
         .insert(OrbitCamera)
         // .insert(Transform::from_xyz(5.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y))
         ;
 
     // target
     commands
-        .spawn_bundle(PbrBundle {
+        .spawn(PbrBundle {
             transform: Transform::from_xyz(3.0, 5.0, 3.0),
             mesh: meshes.add(Mesh::from(shape::Capsule {
                 radius: 0.25,
@@ -60,7 +60,7 @@ fn setup_environment(
         .insert(Name::new("Target"));
 
     // X axis
-    commands.spawn_bundle(PbrBundle {
+    commands.spawn(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Box {
             min_x: 0.0,
             max_x: 3.0,
@@ -74,7 +74,7 @@ fn setup_environment(
     });
 
     // Y axis
-    commands.spawn_bundle(PbrBundle {
+    commands.spawn(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Box {
             min_x: 0.0,
             max_x: 0.1,
@@ -88,7 +88,7 @@ fn setup_environment(
     });
 
     // Z axis
-    commands.spawn_bundle(PbrBundle {
+    commands.spawn(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Box {
             min_x: 0.0,
             max_x: 0.1,
@@ -101,7 +101,7 @@ fn setup_environment(
         ..Default::default()
     });
 
-    commands.spawn_bundle(PointLightBundle {
+    commands.spawn(PointLightBundle {
         transform: Transform::from_xyz(4.0, 8.0, 4.0),
         ..Default::default()
     });

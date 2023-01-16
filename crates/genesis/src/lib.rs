@@ -5,7 +5,7 @@ use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{
     prelude::EventWriter,
     schedule::{SystemLabel, SystemSet},
-    system::{ResMut, SystemParam, Resource},
+    system::{ResMut, Resource, SystemParam},
 };
 use bevy_log::debug;
 use bevy_math::IVec3;
@@ -152,13 +152,7 @@ impl std::fmt::Debug for GenesisCommandBuffer {
 
         write!(
             f,
-            "Running (LD: {} UL: {} UP: {}) | Pending (LD: {} UL: {} UP: {})",
-            running_load,
-            running_unload,
-            running_update,
-            pending_load,
-            pending_unload,
-            pending_update,
+            "Running (LD: {running_load} UL: {running_unload} UP: {running_update}) | Pending (LD: {pending_load} UL: {pending_unload} UP: {pending_update})",
         )
     }
 }
@@ -336,8 +330,7 @@ fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd>
                         }
                         _ => {
                             panic!(
-                                "Undefined behavior for {:?} and {:?} when chunk_exists = {:?}",
-                                cmd, existing_cmd, chunk_exists
+                                "Undefined behavior for {cmd:?} and {existing_cmd:?} when chunk_exists = {chunk_exists:?}"
                             );
                         }
                     }
@@ -370,8 +363,7 @@ fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd>
                         }
                         _ => {
                             panic!(
-                                "Undefined behavior for {:?} and {:?} when chunk_exists = {:?}",
-                                cmd, existing_cmd, chunk_exists
+                                "Undefined behavior for {cmd:?} and {existing_cmd:?} when chunk_exists = {chunk_exists:?}"
                             );
                         }
                     }
@@ -408,7 +400,7 @@ fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd>
                         }
                         ChunkCmd::Unload(_) => continue, // Rule 9.
                         _ => {
-                            panic!("Undefined behavior for {:?} and {:?}", cmd, existing_cmd);
+                            panic!("Undefined behavior for {cmd:?} and {existing_cmd:?}");
                         }
                     }
                 }
@@ -434,7 +426,6 @@ mod tests {
     #[test]
     fn optimize_commands_preserve_insertion_order() {
         let cmds = (0..100)
-            .into_iter()
             .map(|i| ChunkCmd::Load((i, i, i).into()))
             .collect::<Vec<_>>();
 
