@@ -4,10 +4,7 @@ use bevy::{
 };
 use bevy_ui_navigation::DefaultNavigationPlugins;
 
-use crate::{
-    console::ConsolePlugin, input_text::InputTextPlugin, item_list::ItemListPlugin,
-    theme::ThemePlugin,
-};
+use crate::{console::ConsolePlugin, input_text::InputTextPlugin, item_list::ItemListPlugin};
 
 pub struct WidgetPlugin;
 
@@ -17,21 +14,12 @@ impl Plugin for WidgetPlugin {
             .add_plugin(ItemListPlugin)
             .add_plugin(InputTextPlugin)
             .add_plugin(ConsolePlugin)
-            .add_plugin(ThemePlugin)
             // .add_plugin(ButtonPlugin)
-            .init_resource::<WidgetSettings>()
             .register_type::<StringLabel>();
     }
 }
 
-#[derive(Default, Reflect, Debug, Resource)]
-pub struct WidgetSettings {
-    pub default_font: Handle<Font>,
-}
-
 pub trait Widget {
-    type Theme: Component + Reflect + Default;
-
     fn build<L: WidgetLabel>(label: L, commands: &mut Commands) -> Entity;
 }
 

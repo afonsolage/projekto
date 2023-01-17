@@ -3,6 +3,7 @@ use bevy::{
     prelude::*,
     time::FixedTimestep,
 };
+use bevy_ecss::EcssPlugin;
 use projekto_widgets::widget::WidgetPlugin;
 
 use self::console::ConsolePlugin;
@@ -19,6 +20,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(WidgetPlugin)
             .add_plugin(ConsolePlugin)
+            .add_plugin(EcssPlugin)
             // .add_plugin(EguiPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin::default())
             .add_startup_system(setup_fps_text)

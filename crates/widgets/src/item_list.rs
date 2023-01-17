@@ -1,12 +1,7 @@
 use bevy::{prelude::*, ui::FocusPolicy};
+use bevy_ecss::RegisterComponentSelector;
 
-use crate::{
-    theme::{
-        ApplyThemeStyle, ApplyThemeText, ThemeStyle, ThemeStyleProperty, ThemeText,
-        ThemeTextProperty,
-    },
-    widget::{Widget, WidgetLabel, WidgetSettings},
-};
+use crate::widget::{Widget, WidgetLabel};
 
 const ITEM_HEIGHT: f32 = 20.0;
 
@@ -15,49 +10,11 @@ pub(super) struct ItemListPlugin;
 impl Plugin for ItemListPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<ItemList>()
-            .register_type::<ItemListTheme>()
             .register_type::<ItemIndex>()
-            .add_system(update_item_list_items)
-            .add_system(update_item_list_max_visible_items)
-            .add_system(apply_theme);
-    }
-}
-
-#[derive(Component, Debug, Reflect, Clone)]
-#[reflect(Component)]
-pub struct ItemListTheme {
-    item_size: Size,
-    item_font_size: f32,
-    item_font_color: Color,
-    item_font: Handle<Font>,
-
-    background_border: UiRect,
-    background_color: Color,
-
-    border: UiRect,
-    border_color: Color,
-}
-
-impl ItemListTheme {
-    fn apply_defaults(&mut self, settings: &WidgetSettings) {
-        if self.item_font == Default::default() {
-            self.item_font = settings.default_font.clone();
-        }
-    }
-}
-
-impl Default for ItemListTheme {
-    fn default() -> Self {
-        Self {
-            item_size: Size::new(Val::Percent(100.0), Val::Px(20.0)),
-            item_font_size: 15.0,
-            item_font_color: Color::rgb(0.9, 0.9, 0.9),
-            item_font: Default::default(),
-            background_border: UiRect::all(Val::Px(5.0)),
-            background_color: Color::rgba(0.5, 0.5, 0.5, 0.1),
-            border: UiRect::all(Val::Px(2.0)),
-            border_color: Color::rgba(0.5, 0.5, 0.5, 0.1),
-        }
+            .register_component_selector::<ItemList>("item-list")
+            .register_component_selector::<ItemListContainer>("item-list-container")
+            .register_component_selector::<ItemIndex>("item-index")
+            .add_system(update_item_list_items);
     }
 }
 
@@ -77,12 +34,11 @@ pub struct ItemList {
     pub items: Vec<String>,
 }
 
-#[derive(Component)]
+#[derive(Component, Default, Reflect)]
+#[reflect(Component)]
 struct ItemListContainer;
 
 impl Widget for ItemList {
-    type Theme = ItemListTheme;
-
     fn build<L: WidgetLabel>(label: L, commands: &mut Commands) -> Entity {
         let list_bg = commands
             .spawn(NodeBundle {
@@ -91,7 +47,7 @@ impl Widget for ItemList {
                     border: UiRect::all(Val::Px(5.0)),
                     flex_direction: FlexDirection::Column,
                     flex_shrink: 0.0,
-                    ..default()
+                    ..Default::default()
                 },
                 focus_policy: FocusPolicy::Pass,
                 background_color: Color::rgba(0.1, 0.1, 0.1, 0.9).into(),
@@ -106,7 +62,7 @@ impl Widget for ItemList {
                     size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
                     border: UiRect::all(Val::Px(2.0)),
                     flex_direction: FlexDirection::Column,
-                    ..default()
+                    ..Default::default()
                 },
                 focus_policy: FocusPolicy::Pass,
                 background_color: Color::rgba(0.5, 0.5, 0.5, 0.1).into(),
@@ -120,18 +76,17 @@ impl Widget for ItemList {
                 container_entity: list_bg,
                 max_visible_items: 0,
             })
-            .insert(Self::Theme::default())
             .id()
     }
 }
 
 fn update_item_list_items(
     mut commands: Commands,
-    q: Query<(&ItemList, &ItemListMeta, &ItemListTheme), Changed<ItemList>>,
+    q: Query<(&ItemList, &ItemListMeta), Changed<ItemList>>,
     q_containers: Query<&Children, With<ItemListContainer>>,
     mut q_items: Query<(Entity, &mut Text), With<ItemIndex>>,
 ) {
-    for (item_list, meta, theme) in &q {
+    for (item_list, meta) in &q {
         let children = q_containers.get(meta.container_entity).ok();
 
         // Sync children with item list items
@@ -150,7 +105,17 @@ fn update_item_list_items(
                 }
                 _ => {
                     let item = commands
-                        .spawn(create_item_bundle(item.clone(), theme))
+                        .spawn(
+                            TextBundle::from_section(
+                                item,
+                                TextStyle {
+                                    ..Default::default()
+                                },
+                            )
+                            .with_style(Style {
+                                ..Default::default()
+                            }),
+                        )
                         .id();
                     commands.entity(meta.container_entity).add_child(item);
                     item
@@ -172,22 +137,6 @@ fn update_item_list_items(
     }
 }
 
-fn create_item_bundle(content: String, theme: &ItemListTheme) -> TextBundle {
-    TextBundle::from_section(
-        content,
-        TextStyle {
-            font: theme.item_font.clone(),
-            font_size: theme.item_font_size,
-            color: theme.item_font_color,
-        },
-    )
-    .with_style(Style {
-        flex_shrink: 0.0,
-        size: theme.item_size,
-        ..default()
-    })
-}
-
 fn update_item_list_max_visible_items(
     mut q: Query<&mut ItemListMeta, (With<ItemList>, Changed<Node>)>,
     q_containers: Query<&Node, With<ItemListContainer>>,
@@ -196,57 +145,5 @@ fn update_item_list_max_visible_items(
         if let Ok(container_node) = q_containers.get(meta.container_entity) {
             meta.max_visible_items = (container_node.size().y / ITEM_HEIGHT) as usize;
         }
-    }
-}
-
-fn apply_theme(
-    mut commands: Commands,
-    q_themes: Query<
-        (Entity, &Children, &ItemListMeta, &ItemListTheme),
-        (With<ItemList>, Changed<ItemListTheme>),
-    >,
-    q_items: Query<With<ItemIndex>>,
-    settings: Res<WidgetSettings>,
-    mut style_theme_writer: EventWriter<ApplyThemeStyle>,
-    mut text_theme_writer: EventWriter<ApplyThemeText>,
-) {
-    for (entity, children, meta, theme) in &q_themes {
-        let mut theme = theme.clone();
-        theme.apply_defaults(&settings);
-
-        for &child in children {
-            if !q_items.contains(child) {
-                continue;
-            }
-
-            text_theme_writer.send(ApplyThemeText(
-                child,
-                ThemeText(vec![
-                    ThemeTextProperty::Font(theme.item_font.clone()),
-                    ThemeTextProperty::Size(theme.item_font_size),
-                    ThemeTextProperty::Color(theme.item_font_color),
-                ]),
-            ));
-
-            style_theme_writer.send(ApplyThemeStyle(
-                child,
-                ThemeStyle(vec![ThemeStyleProperty::Size(theme.item_size)]),
-            ));
-        }
-
-        style_theme_writer.send(ApplyThemeStyle(
-            meta.container_entity,
-            ThemeStyle(vec![ThemeStyleProperty::Border(theme.background_border)]),
-        ));
-
-        style_theme_writer.send(ApplyThemeStyle(
-            entity,
-            ThemeStyle(vec![ThemeStyleProperty::Border(theme.border)]),
-        ));
-
-        commands
-            .entity(meta.container_entity)
-            .insert(BackgroundColor(theme.background_color));
-        commands.entity(entity).insert(BackgroundColor(theme.border_color));
     }
 }

@@ -1,4 +1,5 @@
 use bevy::{prelude::*, ui::FocusPolicy};
+use bevy_ecss::RegisterComponentSelector;
 use bevy_ui_navigation::prelude::NavRequest;
 
 use crate::{
@@ -15,6 +16,7 @@ pub(super) struct ConsolePlugin;
 impl Plugin for ConsolePlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<Console>()
+            .register_component_selector::<Console>("console")
             .add_event::<ConsoleAction>()
             .add_event::<CommandIssued>()
             .add_system(apply_command)
@@ -79,8 +81,6 @@ impl WidgetLabel for LogListLabel {}
 pub struct ConsoleTheme {}
 
 impl Widget for Console {
-    type Theme = ConsoleTheme;
-
     fn build<L: WidgetLabel>(label: L, commands: &mut Commands) -> Entity {
         let panel = NodeBundle {
             style: Style {
@@ -95,7 +95,7 @@ impl Widget for Console {
                 align_self: AlignSelf::FlexEnd,
                 border: UiRect::all(Val::Px(2.0)),
                 flex_direction: FlexDirection::Column,
-                ..default()
+                ..Default::default()
             },
             focus_policy: FocusPolicy::Pass,
             background_color: Color::rgba(0.1, 0.1, 0.1, 0.9).into(),
@@ -111,9 +111,8 @@ impl Widget for Console {
             .add_child(log_items)
             .insert(Name::new(label.name()))
             .insert(label)
-            .insert(Console::default())
+            .insert(Console)
             .insert(Visibility { is_visible: false })
-            .insert(Self::Theme::default())
             .id();
 
         commands.insert_resource(ConsoleMeta {
@@ -151,13 +150,17 @@ fn apply_command(
         .get_mut(meta.command_text)
         .expect("Every console should have an input text");
 
-    let cmd = input_text.take();
+    let cmd = input_text.take().trim().to_string();
+
+    if cmd.is_empty() {
+        return;
+    }
 
     let mut item_list = q_item_list
         .get_mut(meta.log_items)
         .expect("Every console should have an item list");
 
-    item_list.items.push(cmd.clone());
+    item_list.items.push(format!("> {}", cmd));
 
     writer.send(CommandIssued(meta.entity, cmd))
 }
