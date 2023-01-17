@@ -20,7 +20,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(WidgetPlugin)
             .add_plugin(ConsolePlugin)
-            .add_plugin(EcssPlugin)
+            .add_plugin(EcssPlugin::default())
             // .add_plugin(EguiPlugin)
             .add_plugin(FrameTimeDiagnosticsPlugin::default())
             .add_startup_system(setup_fps_text)

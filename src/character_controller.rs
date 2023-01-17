@@ -6,7 +6,6 @@ use bevy::{
     prelude::*,
     utils::HashSet,
 };
-use bevy_inspector_egui::{Inspectable, InspectorPlugin};
 use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
 use projekto_core::{chunk, landscape, voxel};
 use projekto_genesis::{ChunkKindRes, ChunkLightRes};
@@ -21,7 +20,9 @@ impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CharacterControllerConfig>()
             .init_resource::<CharacterPosition>()
-            .add_plugin(InspectorPlugin::<CharacterPosition>::new())
+            .add_plugin(bevy_inspector_egui::quick::ResourceInspectorPlugin::<
+                CharacterPosition,
+            >::new())
             .init_resource::<ChunkMaterialImage>()
             .register_type::<ChunkMaterialImage>()
             .add_system(sync_material_image)
@@ -78,7 +79,7 @@ fn sync_material_image(
     }
 }
 
-#[derive(Default, Debug, Reflect, Deref, DerefMut, Inspectable, Resource)]
+#[derive(Default, Debug, Reflect, Deref, DerefMut, Resource)]
 pub struct CharacterPosition(IVec3);
 
 fn is_active(
@@ -296,11 +297,7 @@ fn update_chunk_material(
     mut clipped: Local<bool>,
 ) {
     if debug_entity.is_none() {
-        *debug_entity = Some(
-            commands
-                .spawn(Visibility { is_visible: false })
-                .id(),
-        );
+        *debug_entity = Some(commands.spawn(Visibility { is_visible: false }).id());
     }
 
     match voxels {

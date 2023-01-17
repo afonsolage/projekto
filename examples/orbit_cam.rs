@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window};
-use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use projekto_camera::{
     orbit::{OrbitCamera, OrbitCameraConfig, OrbitCameraTarget},
     CameraPlugin,
@@ -8,7 +8,7 @@ use projekto_camera::{
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugin(WorldInspectorPlugin::default())
+        .add_plugin(WorldInspectorPlugin)
         .add_plugin(CameraPlugin)
         .add_system(window::close_on_esc)
         .add_system(move_target)

@@ -56,7 +56,7 @@ fn main() {
         .add_startup_system(setup);
 
     #[cfg(feature = "inspector")]
-    app.add_plugin(bevy_inspector_egui::WorldInspectorPlugin::new());
+    app.add_plugin(bevy_inspector_egui::quick::WorldInspectorPlugin);
 
     app.run();
 }
