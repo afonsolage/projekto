@@ -1,15 +1,14 @@
 use std::marker::PhantomData;
 
-use bevy_app::{App, CoreStage, Plugin};
+use bevy_app::{App, Plugin, PostUpdate, PreUpdate, Startup};
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{
     prelude::EventWriter,
-    schedule::{SystemLabel, SystemSet},
+    schedule::{IntoSystemConfigs, SystemSet},
     system::{ResMut, Resource, SystemParam},
 };
 use bevy_log::debug;
 use bevy_math::IVec3;
-use bevy_reflect::Reflect;
 use bevy_tasks::{AsyncComputeTaskPool, Task};
 use bevy_utils::{HashMap, HashSet};
 
@@ -41,26 +40,19 @@ impl Plugin for GenesisPlugin {
             .init_resource::<ChunkLightRes>()
             .init_resource::<ChunkVertexRes>()
             .insert_resource(WorldRes(Some(Default::default())))
-            .add_system_set_to_stage(
-                CoreStage::PreUpdate,
-                SystemSet::new()
-                    .with_system(collect_completed_task_results)
-                    .label(GenesisLabel::Collect),
+            .add_systems(
+                PreUpdate,
+                collect_completed_task_results.in_set(GenesisLabel::Collect),
             )
-            .add_system_set_to_stage(
-                CoreStage::PostUpdate,
-                SystemSet::new()
-                    .with_system(dispatch_task)
-                    .label(GenesisLabel::Dispatch),
-            )
-            .add_startup_system(init_cache);
+            .add_systems(PostUpdate, dispatch_task.in_set(GenesisLabel::Dispatch))
+            .add_systems(Startup, init_cache);
 
         events::register(app);
     }
 }
 
 /// [`SystemSet`] labels used by [`GenesisPlugin`] to do interact with [`VoxWorld`]
-#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel, Reflect)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 pub enum GenesisLabel {
     /// Collects all tasks results and place them in resource
     /// This happens at [`CoreStage::PreUpdate`]
@@ -72,9 +64,10 @@ pub enum GenesisLabel {
 
 pub mod events {
     use bevy_app::App;
+    use bevy_ecs::event::Event;
     use bevy_math::IVec3;
 
-    #[derive(Debug, Default)]
+    #[derive(Event, Debug, Default)]
     pub struct ChunkUpdated(pub IVec3);
 
     pub(super) fn register(app: &mut App) {

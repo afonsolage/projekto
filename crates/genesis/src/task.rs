@@ -366,7 +366,7 @@ mod tests {
 
     #[test]
     fn load_chunks() {
-        IoTaskPool::init(Default::default);
+        IoTaskPool::get_or_init(Default::default);
 
         // Load existing cache
         let local = (9943, 9943, 9999).into();
