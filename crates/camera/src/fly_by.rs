@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use bevy::{ecs::schedule::ShouldRun, prelude::*};
+use bevy::prelude::*;
 
 use bevy::input::mouse::MouseMotion;
 
@@ -10,19 +10,14 @@ pub struct FlyByCameraPlugin;
 
 impl Plugin for FlyByCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<FlyByCameraConfig>().add_system_set(
-            SystemSet::new()
-                .with_run_criteria(is_active)
-                .label(CameraUpdate)
-                .with_system(move_camera)
-                .with_system(rotate_camera),
+        app.init_resource::<FlyByCameraConfig>().add_systems(
+            Update,
+            (move_camera, rotate_camera)
+                .in_set(super::CameraUpdate)
+                .run_if(is_active),
         );
     }
 }
-
-/// [`SystemLabel`] used by internals systems.
-#[derive(SystemLabel)]
-pub struct CameraUpdate;
 
 /// Component used to tag entity camera.
 /// There can be only one Entity with this component.
@@ -63,8 +58,8 @@ impl Default for KeyBindings {
             left: KeyCode::A,
             right: KeyCode::D,
             up: KeyCode::Space,
-            down: KeyCode::LControl,
-            boost: KeyCode::LShift,
+            down: KeyCode::ControlLeft,
+            boost: KeyCode::ShiftLeft,
         }
     }
 }
@@ -102,12 +97,8 @@ impl Default for FlyByCameraConfig {
 }
 
 /// Returns [`ShouldRun::Yes`] when [`FlyByCameraConfig::active`] is true.
-pub fn is_active(config: Res<FlyByCameraConfig>) -> ShouldRun {
-    if config.active {
-        ShouldRun::Yes
-    } else {
-        ShouldRun::No
-    }
+pub fn is_active(config: Res<FlyByCameraConfig>) -> bool {
+    config.active
 }
 
 /// Move camera around using [`FlyByCameraConfig`] configuration settings.
@@ -149,7 +140,7 @@ fn rotate_camera(
 ) {
     if let Ok(mut transform) = q.get_single_mut() {
         let mut delta = Vec2::ZERO;
-        for ev in motion_evt.iter() {
+        for ev in motion_evt.read() {
             delta += ev.delta;
         }
 

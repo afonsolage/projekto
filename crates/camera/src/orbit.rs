@@ -6,29 +6,25 @@ use bevy::{
 
 use std::f32::consts::PI;
 
-use bevy::ecs::schedule::ShouldRun;
-
 /// Adds [`OrbitCameraPlugin`] resource and internals systems gated by [`is_active`] run criteria
 /// grouped on [`CameraUpdate`] system set.
 pub struct OrbitCameraPlugin;
 
 impl Plugin for OrbitCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<OrbitCameraConfig>().add_system_set(
-            SystemSet::new()
-                .with_run_criteria(is_active)
-                .with_system(target_moved)
-                .with_system(settings_changed)
-                .with_system(move_camera_keycode)
-                .with_system(move_camera_mouse)
-                .label(CameraUpdate),
+        app.init_resource::<OrbitCameraConfig>().add_systems(
+            Update,
+            (
+                target_moved,
+                settings_changed,
+                move_camera_keycode,
+                move_camera_mouse,
+            )
+                .in_set(super::CameraUpdate)
+                .run_if(is_active),
         );
     }
 }
-
-/// [`SystemLabel`] used by internals systems.
-#[derive(SystemLabel)]
-pub struct CameraUpdate;
 
 /// Component used to tag entity camera.
 /// There can be only one Entity with this component.
@@ -162,13 +158,9 @@ impl Default for OrbitCameraConfig {
     }
 }
 
-/// Returns [`ShouldRun::Yes`] when [`OrbitCameraConfig::active`] is true.
-pub fn is_active(config: Res<OrbitCameraConfig>) -> ShouldRun {
-    if config.active {
-        ShouldRun::Yes
-    } else {
-        ShouldRun::No
-    }
+/// Returns true when [`OrbitCameraConfig::active`] is true.
+pub fn is_active(config: Res<OrbitCameraConfig>) -> bool {
+    config.active
 }
 
 /// Calculates the spheric rotation around the target using [`OrbitCameraConfig`] settings.
@@ -309,13 +301,13 @@ fn move_camera_mouse(
     let mut delta = Vec3::ZERO;
 
     if input.pressed(MouseButton::Right) {
-        for evt in mouse_move.iter() {
+        for evt in mouse_move.read() {
             delta.x += evt.delta.x * time.delta_seconds() * config.mouse_rotate_speed;
             delta.y += evt.delta.y * time.delta_seconds() * config.mouse_rotate_speed;
         }
     }
 
-    for evt in mouse_wheel.iter() {
+    for evt in mouse_wheel.read() {
         delta.z -= evt.y * time.delta_seconds() * config.mouse_zoom_speed;
     }
 
