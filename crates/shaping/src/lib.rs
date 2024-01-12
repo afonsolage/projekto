@@ -474,7 +474,7 @@ mod tests {
     }
 
     fn create_test_world() -> VoxWorld {
-        AsyncComputeTaskPool::init(Default::default);
+        AsyncComputeTaskPool::get_or_init(Default::default);
         // Chunk               Neighbor
         // +----+----+        +----+----+----+
         // 11 | -- | 15 |        | -- | -- | 15 |
@@ -502,7 +502,7 @@ mod tests {
         // 0  | -- | 12 |        | 13 | 14 | 15 |
         // +----+----+        +----+----+----+
         //
-        // +    14   15            0    1    2
+        // + 14   15            0    1    2
 
         let mut chunk = Chunk::default();
         chunk.kinds.set_all(1.into()); // Make solid
@@ -840,9 +840,7 @@ mod tests {
         down.kinds.set_all(3.into());
 
         let mut center = Chunk::default();
-        center
-            .kinds
-            .set((0, chunk::Y_END, 0).into(), 1.into());
+        center.kinds.set((0, chunk::Y_END, 0).into(), 1.into());
         center.kinds.set((1, 0, 1).into(), 1.into());
 
         world.add((0, 1, 0).into(), top);

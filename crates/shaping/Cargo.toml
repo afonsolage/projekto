@@ -7,10 +7,10 @@ readme = "README.md"
 
 [dependencies]
 projekto_core = {path = "../core"}
-bevy_math = "0.9"
-bevy_utils = "0.9"
-bevy_log = "0.9"
-bevy_tasks = "0.9"
+bevy_math = "0.12"
+bevy_utils = "0.12"
+bevy_log = "0.12"
+bevy_tasks = "0.12"
 futures-lite = "1.12"
 itertools = "0.10"
 bracket-noise = "0.8.7"
@@ -18,3 +18,6 @@ bracket-noise = "0.8.7"
 
 [dev-dependencies]
 projekto_core = {path = "../core", features = ["auto_load_kinds_descs"]}
+
+[features]
+default = ["bevy_tasks/multi-threaded"]
