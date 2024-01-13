@@ -9,8 +9,7 @@ pub struct TerraformationPlugin;
 
 impl Plugin for TerraformationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(GenesisPlugin)
-            .add_plugin(landscaping::LandscapingPlugin)
+        app.add_plugins((GenesisPlugin, landscaping::LandscapingPlugin))
             .insert_resource(TerraformationConfig {
                 horizontal_radius: (landscape::HORIZONTAL_RADIUS + 2) as u32,
             });

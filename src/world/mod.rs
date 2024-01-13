@@ -10,10 +10,12 @@ pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(terraformation::TerraformationPlugin)
-            .add_plugin(rendering::PipelinePlugin)
-            .add_plugin(debug::WireframeDebugPlugin)
-            .add_startup_system_to_stage(StartupStage::PreStartup, setup_resources);
+        app.add_plugins((
+            terraformation::TerraformationPlugin,
+            rendering::PipelinePlugin,
+            debug::WireframeDebugPlugin,
+        ))
+        .add_systems(PreStartup, setup_resources);
     }
 }
 

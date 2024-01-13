@@ -23,22 +23,20 @@ impl Plugin for WireframeDebugPlugin {
         app.insert_resource(DebugWireframeStateRes::default())
             .register_type::<DrawVoxels>()
             .register_type::<RaycastDebug>()
-            .add_startup_system(setup_wireframe_shader)
-            .add_asset::<WireframeMaterial>()
-            .add_plugin(MaterialPlugin::<WireframeMaterial>::default())
-            .add_system_set(
-                SystemSet::new()
-                    .with_run_criteria(fly_by::is_active)
-                    .with_system(do_raycast)
-                    .with_system(remove_voxel)
-                    .with_system(add_voxel),
-            )
-            .add_system(toggle_mesh_wireframe)
-            .add_system(toggle_chunk_voxels_wireframe)
-            .add_system(toggle_landscape_pause)
-            .add_system(draw_voxels)
-            .add_system(draw_raycast)
-            .add_system(check_raycast_intersections);
+            .add_plugins(MaterialPlugin::<WireframeMaterial>::default())
+            .add_systems(Startup, setup_wireframe_shader)
+            .add_systems(
+                Update,
+                (
+                    toggle_mesh_wireframe,
+                    toggle_chunk_voxels_wireframe,
+                    toggle_landscape_pause,
+                    draw_voxels,
+                    draw_raycast,
+                    check_raycast_intersections,
+                    (do_raycast, remove_voxel, add_voxel).run_if(fly_by::is_active),
+                ),
+            );
     }
 }
 
@@ -280,6 +278,11 @@ fn draw_voxels(
         mesh.set_indices(Some(Indices::U32(indices)));
 
         let mesh_handle = meshes.add(mesh);
+        let visibility = if draw_voxels.visible {
+            Visibility::Visible
+        } else {
+            Visibility::Inherited
+        };
 
         commands.entity(e).insert(MaterialMeshBundle {
             mesh: mesh_handle,
@@ -287,9 +290,7 @@ fn draw_voxels(
             transform: Transform::from_translation(
                 first_voxel.as_vec3() * -1.0 + draw_voxels.offset,
             ),
-            visibility: Visibility {
-                is_visible: draw_voxels.visible,
-            },
+            visibility,
             ..Default::default()
         });
     }

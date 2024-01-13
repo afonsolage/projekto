@@ -7,12 +7,13 @@ use projekto_camera::{
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugin(WorldInspectorPlugin)
-        .add_plugin(CameraPlugin)
-        .add_system(window::close_on_esc)
-        .add_system(move_target)
-        .add_startup_system(setup_environment)
+        .add_plugins((
+            DefaultPlugins,
+            WorldInspectorPlugin::default(),
+            CameraPlugin,
+        ))
+        .add_systems(Update, (window::close_on_esc, move_target))
+        .add_systems(Startup, setup_environment)
         .run();
 }
 
@@ -132,7 +133,7 @@ fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {
         res.y += 1.0
     }
 
-    if input.pressed(KeyCode::LControl) {
+    if input.pressed(KeyCode::ControlLeft) {
         res.y -= 1.0
     }
 

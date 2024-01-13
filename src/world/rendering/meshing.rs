@@ -15,7 +15,7 @@ pub(super) struct MeshingPlugin;
 
 impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(mesh_generation_system);
+        app.add_systems(Update, mesh_generation_system);
     }
 }
 
@@ -32,7 +32,7 @@ fn mesh_generation_system(
     mut reader: EventReader<EvtChunkMeshDirty>,
     mut meta: Local<MeshGenerationMeta>,
 ) {
-    meta.pending_chunks.extend(reader.iter().map(|evt| evt.0));
+    meta.pending_chunks.extend(reader.read().map(|evt| evt.0));
 
     let limit = usize::min(meta.pending_chunks.len(), 1);
 

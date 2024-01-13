@@ -17,12 +17,12 @@ pub struct PipelinePlugin;
 impl Plugin for PipelinePlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<ChunkMaterial>()
-            .add_plugin(LandscapingPlugin)
-            .add_plugin(MeshingPlugin);
+            .add_plugins((LandscapingPlugin, MeshingPlugin));
     }
 }
 
 /// This event is raised whenever a chunk mesh needs to be redrawn
+#[derive(Event)]
 pub struct EvtChunkMeshDirty(pub IVec3);
 
 #[derive(Component)]
@@ -34,7 +34,6 @@ pub struct ChunkEntityMap(pub HashMap<IVec3, Entity>);
 #[derive(Bundle)]
 pub struct ChunkBundle {
     local: ChunkLocal,
-    #[bundle]
     mesh_bundle: MaterialMeshBundle<material::ChunkMaterial>,
 }
 

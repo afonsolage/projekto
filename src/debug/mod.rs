@@ -4,12 +4,12 @@ pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(setup_hold_est_to_exit)
+        app.add_systems(Startup, setup_hold_est_to_exit)
             // .add_system(slow_down_fps)
-            .add_system(hold_esc_to_exit);
+            .add_systems(Update, hold_esc_to_exit);
 
         #[cfg(feature = "perf_counter")]
-        app.add_plugin(perf::PerfCounterPlugin);
+        app.add_plugins(perf::PerfCounterPlugin);
     }
 }
 
