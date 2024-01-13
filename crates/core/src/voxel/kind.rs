@@ -209,7 +209,7 @@ impl Kind {
         let depth = height as i32 - surface as i32;
 
         match depth {
-            depth if depth == 0 => Kind(2),
+            0 => Kind(2),
             depth if (-3..=-1).contains(&depth) => Kind(1),
             _ => Kind(3),
         }

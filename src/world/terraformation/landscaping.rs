@@ -47,7 +47,7 @@ fn update_landscape(
         let end = center + radius;
 
         let visible_range = query::range_inclusive(begin, end).collect::<HashSet<_>>();
-        let existing_chunks = HashSet::from_iter(kinds.list_chunks().into_iter());
+        let existing_chunks = HashSet::from_iter(kinds.list_chunks());
 
         visible_range
             .iter()
