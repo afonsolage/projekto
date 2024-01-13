@@ -1,4 +1,4 @@
-pub const HORIZONTAL_RADIUS: usize = 4;
+pub const HORIZONTAL_RADIUS: usize = 3;
 pub const HORIZONTAL_SIZE: usize = (HORIZONTAL_RADIUS * 2) + 1; // Includes the center one
 
 // pub fn is_within_bounds(local: IVec3) -> bool {
