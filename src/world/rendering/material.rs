@@ -23,7 +23,7 @@ pub struct ChunkMaterial {
     pub clip_map_origin: Vec2,
     #[uniform(2)]
     pub clip_height: f32,
-    #[texture(3, dimension = "1d")]
+    #[texture(3, dimension = "1d", sample_type = "u_int")]
     pub clip_map: Handle<Image>,
 
     pub show_back_faces: bool,

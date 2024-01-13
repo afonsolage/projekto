@@ -1,5 +1,5 @@
-#import bevy_pbr::mesh_view_bindings
-#import bevy_pbr::mesh_types
+#import bevy_pbr::mesh_types::Mesh
+#import bevy_pbr::mesh_view_bindings::view
 
 struct Vertex {
     @location(0) position: vec3<f32>,
@@ -38,25 +38,25 @@ var<uniform> material_data: MaterialData;
 var clip_map: texture_1d<u32>;
 
 @group(2) @binding(0)
-var<uniform> mesh: Mesh;
+var<storage> mesh: array<Mesh>;
 
-let CLIPPED_VERTEX: vec4<f32> = vec4<f32>(-2.0, -2.0, -2.0, -2.0);
-let CLIPPED_LIGHT: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
-let CLIPPED_TILE_COORD_START: vec2<f32> = vec2<f32>(0.0, 0.0);
+const CLIPPED_VERTEX: vec4<f32> = vec4<f32>(-2.0, -2.0, -2.0, -2.0);
+const CLIPPED_LIGHT: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
+const CLIPPED_TILE_COORD_START: vec2<f32> = vec2<f32>(0.0, 0.0);
 
-let NO_CLIP: f32 = 9999.0;
-let CLIP_AXIS_SIZE: u32 = 144u;
-let CLIP_SIZE: u32 = 20736u;
+const NO_CLIP: f32 = 9999.0;
+const CLIP_AXIS_SIZE: u32 = 144u;
+const CLIP_SIZE: u32 = 12544u;
 
-let UP: vec3<f32> = vec3<f32>(0.0, 1.0, 0.0);
-let DOWN: vec3<f32> = vec3<f32>(0.0, -1.0, 0.0);
-let RIGHT: vec3<f32> = vec3<f32>(1.0, 0.0, 0.0);
-let LEFT: vec3<f32> = vec3<f32>(-1.0, 0.0, 0.0);
-let FRONT: vec3<f32> = vec3<f32>(0.0, 0.0, 1.0);
-let BACK: vec3<f32> = vec3<f32>(0.0, 0.0, -1.0);
+const UP: vec3<f32> = vec3<f32>(0.0, 1.0, 0.0);
+const DOWN: vec3<f32> = vec3<f32>(0.0, -1.0, 0.0);
+const RIGHT: vec3<f32> = vec3<f32>(1.0, 0.0, 0.0);
+const LEFT: vec3<f32> = vec3<f32>(-1.0, 0.0, 0.0);
+const FRONT: vec3<f32> = vec3<f32>(0.0, 0.0, 1.0);
+const BACK: vec3<f32> = vec3<f32>(0.0, 0.0, -1.0);
 
 fn to_world(position: vec3<f32>) -> vec4<f32> {
-    return mesh.model * vec4<f32>(position, 1.0);
+    return mesh[0].model * position;
 }
 
 fn unpack_voxel(packed: u32) -> vec3<f32> {
@@ -87,19 +87,22 @@ fn is_side_face(vertex: Vertex) -> bool {
 }
 
 fn get_side_clip(voxel: vec3<f32>) -> u32 {
-    let clip = get_voxel_clip_data(voxel + RIGHT);
+    var clip = get_voxel_clip_data(voxel + RIGHT);
     if (clip > 0u) {
         return clip;
     }
-    let clip = get_voxel_clip_data(voxel + LEFT);
+
+    clip = get_voxel_clip_data(voxel + LEFT);
     if (clip > 0u) {
         return clip;
     }
-    let clip = get_voxel_clip_data(voxel + FRONT);
+
+    clip = get_voxel_clip_data(voxel + FRONT);
     if (clip > 0u) {
         return clip;
     }
-    let clip = get_voxel_clip_data(voxel + BACK);
+
+    clip = get_voxel_clip_data(voxel + BACK);
     if (clip > 0u) {
         return clip;
     } else {
@@ -165,14 +168,14 @@ fn vertex(
     if (should_clip) {
         out.clip_position = CLIPPED_VERTEX;
     } else {
-        out.clip_position = view.view_proj * mesh.model * position ;
+        out.clip_position = view.view_proj * mesh[0].model * position.xyz;
     }
 
     out.light_intensity = light_intensity;
     out.uv = vertex.uv;
     out.tile_coord_start = tile_coord_start;
     out.world_normal = vertex.normal;
-    out.world_pos = (mesh.model * position).xyz;
+    out.world_pos = (mesh[0].model * position.xyz).xyz;
 
     return out;
 }
