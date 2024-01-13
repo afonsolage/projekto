@@ -9,7 +9,7 @@ pub(super) struct LandscapingPlugin;
 
 impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(update_landscape);
+        app.add_systems(Update, update_landscape);
     }
 }
 #[derive(Default)]

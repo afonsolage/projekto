@@ -1,11 +1,6 @@
 use std::collections::VecDeque;
 
-use bevy::{
-    ecs::{query::QuerySingleError, schedule::ShouldRun},
-    math::Vec3Swizzles,
-    prelude::*,
-    utils::HashSet,
-};
+use bevy::{ecs::query::QuerySingleError, math::Vec3Swizzles, prelude::*, utils::HashSet};
 use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
 use projekto_core::{chunk, landscape, voxel};
 use projekto_genesis::{ChunkKindRes, ChunkLightRes};
@@ -20,32 +15,48 @@ impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CharacterControllerConfig>()
             .init_resource::<CharacterPosition>()
-            .add_plugin(bevy_inspector_egui::quick::ResourceInspectorPlugin::<
+            .add_plugins(bevy_inspector_egui::quick::ResourceInspectorPlugin::<
                 CharacterPosition,
             >::new())
             .init_resource::<ChunkMaterialImage>()
             .register_type::<ChunkMaterialImage>()
-            .add_system(sync_material_image)
-            .add_system_set(
-                SystemSet::new()
-                    .with_run_criteria(is_active)
-                    .with_system(move_character)
-                    .with_system(sync_rotation)
-                    .with_system(update_character_position.label(CharacterPositionUpdate))
-                    .with_system(
+            .add_systems(
+                Update,
+                (
+                    sync_material_image,
+                    (
+                        move_character,
+                        sync_rotation,
+                        update_character_position.in_set(CharacterPositionUpdate),
                         update_view_frustum
                             .pipe(update_chunk_material)
                             .after(CharacterPositionUpdate),
                     )
-                    .label(CharacterUpdate),
+                        .in_set(CharacterUpdate)
+                        .run_if(is_active),
+                ),
             );
+        // .add_system(sync_material_image)
+        // .add_system_set(
+        //     SystemSet::new()
+        //         .with_run_criteria(is_active)
+        //         .with_system(move_character)
+        //         .with_system(sync_rotation)
+        //         .with_system(update_character_position.label(CharacterPositionUpdate))
+        //         .with_system(
+        //             update_view_frustum
+        //                 .pipe(update_chunk_material)
+        //                 .after(CharacterPositionUpdate),
+        //         )
+        //         .label(CharacterUpdate),
+        // );
     }
 }
 
-#[derive(SystemLabel)]
+#[derive(Debug, SystemSet, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct CharacterUpdate;
 
-#[derive(SystemLabel)]
+#[derive(Debug, SystemSet, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct CharacterPositionUpdate;
 
 #[derive(Component, Default, Reflect)]
@@ -75,7 +86,7 @@ fn sync_material_image(
     mut image_handle: ResMut<ChunkMaterialImage>,
 ) {
     if material.is_changed() {
-        **image_handle = materials.get(&material).unwrap().clip_map.clone();
+        **image_handle = materials.get(&**material).unwrap().clip_map.clone();
     }
 }
 
@@ -85,12 +96,8 @@ pub struct CharacterPosition(IVec3);
 fn is_active(
     char_config: Res<CharacterControllerConfig>,
     cam_config: Res<OrbitCameraConfig>,
-) -> ShouldRun {
-    if char_config.active && cam_config.active {
-        ShouldRun::Yes
-    } else {
-        ShouldRun::No
-    }
+) -> bool {
+    char_config.active && cam_config.active
 }
 
 fn sync_rotation(
@@ -173,7 +180,7 @@ fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {
         res.y += 1.0
     }
 
-    if input.pressed(KeyCode::LControl) {
+    if input.pressed(KeyCode::ControlLeft) {
         res.y -= 1.0
     }
 
@@ -297,7 +304,7 @@ fn update_chunk_material(
     mut clipped: Local<bool>,
 ) {
     if debug_entity.is_none() {
-        *debug_entity = Some(commands.spawn(Visibility { is_visible: false }).id());
+        *debug_entity = Some(commands.spawn(Visibility::Hidden).id());
     }
 
     match voxels {
@@ -309,7 +316,7 @@ fn update_chunk_material(
 
             trace!("Revert!");
 
-            if let Some(material) = materials.get_mut(&chunk_material_handle) {
+            if let Some(material) = materials.get_mut(&**chunk_material_handle) {
                 if let Some(image) = images.get_mut(&material.clip_map) {
                     material.clip_map_origin = Vec2::ZERO;
                     material.clip_height = f32::MAX;
@@ -335,7 +342,7 @@ fn update_chunk_material(
                 visible: false,
             });
 
-            if let Some(material) = materials.get_mut(&chunk_material_handle) {
+            if let Some(material) = materials.get_mut(&**chunk_material_handle) {
                 if let Some(image) = images.get_mut(&material.clip_map) {
                     let char_chunk = chunk::to_local(char_pos.as_vec3());
                     let left_bottom_chunk =

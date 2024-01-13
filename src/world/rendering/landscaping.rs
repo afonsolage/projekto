@@ -19,10 +19,9 @@ pub(super) struct LandscapingPlugin;
 impl Plugin for LandscapingPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<EvtChunkMeshDirty>()
-            .add_plugin(MaterialPlugin::<ChunkMaterial>::default())
-            .add_startup_system(setup_resources)
-            .add_system(process_chunk_updated_events)
-            .add_system(update_landscape);
+            .add_plugins(MaterialPlugin::<ChunkMaterial>::default())
+            .add_systems(Startup, setup_resources)
+            .add_systems(Update, (process_chunk_updated_events, update_landscape));
     }
 }
 
@@ -85,7 +84,7 @@ fn setup_resources(
 struct UpdateLandscapeParams<'w, 's> {
     kinds: Res<'w, ChunkKindRes>,
     meta: ResMut<'w, LandscapeMeta>,
-    writer: EventWriter<'w, 's, EvtChunkMeshDirty>,
+    writer: EventWriter<'w, EvtChunkMeshDirty>,
     material: Res<'w, ChunkMaterialHandle>,
     entity_map: ResMut<'w, ChunkEntityMap>,
     center_query: Query<'w, 's, &'static Transform, With<LandscapeCenter>>,
@@ -175,7 +174,7 @@ fn process_chunk_updated_events(
     mut writer: EventWriter<EvtChunkMeshDirty>,
     entity_map: Res<ChunkEntityMap>,
 ) {
-    for ChunkUpdated(chunk_local) in reader.iter() {
+    for ChunkUpdated(chunk_local) in reader.read() {
         if entity_map.0.get(chunk_local).is_some() {
             writer.send(EvtChunkMeshDirty(*chunk_local));
         }
@@ -184,7 +183,11 @@ fn process_chunk_updated_events(
 
 #[cfg(test)]
 mod test {
-    use bevy::{ecs::event::Events, prelude::*, utils::HashMap};
+    use bevy::{
+        ecs::{event::Events, system::RunSystemOnce},
+        prelude::*,
+        utils::HashMap,
+    };
 
     use super::*;
 
@@ -204,11 +207,8 @@ mod test {
             .insert((1, 2, 3).into(), world.spawn(ChunkBundle::default()).id());
         world.insert_resource(entity_map);
 
-        let mut stage = SystemStage::parallel();
-        stage.add_system(super::process_chunk_updated_events);
-
         // Act
-        stage.run(&mut world);
+        world.run_system_once(super::process_chunk_updated_events);
 
         // Assert
         assert_eq!(

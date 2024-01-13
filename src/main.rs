@@ -1,7 +1,5 @@
 #![allow(clippy::type_complexity)]
 #![feature(test)]
-#![feature(once_cell)]
-#![feature(is_some_and)]
 
 use bevy::{prelude::*, window::PresentMode};
 
@@ -18,8 +16,8 @@ use projekto_camera::{
 };
 use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
 
-mod ui;
-use ui::UiPlugin;
+// mod ui;
+// use ui::UiPlugin;
 
 mod camera_controller;
 mod character_controller;
@@ -29,34 +27,31 @@ fn main() {
 
     let mut app = App::new();
 
-    app.insert_resource(Msaa { samples: 4 })
+    app.insert_resource(Msaa::Sample4)
         // This may cause problems later on. Ideally this setup should be done per image
         .add_plugins(
             DefaultPlugins
                 .set(WindowPlugin {
-                    window: WindowDescriptor {
+                    primary_window: Some(Window {
                         present_mode: PresentMode::AutoNoVsync,
                         ..Default::default()
-                    },
+                    }),
                     ..Default::default()
                 })
-                .set(ImagePlugin::default_nearest())
-                .set(AssetPlugin {
-                    watch_for_changes: true,
-                    ..Default::default()
-                }),
+                .set(ImagePlugin::default_nearest()),
         )
-        .add_plugin(DebugPlugin)
-        .add_plugin(CameraPlugin)
-        .add_plugin(WorldPlugin)
-        .add_plugin(UiPlugin)
-        .add_plugin(CameraControllerPlugin)
-        .add_plugin(CharacterControllerPlugin)
+        .add_plugins((
+            DebugPlugin,
+            CameraPlugin,
+            WorldPlugin,
+            CameraControllerPlugin,
+            CharacterControllerPlugin,
+        ))
         // .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
-        .add_startup_system(setup);
+        .add_systems(Startup, setup);
 
     #[cfg(feature = "inspector")]
-    app.add_plugin(bevy_inspector_egui::quick::WorldInspectorPlugin);
+    app.add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::new());
 
     app.run();
 }

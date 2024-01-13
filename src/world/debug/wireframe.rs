@@ -1,12 +1,10 @@
 use bevy::{
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
-    reflect::TypeUuid,
     render::render_resource::{AsBindGroup, ShaderRef},
 };
 
-#[derive(AsBindGroup, Debug, Clone, TypeUuid)]
-#[uuid = "f690fd1e-d5d8-45ab-8225-97e2a3f056e1"]
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub struct WireframeMaterial {
     #[uniform(0)]
     pub color: Color,
