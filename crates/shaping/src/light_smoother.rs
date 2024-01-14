@@ -354,7 +354,7 @@ mod tests {
     fn lookup_table() {
         let mut count = vec![0; NEIGHBOR_COUNT];
 
-        let corners = vec![0usize, 2, 19, 17, 6, 8, 25, 23];
+        let corners = [0usize, 2, 19, 17, 6, 8, 25, 23];
 
         for s in NEIGHBOR_VERTEX_LOOKUP {
             for v in s {

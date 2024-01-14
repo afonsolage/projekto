@@ -1,6 +1,5 @@
-use bevy::{ecs::query::QuerySingleError, prelude::*};
+use bevy::prelude::*;
 use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
-use projekto_core::{chunk, landscape};
 
 pub struct CharacterControllerPlugin;
 
@@ -74,17 +73,12 @@ fn sync_rotation(
     >,
     mut q: Query<&mut Transform, With<CharacterController>>,
 ) {
-    let cam_transform = match q_cam.get_single() {
-        Ok(t) => t,
-        Err(_) => return,
+    let Ok(cam_transform) = q_cam.get_single() else {
+        return;
     };
 
-    let mut transform = match q.get_single_mut() {
-        Ok(t) => t,
-        Err(QuerySingleError::NoEntities(_)) => return,
-        Err(QuerySingleError::MultipleEntities(_)) => {
-            panic!("There can be only one character controlled entity.")
-        }
+    let Ok(mut transform) = q.get_single_mut() else {
+        return;
     };
 
     let (y, _, _) = cam_transform.rotation.to_euler(EulerRot::YXZ);
@@ -103,12 +97,8 @@ fn move_character(
         return;
     }
 
-    let mut transform = match q.get_single_mut() {
-        Ok(t) => t,
-        Err(QuerySingleError::NoEntities(_)) => return,
-        Err(QuerySingleError::MultipleEntities(_)) => {
-            panic!("There can be only one character controlled entity.")
-        }
+    let Ok(mut transform) = q.get_single_mut() else {
+        return;
     };
 
     let forward_vector = transform.forward() * input_vec.z;
@@ -154,80 +144,11 @@ fn update_character_position(
     mut position: ResMut<CharacterPosition>,
     q: Query<&Transform, (With<CharacterController>, Changed<Transform>)>,
 ) {
-    let transform = match q.get_single() {
-        Ok(t) => t,
-        Err(_) => return,
+    let Ok(transform) = q.get_single() else {
+        return;
     };
 
     if projekto_core::math::floor(transform.translation) != **position {
         **position = projekto_core::math::floor(transform.translation);
-    }
-}
-
-// fn calc_clip_map(position: Vec3) -> (Vec2, [Vec4; chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE]) {
-//     let offset = Vec2::new(
-//         chunk::X_AXIS_SIZE as f32 / 2.0,
-//         chunk::Z_AXIS_SIZE as f32 / 2.0,
-//     );
-//     let origin = Vec2::new(position.x, position.z) - offset;
-
-//     (
-//         origin,
-//         [Vec4::splat(position.y.floor()); chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE],
-//     )
-// }
-
-enum ViewFrustumChain {
-    DoNothing,
-    ClipMaterial(IVec3, Vec<Vec3>),
-    RevertMaterial,
-}
-
-const X_AXIS: usize = landscape::HORIZONTAL_SIZE * chunk::Z_AXIS_SIZE;
-
-fn is_on_landscape_bounds(coords: IVec2) -> bool {
-    coords.x >= 0 && coords.x < X_AXIS as i32 && coords.y >= 0 && coords.y < X_AXIS as i32
-}
-
-fn pack_landscape_coords(coords: IVec2) -> usize {
-    coords.x as usize * X_AXIS + coords.y as usize
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pack_landscape_coords() {
-        assert_eq!(super::pack_landscape_coords(IVec2::new(0, 0)), 0);
-        assert_eq!(super::pack_landscape_coords(IVec2::new(0, 1)), 1);
-        assert_eq!(super::pack_landscape_coords(IVec2::new(0, 2)), 2);
-        assert_eq!(super::pack_landscape_coords(IVec2::new(0, 3)), 3);
-
-        assert_eq!(
-            super::pack_landscape_coords(IVec2::new(1, 0)),
-            super::X_AXIS
-        );
-        assert_eq!(
-            super::pack_landscape_coords(IVec2::new(2, 0)),
-            2 * super::X_AXIS
-        );
-        assert_eq!(
-            super::pack_landscape_coords(IVec2::new(3, 0)),
-            3 * super::X_AXIS
-        );
-
-        assert_eq!(
-            super::pack_landscape_coords(IVec2::new(1, 1)),
-            super::X_AXIS + 1
-        );
-        assert_eq!(
-            super::pack_landscape_coords(IVec2::new(2, 2)),
-            2 * super::X_AXIS + 2
-        );
-        assert_eq!(
-            super::pack_landscape_coords(IVec2::new(3, 3)),
-            3 * super::X_AXIS + 3
-        );
     }
 }

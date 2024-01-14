@@ -15,12 +15,8 @@ projekto_core = { path = "crates/core" }
 projekto_shaping = { path = "crates/shaping" }
 projekto_camera = { path = "crates/camera" }
 projekto_genesis = { path = "crates/genesis" }
-# projekto_widgets = { path = "crates/widgets" }
 
 bevy = { version = "0.12", default-features = false }
-
-# Bevy assets
-# bevy_ecss = { git = "https://github.com/afonsolage/bevy_ecss.git" }
 
 itertools = "0.10"
 
@@ -43,15 +39,15 @@ default = [
 
 # Only enable used bevy features, to reduce clean compile time.
 dev = [
-     "bevy/dynamic_linking",            # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
-     "bevy/bevy_asset",
-     "bevy/bevy_scene",
-     "bevy/bevy_winit",
-     "bevy/bevy_render",
+    "bevy/dynamic_linking",            # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
+    "bevy/bevy_asset",
+    "bevy/bevy_scene",
+    "bevy/bevy_winit",
+    "bevy/bevy_render",
     "bevy/bevy_pbr",
-     "bevy/png",
-     "bevy/file_watcher",
-     "bevy/x11",
+    "bevy/png",
+    "bevy/file_watcher",
+    "bevy/x11",
 ]
 
 inspector = ["dep:bevy-inspector-egui", "dep:bevy_egui"]
