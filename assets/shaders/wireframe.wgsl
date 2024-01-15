@@ -1,7 +1,7 @@
-#import bevy_pbr::mesh_view_bindings
-#import bevy_pbr::mesh_types
+#import bevy_pbr::mesh_functions::{get_model_matrix, mesh_position_local_to_clip}
 
 struct Vertex {
+    @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
 };
 
@@ -16,14 +16,11 @@ struct WireframeMaterial {
 @group(1) @binding(0)
 var<uniform> material: WireframeMaterial;
 
-@group(2) @binding(0)
-var<uniform> mesh: Mesh;
-
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
-    out.clip_position = view.view_proj * mesh.model * vec4<f32>(vertex.position, 1.0);
+    out.clip_position = mesh_position_local_to_clip(get_model_matrix(vertex.instance_index), vec4<f32>(vertex.position, 1.0));
 
     return out;
 }

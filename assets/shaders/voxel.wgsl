@@ -1,7 +1,7 @@
-#import bevy_pbr::mesh_types::Mesh
-#import bevy_pbr::mesh_view_bindings::view
+#import bevy_pbr::mesh_functions::{get_model_matrix, mesh_position_local_to_clip}
 
 struct Vertex {
+    @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
@@ -29,16 +29,13 @@ var atlas_sampler: sampler;
 @group(1) @binding(2)
 var<uniform> material_data: MaterialData;
 
-@group(2) @binding(0)
-var<storage> mesh: array<Mesh>;
-
 @vertex
 fn vertex(
     vertex: Vertex,
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    out.clip_position = view.view_proj * mesh[0].model * vertex.position;
+    out.clip_position = mesh_position_local_to_clip(get_model_matrix(vertex.instance_index), vec4<f32>(vertex.position, 1.0));
     out.light_intensity = vertex.light;
     out.uv = vertex.uv;
     out.tile_coord_start = vertex.tile_coord_start;
