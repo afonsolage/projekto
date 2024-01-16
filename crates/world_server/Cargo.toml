@@ -1,0 +1,22 @@
+[package]
+name = "projekto_world_server"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+projekto_core = {path = "../core"}
+projekto_genesis = {path = "../genesis"}
+
+bevy_ecs = "0.12"
+bevy_math = "0.12"
+bevy_utils = "0.12"
+bevy_log = "0.12"
+bevy_app = "0.12"
+bevy_tasks =  "0.12"
+bevy_derive = "0.12"
+bevy_reflect = "0.12"
+
+futures-lite = "1.12"

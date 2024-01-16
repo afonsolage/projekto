@@ -15,6 +15,7 @@ projekto_core = { path = "crates/core" }
 projekto_shaping = { path = "crates/shaping" }
 projekto_camera = { path = "crates/camera" }
 projekto_genesis = { path = "crates/genesis" }
+projekto_world_server = {path = "crates/world_server"}
 
 bevy = { version = "0.12", default-features = false }
 

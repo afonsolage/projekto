@@ -21,7 +21,7 @@ use projekto_core::{
 };
 
 mod resources;
-mod task;
+pub mod task;
 
 pub use resources::*;
 
@@ -288,7 +288,7 @@ fn dispatch_task(
 /// This functions optimize the command list removing duplicated commands or commands that nullifies
 /// each other.
 ///
-/// Rules**
+/// **Rules**
 /// 1. Skips any duplicated commands of type *Load* and *Unload*.
 /// 2. Skips *Load* and remove existing *Unload* cmd when chunk exists already.
 /// 3. Skips *Unload* and remove existing *Load* cmd when chunk doesn't exists already.
@@ -299,9 +299,9 @@ fn dispatch_task(
 /// 8. Merges any duplicated *Update* keeping the last value.
 /// 9. Skips *Update* if there is an *Unload* cmd already.
 ///
-/// This functions does preserves the insertion order**
+/// **This functions does preserves the insertion order**
 ///
-/// Returns** an optimized command list
+/// **Returns** an optimized command list
 fn optimize_commands(world: &VoxWorld, commands: Vec<ChunkCmd>) -> Vec<ChunkCmd> {
     let mut map = HashMap::<IVec3, (u32, ChunkCmd)>::new();
 

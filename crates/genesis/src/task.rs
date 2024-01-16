@@ -156,9 +156,9 @@ fn unload_chunks(world: &mut VoxWorld, locals: &[IVec3]) -> HashSet<IVec3> {
 
 type LoadTask = Task<Vec<(IVec3, Chunk)>>;
 
-struct LoadChunksResult {
-    not_found: Vec<IVec3>,
-    load_task: Option<Vec<LoadTask>>,
+pub struct LoadChunksResult {
+    pub not_found: Vec<IVec3>,
+    pub load_task: Option<Vec<LoadTask>>,
 }
 
 /// Spawn a task on [`IoTaskPool`] which will load all existing chunks.
@@ -168,7 +168,7 @@ struct LoadChunksResult {
 ///
 /// **Returns** A list of chunks locals which doesn't exists on cache and an optional task running
 /// on [`IoTaskPool`] loading existing chunks.
-fn load_chunks(locals: &[IVec3]) -> LoadChunksResult {
+pub fn load_chunks(locals: &[IVec3]) -> LoadChunksResult {
     let (exists, not_exists): (Vec<_>, Vec<_>) = locals
         .iter()
         .map(|v| (v, local_path(v)))
