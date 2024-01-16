@@ -1,6 +1,7 @@
 use bevy_app::prelude::*;
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
+use bevy_log::warn;
 use bevy_math::prelude::*;
 use bevy_tasks::Task;
 use bevy_utils::HashMap;
@@ -16,7 +17,14 @@ impl Plugin for WorldServerPlugin {
             .add_event::<ChunkUnload>()
             .add_event::<ChunkLoad>()
             .add_event::<ChunkGen>()
-            .add_systems(Update, (unload_chunks, load_chunks, handle_load_tasks));
+            .add_systems(
+                Update,
+                (
+                    chunks_unload.run_if(on_event::<ChunkUnload>()),
+                    chunks_load.run_if(on_event::<ChunkLoad>()),
+                    chunks_handle_load_tasks,
+                ),
+            );
     }
 }
 
@@ -26,14 +34,16 @@ struct ChunkMap(HashMap<IVec3, Entity>);
 #[derive(Event, Debug, Clone, Copy)]
 struct ChunkUnload(IVec3);
 
-fn unload_chunks(
+fn chunks_unload(
     mut commands: Commands,
-    chunk_map: Res<ChunkMap>,
+    mut chunk_map: ResMut<ChunkMap>,
     mut reader: EventReader<ChunkUnload>,
 ) {
     for ChunkUnload(local) in reader.read() {
-        if let Some(&e) = chunk_map.get(local) {
+        if let Some(e) = chunk_map.remove(local) {
             commands.entity(e).despawn();
+        } else {
+            warn!("Failed to unload chunk {local}. Chunk not found in entity map.");
         }
     }
 }
@@ -46,7 +56,7 @@ type LoadTask = Task<Vec<(IVec3, Chunk)>>;
 #[derive(Resource, Default, Debug, Deref, DerefMut)]
 struct LoadTasks(Vec<LoadTask>);
 
-fn load_chunks(
+fn chunks_load(
     mut reader: EventReader<ChunkLoad>,
     mut writer: EventWriter<ChunkGen>,
     mut load_tasks: ResMut<LoadTasks>,
@@ -67,24 +77,20 @@ fn load_chunks(
         .for_each(|local| writer.send(ChunkGen(local)));
 }
 
-fn handle_load_tasks(
+fn chunks_handle_load_tasks(
     mut commands: Commands,
     mut chunk_map: ResMut<ChunkMap>,
-    mut load_tasks: ResMut<LoadTasks>,
-    mut running_tasks: Local<Vec<LoadTask>>,
+    mut running_tasks: ResMut<LoadTasks>,
 ) {
-    running_tasks.extend(load_tasks.bypass_change_detection().drain(..));
-
     running_tasks.retain_mut(|task| {
-        if let Some(result) = future::block_on(future::poll_once(task)) {
+        future::block_on(future::poll_once(task)).is_some_and(|result| {
             result.into_iter().for_each(|(local, _chunk)| {
                 let entity = commands.spawn_empty().id();
+                // TODO: Spawn chunk bundle
                 chunk_map.insert(local, entity);
             });
-            false
-        } else {
             true
-        }
+        })
     });
 }
 
