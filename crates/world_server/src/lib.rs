@@ -6,8 +6,8 @@ use bevy_math::prelude::*;
 use bevy_utils::HashMap;
 use genesis::GeneratedChunk;
 use projekto_core::{
-    chunk::{self, ChunkStorage},
-    voxel::{self, Side, SIDE_COUNT},
+    chunk::ChunkStorage,
+    voxel::{self, SIDE_COUNT},
 };
 
 mod genesis;
@@ -22,13 +22,21 @@ impl Plugin for WorldServerPlugin {
             .add_systems(
                 Update,
                 (
-                    chunks_unload.run_if(on_event::<ChunkUnload>()),
-                    chunks_load.run_if(on_event::<ChunkLoad>()),
-                    chunks_gen.run_if(on_event::<ChunkGen>()),
+                    (
+                        chunks_unload.run_if(on_event::<ChunkUnload>()),
+                        chunks_load.run_if(on_event::<ChunkLoad>()),
+                        chunks_gen.run_if(on_event::<ChunkGen>()),
+                    )
+                        .in_set(WorldSet::EntityManagement),
                     update_chunk_neighborhood.run_if(added_chunk_neighborhood),
                 ),
             );
     }
+}
+
+#[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
+enum WorldSet {
+    EntityManagement,
 }
 
 // Components
@@ -140,27 +148,26 @@ fn update_chunk_neighborhood(
         .for_each(|(new_chunk, &ChunkLocal(local))| {
             voxel::SIDES
                 .iter()
-                .enumerate()
-                .filter_map(|(idx, side)| {
+                .filter_map(|side| {
                     let neighbor = side.dir() + local;
                     chunk_map
                         .get(&neighbor)
                         .copied()
-                        .map(|neighbor| (idx, neighbor))
+                        .map(|neighbor| (side, neighbor))
                 })
-                .for_each(|(idx, neighbor)| {
+                .for_each(|(side, neighbor)| {
                     if let Ok(mut neighborhood) = q_neighborhood.get_mut(new_chunk) {
-                        neighborhood[idx] = Some(neighbor);
+                        neighborhood[side.index()] = Some(neighbor);
                     } else {
-                        panic!("Unable to find newly added chunk {local}");
+                        error!("Unable to find newly added chunk {local}");
                     };
 
                     if let Ok(mut neighborhood) = q_neighborhood.get_mut(neighbor) {
-                        let opposide_idx = voxel::SIDES[idx].opposite().index();
+                        let opposide_idx = side.opposite().index();
                         neighborhood[opposide_idx] = Some(new_chunk);
                     } else {
-                        let neighbor_local = local + voxel::SIDES[idx].dir();
-                        panic!("Unable to find newly added chunk neighbor at {neighbor_local}");
+                        let neighbor_local = local + side.dir();
+                        error!("Unable to find newly added chunk neighbor at {neighbor_local}");
                     };
                 });
         });
