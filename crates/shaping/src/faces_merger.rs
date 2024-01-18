@@ -26,21 +26,12 @@ fn find_furthest_eq_voxel(
     merged: &[bool],
     side: voxel::Side,
     chunk: &Chunk,
-    occlusion: &ChunkFacesOcclusion,
-    chunk_smooth_light: &ChunkSmoothLight,
+    data: &ChunkData,
     until: Option<IVec3>,
 ) -> IVec3 {
     let mut next_voxel = begin + step;
 
-    while should_merge(
-        begin,
-        next_voxel,
-        chunk,
-        merged,
-        side,
-        occlusion,
-        chunk_smooth_light,
-    ) {
+    while should_merge(begin, next_voxel, chunk, merged, side, data) {
         if let Some(target) = until {
             if target == next_voxel {
                 return next_voxel;
@@ -62,8 +53,7 @@ fn should_merge(
     chunk: &Chunk,
     merged: &[bool],
     side: voxel::Side,
-    occlusion: &ChunkFacesOcclusion,
-    chunk_smooth_light: &ChunkSmoothLight,
+    data: &ChunkData,
 ) -> bool {
     chunk::is_within_bounds(next_voxel)
         && !should_skip_voxel(
@@ -71,10 +61,10 @@ fn should_merge(
             next_voxel,
             side,
             chunk.kinds.get(next_voxel),
-            occlusion,
+            &data.occlusion,
         )
         && chunk.kinds.get(voxel) == chunk.kinds.get(next_voxel)
-        && chunk_smooth_light.get(voxel).get(side) == chunk_smooth_light.get(next_voxel).get(side)
+        && data.smooth_light.get(voxel).get(side) == data.smooth_light.get(next_voxel).get(side)
 }
 
 /// The first tuple item is the outer most loop and the third item is the inner most.
@@ -212,6 +202,11 @@ impl Iterator for MergerIterator {
     }
 }
 
+struct ChunkData {
+    occlusion: ChunkFacesOcclusion,
+    smooth_light: ChunkSmoothLight,
+}
+
 /// Merge all faces which have the same voxel properties, like kind, lighting, AO and so on.
 ///
 /// The basic logic of function was inspired from [Greedy Mesh](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/).
@@ -222,10 +217,15 @@ impl Iterator for MergerIterator {
 /// **Returns** a list of merged [`VoxelFace`]
 pub fn merge(
     occlusion: ChunkFacesOcclusion,
-    chunk_smooth_light: ChunkSmoothLight,
+    smooth_light: ChunkSmoothLight,
     chunk: &Chunk,
 ) -> Vec<VoxelFace> {
     let mut faces_vertices = vec![];
+
+    let data = ChunkData {
+        occlusion,
+        smooth_light,
+    };
 
     for side in voxel::SIDES {
         let walk_axis = get_side_walk_axis(side);
@@ -238,24 +238,15 @@ pub fn merge(
 
             let kind = chunk.kinds.get(voxel);
 
-            if should_skip_voxel(&merged, voxel, side, kind, &occlusion) {
+            if should_skip_voxel(&merged, voxel, side, kind, &data.occlusion) {
                 continue;
             }
 
-            let smooth_light = chunk_smooth_light.get(voxel);
+            let smooth_light = data.smooth_light.get(voxel);
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
-            let v2 = find_furthest_eq_voxel(
-                voxel,
-                current_axis,
-                &merged,
-                side,
-                chunk,
-                &occlusion,
-                &chunk_smooth_light,
-                None,
-            );
+            let v2 = find_furthest_eq_voxel(voxel, current_axis, &merged, side, chunk, &data, None);
 
             // Finds the furthest equal voxel on perpendicular axis
             let perpendicular_step = perpendicular_axis;
@@ -265,23 +256,14 @@ pub fn merge(
             // perpendicular_axis. This walk it'll be possible to find the next vertex
             // (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
-            while should_merge(
-                voxel,
-                next_begin_voxel,
-                chunk,
-                &merged,
-                side,
-                &occlusion,
-                &chunk_smooth_light,
-            ) {
+            while should_merge(voxel, next_begin_voxel, chunk, &merged, side, &data) {
                 let furthest = find_furthest_eq_voxel(
                     next_begin_voxel,
                     current_axis,
                     &merged,
                     side,
                     chunk,
-                    &occlusion,
-                    &chunk_smooth_light,
+                    &data,
                     Some(v3),
                 );
 
