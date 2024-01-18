@@ -20,3 +20,6 @@ bevy_derive = "0.12"
 bevy_reflect = "0.12"
 
 futures-lite = "1.12"
+
+# genesis
+bracket-noise = "0.8.7"

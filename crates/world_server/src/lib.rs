@@ -1,20 +1,22 @@
 use bevy_app::prelude::*;
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
-use bevy_log::warn;
+use bevy_log::{error, warn};
 use bevy_math::prelude::*;
-use bevy_tasks::Task;
 use bevy_utils::HashMap;
-use futures_lite::future;
-use projekto_core::chunk::Chunk;
-use projekto_genesis::task;
+use genesis::GeneratedChunk;
+use projekto_core::{
+    chunk::{self, ChunkStorage},
+    voxel::{self, Side, SIDE_COUNT},
+};
+
+mod genesis;
 
 pub struct WorldServerPlugin;
 
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<LoadTasks>()
-            .add_event::<ChunkUnload>()
+        app.add_event::<ChunkUnload>()
             .add_event::<ChunkLoad>()
             .add_event::<ChunkGen>()
             .add_systems(
@@ -22,10 +24,32 @@ impl Plugin for WorldServerPlugin {
                 (
                     chunks_unload.run_if(on_event::<ChunkUnload>()),
                     chunks_load.run_if(on_event::<ChunkLoad>()),
-                    chunks_handle_load_tasks,
+                    chunks_gen.run_if(on_event::<ChunkGen>()),
+                    update_chunk_neighborhood.run_if(added_chunk_neighborhood),
                 ),
             );
     }
+}
+
+// Components
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+struct ChunkKind(ChunkStorage<voxel::Kind>);
+
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+struct ChunkLight(ChunkStorage<voxel::Light>);
+
+#[derive(Component, Default, Debug, Clone, Copy, Deref, DerefMut)]
+struct ChunkLocal(IVec3);
+
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+struct ChunkNeighborhood([Option<Entity>; SIDE_COUNT]);
+
+#[derive(Bundle, Default)]
+struct ChunkBundle {
+    kind: ChunkKind,
+    light: ChunkLight,
+    local: ChunkLocal,
+    neighborhood: ChunkNeighborhood,
 }
 
 #[derive(Resource, Debug, Clone, Deref, DerefMut)]
@@ -38,61 +62,106 @@ fn chunks_unload(
     mut commands: Commands,
     mut chunk_map: ResMut<ChunkMap>,
     mut reader: EventReader<ChunkUnload>,
+    mut q_neighborhood: Query<&mut ChunkNeighborhood>,
 ) {
-    for ChunkUnload(local) in reader.read() {
-        if let Some(e) = chunk_map.remove(local) {
-            commands.entity(e).despawn();
-        } else {
-            warn!("Failed to unload chunk {local}. Chunk not found in entity map.");
+    let removed = reader
+        .read()
+        .filter_map(|evt| {
+            if let Some(entity) = chunk_map.remove(&evt.0) {
+                commands.entity(entity).despawn();
+                Some(entity)
+            } else {
+                let local = evt.0;
+                warn!("Chunk {local} entity not found.");
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    q_neighborhood.iter_mut().for_each(|mut neighborhood| {
+        for i in 0..voxel::SIDE_COUNT {
+            if let Some(ref e) = neighborhood[i] {
+                if removed.contains(e) {
+                    neighborhood[i] = None;
+                }
+            }
         }
-    }
+    })
 }
 
 #[derive(Event, Debug, Clone, Copy)]
 struct ChunkLoad(IVec3);
 
-type LoadTask = Task<Vec<(IVec3, Chunk)>>;
-
-#[derive(Resource, Default, Debug, Deref, DerefMut)]
-struct LoadTasks(Vec<LoadTask>);
-
-fn chunks_load(
-    mut reader: EventReader<ChunkLoad>,
-    mut writer: EventWriter<ChunkGen>,
-    mut load_tasks: ResMut<LoadTasks>,
-) {
+fn chunks_load(mut reader: EventReader<ChunkLoad>, mut writer: EventWriter<ChunkGen>) {
     let locals = reader.read().map(|evt| evt.0).collect::<Vec<_>>();
 
-    let task::LoadChunksResult {
-        not_found,
-        load_task,
-    } = task::load_chunks(&locals);
+    // TODO: Include load generated chunks from cache
 
-    if let Some(new_load_task) = load_task {
-        load_tasks.extend(new_load_task);
-    }
-
-    not_found
+    locals
         .into_iter()
         .for_each(|local| writer.send(ChunkGen(local)));
 }
 
-fn chunks_handle_load_tasks(
-    mut commands: Commands,
-    mut chunk_map: ResMut<ChunkMap>,
-    mut running_tasks: ResMut<LoadTasks>,
-) {
-    running_tasks.retain_mut(|task| {
-        future::block_on(future::poll_once(task)).is_some_and(|result| {
-            result.into_iter().for_each(|(local, _chunk)| {
-                let entity = commands.spawn_empty().id();
-                // TODO: Spawn chunk bundle
-                chunk_map.insert(local, entity);
-            });
-            true
-        })
-    });
-}
-
 #[derive(Event, Debug, Clone, Copy)]
 struct ChunkGen(IVec3);
+
+fn chunks_gen(
+    mut commands: Commands,
+    mut reader: EventReader<ChunkGen>,
+    mut chunk_map: ResMut<ChunkMap>,
+) {
+    for &ChunkGen(local) in reader.read() {
+        let GeneratedChunk { kind, light } = genesis::generate_chunk(local);
+        let entity = commands
+            .spawn(ChunkBundle {
+                kind: ChunkKind(kind),
+                light: ChunkLight(light),
+                ..Default::default()
+            })
+            .id();
+
+        let existing = chunk_map.insert(local, entity).is_none();
+
+        assert!(!existing);
+    }
+}
+
+fn added_chunk_neighborhood(q_added_chunks: Query<(), Added<ChunkNeighborhood>>) -> bool {
+    !q_added_chunks.is_empty()
+}
+
+fn update_chunk_neighborhood(
+    chunk_map: Res<ChunkMap>,
+    q_added_chunks: Query<(Entity, &ChunkLocal), Added<ChunkNeighborhood>>,
+    mut q_neighborhood: Query<&mut ChunkNeighborhood>,
+) {
+    q_added_chunks
+        .iter()
+        .for_each(|(new_chunk, &ChunkLocal(local))| {
+            voxel::SIDES
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, side)| {
+                    let neighbor = side.dir() + local;
+                    chunk_map
+                        .get(&neighbor)
+                        .copied()
+                        .map(|neighbor| (idx, neighbor))
+                })
+                .for_each(|(idx, neighbor)| {
+                    if let Ok(mut neighborhood) = q_neighborhood.get_mut(new_chunk) {
+                        neighborhood[idx] = Some(neighbor);
+                    } else {
+                        panic!("Unable to find newly added chunk {local}");
+                    };
+
+                    if let Ok(mut neighborhood) = q_neighborhood.get_mut(neighbor) {
+                        let opposide_idx = voxel::SIDES[idx].opposite().index();
+                        neighborhood[opposide_idx] = Some(new_chunk);
+                    } else {
+                        let neighbor_local = local + voxel::SIDES[idx].dir();
+                        panic!("Unable to find newly added chunk neighbor at {neighbor_local}");
+                    };
+                });
+        });
+}

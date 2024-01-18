@@ -93,6 +93,27 @@ pub const SIDES: [Side; SIDE_COUNT] = [
 ];
 
 impl Side {
+    pub fn opposite(&self) -> Side {
+        match self {
+            Side::Right => Side::Left,
+            Side::Left => Side::Right,
+            Side::Up => Side::Down,
+            Side::Down => Side::Up,
+            Side::Front => Side::Back,
+            Side::Back => Side::Front,
+        }
+    }
+    pub fn index(&self) -> usize {
+        match self {
+            Side::Right => 0,
+            Side::Left => 1,
+            Side::Up => 2,
+            Side::Down => 3,
+            Side::Front => 4,
+            Side::Back => 5,
+        }
+    }
+
     pub fn normal(&self) -> Vec3 {
         match self {
             Side::Right => Vec3::X,
