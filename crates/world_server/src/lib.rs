@@ -172,3 +172,5 @@ fn update_chunk_neighborhood(
                 });
         });
 }
+
+// TODO: Extract and render to check if its working.

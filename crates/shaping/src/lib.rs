@@ -17,7 +17,7 @@ use projekto_core::{
     VoxWorld,
 };
 
-// mod faces_merger;
+pub mod faces_merger;
 mod light_propagator;
 mod light_smoother;
 
@@ -356,12 +356,6 @@ fn generate_faces(
                 side,
                 kind,
                 light: smooth_light.get(side),
-                voxel: [
-                    projekto_core::math::pack(v1.x as u8, v1.y as u8, v1.z as u8, 0),
-                    projekto_core::math::pack(v2.x as u8, v2.y as u8, v2.z as u8, 0),
-                    projekto_core::math::pack(v3.x as u8, v3.y as u8, v3.z as u8, 0),
-                    projekto_core::math::pack(v4.x as u8, v4.y as u8, v4.z as u8, 0),
-                ],
             });
         }
     }
@@ -425,7 +419,6 @@ fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
                 uv: tile_uv[i],
                 tile_coord_start,
                 light: Vec3::splat(face.light[i] * light_fraction),
-                voxel: face.voxel[i],
             });
         }
     }

@@ -6,9 +6,7 @@ use projekto_core::{
 
 use super::light_smoother::ChunkSmoothLight;
 
-/**
-  Checks if voxel is out of bounds, or is empty or is already merged or is fully occluded.
-*/
+/// Checks if voxel is out of bounds, or is empty or is already merged or is fully occluded.
 #[inline]
 fn should_skip_voxel(
     merged: &[bool],
@@ -17,14 +15,10 @@ fn should_skip_voxel(
     kind: voxel::Kind,
     occlusion: &ChunkFacesOcclusion,
 ) -> bool {
-    kind.is_none()
-        || merged[chunk::to_index(voxel)]
-        || occlusion.get(voxel).is_occluded(side)
+    kind.is_none() || merged[chunk::to_index(voxel)] || occlusion.get(voxel).is_occluded(side)
 }
 
-/**
- Finds the furthest equal voxel from the given begin point, into the step direction.
-*/
+/// Finds the furthest equal voxel from the given begin point, into the step direction.
 #[inline]
 fn find_furthest_eq_voxel(
     begin: IVec3,
@@ -47,11 +41,13 @@ fn find_furthest_eq_voxel(
         occlusion,
         chunk_smooth_light,
     ) {
-        if let Some(target) = until && target == next_voxel {
+        if let Some(target) = until {
+            if target == next_voxel {
                 return next_voxel;
-            } else {
-                next_voxel += step;
             }
+        }
+
+        next_voxel += step;
     }
 
     next_voxel -= step;
@@ -81,11 +77,9 @@ fn should_merge(
         && chunk_smooth_light.get(voxel).get(side) == chunk_smooth_light.get(next_voxel).get(side)
 }
 
-/**
-  The first tuple item is the outer most loop and the third item is the inner most.
-
-  **Returns** a tuple indicating which direction the algorithm will walk in order to merge faces.
-*/
+/// The first tuple item is the outer most loop and the third item is the inner most.
+///
+/// Returns** a tuple indicating which direction the algorithm will walk in order to merge faces.
 #[inline]
 fn get_side_walk_axis(side: voxel::Side) -> (IVec3, IVec3, IVec3) {
     match side {
@@ -101,11 +95,10 @@ fn get_side_walk_axis(side: voxel::Side) -> (IVec3, IVec3, IVec3) {
 type AxisRange =
     itertools::Either<std::ops::RangeInclusive<i32>, std::iter::Rev<std::ops::RangeInclusive<i32>>>;
 
-/**
-  This function returns a [`Box`] dyn iterator since it can return either [`Range`] or [`Rev<Iterator>`]
-
-  **Returns** a boxed iterator to iterate over a given axis.
-*/
+/// This function returns a [`Box`] dyn iterator since it can return either [`Range`] or
+/// [`Rev<Iterator>`]
+///
+/// Returns** a boxed iterator to iterate over a given axis.
 #[inline]
 fn get_axis_range(axis: IVec3) -> AxisRange {
     use itertools::Either::*;
@@ -121,19 +114,15 @@ fn get_axis_range(axis: IVec3) -> AxisRange {
     }
 }
 
-/**
- Converts a swizzled Vector in it's conventional (X, Y, Z) format
-
- **Returns** a [`IVec3`] with X, Y and Z elements in order.
-*/
+/// Converts a swizzled Vector in it's conventional (X, Y, Z) format
+///
+/// Returns** a [`IVec3`] with X, Y and Z elements in order.
 #[inline]
 fn unswizzle(walk_axis: (IVec3, IVec3, IVec3), a: i32, b: i32, c: i32) -> IVec3 {
     walk_axis.0.abs() * a + walk_axis.1.abs() * b + walk_axis.2.abs() * c
 }
 
-/**
- Generates a list of voxels, based on v1, v2 and v3 inclusive, which was walked.
-*/
+/// Generates a list of voxels, based on v1, v2 and v3 inclusive, which was walked.
 #[inline]
 fn calc_walked_voxels(
     v1: IVec3,
@@ -223,17 +212,15 @@ impl Iterator for MergerIterator {
     }
 }
 
-/**
- Merge all faces which have the same voxel properties, like kind, lighting, AO and so on.
-
- The basic logic of function was inspired from [Greedy Mesh](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/).
- It was heavy modified to use a less mathematical and more logic approach.
-
- This function is very CPU intense so it should be run in a separated thread to avoid FPS drops.
-
- **Returns** a list of merged [`VoxelFace`]
-*/
-pub(super) fn merge(
+/// Merge all faces which have the same voxel properties, like kind, lighting, AO and so on.
+///
+/// The basic logic of function was inspired from [Greedy Mesh](https://0fps.net/2012/06/30/meshing-in-a-minecraft-game/).
+/// It was heavy modified to use a less mathematical and more logic approach.
+///
+/// This function is very CPU intense so it should be run in a separated thread to avoid FPS drops.
+///
+/// **Returns** a list of merged [`VoxelFace`]
+pub fn merge(
     occlusion: ChunkFacesOcclusion,
     chunk_smooth_light: ChunkSmoothLight,
     chunk: &Chunk,
@@ -274,8 +261,9 @@ pub(super) fn merge(
             let perpendicular_step = perpendicular_axis;
             let mut v3 = v2 + perpendicular_step;
 
-            // The loop walks all the way up on current_axis and than stepping one unit at time on perpendicular_axis.
-            // This walk it'll be possible to find the next vertex (v3) which is be able to merge with v1 and v2
+            // The loop walks all the way up on current_axis and than stepping one unit at time on
+            // perpendicular_axis. This walk it'll be possible to find the next vertex
+            // (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
             while should_merge(
                 voxel,
@@ -305,7 +293,8 @@ pub(super) fn merge(
                 }
             }
 
-            // At this point, v3 is out-of-bounds or points to a voxel which can't be merged, so step-back one unit
+            // At this point, v3 is out-of-bounds or points to a voxel which can't be merged, so
+            // step-back one unit
             v3 -= perpendicular_step;
 
             // Flag walked voxels, making a perfect square from v1, v2 and v3, on the given axis.
@@ -321,12 +310,6 @@ pub(super) fn merge(
                 side,
                 kind,
                 light: smooth_light.get(side),
-                voxel: [
-                    projekto_core::math::pack(v1.x as u8, v1.y as u8, v1.z as u8, 0),
-                    projekto_core::math::pack(v2.x as u8, v2.y as u8, v2.z as u8, 0),
-                    projekto_core::math::pack(v3.x as u8, v3.y as u8, v3.z as u8, 0),
-                    projekto_core::math::pack(v4.x as u8, v4.y as u8, v4.z as u8, 0),
-                ],
             })
         }
     }
@@ -341,23 +324,21 @@ mod tests {
 
     #[test]
     fn merge_right_faces() {
-        /*
-                        +-------------------+        +-------------------+
-                     4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
-                        +-------------------+        +-------- 2 -   ----+
-                     3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
-                        +-------------------+        +------------   ----+
-               Y     2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
-               |        +-------------------+        +----       --------+
-               |     1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
-        Z -----+        +-------------------+        +----       --------+
-                     0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
-                        +-------------------+        +-------------------+
-
-                     +    4   3   2   1   0
-
-                       Merge direction (-Z, Y)[->, ^]
-        */
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Y     2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |        +-------------------+        +----       --------+
+        // |     1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // Z -----+        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 4   3   2   1   0
+        //
+        // Merge direction (-Z, Y)[->, ^]
 
         let mut chunk = Chunk::default();
         let kinds = &mut chunk.kinds;
@@ -378,7 +359,7 @@ mod tests {
 
         let merged = super::merge(default(), default(), &chunk)
             .into_iter()
-            .filter(|vf| vf.side == voxel::Side::Right) //We care only for right faces here
+            .filter(|vf| vf.side == voxel::Side::Right) // We care only for right faces here
             .collect::<Vec<_>>();
 
         let test_merged: Vec<VoxelFace> = vec![
@@ -448,23 +429,21 @@ mod tests {
 
     #[test]
     fn merge_left_faces() {
-        /*
-                        +-------------------+        +-------------------+
-                     4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
-                        +-------------------+        +-------- 2 -   ----+
-                     3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
-                        +-------------------+        +------------   ----+
-        Y            2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
-        |               +-------------------+        +----       --------+
-        |            1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
-        +----- Z        +-------------------+        +----       --------+
-                     0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
-                        +-------------------+        +-------------------+
-
-                     +    0   1   2   3   4
-
-                       Merge direction (Z, Y)[->, ^]
-        */
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Y            2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |               +-------------------+        +----       --------+
+        // |            1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // +----- Z        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (Z, Y)[->, ^]
 
         let mut chunk = Chunk::default();
         let kinds = &mut chunk.kinds;
@@ -485,7 +464,7 @@ mod tests {
 
         let merged = super::merge(default(), default(), &chunk)
             .into_iter()
-            .filter(|vf| vf.side == voxel::Side::Left) //We care only for left faces here
+            .filter(|vf| vf.side == voxel::Side::Left) // We care only for left faces here
             .collect::<Vec<_>>();
 
         let test_merged: Vec<VoxelFace> = vec![
@@ -555,23 +534,21 @@ mod tests {
 
     #[test]
     fn merge_up_faces() {
-        /*
-                        +-------------------+        +-------------------+
-                     0  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
-                        +-------------------+        +-------- 2 -   ----+
-                     1  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
-                        +-------------------+        +------------   ----+
-        +----- X     2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
-        |               +-------------------+        +----       --------+
-        |            3  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
-        Z               +-------------------+        +----       --------+
-                     4  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
-                        +-------------------+        +-------------------+
-
-                     +    0   1   2   3   4
-
-                       Merge direction (X, -Z)[->, ^]
-        */
+        // +-------------------+        +-------------------+
+        // 0  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 1  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // +----- X     2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |               +-------------------+        +----       --------+
+        // |            3  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // Z               +-------------------+        +----       --------+
+        // 4  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (X, -Z)[->, ^]
 
         let mut chunk = Chunk::default();
         let kinds = &mut chunk.kinds;
@@ -592,7 +569,7 @@ mod tests {
 
         let merged = super::merge(default(), default(), &chunk)
             .into_iter()
-            .filter(|vf| vf.side == voxel::Side::Up) //We care only for Up faces here
+            .filter(|vf| vf.side == voxel::Side::Up) // We care only for Up faces here
             .collect::<Vec<_>>();
 
         let test_merged: Vec<VoxelFace> = vec![
@@ -662,23 +639,21 @@ mod tests {
 
     #[test]
     fn merge_up_faces_sub_divide() {
-        /*
-                        +-------------------+        +-------------------+
-                     0  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
-                        +-------------------+        +----   1   --------+
-                     1  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
-                        +-------------------+        +-------------------+
-        +----- X     2  | 0 | 1 | 2 | 0 | 0 |   ->   | 0 | 1 | 2 | 0 | 0 |
-        |               +-------------------+        +-------------------+
-        |            3  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
-        Z               +-------------------+        +----   1   --------+
-                     4  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
-                        +-------------------+        +-------------------+
-
-                     +    0   1   2   3   4
-
-                       Merge direction (X, -Z)[->, ^]
-        */
+        // +-------------------+        +-------------------+
+        // 0  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
+        // +-------------------+        +----   1   --------+
+        // 1  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
+        // +-------------------+        +-------------------+
+        // +----- X     2  | 0 | 1 | 2 | 0 | 0 |   ->   | 0 | 1 | 2 | 0 | 0 |
+        // |               +-------------------+        +-------------------+
+        // |            3  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
+        // Z               +-------------------+        +----   1   --------+
+        // 4  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (X, -Z)[->, ^]
 
         let mut chunk = Chunk::default();
         let kinds = &mut chunk.kinds;
@@ -696,7 +671,7 @@ mod tests {
 
         let merged = super::merge(default(), default(), &chunk)
             .into_iter()
-            .filter(|vf| vf.side == voxel::Side::Up) //We care only for Up faces here
+            .filter(|vf| vf.side == voxel::Side::Up) // We care only for Up faces here
             .collect::<Vec<_>>();
 
         let test_merged: Vec<VoxelFace> = vec![
@@ -755,23 +730,21 @@ mod tests {
 
     #[test]
     fn merge_down_faces() {
-        /*
-                        +-------------------+        +-------------------+
-                     4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
-                        +-------------------+        +-------- 2 -   ----+
-                     3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
-                        +-------------------+        +------------   ----+
-        Z            2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
-        |               +-------------------+        +----       --------+
-        |            1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
-        +----- X        +-------------------+        +----       --------+
-                     0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
-                        +-------------------+        +-------------------+
-
-                     +    0   1   2   3   4
-
-                       Merge direction (X, Z)[->, ^]
-        */
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Z            2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |               +-------------------+        +----       --------+
+        // |            1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // +----- X        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (X, Z)[->, ^]
 
         let mut chunk = Chunk::default();
         let kinds = &mut chunk.kinds;
@@ -792,7 +765,7 @@ mod tests {
 
         let merged = super::merge(default(), default(), &chunk)
             .into_iter()
-            .filter(|vf| vf.side == voxel::Side::Down) //We care only for Down faces here
+            .filter(|vf| vf.side == voxel::Side::Down) // We care only for Down faces here
             .collect::<Vec<_>>();
 
         let test_merged: Vec<VoxelFace> = vec![
@@ -862,23 +835,21 @@ mod tests {
 
     #[test]
     fn merge_front_faces() {
-        /*
-                        +-------------------+        +-------------------+
-                     4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
-                        +-------------------+        +-------- 2 -   ----+
-                     3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
-                        +-------------------+        +------------   ----+
-        Y            2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
-        |               +-------------------+        +----       --------+
-        |            1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
-        +----- X        +-------------------+        +----       --------+
-                     0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
-                        +-------------------+        +-------------------+
-
-                     +    0   1   2   3   4
-
-                       Merge direction (X, Y)[->, ^]
-        */
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Y            2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |               +-------------------+        +----       --------+
+        // |            1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // +----- X        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (X, Y)[->, ^]
 
         let mut chunk = Chunk::default();
         let kinds = &mut chunk.kinds;
@@ -899,7 +870,7 @@ mod tests {
 
         let merged = super::merge(default(), default(), &chunk)
             .into_iter()
-            .filter(|vf| vf.side == voxel::Side::Front) //We care only for Front faces here
+            .filter(|vf| vf.side == voxel::Side::Front) // We care only for Front faces here
             .collect::<Vec<_>>();
 
         let test_merged: Vec<VoxelFace> = vec![
@@ -969,23 +940,21 @@ mod tests {
 
     #[test]
     fn merge_back_faces() {
-        /*
-                        +-------------------+        +-------------------+
-                     4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
-                        +-------------------+        +-------- 2 -   ----+
-                     3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
-                        +-------------------+        +------------   ----+
-               Y     2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
-               |        +-------------------+        +----       --------+
-               |     1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
-        X -----+        +-------------------+        +----       --------+
-                     0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
-                        +-------------------+        +-------------------+
-
-                     +    4   3   2   1   0
-
-                       Merge direction (-X, Y)[->, ^]
-        */
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Y     2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |        +-------------------+        +----       --------+
+        // |     1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // X -----+        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 4   3   2   1   0
+        //
+        // Merge direction (-X, Y)[->, ^]
 
         let mut chunk = Chunk::default();
         let kinds = &mut chunk.kinds;
@@ -1006,7 +975,7 @@ mod tests {
 
         let merged = super::merge(default(), default(), &chunk)
             .into_iter()
-            .filter(|vf| vf.side == voxel::Side::Back) //We care only for Back faces here
+            .filter(|vf| vf.side == voxel::Side::Back) // We care only for Back faces here
             .collect::<Vec<_>>();
 
         let test_merged: Vec<VoxelFace> = vec![
@@ -1174,7 +1143,7 @@ mod tests {
             for x in 0..chunk::X_AXIS_SIZE {
                 for y in 0..chunk::Y_AXIS_SIZE {
                     for z in (0..=chunk::Z_END).rev() {
-                        vec.push(IVec3::new(x as i32, y as i32, z as i32));
+                        vec.push(IVec3::new(x as i32, y as i32, z));
                     }
                 }
             }
@@ -1218,7 +1187,7 @@ mod tests {
             for y in 0..chunk::Y_AXIS_SIZE {
                 for z in (0..=chunk::Z_END).rev() {
                     for x in 0..chunk::X_AXIS_SIZE {
-                        vec.push(IVec3::new(x as i32, y as i32, z as i32));
+                        vec.push(IVec3::new(x as i32, y as i32, z));
                     }
                 }
             }
@@ -1284,7 +1253,7 @@ mod tests {
             for z in 0..chunk::Z_AXIS_SIZE {
                 for y in 0..chunk::Y_AXIS_SIZE {
                     for x in (0..=chunk::X_END).rev() {
-                        vec.push(IVec3::new(x as i32, y as i32, z as i32));
+                        vec.push(IVec3::new(x, y as i32, z as i32));
                     }
                 }
             }
