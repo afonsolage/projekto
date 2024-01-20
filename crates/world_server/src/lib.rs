@@ -6,11 +6,12 @@ use bevy_math::prelude::*;
 use bevy_utils::HashMap;
 use genesis::GeneratedChunk;
 use projekto_core::{
-    chunk::ChunkStorage,
+    chunk::{self, ChunkStorage},
     voxel::{self, SIDE_COUNT},
 };
 
 mod genesis;
+mod light;
 
 pub struct WorldServerPlugin;
 
@@ -27,8 +28,13 @@ impl Plugin for WorldServerPlugin {
                         chunks_load.run_if(on_event::<ChunkLoad>()),
                         chunks_gen.run_if(on_event::<ChunkGen>()),
                     )
-                        .in_set(WorldSet::EntityManagement),
-                    update_chunk_neighborhood.run_if(added_chunk_neighborhood),
+                        .in_set(WorldSet::ChunkManagement),
+                    apply_deferred.in_set(WorldSet::FlushCommands),
+                    (
+                        update_chunk_neighborhood.run_if(added::<ChunkNeighborhood>),
+                        init_light.run_if(added::<ChunkLight>),
+                    )
+                        .in_set(WorldSet::ChunkInitialization),
                 ),
             );
     }
@@ -36,7 +42,9 @@ impl Plugin for WorldServerPlugin {
 
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
 enum WorldSet {
-    EntityManagement,
+    ChunkManagement,
+    FlushCommands,
+    ChunkInitialization,
 }
 
 // Components
@@ -134,7 +142,7 @@ fn chunks_gen(
     }
 }
 
-fn added_chunk_neighborhood(q_added_chunks: Query<(), Added<ChunkNeighborhood>>) -> bool {
+fn added<T: Component>(q_added_chunks: Query<(), Added<T>>) -> bool {
     !q_added_chunks.is_empty()
 }
 
@@ -171,6 +179,17 @@ fn update_chunk_neighborhood(
                     };
                 });
         });
+}
+
+fn init_light(mut q: Query<(&ChunkKind, &mut ChunkLight), Added<ChunkLight>>) {
+    q.for_each_mut(|(kind, mut light)| {
+        let top_voxels = (0..=chunk::X_END)
+            .zip(0..chunk::Z_END)
+            .map(|(x, z)| IVec3::new(x, chunk::Y_END, z))
+            .collect::<Vec<_>>();
+
+        light::propagate(kind, &mut light, voxel::LightTy::Natural, &top_voxels);
+    });
 }
 
 // TODO: Extract and render to check if its working.

@@ -5,7 +5,7 @@ use bevy_utils::HashSet;
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use itertools::Itertools;
 
-use light_smoother::ChunkSmoothLight;
+// use light_smoother::ChunkSmoothLight;
 use projekto_core::{
     chunk::{ChunkKind, ChunkLight},
     voxel::{self, ChunkFacesOcclusion, FacesOcclusion},
@@ -292,7 +292,8 @@ pub fn generate_chunk_vertices(
             if occlusion.is_fully_occluded() {
                 Some((local, vec![]))
             } else {
-                let faces = generate_faces(occlusion, smooth_light, world.get(local)?);
+                let faces = faces_merger::merge(occlusion, smooth_light, world.get(local)?);
+                // let faces = generate_faces(occlusion, smooth_light, world.get(local)?);
                 Some((local, generate_vertices(faces)))
             }
         })
@@ -328,40 +329,40 @@ fn faces_occlusion(chunk: &Chunk) -> ChunkFacesOcclusion {
     occlusion
 }
 
-fn generate_faces(
-    occlusion: ChunkFacesOcclusion,
-    smooth_light: ChunkSmoothLight,
-    chunk: &Chunk,
-) -> Vec<VoxelFace> {
-    let mut faces_vertices = vec![];
-
-    for voxel in chunk::voxels() {
-        for side in voxel::SIDES {
-            // Since this is a top-down game, we don't need down face at all
-            if side == voxel::Side::Down {
-                continue;
-            }
-
-            let kind = chunk.kinds.get(voxel);
-
-            if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
-                continue;
-            }
-
-            let smooth_light = smooth_light.get(voxel);
-
-            let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
-            faces_vertices.push(VoxelFace {
-                vertices: [v1, v2, v3, v4],
-                side,
-                kind,
-                light: smooth_light.get(side),
-            });
-        }
-    }
-
-    faces_vertices
-}
+// fn generate_faces(
+//     occlusion: ChunkFacesOcclusion,
+//     smooth_light: ChunkSmoothLight,
+//     chunk: &Chunk,
+// ) -> Vec<VoxelFace> {
+//     let mut faces_vertices = vec![];
+//
+//     for voxel in chunk::voxels() {
+//         for side in voxel::SIDES {
+//             // Since this is a top-down game, we don't need down face at all
+//             if side == voxel::Side::Down {
+//                 continue;
+//             }
+//
+//             let kind = chunk.kinds.get(voxel);
+//
+//             if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
+//                 continue;
+//             }
+//
+//             let smooth_light = smooth_light.get(voxel);
+//
+//             let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
+//             faces_vertices.push(VoxelFace {
+//                 vertices: [v1, v2, v3, v4],
+//                 side,
+//                 kind,
+//                 light: smooth_light.get(side),
+//             });
+//         }
+//     }
+//
+//     faces_vertices
+// }
 
 /// Generates vertices data from a given [`VoxelFace`] list.
 ///
