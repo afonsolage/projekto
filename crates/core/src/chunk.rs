@@ -188,7 +188,8 @@ pub fn to_index_2d(local: IVec2) -> usize {
     (local.x << Z_AXIS_SIZE.ilog2() | local.y << Y_SHIFT) as usize
 }
 
-fn from_index(index: usize) -> IVec3 {
+#[inline]
+pub fn from_index(index: usize) -> IVec3 {
     IVec3::new(
         ((index & X_MASK) >> X_SHIFT) as i32,
         ((index & Y_MASK) >> Y_SHIFT) as i32,

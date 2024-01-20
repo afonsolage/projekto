@@ -188,7 +188,8 @@ fn init_light(mut q: Query<(&ChunkKind, &mut ChunkLight), Added<ChunkLight>>) {
             .map(|(x, z)| IVec3::new(x, chunk::Y_END, z))
             .collect::<Vec<_>>();
 
-        light::propagate(kind, &mut light, voxel::LightTy::Natural, &top_voxels);
+        let neighbor_propagation =
+            light::propagate(kind, &mut light, voxel::LightTy::Natural, &top_voxels);
     });
 }
 
