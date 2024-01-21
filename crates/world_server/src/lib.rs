@@ -3,7 +3,8 @@ use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
 use bevy_log::{error, warn};
 use bevy_math::prelude::*;
-use bevy_utils::HashMap;
+use bevy_time::common_conditions::on_timer;
+use bevy_utils::{Duration, HashMap, HashSet};
 use genesis::GeneratedChunk;
 use light::NeighborLightPropagation;
 use projekto_core::{
@@ -13,6 +14,7 @@ use projekto_core::{
 
 mod genesis;
 mod light;
+mod meshing;
 
 pub struct WorldServerPlugin;
 
@@ -40,6 +42,9 @@ impl Plugin for WorldServerPlugin {
                     propagate_light
                         .run_if(on_event::<LightSet>())
                         .in_set(WorldSet::Propagation),
+                    (faces_occlusion.run_if(changed::<ChunkKind>),)
+                        .in_set(WorldSet::Meshing)
+                        .run_if(on_timer(Duration::from_secs_f32(0.5))),
                 ),
             );
     }
@@ -51,6 +56,7 @@ enum WorldSet {
     FlushCommands,
     ChunkInitialization,
     Propagation,
+    Meshing,
 }
 
 // Components
@@ -65,6 +71,9 @@ struct ChunkLocal(IVec3);
 
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkNeighborhood([Option<Entity>; SIDE_COUNT]);
+
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+struct ChunkFacesOcclusion(ChunkStorage<voxel::FacesOcclusion>);
 
 #[derive(Bundle, Default)]
 struct ChunkBundle {
@@ -150,6 +159,10 @@ fn chunks_gen(
 
 fn added<T: Component>(q_added_chunks: Query<(), Added<T>>) -> bool {
     !q_added_chunks.is_empty()
+}
+
+fn changed<T: Component>(q_changed_chunks: Query<(), Changed<T>>) -> bool {
+    !q_changed_chunks.is_empty()
 }
 
 fn update_chunk_neighborhood(
@@ -286,6 +299,39 @@ fn propagate_light(
                     });
                 },
             );
+        });
+}
+
+fn faces_occlusion(
+    chunk_map: Res<ChunkMap>,
+    q_changed_chunks: Query<&ChunkLocal, Changed<ChunkKind>>,
+    q_kinds: Query<&ChunkKind>,
+    mut q_occlusions: Query<&mut ChunkFacesOcclusion>,
+) {
+    q_changed_chunks
+        .iter()
+        .flat_map(|local| {
+            let neighbors = voxel::SIDES.map(|s| **local + s.dir());
+            std::iter::once(**local).chain(neighbors)
+        })
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .filter_map(|local| chunk_map.get(&local).map(|e| (local, e)))
+        .for_each(|(local, &entity)| {
+            let mut neighborhood = [None; voxel::SIDE_COUNT];
+
+            // Update neighborhood
+            voxel::SIDES.iter().for_each(|side| {
+                let neighbor = local + side.dir();
+                neighborhood[side.index()] = chunk_map
+                    .get(&neighbor)
+                    .map(|&neighbor_entity| &**q_kinds.get(neighbor_entity).expect("Entity exists"))
+            });
+
+            let kind = q_kinds.get(entity).expect("Entity exists");
+            let mut faces_occlusion = q_occlusions.get_mut(entity).expect("Entity exists");
+
+            meshing::faces_occlusion(kind, &mut faces_occlusion, &neighborhood);
         });
 }
 

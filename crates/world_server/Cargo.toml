@@ -18,6 +18,7 @@ bevy_app = "0.12"
 bevy_tasks =  "0.12"
 bevy_derive = "0.12"
 bevy_reflect = "0.12"
+bevy_time = "0.12"
 
 futures-lite = "1.12"
 
