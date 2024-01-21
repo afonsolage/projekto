@@ -37,6 +37,9 @@ impl Plugin for WorldServerPlugin {
                         init_light.run_if(added::<ChunkLight>),
                     )
                         .in_set(WorldSet::ChunkInitialization),
+                    propagate_light
+                        .run_if(on_event::<LightSet>())
+                        .in_set(WorldSet::Propagation),
                 ),
             );
     }
@@ -47,6 +50,7 @@ enum WorldSet {
     ChunkManagement,
     FlushCommands,
     ChunkInitialization,
+    Propagation,
 }
 
 // Components
@@ -187,7 +191,8 @@ fn update_chunk_neighborhood(
 struct LightSet {
     chunk: IVec3,
     voxel: IVec3,
-    value: voxel::Light,
+    ty: voxel::LightTy,
+    intensity: u8,
 }
 
 fn init_light(
@@ -211,16 +216,77 @@ fn init_light(
                  intensity,
              }| {
                 let chunk = dir + **local;
-                let light = voxel::Light::with(ty, intensity);
 
                 writer.send(LightSet {
                     chunk,
                     voxel,
-                    value: light,
+                    ty,
+                    intensity,
                 });
             },
         );
     });
+}
+
+fn propagate_light(
+    chunk_map: Res<ChunkMap>,
+    mut q_light: Query<(&ChunkKind, &mut ChunkLight)>,
+    mut reader: EventReader<LightSet>,
+    mut writer: EventWriter<LightSet>,
+) {
+    reader
+        .read()
+        .fold(
+            HashMap::<(IVec3, voxel::LightTy), Vec<IVec3>>::new(),
+            |mut map,
+             &LightSet {
+                 chunk,
+                 voxel,
+                 ty,
+                 intensity,
+             }| {
+                let Some(&entity) = chunk_map.get(&chunk) else {
+                    warn!("Failed to set light on chunk {chunk}. Entity not found on map");
+                    return map;
+                };
+
+                let Ok((_, mut light)) = q_light.get_mut(entity) else {
+                    warn!("Failed to set light on chunk {chunk}. Entity not found on query");
+                    return map;
+                };
+
+                if intensity > light.get(voxel).get(ty) {
+                    light.set_type(voxel, ty, intensity);
+                    map.entry((chunk, ty)).or_default().push(voxel);
+                }
+
+                map
+            },
+        )
+        .into_iter()
+        .for_each(|((chunk, light_ty), voxels)| {
+            let entity = chunk_map.get(&chunk).expect("Chunk exists");
+            let (kind, mut light) = q_light.get_mut(*entity).expect("Entity exists");
+            let neighborhood_propagation = light::propagate(kind, &mut light, light_ty, &voxels);
+
+            neighborhood_propagation.into_iter().for_each(
+                |NeighborLightPropagation {
+                     dir,
+                     voxel,
+                     ty,
+                     intensity,
+                 }| {
+                    let neighbor = dir + chunk;
+
+                    writer.send(LightSet {
+                        chunk: neighbor,
+                        voxel,
+                        ty,
+                        intensity,
+                    });
+                },
+            );
+        });
 }
 
 // TODO: Extract and render to check if its working.

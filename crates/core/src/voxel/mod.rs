@@ -10,7 +10,7 @@ pub use kind::*;
 
 pub const SIDE_COUNT: usize = 6;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub enum LightTy {
     Natural,
     Artificial,
@@ -37,12 +37,6 @@ pub struct Light(u8);
 
 impl Light {
     pub const MAX_NATURAL_INTENSITY: u8 = 15;
-
-    pub fn with(ty: LightTy, intensity: u8) -> Self {
-        let mut light = Self::default();
-        light.set(ty, intensity);
-        light
-    }
 
     pub fn natural(intensity: u8) -> Self {
         let mut light = Light::default();
