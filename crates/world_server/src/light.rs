@@ -85,6 +85,8 @@ pub fn propagate(
 
 #[cfg(test)]
 mod test {
+    use bevy_utils::HashMap;
+
     use super::*;
 
     #[test]
@@ -179,5 +181,102 @@ mod test {
                 "Should propagate decreasing intensity at {voxel}"
             );
         });
+    }
+
+    #[test]
+    fn propagate_to_neighborhood_empty_chunk() {
+        let kind = ChunkStorage::<voxel::Kind>::default();
+        let mut light = ChunkStorage::<voxel::Light>::default();
+
+        let top_voxels = (0..=chunk::X_END)
+            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
+            .collect::<Vec<_>>();
+
+        top_voxels.iter().for_each(|&voxel| {
+            light.set_type(voxel, LightTy::Natural, voxel::Light::MAX_NATURAL_INTENSITY);
+        });
+
+        let neighbor_propagation = propagate(&kind, &mut light, LightTy::Natural, &top_voxels);
+        neighbor_propagation
+            .iter()
+            .fold(
+                HashMap::<IVec3, Vec<_>>::new(),
+                |mut map, &NeighborLightPropagation { dir, voxel, .. }| {
+                    map.entry(dir).or_default().push(voxel);
+                    map
+                },
+            )
+            .into_iter()
+            .for_each(|(dir, voxels)| {
+                if dir == voxel::Side::Up.dir() || dir == voxel::Side::Down.dir() {
+                    assert_eq!(voxels.len(), chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE);
+                } else {
+                    assert_eq!(voxels.len(), chunk::X_AXIS_SIZE * chunk::Y_AXIS_SIZE);
+                }
+            });
+
+        neighbor_propagation.into_iter().for_each(
+            |NeighborLightPropagation {
+                 dir,
+                 voxel,
+                 ty,
+                 intensity,
+             }| {
+                assert_eq!(
+                    ty,
+                    LightTy::Natural,
+                    "Only natural light should be propagated"
+                );
+                if dir == voxel::Side::Down.dir() {
+                    assert_eq!(
+                        intensity,
+                        voxel::Light::MAX_NATURAL_INTENSITY,
+                        "Downwards propagation should keep max natural intensity"
+                    );
+                } else {
+                    assert_eq!(
+                        intensity,
+                        voxel::Light::MAX_NATURAL_INTENSITY - 1,
+                        "Non-downwards propagation should reduce natural intensity"
+                    );
+                }
+                assert!(
+                    chunk::is_at_bounds(voxel),
+                    "All voxels propagated should be at boundry"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn propagate_to_neighborhood() {
+        let mut kind = ChunkStorage::<voxel::Kind>::default();
+        let mut light = ChunkStorage::<voxel::Light>::default();
+
+        let top_voxels = (0..=chunk::X_END)
+            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
+            .filter(|v| v.x != 0)
+            .collect::<Vec<_>>();
+
+        top_voxels.iter().for_each(|&voxel| {
+            light.set_type(voxel, LightTy::Natural, voxel::Light::MAX_NATURAL_INTENSITY);
+        });
+
+        let left_wall = (0..=chunk::Z_END)
+            .flat_map(|z| (0..=chunk::Y_END).map(move |y| IVec3::new(0, y, z)))
+            .collect::<Vec<_>>();
+        left_wall.iter().for_each(|&v| kind.set(v, 1.into()));
+
+        let neighbor_propagation = propagate(&kind, &mut light, LightTy::Natural, &top_voxels);
+
+        neighbor_propagation
+            .into_iter()
+            .for_each(|NeighborLightPropagation { dir, .. }| {
+                assert_ne!(
+                    dir,
+                    voxel::Side::Left.dir(),
+                    "No light should be propagated to left"
+                );
+            });
     }
 }

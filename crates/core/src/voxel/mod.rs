@@ -38,6 +38,12 @@ pub struct Light(u8);
 impl Light {
     pub const MAX_NATURAL_INTENSITY: u8 = 15;
 
+    pub fn with(ty: LightTy, intensity: u8) -> Self {
+        let mut light = Self::default();
+        light.set(ty, intensity);
+        light
+    }
+
     pub fn natural(intensity: u8) -> Self {
         let mut light = Light::default();
         light.set(LightTy::Natural, intensity);

@@ -5,6 +5,7 @@ use bevy_log::{error, warn};
 use bevy_math::prelude::*;
 use bevy_utils::HashMap;
 use genesis::GeneratedChunk;
+use light::NeighborLightPropagation;
 use projekto_core::{
     chunk::{self, ChunkStorage},
     voxel::{self, SIDE_COUNT},
@@ -20,6 +21,7 @@ impl Plugin for WorldServerPlugin {
         app.add_event::<ChunkUnload>()
             .add_event::<ChunkLoad>()
             .add_event::<ChunkGen>()
+            .add_event::<LightSet>()
             .add_systems(
                 Update,
                 (
@@ -181,8 +183,18 @@ fn update_chunk_neighborhood(
         });
 }
 
-fn init_light(mut q: Query<(&ChunkKind, &mut ChunkLight), Added<ChunkLight>>) {
-    q.for_each_mut(|(kind, mut light)| {
+#[derive(Event, Debug, Clone, Copy)]
+struct LightSet {
+    chunk: IVec3,
+    voxel: IVec3,
+    value: voxel::Light,
+}
+
+fn init_light(
+    mut q: Query<(&ChunkLocal, &ChunkKind, &mut ChunkLight), Added<ChunkLight>>,
+    mut writer: EventWriter<LightSet>,
+) {
+    q.for_each_mut(|(local, kind, mut light)| {
         let top_voxels = (0..=chunk::X_END)
             .zip(0..chunk::Z_END)
             .map(|(x, z)| IVec3::new(x, chunk::Y_END, z))
@@ -190,6 +202,24 @@ fn init_light(mut q: Query<(&ChunkKind, &mut ChunkLight), Added<ChunkLight>>) {
 
         let neighbor_propagation =
             light::propagate(kind, &mut light, voxel::LightTy::Natural, &top_voxels);
+
+        neighbor_propagation.into_iter().for_each(
+            |NeighborLightPropagation {
+                 dir,
+                 voxel,
+                 ty,
+                 intensity,
+             }| {
+                let chunk = dir + **local;
+                let light = voxel::Light::with(ty, intensity);
+
+                writer.send(LightSet {
+                    chunk,
+                    voxel,
+                    value: light,
+                });
+            },
+        );
     });
 }
 
