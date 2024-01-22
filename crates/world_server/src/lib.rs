@@ -1,6 +1,10 @@
 use bevy_app::prelude::*;
 use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::prelude::*;
+use bevy_ecs::{
+    prelude::*,
+    query::{QueryItem, ReadOnlyWorldQuery, WorldQuery},
+    system::SystemParam,
+};
 use bevy_log::{error, warn};
 use bevy_math::prelude::*;
 use bevy_time::common_conditions::on_timer;
@@ -86,6 +90,52 @@ struct ChunkBundle {
 #[derive(Resource, Debug, Clone, Deref, DerefMut)]
 struct ChunkMap(HashMap<IVec3, Entity>);
 
+#[derive(SystemParam)]
+struct ChunkQuery<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static = ()> {
+    map: Res<'w, ChunkMap>,
+    query: Query<'w, 's, Q, F>,
+}
+
+impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuery<'w, 's, Q, F> {
+    fn get_chunk(&self, local: IVec3) -> Option<Entity> {
+        self.map.0.get(&local).copied()
+    }
+
+    fn get_at_local(&self, local: IVec3) -> Option<QueryItem<'_, <Q as WorldQuery>::ReadOnly>> {
+        self.map.0.get(&local).map(|&entity| {
+            self.query
+                .get(entity)
+                .expect("All entities inside the map must exists")
+        })
+    }
+
+    fn get_mut_at_local(&mut self, local: IVec3) -> Option<Q::Item<'_>> {
+        self.map.0.get(&local).map(|&entity| {
+            self.query
+                .get_mut(entity)
+                .expect("All entities inside the map must exists")
+        })
+    }
+}
+
+impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops::Deref
+    for ChunkQuery<'w, 's, Q, F>
+{
+    type Target = Query<'w, 's, Q, F>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.query
+    }
+}
+
+impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops::DerefMut
+    for ChunkQuery<'w, 's, Q, F>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.query
+    }
+}
+
 #[derive(Event, Debug, Clone, Copy)]
 struct ChunkUnload(IVec3);
 
@@ -166,37 +216,30 @@ fn changed<T: Component>(q_changed_chunks: Query<(), Changed<T>>) -> bool {
 }
 
 fn update_chunk_neighborhood(
-    chunk_map: Res<ChunkMap>,
     q_added_chunks: Query<(Entity, &ChunkLocal), Added<ChunkNeighborhood>>,
-    mut q_neighborhood: Query<&mut ChunkNeighborhood>,
+    mut q_neighborhood: ChunkQuery<&mut ChunkNeighborhood>,
 ) {
     q_added_chunks
         .iter()
         .for_each(|(new_chunk, &ChunkLocal(local))| {
-            voxel::SIDES
-                .iter()
-                .filter_map(|side| {
-                    let neighbor = side.dir() + local;
-                    chunk_map
-                        .get(&neighbor)
-                        .copied()
-                        .map(|neighbor| (side, neighbor))
-                })
-                .for_each(|(side, neighbor)| {
-                    if let Ok(mut neighborhood) = q_neighborhood.get_mut(new_chunk) {
-                        neighborhood[side.index()] = Some(neighbor);
-                    } else {
-                        error!("Unable to find newly added chunk {local}");
-                    };
+            voxel::SIDES.iter().for_each(|side| {
+                let neighbor = local + side.dir();
 
-                    if let Ok(mut neighborhood) = q_neighborhood.get_mut(neighbor) {
-                        let opposide_idx = side.opposite().index();
-                        neighborhood[opposide_idx] = Some(new_chunk);
-                    } else {
-                        let neighbor_local = local + side.dir();
-                        error!("Unable to find newly added chunk neighbor at {neighbor_local}");
-                    };
-                });
+                let neighbor_entity = q_neighborhood.get_chunk(neighbor);
+                if let Ok(mut neighborhood) = q_neighborhood.get_mut(new_chunk) {
+                    neighborhood[side.index()] = neighbor_entity;
+                } else {
+                    error!("Unable to find newly added chunk {local}");
+                };
+
+                if let Some(mut neighborhood) = q_neighborhood.get_mut_at_local(neighbor) {
+                    let opposide_idx = side.opposite().index();
+                    neighborhood[opposide_idx] = Some(new_chunk);
+                } else {
+                    let neighbor_local = local + side.dir();
+                    error!("Unable to find newly added chunk neighbor at {neighbor_local}");
+                };
+            });
         });
 }
 
@@ -242,8 +285,7 @@ fn init_light(
 }
 
 fn propagate_light(
-    chunk_map: Res<ChunkMap>,
-    mut q_light: Query<(&ChunkKind, &mut ChunkLight)>,
+    mut q_light: ChunkQuery<(&ChunkKind, &mut ChunkLight)>,
     mut reader: EventReader<LightSet>,
     mut writer: EventWriter<LightSet>,
 ) {
@@ -258,12 +300,7 @@ fn propagate_light(
                  ty,
                  intensity,
              }| {
-                let Some(&entity) = chunk_map.get(&chunk) else {
-                    warn!("Failed to set light on chunk {chunk}. Entity not found on map");
-                    return map;
-                };
-
-                let Ok((_, mut light)) = q_light.get_mut(entity) else {
+                let Some((_, mut light)) = q_light.get_mut_at_local(chunk) else {
                     warn!("Failed to set light on chunk {chunk}. Entity not found on query");
                     return map;
                 };
@@ -278,8 +315,9 @@ fn propagate_light(
         )
         .into_iter()
         .for_each(|((chunk, light_ty), voxels)| {
-            let entity = chunk_map.get(&chunk).expect("Chunk exists");
-            let (kind, mut light) = q_light.get_mut(*entity).expect("Entity exists");
+            let (kind, mut light) = q_light
+                .get_mut_at_local(chunk)
+                .expect("Missing entities was filtered already");
             let neighborhood_propagation = light::propagate(kind, &mut light, light_ty, &voxels);
 
             neighborhood_propagation.into_iter().for_each(
@@ -303,36 +341,41 @@ fn propagate_light(
 }
 
 fn faces_occlusion(
-    chunk_map: Res<ChunkMap>,
     q_changed_chunks: Query<&ChunkLocal, Changed<ChunkKind>>,
-    q_kinds: Query<&ChunkKind>,
-    mut q_occlusions: Query<&mut ChunkFacesOcclusion>,
+    q_kinds: ChunkQuery<&ChunkKind>,
+    mut q_occlusions: ChunkQuery<&mut ChunkFacesOcclusion>,
 ) {
+    let mut tmp_faces_occlusion = Default::default();
     q_changed_chunks
         .iter()
         .flat_map(|local| {
+            // When a chunk kind is updated, we have to change all its surrounding.
+            // TODO: There should be a better way to avoid update everything.
             let neighbors = voxel::SIDES.map(|s| **local + s.dir());
             std::iter::once(**local).chain(neighbors)
         })
         .collect::<HashSet<_>>()
         .into_iter()
-        .filter_map(|local| chunk_map.get(&local).map(|e| (local, e)))
-        .for_each(|(local, &entity)| {
+        .for_each(|local| {
             let mut neighborhood = [None; voxel::SIDE_COUNT];
 
             // Update neighborhood
             voxel::SIDES.iter().for_each(|side| {
                 let neighbor = local + side.dir();
-                neighborhood[side.index()] = chunk_map
-                    .get(&neighbor)
-                    .map(|&neighbor_entity| &**q_kinds.get(neighbor_entity).expect("Entity exists"))
+                neighborhood[side.index()] = q_kinds.get_at_local(neighbor).map(|kind| &**kind);
             });
 
-            let kind = q_kinds.get(entity).expect("Entity exists");
-            let mut faces_occlusion = q_occlusions.get_mut(entity).expect("Entity exists");
+            let kind = q_kinds.get_at_local(local).expect("Entity exists");
+            meshing::faces_occlusion(kind, &mut tmp_faces_occlusion, &neighborhood);
 
-            meshing::faces_occlusion(kind, &mut faces_occlusion, &neighborhood);
+            let mut faces_occlusion = q_occlusions.get_mut_at_local(local).expect("Entity exists");
+
+            // Avoid triggering change detection when the value didn't changed.
+            if !tmp_faces_occlusion.eq(&faces_occlusion) {
+                faces_occlusion.copy_from(&tmp_faces_occlusion);
+            }
         });
 }
+// TODO: Query Params?
 
 // TODO: Extract and render to check if its working.

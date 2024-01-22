@@ -142,6 +142,10 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
     pub fn is_all(&self, value: T) -> bool {
         self.iter().all(|t| *t == value)
     }
+
+    pub fn copy_from(&mut self, other: &Self) {
+        self.main.copy_from_slice(&other.main);
+    }
 }
 
 impl<T: ChunkStorageType> std::ops::Index<usize> for ChunkStorage<T> {
