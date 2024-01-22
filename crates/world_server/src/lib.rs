@@ -349,8 +349,8 @@ fn faces_occlusion(
     q_changed_chunks
         .iter()
         .flat_map(|local| {
-            // When a chunk kind is updated, we have to change all its surrounding.
             // TODO: There should be a better way to avoid update everything.
+            // When a chunk kind is updated, we have to check all its surrounding.
             let neighbors = voxel::SIDES.map(|s| **local + s.dir());
             std::iter::once(**local).chain(neighbors)
         })
