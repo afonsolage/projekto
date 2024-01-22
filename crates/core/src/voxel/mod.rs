@@ -162,6 +162,10 @@ pub struct FacesOcclusion(u8);
 const FULL_OCCLUDED_MASK: u8 = 0b0011_1111;
 
 impl FacesOcclusion {
+    pub fn fully_occluded() -> Self {
+        Self(FULL_OCCLUDED_MASK)
+    }
+
     pub fn set_all(&mut self, occluded: bool) {
         if occluded {
             self.0 = FULL_OCCLUDED_MASK;
