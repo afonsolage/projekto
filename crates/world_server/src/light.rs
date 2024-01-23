@@ -173,10 +173,10 @@ fn smooth_ambient_occlusion<const VERTEX: usize>(
 
 fn soft_vertex_light(neighbors: &[Option<u8>; NEIGHBOR_COUNT], side: voxel::Side) -> [f32; 4] {
     [
-        smooth_ambient_occlusion::<0>(&neighbors, side),
-        smooth_ambient_occlusion::<1>(&neighbors, side),
-        smooth_ambient_occlusion::<2>(&neighbors, side),
-        smooth_ambient_occlusion::<3>(&neighbors, side),
+        smooth_ambient_occlusion::<0>(neighbors, side),
+        smooth_ambient_occlusion::<1>(neighbors, side),
+        smooth_ambient_occlusion::<2>(neighbors, side),
+        smooth_ambient_occlusion::<3>(neighbors, side),
     ]
 }
 

@@ -46,7 +46,11 @@ impl Plugin for WorldServerPlugin {
                     propagate_light
                         .run_if(on_event::<LightSet>())
                         .in_set(WorldSet::Propagation),
-                    (faces_occlusion.run_if(changed::<ChunkKind>),)
+                    (
+                        faces_occlusion.run_if(changed::<ChunkKind>),
+                        faces_light_softening
+                            .run_if(when::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
+                    )
                         .in_set(WorldSet::Meshing)
                         .run_if(on_timer(Duration::from_secs_f32(0.5))),
                 ),
@@ -131,14 +135,14 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuer
         None
     }
 
-    fn get_chunk_component_mut<T: Component>(&mut self, chunk: IVec3) -> Option<Mut<'_, T>> {
-        if let Some(&entity) = self.map.0.get(&chunk) {
-            if let Ok(component) = self.query.get_component_mut::<T>(entity) {
-                return Some(component);
-            }
-        }
-        None
-    }
+    // fn get_chunk_component_mut<T: Component>(&mut self, chunk: IVec3) -> Option<Mut<'_, T>> {
+    //     if let Some(&entity) = self.map.0.get(&chunk) {
+    //         if let Ok(component) = self.query.get_component_mut::<T>(entity) {
+    //             return Some(component);
+    //         }
+    //     }
+    //     None
+    // }
 }
 
 impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops::Deref
@@ -235,6 +239,10 @@ fn added<T: Component>(q_added_chunks: Query<(), Added<T>>) -> bool {
 }
 
 fn changed<T: Component>(q_changed_chunks: Query<(), Changed<T>>) -> bool {
+    !q_changed_chunks.is_empty()
+}
+
+fn when<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), T>) -> bool {
     !q_changed_chunks.is_empty()
 }
 
@@ -400,10 +408,11 @@ fn faces_occlusion(
         });
 }
 
+#[allow(clippy::type_complexity)]
 fn faces_light_softening(
     q_changed_chunks: Query<&ChunkLocal, Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>,
     q_chunks: ChunkQuery<(&ChunkLocal, &ChunkKind, &ChunkLight, &ChunkFacesOcclusion)>,
-    mut q_soft_light: ChunkQuery<(&mut ChunkFacesSoftLight,)>,
+    mut q_soft_light: ChunkQuery<&mut ChunkFacesSoftLight>,
 ) {
     q_changed_chunks
         .iter()
@@ -437,6 +446,14 @@ fn faces_light_softening(
                         .map(|c| &**c)
                 },
             );
+
+            // Avoid change detection
+            let mut existing_soft_light = q_soft_light
+                .get_chunk_mut(chunk)
+                .expect("Chunk must exists");
+            if soft_light != **existing_soft_light {
+                existing_soft_light.copy_from(&soft_light);
+            }
 
             //
         });
