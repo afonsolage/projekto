@@ -219,6 +219,30 @@ impl ChunkFacesOcclusion {
     }
 }
 
+/// Contains smoothed vertex light for each face
+#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct FacesSoftLight([[f32; 4]; SIDE_COUNT]);
+
+impl FacesSoftLight {
+    pub fn new(soft_light: [[f32; 4]; SIDE_COUNT]) -> Self {
+        Self(soft_light)
+    }
+
+    pub fn with_intensity(intensity: u8) -> Self {
+        Self([[intensity as f32; 4]; SIDE_COUNT])
+    }
+
+    pub fn set(&mut self, side: Side, light: [f32; 4]) {
+        self.0[side as usize] = light;
+    }
+
+    pub fn get(&self, side: Side) -> [f32; 4] {
+        self.0[side as usize]
+    }
+}
+
+impl ChunkStorageType for FacesSoftLight {}
+
 #[derive(Debug, PartialEq, Default)]
 pub struct VoxelFace {
     pub vertices: [IVec3; 4],

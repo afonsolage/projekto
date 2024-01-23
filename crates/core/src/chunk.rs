@@ -171,6 +171,26 @@ impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
     }
 }
 
+pub trait GetChunkStorage<'a, T: ChunkStorageType + 'a>:
+    Fn(IVec3) -> Option<&'a ChunkStorage<T>>
+{
+}
+
+impl<'a, T: ChunkStorageType + 'a> GetChunkStorage<'a, T> for T where
+    T: Fn(IVec3) -> Option<&'a ChunkStorage<T>>
+{
+}
+
+pub trait GetChunkStorageMut<'a, T: ChunkStorageType + 'a>:
+    FnMut(IVec3) -> Option<&'a mut ChunkStorage<T>>
+{
+}
+
+impl<'a, T: ChunkStorageType + 'a> GetChunkStorageMut<'a, T> for T where
+    T: FnMut(IVec3) -> Option<&'a mut ChunkStorage<T>>
+{
+}
+
 pub type ChunkKind = ChunkStorage<voxel::Kind>;
 pub type ChunkLight = ChunkStorage<voxel::Light>;
 

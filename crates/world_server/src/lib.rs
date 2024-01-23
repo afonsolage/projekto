@@ -79,12 +79,17 @@ struct ChunkNeighborhood([Option<Entity>; SIDE_COUNT]);
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkFacesOcclusion(ChunkStorage<voxel::FacesOcclusion>);
 
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+struct ChunkFacesSoftLight(ChunkStorage<voxel::FacesSoftLight>);
+
 #[derive(Bundle, Default)]
 struct ChunkBundle {
     kind: ChunkKind,
     light: ChunkLight,
     local: ChunkLocal,
     neighborhood: ChunkNeighborhood,
+    occlusion: ChunkFacesOcclusion,
+    soft_light: ChunkFacesSoftLight,
 }
 
 #[derive(Resource, Debug, Clone, Deref, DerefMut)]
@@ -97,20 +102,20 @@ struct ChunkQuery<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'stat
 }
 
 impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuery<'w, 's, Q, F> {
-    fn get_chunk(&self, local: IVec3) -> Option<Entity> {
-        self.map.0.get(&local).copied()
+    fn get_chunk_entity(&self, chunk: IVec3) -> Option<Entity> {
+        self.map.0.get(&chunk).copied()
     }
 
-    fn get_at_local(&self, local: IVec3) -> Option<QueryItem<'_, <Q as WorldQuery>::ReadOnly>> {
-        self.map.0.get(&local).map(|&entity| {
+    fn get_chunk(&self, chunk: IVec3) -> Option<QueryItem<'_, <Q as WorldQuery>::ReadOnly>> {
+        self.map.0.get(&chunk).map(|&entity| {
             self.query
                 .get(entity)
                 .expect("All entities inside the map must exists")
         })
     }
 
-    fn get_mut_at_local(&mut self, local: IVec3) -> Option<Q::Item<'_>> {
-        self.map.0.get(&local).map(|&entity| {
+    fn get_chunk_mut(&mut self, chunk: IVec3) -> Option<Q::Item<'_>> {
+        self.map.0.get(&chunk).map(|&entity| {
             self.query
                 .get_mut(entity)
                 .expect("All entities inside the map must exists")
@@ -225,14 +230,14 @@ fn update_chunk_neighborhood(
             voxel::SIDES.iter().for_each(|side| {
                 let neighbor = local + side.dir();
 
-                let neighbor_entity = q_neighborhood.get_chunk(neighbor);
+                let neighbor_entity = q_neighborhood.get_chunk_entity(neighbor);
                 if let Ok(mut neighborhood) = q_neighborhood.get_mut(new_chunk) {
                     neighborhood[side.index()] = neighbor_entity;
                 } else {
                     error!("Unable to find newly added chunk {local}");
                 };
 
-                if let Some(mut neighborhood) = q_neighborhood.get_mut_at_local(neighbor) {
+                if let Some(mut neighborhood) = q_neighborhood.get_chunk_mut(neighbor) {
                     let opposide_idx = side.opposite().index();
                     neighborhood[opposide_idx] = Some(new_chunk);
                 } else {
@@ -300,7 +305,7 @@ fn propagate_light(
                  ty,
                  intensity,
              }| {
-                let Some((_, mut light)) = q_light.get_mut_at_local(chunk) else {
+                let Some((_, mut light)) = q_light.get_chunk_mut(chunk) else {
                     warn!("Failed to set light on chunk {chunk}. Entity not found on query");
                     return map;
                 };
@@ -316,7 +321,7 @@ fn propagate_light(
         .into_iter()
         .for_each(|((chunk, light_ty), voxels)| {
             let (kind, mut light) = q_light
-                .get_mut_at_local(chunk)
+                .get_chunk_mut(chunk)
                 .expect("Missing entities was filtered already");
             let neighborhood_propagation = light::propagate(kind, &mut light, light_ty, &voxels);
 
@@ -362,13 +367,13 @@ fn faces_occlusion(
             // Update neighborhood
             voxel::SIDES.iter().for_each(|side| {
                 let neighbor = local + side.dir();
-                neighborhood[side.index()] = q_kinds.get_at_local(neighbor).map(|kind| &**kind);
+                neighborhood[side.index()] = q_kinds.get_chunk(neighbor).map(|kind| &**kind);
             });
 
-            let kind = q_kinds.get_at_local(local).expect("Entity exists");
+            let kind = q_kinds.get_chunk(local).expect("Entity exists");
             meshing::faces_occlusion(kind, &mut tmp_faces_occlusion, &neighborhood);
 
-            let mut faces_occlusion = q_occlusions.get_mut_at_local(local).expect("Entity exists");
+            let mut faces_occlusion = q_occlusions.get_chunk_mut(local).expect("Entity exists");
 
             // Avoid triggering change detection when the value didn't changed.
             if !tmp_faces_occlusion.eq(&faces_occlusion) {
@@ -376,6 +381,47 @@ fn faces_occlusion(
             }
         });
 }
-// TODO: Query Params?
+
+fn faces_light_softening(
+    q_changed_chunks: Query<&ChunkLocal, Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>,
+    q_chunks: ChunkQuery<(&ChunkLocal, &ChunkKind, &ChunkLight, &ChunkFacesOcclusion)>,
+    mut q_soft_light: ChunkQuery<(&mut ChunkFacesSoftLight,)>,
+) {
+    let mut tmp_faces_soft_light = Default::default();
+
+    q_changed_chunks
+        .iter()
+        .flat_map(|local| {
+            // TODO: There should be a better way to avoid update everything.
+            // When a chunk kind is updated, we have to check all its surrounding.
+            let neighbors = voxel::SIDES.map(|s| **local + s.dir());
+            std::iter::once(**local).chain(neighbors)
+        })
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .for_each(|chunk| {
+            let mut soft_light = q_soft_light
+                .get_chunk_mut(chunk)
+                .expect("Chunk must exists");
+
+            let (_, _, _, occlusion) = q_chunks.get_chunk(chunk).expect("Chunk must exists");
+
+            light::smooth_lighting(
+                chunk,
+                occlusion,
+                &mut **soft_light,
+                |chunk| {
+                    let (_, kind, _, _) = q_chunks.get_chunk(chunk).unwrap();
+                    Some(&**kind)
+                },
+                |chunk| {
+                    let (_, _, light, _) = q_chunks.get_chunk(chunk).unwrap();
+                    Some(&**light)
+                },
+            );
+
+            //
+        });
+}
 
 // TODO: Extract and render to check if its working.
