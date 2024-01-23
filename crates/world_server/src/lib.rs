@@ -121,6 +121,24 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuer
                 .expect("All entities inside the map must exists")
         })
     }
+
+    fn get_chunk_component<T: Component>(&self, chunk: IVec3) -> Option<&T> {
+        if let Some(&entity) = self.map.0.get(&chunk) {
+            if let Ok(component) = self.query.get_component::<T>(entity) {
+                return Some(component);
+            }
+        }
+        None
+    }
+
+    fn get_chunk_component_mut<T: Component>(&mut self, chunk: IVec3) -> Option<Mut<'_, T>> {
+        if let Some(&entity) = self.map.0.get(&chunk) {
+            if let Ok(component) = self.query.get_component_mut::<T>(entity) {
+                return Some(component);
+            }
+        }
+        None
+    }
 }
 
 impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops::Deref
@@ -387,8 +405,6 @@ fn faces_light_softening(
     q_chunks: ChunkQuery<(&ChunkLocal, &ChunkKind, &ChunkLight, &ChunkFacesOcclusion)>,
     mut q_soft_light: ChunkQuery<(&mut ChunkFacesSoftLight,)>,
 ) {
-    let mut tmp_faces_soft_light = Default::default();
-
     q_changed_chunks
         .iter()
         .flat_map(|local| {
@@ -400,23 +416,25 @@ fn faces_light_softening(
         .collect::<HashSet<_>>()
         .into_iter()
         .for_each(|chunk| {
-            let mut soft_light = q_soft_light
-                .get_chunk_mut(chunk)
-                .expect("Chunk must exists");
+            let mut soft_light = ChunkStorage::<voxel::FacesSoftLight>::default();
 
-            let (_, _, _, occlusion) = q_chunks.get_chunk(chunk).expect("Chunk must exists");
+            let occlusion = &**q_chunks
+                .get_chunk_component::<ChunkFacesOcclusion>(chunk)
+                .expect("Chunk must exists");
 
             light::smooth_lighting(
                 chunk,
                 occlusion,
-                &mut **soft_light,
+                &mut soft_light,
                 |chunk| {
-                    let (_, kind, _, _) = q_chunks.get_chunk(chunk).unwrap();
-                    Some(&**kind)
+                    q_chunks
+                        .get_chunk_component::<ChunkKind>(chunk)
+                        .map(|c| &**c)
                 },
                 |chunk| {
-                    let (_, _, light, _) = q_chunks.get_chunk(chunk).unwrap();
-                    Some(&**light)
+                    q_chunks
+                        .get_chunk_component::<ChunkLight>(chunk)
+                        .map(|c| &**c)
                 },
             );
 

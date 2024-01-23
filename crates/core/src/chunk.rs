@@ -172,22 +172,22 @@ impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
 }
 
 pub trait GetChunkStorage<'a, T: ChunkStorageType + 'a>:
-    Fn(IVec3) -> Option<&'a ChunkStorage<T>>
+    Fn(IVec3) -> Option<&'a ChunkStorage<T>> + Copy
 {
 }
 
-impl<'a, T: ChunkStorageType + 'a> GetChunkStorage<'a, T> for T where
-    T: Fn(IVec3) -> Option<&'a ChunkStorage<T>>
+impl<'a, T: ChunkStorageType + 'a, F: Copy> GetChunkStorage<'a, T> for F where
+    F: Fn(IVec3) -> Option<&'a ChunkStorage<T>>
 {
 }
 
 pub trait GetChunkStorageMut<'a, T: ChunkStorageType + 'a>:
-    FnMut(IVec3) -> Option<&'a mut ChunkStorage<T>>
+    FnMut(IVec3) -> Option<&'a mut ChunkStorage<T>> + Copy
 {
 }
 
-impl<'a, T: ChunkStorageType + 'a> GetChunkStorageMut<'a, T> for T where
-    T: FnMut(IVec3) -> Option<&'a mut ChunkStorage<T>>
+impl<'a, T: ChunkStorageType + 'a, F: Copy> GetChunkStorageMut<'a, T> for F where
+    F: FnMut(IVec3) -> Option<&'a mut ChunkStorage<T>>
 {
 }
 

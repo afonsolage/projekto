@@ -148,7 +148,7 @@ fn gather_neighborhood_light<'a>(
 
 /// Calculates the ambient occlusion and light smoothness based on [0fps article](https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/)
 /// Skips AO and Light Smoothness if voxel is a light emitter
-const fn smooth_ambient_occlusion<const VERTEX: usize>(
+fn smooth_ambient_occlusion<const VERTEX: usize>(
     neighbors: &[Option<u8>; NEIGHBOR_COUNT],
     side: voxel::Side,
 ) -> f32 {
@@ -171,10 +171,7 @@ const fn smooth_ambient_occlusion<const VERTEX: usize>(
     (side) + side1 + side2 + corner / 4.0
 }
 
-const fn soft_vertex_light(
-    neighbors: &[Option<u8>; NEIGHBOR_COUNT],
-    side: voxel::Side,
-) -> [f32; 4] {
+fn soft_vertex_light(neighbors: &[Option<u8>; NEIGHBOR_COUNT], side: voxel::Side) -> [f32; 4] {
     [
         smooth_ambient_occlusion::<0>(&neighbors, side),
         smooth_ambient_occlusion::<1>(&neighbors, side),
