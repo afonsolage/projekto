@@ -32,7 +32,7 @@ pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
 pub struct Chunk {
     pub kinds: ChunkKind,
     pub lights: ChunkLight,
-    pub vertices: Vec<voxel::VoxelVertex>,
+    pub vertices: Vec<voxel::Vertex>,
 }
 
 impl PartialEq for Chunk {

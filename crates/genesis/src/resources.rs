@@ -65,7 +65,7 @@ pub type ChunkKindRes = ChunkWorldRes<ChunkKind>;
 pub type ChunkLightRes = ChunkWorldRes<ChunkLight>;
 
 /// [`ChunkWorldRes`] holding a vector of [`voxel::VoxelVertex`]
-pub type ChunkVertexRes = ChunkWorldRes<Vec<voxel::VoxelVertex>>;
+pub type ChunkVertexRes = ChunkWorldRes<Vec<voxel::Vertex>>;
 
 /// Those are implements which should be used only by genesis module
 pub(super) mod impls {

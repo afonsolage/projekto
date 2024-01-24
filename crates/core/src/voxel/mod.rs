@@ -72,7 +72,7 @@ impl From<Light> for u8 {
 
 impl ChunkStorageType for Light {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Serialize, Deserialize)]
 pub enum Side {
     #[default]
     Right = 0,
@@ -243,8 +243,8 @@ impl FacesSoftLight {
 
 impl ChunkStorageType for FacesSoftLight {}
 
-#[derive(Debug, PartialEq, Default)]
-pub struct VoxelFace {
+#[derive(Default, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Face {
     pub vertices: [IVec3; 4],
     pub side: Side,
     pub kind: Kind,
@@ -252,7 +252,7 @@ pub struct VoxelFace {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct VoxelVertex {
+pub struct Vertex {
     pub position: Vec3,
     pub normal: Vec3,
     pub uv: Vec2,

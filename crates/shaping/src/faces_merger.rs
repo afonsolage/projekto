@@ -1,7 +1,7 @@
 use bevy_math::IVec3;
 use projekto_core::{
     chunk::{self, Chunk},
-    voxel::{self, ChunkFacesOcclusion, VoxelFace},
+    voxel::{self, ChunkFacesOcclusion, Face},
 };
 
 use super::light_smoother::ChunkSmoothLight;
@@ -219,7 +219,7 @@ pub fn merge(
     occlusion: ChunkFacesOcclusion,
     smooth_light: ChunkSmoothLight,
     chunk: &Chunk,
-) -> Vec<VoxelFace> {
+) -> Vec<Face> {
     let mut faces_vertices = vec![];
 
     let data = ChunkData {
@@ -287,7 +287,7 @@ pub fn merge(
             // v4 can be inferred com v1, v2 and v3
             let v4 = v1 + (v3 - v2);
 
-            faces_vertices.push(VoxelFace {
+            faces_vertices.push(Face {
                 vertices: [v1, v2, v3, v4],
                 side,
                 kind,
@@ -344,8 +344,8 @@ mod tests {
             .filter(|vf| vf.side == voxel::Side::Right) // We care only for right faces here
             .collect::<Vec<_>>();
 
-        let test_merged: Vec<VoxelFace> = vec![
-            voxel::VoxelFace {
+        let test_merged: Vec<Face> = vec![
+            voxel::Face {
                 vertices: [
                     (0, 0, 3).into(),
                     (0, 0, 2).into(),
@@ -356,7 +356,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (0, 0, 0).into(),
                     (0, 0, 0).into(),
@@ -367,7 +367,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (0, 1, 1).into(),
                     (0, 1, 1).into(),
@@ -378,7 +378,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (0, 2, 1).into(),
                     (0, 2, 1).into(),
@@ -389,7 +389,7 @@ mod tests {
                 kind: 2.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (0, 3, 2).into(),
                     (0, 3, 2).into(),
@@ -449,8 +449,8 @@ mod tests {
             .filter(|vf| vf.side == voxel::Side::Left) // We care only for left faces here
             .collect::<Vec<_>>();
 
-        let test_merged: Vec<VoxelFace> = vec![
-            voxel::VoxelFace {
+        let test_merged: Vec<Face> = vec![
+            voxel::Face {
                 vertices: [
                     (0, 0, 1).into(),
                     (0, 0, 2).into(),
@@ -461,7 +461,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (0, 0, 4).into(),
                     (0, 0, 4).into(),
@@ -472,7 +472,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (0, 1, 3).into(),
                     (0, 1, 3).into(),
@@ -483,7 +483,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (0, 2, 3).into(),
                     (0, 2, 3).into(),
@@ -494,7 +494,7 @@ mod tests {
                 kind: 2.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (0, 3, 2).into(),
                     (0, 3, 2).into(),
@@ -554,8 +554,8 @@ mod tests {
             .filter(|vf| vf.side == voxel::Side::Up) // We care only for Up faces here
             .collect::<Vec<_>>();
 
-        let test_merged: Vec<VoxelFace> = vec![
-            voxel::VoxelFace {
+        let test_merged: Vec<Face> = vec![
+            voxel::Face {
                 vertices: [
                     (1, 0, 4).into(),
                     (2, 0, 4).into(),
@@ -566,7 +566,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (4, 0, 4).into(),
                     (4, 0, 4).into(),
@@ -577,7 +577,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (3, 0, 3).into(),
                     (3, 0, 3).into(),
@@ -588,7 +588,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (3, 0, 2).into(),
                     (3, 0, 2).into(),
@@ -599,7 +599,7 @@ mod tests {
                 kind: 2.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (2, 0, 1).into(),
                     (2, 0, 1).into(),
@@ -656,8 +656,8 @@ mod tests {
             .filter(|vf| vf.side == voxel::Side::Up) // We care only for Up faces here
             .collect::<Vec<_>>();
 
-        let test_merged: Vec<VoxelFace> = vec![
-            voxel::VoxelFace {
+        let test_merged: Vec<Face> = vec![
+            voxel::Face {
                 vertices: [
                     (1, 0, 4).into(),
                     (2, 0, 4).into(),
@@ -668,7 +668,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (1, 0, 2).into(),
                     (1, 0, 2).into(),
@@ -679,7 +679,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (2, 0, 2).into(),
                     (2, 0, 2).into(),
@@ -690,7 +690,7 @@ mod tests {
                 kind: 2.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (1, 0, 1).into(),
                     (2, 0, 1).into(),
@@ -750,8 +750,8 @@ mod tests {
             .filter(|vf| vf.side == voxel::Side::Down) // We care only for Down faces here
             .collect::<Vec<_>>();
 
-        let test_merged: Vec<VoxelFace> = vec![
-            voxel::VoxelFace {
+        let test_merged: Vec<Face> = vec![
+            voxel::Face {
                 vertices: [
                     (1, 0, 0).into(),
                     (2, 0, 0).into(),
@@ -762,7 +762,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (4, 0, 0).into(),
                     (4, 0, 0).into(),
@@ -773,7 +773,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (3, 0, 1).into(),
                     (3, 0, 1).into(),
@@ -784,7 +784,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (3, 0, 2).into(),
                     (3, 0, 2).into(),
@@ -795,7 +795,7 @@ mod tests {
                 kind: 2.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (2, 0, 3).into(),
                     (2, 0, 3).into(),
@@ -855,8 +855,8 @@ mod tests {
             .filter(|vf| vf.side == voxel::Side::Front) // We care only for Front faces here
             .collect::<Vec<_>>();
 
-        let test_merged: Vec<VoxelFace> = vec![
-            voxel::VoxelFace {
+        let test_merged: Vec<Face> = vec![
+            voxel::Face {
                 vertices: [
                     (1, 0, 0).into(),
                     (2, 0, 0).into(),
@@ -867,7 +867,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (4, 0, 0).into(),
                     (4, 0, 0).into(),
@@ -878,7 +878,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (3, 1, 0).into(),
                     (3, 1, 0).into(),
@@ -889,7 +889,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (3, 2, 0).into(),
                     (3, 2, 0).into(),
@@ -900,7 +900,7 @@ mod tests {
                 kind: 2.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (2, 3, 0).into(),
                     (2, 3, 0).into(),
@@ -960,8 +960,8 @@ mod tests {
             .filter(|vf| vf.side == voxel::Side::Back) // We care only for Back faces here
             .collect::<Vec<_>>();
 
-        let test_merged: Vec<VoxelFace> = vec![
-            voxel::VoxelFace {
+        let test_merged: Vec<Face> = vec![
+            voxel::Face {
                 vertices: [
                     (3, 0, 0).into(),
                     (2, 0, 0).into(),
@@ -972,7 +972,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (0, 0, 0).into(),
                     (0, 0, 0).into(),
@@ -983,7 +983,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (1, 1, 0).into(),
                     (1, 1, 0).into(),
@@ -994,7 +994,7 @@ mod tests {
                 kind: 1.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (1, 2, 0).into(),
                     (1, 2, 0).into(),
@@ -1005,7 +1005,7 @@ mod tests {
                 kind: 2.into(),
                 ..Default::default()
             },
-            voxel::VoxelFace {
+            voxel::Face {
                 vertices: [
                     (2, 3, 0).into(),
                     (2, 3, 0).into(),

@@ -13,7 +13,7 @@ use projekto_core::{
 
 use projekto_core::{
     chunk::{self, Chunk, ChunkNeighborhood},
-    voxel::{VoxelFace, VoxelVertex},
+    voxel::{Face, Vertex},
     VoxWorld,
 };
 
@@ -268,10 +268,7 @@ fn update_kind(world: &mut VoxWorld, update: &[(IVec3, Vec<(IVec3, voxel::Kind)>
 }
 
 /// Generate the final list of vertices of the given chunks.
-pub fn generate_chunk_vertices(
-    world: &VoxWorld,
-    locals: &[IVec3],
-) -> Vec<(IVec3, Vec<VoxelVertex>)> {
+pub fn generate_chunk_vertices(world: &VoxWorld, locals: &[IVec3]) -> Vec<(IVec3, Vec<Vertex>)> {
     trace!("Generating vertices for {} chunks", locals.len());
 
     let temp_data = locals
@@ -369,7 +366,7 @@ fn faces_occlusion(chunk: &Chunk) -> ChunkFacesOcclusion {
 /// All generated indices will be relative to a triangle list.
 ///
 /// Returns** a list of generated [`VoxelVertex`].
-fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
+fn generate_vertices(faces: Vec<Face>) -> Vec<Vertex> {
     let mut vertices = vec![];
     let kinds_descs = voxel::KindsDescs::get();
     let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
@@ -414,7 +411,7 @@ fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
         let light_fraction = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
 
         for (i, v) in faces_vertices.into_iter().enumerate() {
-            vertices.push(VoxelVertex {
+            vertices.push(Vertex {
                 position: v,
                 normal,
                 uv: tile_uv[i],
@@ -862,7 +859,7 @@ mod tests {
         let side = voxel::Side::Up;
 
         // This face is 2 voxels wide on the -Z axis (0,0) (0,-1)
-        let faces = vec![VoxelFace {
+        let faces = vec![Face {
             side,
             vertices: [
                 (0, 0, 0).into(),
@@ -882,28 +879,28 @@ mod tests {
         assert_eq!(
             vertices,
             vec![
-                VoxelVertex {
+                Vertex {
                     normal,
                     position: (0.0, 1.0, 1.0).into(),
                     uv: (0.0, 0.2).into(),
                     tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
-                VoxelVertex {
+                Vertex {
                     normal,
                     position: (1.0, 1.0, 1.0).into(),
                     uv: (0.1, 0.2).into(),
                     tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
-                VoxelVertex {
+                Vertex {
                     normal,
                     position: (1.0, 1.0, -1.0).into(),
                     uv: (0.1, 0.0).into(),
                     tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
-                VoxelVertex {
+                Vertex {
                     normal,
                     position: (0.0, 1.0, -1.0).into(),
                     uv: (0.0, 0.0).into(),

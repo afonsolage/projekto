@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     render::mesh::{Indices, PrimitiveTopology},
 };
-use projekto_core::voxel::VoxelVertex;
+use projekto_core::voxel::Vertex;
 
 use projekto_genesis::ChunkVertexRes;
 use projekto_shaping as shaping;
@@ -54,7 +54,7 @@ fn mesh_generation_system(
     }
 }
 
-fn generate_mesh(vertices: &Vec<VoxelVertex>) -> Mesh {
+fn generate_mesh(vertices: &Vec<Vertex>) -> Mesh {
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
     let mut positions: Vec<[f32; 3]> = vec![];

@@ -39,18 +39,19 @@ impl Plugin for WorldServerPlugin {
                         .in_set(WorldSet::ChunkManagement),
                     apply_deferred.in_set(WorldSet::FlushCommands),
                     (
-                        update_chunk_neighborhood.run_if(added::<ChunkNeighborhood>),
-                        init_light.run_if(added::<ChunkLight>),
+                        update_chunk_neighborhood.run_if(any_chunk::<Added<ChunkNeighborhood>>),
+                        init_light.run_if(any_chunk::<Added<ChunkLight>>),
                     )
                         .in_set(WorldSet::ChunkInitialization),
-                    propagate_light
-                        .run_if(on_event::<LightSet>())
-                        .in_set(WorldSet::Propagation),
+                    (propagate_light.run_if(on_event::<LightSet>()),).in_set(WorldSet::Propagation),
                     (
-                        faces_occlusion.run_if(changed::<ChunkKind>),
+                        faces_occlusion.run_if(any_chunk::<Changed<ChunkKind>>),
                         faces_light_softening
-                            .run_if(when::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
+                            .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
+                        generate_vertices
+                            .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
                     )
+                        .chain()
                         .in_set(WorldSet::Meshing)
                         .run_if(on_timer(Duration::from_secs_f32(0.5))),
                 ),
@@ -85,6 +86,9 @@ struct ChunkFacesOcclusion(ChunkStorage<voxel::FacesOcclusion>);
 
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkFacesSoftLight(ChunkStorage<voxel::FacesSoftLight>);
+
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+struct ChunkVertex(Vec<voxel::Vertex>);
 
 #[derive(Bundle, Default)]
 struct ChunkBundle {
@@ -234,15 +238,7 @@ fn chunks_gen(
     }
 }
 
-fn added<T: Component>(q_added_chunks: Query<(), Added<T>>) -> bool {
-    !q_added_chunks.is_empty()
-}
-
-fn changed<T: Component>(q_changed_chunks: Query<(), Changed<T>>) -> bool {
-    !q_changed_chunks.is_empty()
-}
-
-fn when<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), T>) -> bool {
+fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
     !q_changed_chunks.is_empty()
 }
 
@@ -376,7 +372,6 @@ fn faces_occlusion(
     q_kinds: ChunkQuery<&ChunkKind>,
     mut q_occlusions: ChunkQuery<&mut ChunkFacesOcclusion>,
 ) {
-    let mut tmp_faces_occlusion = Default::default();
     q_changed_chunks
         .iter()
         .flat_map(|local| {
@@ -396,15 +391,9 @@ fn faces_occlusion(
                 neighborhood[side.index()] = q_kinds.get_chunk(neighbor).map(|kind| &**kind);
             });
 
-            let kind = q_kinds.get_chunk(local).expect("Entity exists");
-            meshing::faces_occlusion(kind, &mut tmp_faces_occlusion, &neighborhood);
-
             let mut faces_occlusion = q_occlusions.get_chunk_mut(local).expect("Entity exists");
-
-            // Avoid triggering change detection when the value didn't changed.
-            if !tmp_faces_occlusion.eq(&faces_occlusion) {
-                faces_occlusion.copy_from(&tmp_faces_occlusion);
-            }
+            let kind = q_kinds.get_chunk(local).expect("Entity exists");
+            meshing::faces_occlusion(kind, &mut faces_occlusion, &neighborhood);
         });
 }
 
@@ -418,17 +407,19 @@ fn faces_light_softening(
         .iter()
         .flat_map(|local| {
             // TODO: There should be a better way to avoid update everything.
-            // When a chunk kind is updated, we have to check all its surrounding.
+            // When a chunk kind or light is updated, we have to check all its surrounding.
             let neighbors = voxel::SIDES.map(|s| **local + s.dir());
             std::iter::once(**local).chain(neighbors)
         })
         .collect::<HashSet<_>>()
         .into_iter()
         .for_each(|chunk| {
-            let mut soft_light = ChunkStorage::<voxel::FacesSoftLight>::default();
-
             let occlusion = &**q_chunks
                 .get_chunk_component::<ChunkFacesOcclusion>(chunk)
+                .expect("Chunk must exists");
+
+            let mut soft_light = q_soft_light
+                .get_chunk_mut(chunk)
                 .expect("Chunk must exists");
 
             light::smooth_lighting(
@@ -446,16 +437,34 @@ fn faces_light_softening(
                         .map(|c| &**c)
                 },
             );
+        });
+}
 
-            // Avoid change detection
-            let mut existing_soft_light = q_soft_light
-                .get_chunk_mut(chunk)
-                .expect("Chunk must exists");
-            if soft_light != **existing_soft_light {
-                existing_soft_light.copy_from(&soft_light);
+#[allow(clippy::type_complexity)]
+fn generate_vertices(
+    q_changed_chunks: Query<
+        (
+            Entity,
+            &ChunkKind,
+            &ChunkFacesOcclusion,
+            &ChunkFacesSoftLight,
+        ),
+        Or<(Changed<ChunkKind>, Changed<ChunkLight>)>,
+    >,
+    mut q_vertex: Query<&mut ChunkVertex>,
+) {
+    q_changed_chunks
+        .iter()
+        .for_each(|(entity, kind, faces_occlusion, faces_soft_light)| {
+            if faces_occlusion.is_fully_occluded() {
+                return;
             }
 
-            //
+            let faces = meshing::faces_merge(kind, faces_occlusion, faces_soft_light);
+            let mut vertex = meshing::generate_vertices(faces);
+
+            let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
+            std::mem::swap(&mut vertex, &mut chunk_vertex);
         });
 }
 
