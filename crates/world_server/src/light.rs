@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use bevy_math::IVec3;
+use bevy::math::IVec3;
 use projekto_core::{
     chunk::{self, ChunkStorage, GetChunkStorage},
     math,
@@ -294,7 +294,7 @@ pub fn propagate(
 
 #[cfg(test)]
 mod test {
-    use bevy_utils::HashMap;
+    use bevy::utils::HashMap;
 
     use super::*;
 

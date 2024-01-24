@@ -1,4 +1,4 @@
-use bevy_math::IVec3;
+use bevy::math::IVec3;
 use bracket_noise::prelude::*;
 use projekto_core::{
     chunk::{self, ChunkKind, ChunkLight},

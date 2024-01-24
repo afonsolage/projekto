@@ -1,19 +1,19 @@
-use bevy_app::prelude::*;
-use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::{
+use std::time::Duration;
+
+use bevy::{
+    ecs::{
+        query::{QueryItem, ReadOnlyWorldQuery, WorldQuery},
+        system::SystemParam,
+    },
     prelude::*,
-    query::{QueryItem, ReadOnlyWorldQuery, WorldQuery},
-    system::SystemParam,
+    time::common_conditions::on_timer,
+    utils::{HashMap, HashSet},
 };
-use bevy_log::{error, warn};
-use bevy_math::prelude::*;
-use bevy_time::common_conditions::on_timer;
-use bevy_utils::{Duration, HashMap, HashSet};
 use genesis::GeneratedChunk;
 use light::NeighborLightPropagation;
 use projekto_core::{
     chunk::{self, ChunkStorage},
-    voxel::{self, SIDE_COUNT},
+    voxel::{self},
 };
 
 mod genesis;
@@ -24,26 +24,30 @@ pub struct WorldServerPlugin;
 
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<ChunkUnload>()
+        app.init_resource::<ChunkMap>()
+            .add_event::<ChunkUnload>()
             .add_event::<ChunkLoad>()
             .add_event::<ChunkGen>()
-            .add_event::<LightSet>()
+            .add_event::<LightUpdate>()
             .add_systems(
                 Update,
                 (
+                    // Chunk Management
                     (
                         chunks_unload.run_if(on_event::<ChunkUnload>()),
                         chunks_load.run_if(on_event::<ChunkLoad>()),
                         chunks_gen.run_if(on_event::<ChunkGen>()),
                     )
+                        .chain()
                         .in_set(WorldSet::ChunkManagement),
                     apply_deferred.in_set(WorldSet::FlushCommands),
-                    (
-                        update_chunk_neighborhood.run_if(any_chunk::<Added<ChunkNeighborhood>>),
-                        init_light.run_if(any_chunk::<Added<ChunkLight>>),
-                    )
+                    // Chunk Initialization
+                    (init_light.run_if(any_chunk::<Added<ChunkLight>>),)
                         .in_set(WorldSet::ChunkInitialization),
-                    (propagate_light.run_if(on_event::<LightSet>()),).in_set(WorldSet::Propagation),
+                    // Chunk Propagation
+                    (propagate_light.run_if(on_event::<LightUpdate>()),)
+                        .in_set(WorldSet::Propagation),
+                    // Meshing
                     (
                         faces_occlusion.run_if(any_chunk::<Changed<ChunkKind>>),
                         faces_light_softening
@@ -54,7 +58,8 @@ impl Plugin for WorldServerPlugin {
                         .chain()
                         .in_set(WorldSet::Meshing)
                         .run_if(on_timer(Duration::from_secs_f32(0.5))),
-                ),
+                )
+                    .chain(),
             );
     }
 }
@@ -79,9 +84,6 @@ struct ChunkLight(ChunkStorage<voxel::Light>);
 struct ChunkLocal(IVec3);
 
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkNeighborhood([Option<Entity>; SIDE_COUNT]);
-
-#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkFacesOcclusion(ChunkStorage<voxel::FacesOcclusion>);
 
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
@@ -95,12 +97,12 @@ struct ChunkBundle {
     kind: ChunkKind,
     light: ChunkLight,
     local: ChunkLocal,
-    neighborhood: ChunkNeighborhood,
     occlusion: ChunkFacesOcclusion,
     soft_light: ChunkFacesSoftLight,
+    vertex: ChunkVertex,
 }
 
-#[derive(Resource, Debug, Clone, Deref, DerefMut)]
+#[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkMap(HashMap<IVec3, Entity>);
 
 #[derive(SystemParam)]
@@ -110,9 +112,9 @@ struct ChunkQuery<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'stat
 }
 
 impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuery<'w, 's, Q, F> {
-    fn get_chunk_entity(&self, chunk: IVec3) -> Option<Entity> {
-        self.map.0.get(&chunk).copied()
-    }
+    // fn get_chunk_entity(&self, chunk: IVec3) -> Option<Entity> {
+    //     self.map.0.get(&chunk).copied()
+    // }
 
     fn get_chunk(&self, chunk: IVec3) -> Option<QueryItem<'_, <Q as WorldQuery>::ReadOnly>> {
         self.map.0.get(&chunk).map(|&entity| {
@@ -174,31 +176,15 @@ fn chunks_unload(
     mut commands: Commands,
     mut chunk_map: ResMut<ChunkMap>,
     mut reader: EventReader<ChunkUnload>,
-    mut q_neighborhood: Query<&mut ChunkNeighborhood>,
 ) {
-    let removed = reader
-        .read()
-        .filter_map(|evt| {
-            if let Some(entity) = chunk_map.remove(&evt.0) {
-                commands.entity(entity).despawn();
-                Some(entity)
-            } else {
-                let local = evt.0;
-                warn!("Chunk {local} entity not found.");
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    q_neighborhood.iter_mut().for_each(|mut neighborhood| {
-        for i in 0..voxel::SIDE_COUNT {
-            if let Some(ref e) = neighborhood[i] {
-                if removed.contains(e) {
-                    neighborhood[i] = None;
-                }
-            }
+    reader.read().for_each(|evt| {
+        if let Some(entity) = chunk_map.remove(&evt.0) {
+            commands.entity(entity).despawn();
+        } else {
+            let local = evt.0;
+            warn!("Chunk {local} entity not found.");
         }
-    })
+    });
 }
 
 #[derive(Event, Debug, Clone, Copy)]
@@ -232,9 +218,9 @@ fn chunks_gen(
             })
             .id();
 
-        let existing = chunk_map.insert(local, entity).is_none();
+        let existing = chunk_map.insert(local, entity);
 
-        assert!(!existing);
+        assert_eq!(existing, None);
     }
 }
 
@@ -242,36 +228,8 @@ fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLo
     !q_changed_chunks.is_empty()
 }
 
-fn update_chunk_neighborhood(
-    q_added_chunks: Query<(Entity, &ChunkLocal), Added<ChunkNeighborhood>>,
-    mut q_neighborhood: ChunkQuery<&mut ChunkNeighborhood>,
-) {
-    q_added_chunks
-        .iter()
-        .for_each(|(new_chunk, &ChunkLocal(local))| {
-            voxel::SIDES.iter().for_each(|side| {
-                let neighbor = local + side.dir();
-
-                let neighbor_entity = q_neighborhood.get_chunk_entity(neighbor);
-                if let Ok(mut neighborhood) = q_neighborhood.get_mut(new_chunk) {
-                    neighborhood[side.index()] = neighbor_entity;
-                } else {
-                    error!("Unable to find newly added chunk {local}");
-                };
-
-                if let Some(mut neighborhood) = q_neighborhood.get_chunk_mut(neighbor) {
-                    let opposide_idx = side.opposite().index();
-                    neighborhood[opposide_idx] = Some(new_chunk);
-                } else {
-                    let neighbor_local = local + side.dir();
-                    error!("Unable to find newly added chunk neighbor at {neighbor_local}");
-                };
-            });
-        });
-}
-
 #[derive(Event, Debug, Clone, Copy)]
-struct LightSet {
+struct LightUpdate {
     chunk: IVec3,
     voxel: IVec3,
     ty: voxel::LightTy,
@@ -280,7 +238,7 @@ struct LightSet {
 
 fn init_light(
     mut q: Query<(&ChunkLocal, &ChunkKind, &mut ChunkLight), Added<ChunkLight>>,
-    mut writer: EventWriter<LightSet>,
+    mut writer: EventWriter<LightUpdate>,
 ) {
     q.for_each_mut(|(local, kind, mut light)| {
         let top_voxels = (0..=chunk::X_END)
@@ -300,7 +258,7 @@ fn init_light(
              }| {
                 let chunk = dir + **local;
 
-                writer.send(LightSet {
+                writer.send(LightUpdate {
                     chunk,
                     voxel,
                     ty,
@@ -313,15 +271,17 @@ fn init_light(
 
 fn propagate_light(
     mut q_light: ChunkQuery<(&ChunkKind, &mut ChunkLight)>,
-    mut reader: EventReader<LightSet>,
-    mut writer: EventWriter<LightSet>,
+    mut params: ParamSet<(EventReader<LightUpdate>, EventWriter<LightUpdate>)>,
 ) {
-    reader
-        .read()
+    let events = params.p0().read().copied().collect::<Vec<_>>();
+    let mut writer = params.p1();
+
+    events
+        .into_iter()
         .fold(
             HashMap::<(IVec3, voxel::LightTy), Vec<IVec3>>::new(),
             |mut map,
-             &LightSet {
+             LightUpdate {
                  chunk,
                  voxel,
                  ty,
@@ -356,7 +316,7 @@ fn propagate_light(
                  }| {
                     let neighbor = dir + chunk;
 
-                    writer.send(LightSet {
+                    writer.send(LightUpdate {
                         chunk: neighbor,
                         voxel,
                         ty,
@@ -468,4 +428,44 @@ fn generate_vertices(
         });
 }
 
+#[cfg(test)]
+mod test {
+    use bevy::app::ScheduleRunnerPlugin;
+
+    use super::*;
+
+    #[test]
+    fn plugin() {
+        App::new()
+            .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_plugins(super::WorldServerPlugin)
+            .run()
+    }
+
+    #[test]
+    fn chunk_load() {
+        // arrange
+        let mut app = App::new();
+
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_plugins(super::WorldServerPlugin);
+
+        app.world.send_event(ChunkLoad((0, 0, 0).into()));
+
+        // act
+        app.update();
+
+        // assert
+        assert_eq!(
+            app.world.entities().len(),
+            1,
+            "One entity should be spawned"
+        );
+        assert_eq!(
+            app.world.get_resource::<ChunkMap>().unwrap().len(),
+            1,
+            "One entity should be inserted on map"
+        );
+    }
+}
 // TODO: Extract and render to check if its working.
