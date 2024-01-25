@@ -467,5 +467,49 @@ mod test {
             "One entity should be inserted on map"
         );
     }
+
+    #[test]
+    fn chunk_gen() {
+        // arrange
+        let mut app = App::new();
+
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_plugins(super::WorldServerPlugin);
+
+        app.world.send_event(ChunkLoad((0, 0, 0).into()));
+
+        // act
+        app.update();
+
+        // assert
+        let (kind, light) = app
+            .world
+            .query::<(&ChunkKind, &ChunkLight)>()
+            .get_single(&app.world)
+            .unwrap();
+
+        for x in 0..=chunk::X_END {
+            for z in 0..=chunk::Z_END {
+                assert_eq!(
+                    light
+                        .get((x, chunk::Y_END, z).into())
+                        .get(voxel::LightTy::Natural),
+                    voxel::Light::MAX_NATURAL_INTENSITY,
+                    "All y-most voxels should have max natural light"
+                );
+            }
+        }
+
+        chunk::voxels().for_each(|voxel| {
+            if kind.get(voxel).is_opaque() {
+                assert_eq!(
+                    light.get(voxel).get_greater_intensity(),
+                    0,
+                    "Opaque voxels should have no light value"
+                );
+            }
+        });
+    }
 }
+
 // TODO: Extract and render to check if its working.
