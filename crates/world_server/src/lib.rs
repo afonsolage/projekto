@@ -25,6 +25,7 @@ pub struct WorldServerPlugin;
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkMap>()
+            .init_resource::<LandscapeCenter>()
             .add_event::<ChunkUnload>()
             .add_event::<ChunkLoad>()
             .add_event::<ChunkGen>()
@@ -32,6 +33,7 @@ impl Plugin for WorldServerPlugin {
             .add_systems(
                 Update,
                 (
+                    update_landscape.run_if(resource_changed::<LandscapeCenter>()),
                     // Chunk Management
                     (
                         chunks_unload.run_if(on_event::<ChunkUnload>()),
@@ -101,6 +103,9 @@ struct ChunkBundle {
     soft_light: ChunkFacesSoftLight,
     vertex: ChunkVertex,
 }
+
+#[derive(Resource, Default, Debug, Clone, Copy)]
+struct LandscapeCenter(IVec3);
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkMap(HashMap<IVec3, Entity>);
@@ -172,6 +177,24 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops:
 #[derive(Event, Debug, Clone, Copy)]
 struct ChunkUnload(IVec3);
 
+#[derive(Event, Debug, Clone, Copy)]
+struct ChunkLoad(IVec3);
+
+#[derive(Event, Debug, Clone, Copy)]
+struct ChunkGen(IVec3);
+
+#[derive(Event, Debug, Clone, Copy)]
+struct LightUpdate {
+    chunk: IVec3,
+    voxel: IVec3,
+    ty: voxel::LightTy,
+    intensity: u8,
+}
+
+fn update_landscape(center: Res<LandscapeCenter>) {
+    // TODO: Load and unload chunks based on landscape position.
+}
+
 fn chunks_unload(
     mut commands: Commands,
     mut chunk_map: ResMut<ChunkMap>,
@@ -187,9 +210,6 @@ fn chunks_unload(
     });
 }
 
-#[derive(Event, Debug, Clone, Copy)]
-struct ChunkLoad(IVec3);
-
 fn chunks_load(mut reader: EventReader<ChunkLoad>, mut writer: EventWriter<ChunkGen>) {
     let locals = reader.read().map(|evt| evt.0).collect::<Vec<_>>();
 
@@ -199,9 +219,6 @@ fn chunks_load(mut reader: EventReader<ChunkLoad>, mut writer: EventWriter<Chunk
         .into_iter()
         .for_each(|local| writer.send(ChunkGen(local)));
 }
-
-#[derive(Event, Debug, Clone, Copy)]
-struct ChunkGen(IVec3);
 
 fn chunks_gen(
     mut commands: Commands,
@@ -226,14 +243,6 @@ fn chunks_gen(
 
 fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
     !q_changed_chunks.is_empty()
-}
-
-#[derive(Event, Debug, Clone, Copy)]
-struct LightUpdate {
-    chunk: IVec3,
-    voxel: IVec3,
-    ty: voxel::LightTy,
-    intensity: u8,
 }
 
 fn init_light(
