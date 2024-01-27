@@ -553,6 +553,32 @@ mod test {
     }
 
     #[test]
+    fn update_landscape_radius_remove() {
+        // arrange
+        let mut app = App::new();
+
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_plugins(super::WorldServerPlugin);
+
+        app.world.insert_resource(Landscape {
+            radius: 1,
+            ..Default::default()
+        });
+
+        app.update();
+        app.world.remove_resource::<Landscape>();
+
+        // act
+        app.update();
+
+        // assert
+        assert!(
+            app.world.entities().is_empty(),
+            "All chunks should be removed and landscape is removed"
+        );
+    }
+
+    #[test]
     fn update_landscape_radius_1() {
         // arrange
         let mut app = App::new();
@@ -574,9 +600,6 @@ mod test {
             9,
             "There should be 9 entities in a landscape with radius 1"
         );
-
-        // TODO: Check coordinates of the spawned chunks
-        let map = app.world.get_resource::<ChunkMap>().unwrap();
     }
 
     #[test]
