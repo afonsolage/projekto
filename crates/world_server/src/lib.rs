@@ -24,7 +24,6 @@ pub struct WorldServerPlugin;
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkMap>()
-            .init_resource::<Landscape>()
             .add_event::<ChunkUnload>()
             .add_event::<ChunkLoad>()
             .add_event::<ChunkGen>()
@@ -32,7 +31,10 @@ impl Plugin for WorldServerPlugin {
             .add_systems(
                 Update,
                 (
-                    update_landscape.run_if(resource_changed::<Landscape>()),
+                    // Landscape Update
+                    (update_landscape.run_if(resource_changed_or_removed::<Landscape>()),)
+                        .in_set(WorldSet::LandscapeUpdate)
+                        .before(WorldSet::ChunkManagement),
                     // Chunk Management
                     (
                         chunks_unload.run_if(on_event::<ChunkUnload>()),
@@ -40,14 +42,17 @@ impl Plugin for WorldServerPlugin {
                         chunks_gen.run_if(on_event::<ChunkGen>()),
                     )
                         .chain()
-                        .in_set(WorldSet::ChunkManagement),
+                        .in_set(WorldSet::ChunkManagement)
+                        .before(WorldSet::FlushCommands),
                     apply_deferred.in_set(WorldSet::FlushCommands),
                     // Chunk Initialization
                     (init_light.run_if(any_chunk::<Added<ChunkLight>>),)
-                        .in_set(WorldSet::ChunkInitialization),
+                        .in_set(WorldSet::ChunkInitialization)
+                        .after(WorldSet::FlushCommands),
                     // Chunk Propagation
                     (propagate_light.run_if(on_event::<LightUpdate>()),)
-                        .in_set(WorldSet::Propagation),
+                        .in_set(WorldSet::Propagation)
+                        .after(WorldSet::ChunkInitialization),
                     // Meshing
                     (
                         faces_occlusion.run_if(any_chunk::<Changed<ChunkKind>>),
@@ -58,15 +63,16 @@ impl Plugin for WorldServerPlugin {
                     )
                         .chain()
                         .in_set(WorldSet::Meshing)
+                        .after(WorldSet::Propagation)
                         .run_if(on_timer(Duration::from_secs_f32(0.5))),
-                )
-                    .chain(),
+                ),
             );
     }
 }
 
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
 enum WorldSet {
+    LandscapeUpdate,
     ChunkManagement,
     FlushCommands,
     ChunkInitialization,
@@ -136,10 +142,19 @@ struct ChunkBundle {
     vertex: ChunkVertex,
 }
 
-#[derive(Resource, Default, Debug, Clone, Copy)]
+#[derive(Resource, Debug, Clone, Copy)]
 pub struct Landscape {
     pub center: IVec2,
     pub radius: u8,
+}
+
+impl Default for Landscape {
+    fn default() -> Self {
+        Self {
+            center: Default::default(),
+            radius: 1,
+        }
+    }
 }
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
@@ -226,16 +241,41 @@ struct LightUpdate {
     intensity: u8,
 }
 
-fn update_landscape(landscape: Res<Landscape>) {
-    let radius = landscape.radius as i32;
-
-    for _x in -radius..=radius {
-        for _z in -radius..=radius {
-            //
+fn update_landscape(
+    maybe_landscape: Option<Res<Landscape>>,
+    chunk_map: Res<ChunkMap>,
+    mut load_writer: EventWriter<ChunkLoad>,
+    mut unload_writer: EventWriter<ChunkUnload>,
+) {
+    let new_landscape_chunks = {
+        if let Some(landscape) = maybe_landscape {
+            let radius = landscape.radius as i32;
+            let center = landscape.center;
+            (-radius..=radius)
+                .flat_map(|x| {
+                    (-radius..=radius).map(move |z| Chunk::new(x + center.x, z + center.y))
+                })
+                .collect::<HashSet<_>>()
+        } else {
+            HashSet::new()
         }
-    }
+    };
 
-    // TODO: Load and unload chunks based on landscape position.
+    println!("{new_landscape_chunks:?}");
+
+    chunk_map
+        .keys()
+        .filter(|&c| !new_landscape_chunks.contains(c))
+        .for_each(|&c| {
+            unload_writer.send(ChunkUnload(c));
+        });
+
+    new_landscape_chunks
+        .into_iter()
+        .filter(|c| !chunk_map.contains_key(c))
+        .for_each(|c| {
+            load_writer.send(ChunkLoad(c));
+        });
 }
 
 fn chunks_unload(
@@ -280,7 +320,7 @@ fn chunks_gen(
 
         let existing = chunk_map.insert(local, entity);
 
-        assert_eq!(existing, None);
+        debug_assert_eq!(existing, None, "Can't replace existing chunk {local}");
     }
 }
 
@@ -492,6 +532,75 @@ mod test {
             .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .add_plugins(super::WorldServerPlugin)
             .run()
+    }
+
+    #[test]
+    fn update_no_landscape() {
+        // arrange
+        let mut app = App::new();
+
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_plugins(super::WorldServerPlugin);
+
+        // act
+        app.update();
+
+        // assert
+        assert!(
+            app.world.entities().is_empty(),
+            "No entity should be spawned"
+        );
+    }
+
+    #[test]
+    fn update_landscape_radius_1() {
+        // arrange
+        let mut app = App::new();
+
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_plugins(super::WorldServerPlugin);
+
+        app.world.insert_resource(Landscape {
+            radius: 1,
+            ..Default::default()
+        });
+
+        // act
+        app.update();
+
+        // assert
+        assert_eq!(
+            app.world.entities().len(),
+            9,
+            "There should be 9 entities in a landscape with radius 1"
+        );
+
+        // TODO: Check coordinates of the spawned chunks
+        let map = app.world.get_resource::<ChunkMap>().unwrap();
+    }
+
+    #[test]
+    fn update_landscape_zero() {
+        // arrange
+        let mut app = App::new();
+
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_plugins(super::WorldServerPlugin);
+
+        app.world.insert_resource(Landscape {
+            radius: 0,
+            ..Default::default()
+        });
+
+        // act
+        app.update();
+
+        // assert
+        assert_eq!(
+            app.world.entities().len(),
+            1,
+            "Only a single chunk should be spawned in a landscape with 0 radius"
+        );
     }
 
     #[test]
