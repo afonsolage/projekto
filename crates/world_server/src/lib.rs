@@ -14,7 +14,7 @@ use genesis::GeneratedChunk;
 use light::NeighborLightPropagation;
 use projekto_core::voxel::{self};
 
-mod chunk;
+pub mod chunk;
 mod genesis;
 mod light;
 mod meshing;
@@ -105,6 +105,12 @@ impl From<(i32, i32)> for Chunk {
     }
 }
 
+impl From<Chunk> for Vec3 {
+    fn from(value: Chunk) -> Self {
+        chunk::to_world(value)
+    }
+}
+
 impl std::fmt::Display for Chunk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -121,7 +127,7 @@ struct ChunkKind(ChunkStorage<voxel::Kind>);
 struct ChunkLight(ChunkStorage<voxel::Light>);
 
 #[derive(Component, Default, Debug, Clone, Copy, Deref, DerefMut)]
-struct ChunkLocal(Chunk);
+pub struct ChunkLocal(Chunk);
 
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkFacesOcclusion(ChunkStorage<voxel::FacesOcclusion>);
@@ -130,7 +136,7 @@ struct ChunkFacesOcclusion(ChunkStorage<voxel::FacesOcclusion>);
 struct ChunkFacesSoftLight(ChunkStorage<voxel::FacesSoftLight>);
 
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkVertex(Vec<voxel::Vertex>);
+pub struct ChunkVertex(Vec<voxel::Vertex>);
 
 #[derive(Bundle, Default)]
 struct ChunkBundle {
