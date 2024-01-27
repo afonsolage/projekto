@@ -9,13 +9,12 @@ use bevy::{
     time::common_conditions::on_timer,
     utils::{HashMap, HashSet},
 };
+use chunk::ChunkStorage;
 use genesis::GeneratedChunk;
 use light::NeighborLightPropagation;
-use projekto_core::{
-    chunk::{self, ChunkStorage},
-    voxel::{self},
-};
+use projekto_core::voxel::{self};
 
+mod chunk;
 mod genesis;
 mod light;
 mod meshing;
@@ -25,7 +24,7 @@ pub struct WorldServerPlugin;
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkMap>()
-            .init_resource::<LandscapeCenter>()
+            .init_resource::<Landscape>()
             .add_event::<ChunkUnload>()
             .add_event::<ChunkLoad>()
             .add_event::<ChunkGen>()
@@ -33,7 +32,7 @@ impl Plugin for WorldServerPlugin {
             .add_systems(
                 Update,
                 (
-                    update_landscape.run_if(resource_changed::<LandscapeCenter>()),
+                    update_landscape.run_if(resource_changed::<Landscape>()),
                     // Chunk Management
                     (
                         chunks_unload.run_if(on_event::<ChunkUnload>()),
@@ -75,6 +74,39 @@ enum WorldSet {
     Meshing,
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Chunk(IVec2);
+
+impl Chunk {
+    pub fn new(x: i32, z: i32) -> Self {
+        Self(IVec2::new(x, z))
+    }
+
+    pub fn neighbor(&self, dir: IVec2) -> Self {
+        Chunk(self.0 + dir)
+    }
+}
+
+impl From<IVec2> for Chunk {
+    fn from(value: IVec2) -> Self {
+        Self(value)
+    }
+}
+
+impl From<(i32, i32)> for Chunk {
+    fn from(value: (i32, i32)) -> Self {
+        Self(value.into())
+    }
+}
+
+impl std::fmt::Display for Chunk {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+pub type Voxel = IVec3;
+
 // Components
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkKind(ChunkStorage<voxel::Kind>);
@@ -83,7 +115,7 @@ struct ChunkKind(ChunkStorage<voxel::Kind>);
 struct ChunkLight(ChunkStorage<voxel::Light>);
 
 #[derive(Component, Default, Debug, Clone, Copy, Deref, DerefMut)]
-struct ChunkLocal(IVec3);
+struct ChunkLocal(Chunk);
 
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkFacesOcclusion(ChunkStorage<voxel::FacesOcclusion>);
@@ -105,10 +137,13 @@ struct ChunkBundle {
 }
 
 #[derive(Resource, Default, Debug, Clone, Copy)]
-struct LandscapeCenter(IVec3);
+pub struct Landscape {
+    pub center: IVec2,
+    pub radius: u8,
+}
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkMap(HashMap<IVec3, Entity>);
+struct ChunkMap(HashMap<Chunk, Entity>);
 
 #[derive(SystemParam)]
 struct ChunkQuery<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static = ()> {
@@ -121,7 +156,7 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuer
     //     self.map.0.get(&chunk).copied()
     // }
 
-    fn get_chunk(&self, chunk: IVec3) -> Option<QueryItem<'_, <Q as WorldQuery>::ReadOnly>> {
+    fn get_chunk(&self, chunk: Chunk) -> Option<QueryItem<'_, <Q as WorldQuery>::ReadOnly>> {
         self.map.0.get(&chunk).map(|&entity| {
             self.query
                 .get(entity)
@@ -129,7 +164,7 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuer
         })
     }
 
-    fn get_chunk_mut(&mut self, chunk: IVec3) -> Option<Q::Item<'_>> {
+    fn get_chunk_mut(&mut self, chunk: Chunk) -> Option<Q::Item<'_>> {
         self.map.0.get(&chunk).map(|&entity| {
             self.query
                 .get_mut(entity)
@@ -137,7 +172,7 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuer
         })
     }
 
-    fn get_chunk_component<T: Component>(&self, chunk: IVec3) -> Option<&T> {
+    fn get_chunk_component<T: Component>(&self, chunk: Chunk) -> Option<&T> {
         if let Some(&entity) = self.map.0.get(&chunk) {
             if let Ok(component) = self.query.get_component::<T>(entity) {
                 return Some(component);
@@ -175,23 +210,31 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops:
 }
 
 #[derive(Event, Debug, Clone, Copy)]
-struct ChunkUnload(IVec3);
+struct ChunkUnload(Chunk);
 
 #[derive(Event, Debug, Clone, Copy)]
-struct ChunkLoad(IVec3);
+struct ChunkLoad(Chunk);
 
 #[derive(Event, Debug, Clone, Copy)]
-struct ChunkGen(IVec3);
+struct ChunkGen(Chunk);
 
 #[derive(Event, Debug, Clone, Copy)]
 struct LightUpdate {
-    chunk: IVec3,
-    voxel: IVec3,
+    chunk: Chunk,
+    voxel: Voxel,
     ty: voxel::LightTy,
     intensity: u8,
 }
 
-fn update_landscape(center: Res<LandscapeCenter>) {
+fn update_landscape(landscape: Res<Landscape>) {
+    let radius = landscape.radius as i32;
+
+    for _x in -radius..=radius {
+        for _z in -radius..=radius {
+            //
+        }
+    }
+
     // TODO: Load and unload chunks based on landscape position.
 }
 
@@ -252,7 +295,7 @@ fn init_light(
     q.for_each_mut(|(local, kind, mut light)| {
         let top_voxels = (0..=chunk::X_END)
             .zip(0..chunk::Z_END)
-            .map(|(x, z)| IVec3::new(x, chunk::Y_END, z))
+            .map(|(x, z)| Voxel::new(x, chunk::Y_END, z))
             .collect::<Vec<_>>();
 
         let neighbor_propagation =
@@ -260,12 +303,12 @@ fn init_light(
 
         neighbor_propagation.into_iter().for_each(
             |NeighborLightPropagation {
-                 dir,
+                 side,
                  voxel,
                  ty,
                  intensity,
              }| {
-                let chunk = dir + **local;
+                let chunk = local.neighbor(side.dir());
 
                 writer.send(LightUpdate {
                     chunk,
@@ -288,7 +331,7 @@ fn propagate_light(
     events
         .into_iter()
         .fold(
-            HashMap::<(IVec3, voxel::LightTy), Vec<IVec3>>::new(),
+            HashMap::<(Chunk, voxel::LightTy), Vec<Voxel>>::new(),
             |mut map,
              LightUpdate {
                  chunk,
@@ -318,12 +361,12 @@ fn propagate_light(
 
             neighborhood_propagation.into_iter().for_each(
                 |NeighborLightPropagation {
-                     dir,
+                     side,
                      voxel,
                      ty,
                      intensity,
                  }| {
-                    let neighbor = dir + chunk;
+                    let neighbor = chunk.neighbor(side.dir());
 
                     writer.send(LightUpdate {
                         chunk: neighbor,
@@ -346,22 +389,22 @@ fn faces_occlusion(
         .flat_map(|local| {
             // TODO: There should be a better way to avoid update everything.
             // When a chunk kind is updated, we have to check all its surrounding.
-            let neighbors = voxel::SIDES.map(|s| **local + s.dir());
+            let neighbors = chunk::SIDES.map(|s| local.neighbor(s.dir()));
             std::iter::once(**local).chain(neighbors)
         })
         .collect::<HashSet<_>>()
         .into_iter()
-        .for_each(|local| {
-            let mut neighborhood = [None; voxel::SIDE_COUNT];
+        .for_each(|chunk| {
+            let mut neighborhood = [None; chunk::SIDE_COUNT];
 
             // Update neighborhood
-            voxel::SIDES.iter().for_each(|side| {
-                let neighbor = local + side.dir();
+            chunk::SIDES.iter().for_each(|side| {
+                let neighbor = chunk.neighbor(side.dir());
                 neighborhood[side.index()] = q_kinds.get_chunk(neighbor).map(|kind| &**kind);
             });
 
-            let mut faces_occlusion = q_occlusions.get_chunk_mut(local).expect("Entity exists");
-            let kind = q_kinds.get_chunk(local).expect("Entity exists");
+            let mut faces_occlusion = q_occlusions.get_chunk_mut(chunk).expect("Entity exists");
+            let kind = q_kinds.get_chunk(chunk).expect("Entity exists");
             meshing::faces_occlusion(kind, &mut faces_occlusion, &neighborhood);
         });
 }
@@ -377,7 +420,7 @@ fn faces_light_softening(
         .flat_map(|local| {
             // TODO: There should be a better way to avoid update everything.
             // When a chunk kind or light is updated, we have to check all its surrounding.
-            let neighbors = voxel::SIDES.map(|s| **local + s.dir());
+            let neighbors = chunk::SIDES.map(|s| local.neighbor(s.dir()));
             std::iter::once(**local).chain(neighbors)
         })
         .collect::<HashSet<_>>()
@@ -425,7 +468,7 @@ fn generate_vertices(
     q_changed_chunks
         .iter()
         .for_each(|(entity, kind, faces_occlusion, faces_soft_light)| {
-            if faces_occlusion.is_fully_occluded() {
+            if faces_occlusion.iter().all(|occ| occ.is_fully_occluded()) {
                 return;
             }
 
@@ -459,7 +502,7 @@ mod test {
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .add_plugins(super::WorldServerPlugin);
 
-        app.world.send_event(ChunkLoad((0, 0, 0).into()));
+        app.world.send_event(ChunkLoad((0, 0).into()));
 
         // act
         app.update();
@@ -485,7 +528,7 @@ mod test {
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .add_plugins(super::WorldServerPlugin);
 
-        app.world.send_event(ChunkLoad((0, 0, 0).into()));
+        app.world.send_event(ChunkLoad((0, 0).into()));
 
         // act
         app.update();

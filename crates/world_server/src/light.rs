@@ -2,9 +2,13 @@ use std::collections::VecDeque;
 
 use bevy::math::IVec3;
 use projekto_core::{
-    chunk::{self, ChunkStorage, GetChunkStorage},
     math,
     voxel::{self, LightTy},
+};
+
+use crate::{
+    chunk::{self, ChunkSide, ChunkStorage, GetChunkStorage},
+    Chunk, Voxel,
 };
 
 /// Number of neighbors per voxel
@@ -83,8 +87,8 @@ const NEIGHBOR_VERTEX_LOOKUP: [[[usize; VERTEX_COUNT]; VERTEX_NEIGHBOR_COUNT]; v
 ];
 
 fn gather_neighborhood_light<'a>(
-    chunk: IVec3,
-    voxel: IVec3,
+    chunk: Chunk,
+    voxel: Voxel,
     get_kind: impl GetChunkStorage<'a, voxel::Kind>,
     get_light: impl GetChunkStorage<'a, voxel::Light>,
 ) -> [Option<u8>; NEIGHBOR_COUNT] {
@@ -105,7 +109,7 @@ fn gather_neighborhood_light<'a>(
 
                 let side_voxel = voxel + dir;
 
-                let intensity = if chunk::is_within_bounds(side_voxel) {
+                let intensity = if chunk::is_inside(side_voxel) {
                     let intensity = light.get(side_voxel).get_greater_intensity();
 
                     // Check if returned block is opaque
@@ -116,7 +120,7 @@ fn gather_neighborhood_light<'a>(
                     }
                 } else {
                     let (dir, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
-                    let neighbor_chunk = chunk + dir;
+                    let neighbor_chunk = chunk.neighbor(dir);
 
                     // TODO: Change this when if-let chains stabilizes
                     if let Some(kind) = get_kind(neighbor_chunk) {
@@ -181,7 +185,7 @@ fn soft_vertex_light(neighbors: &[Option<u8>; NEIGHBOR_COUNT], side: voxel::Side
 }
 
 pub fn smooth_lighting<'a>(
-    chunk: IVec3,
+    chunk: Chunk,
     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
     soft_light: &mut ChunkStorage<voxel::FacesSoftLight>,
     get_kind: impl GetChunkStorage<'a, voxel::Kind>,
@@ -229,8 +233,8 @@ fn calc_propagated_intensity(ty: LightTy, side: voxel::Side, intensity: u8) -> u
 }
 
 pub struct NeighborLightPropagation {
-    pub dir: IVec3,
-    pub voxel: IVec3,
+    pub side: ChunkSide,
+    pub voxel: Voxel,
     pub ty: LightTy,
     pub intensity: u8,
 }
@@ -239,7 +243,7 @@ pub fn propagate(
     kind: &ChunkStorage<voxel::Kind>,
     light: &mut ChunkStorage<voxel::Light>,
     light_ty: LightTy,
-    voxels: &[IVec3],
+    voxels: &[Voxel],
 ) -> Vec<NeighborLightPropagation> {
     let mut queue = voxels.iter().copied().collect::<VecDeque<_>>();
     let mut neighbor_light_propagation = vec![];
@@ -251,8 +255,12 @@ pub fn propagate(
             let side_voxel = voxel + side.dir();
             let propagated_intensity = calc_propagated_intensity(light_ty, side, current_intensity);
 
-            if !chunk::is_within_bounds(side_voxel) {
-                if propagated_intensity > 1 {
+            if propagated_intensity == 0 {
+                continue;
+            }
+
+            if !chunk::is_inside(side_voxel) {
+                if let Some(chunk_side) = ChunkSide::from_voxel_side(side) {
                     let neighbor_voxel = math::euclid_rem(
                         side_voxel,
                         IVec3::new(
@@ -263,12 +271,13 @@ pub fn propagate(
                     );
 
                     neighbor_light_propagation.push(NeighborLightPropagation {
-                        dir: side.dir(),
+                        side: chunk_side,
                         voxel: neighbor_voxel,
                         ty: light_ty,
                         intensity: propagated_intensity,
                     });
                 }
+
                 continue;
             }
 
@@ -409,48 +418,36 @@ mod test {
         neighbor_propagation
             .iter()
             .fold(
-                HashMap::<IVec3, Vec<_>>::new(),
-                |mut map, &NeighborLightPropagation { dir, voxel, .. }| {
-                    map.entry(dir).or_default().push(voxel);
+                HashMap::<ChunkSide, Vec<_>>::new(),
+                |mut map, &NeighborLightPropagation { side, voxel, .. }| {
+                    map.entry(side).or_default().push(voxel);
                     map
                 },
             )
             .into_iter()
-            .for_each(|(dir, voxels)| {
-                if dir == voxel::Side::Up.dir() || dir == voxel::Side::Down.dir() {
-                    assert_eq!(voxels.len(), chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE);
-                } else {
-                    assert_eq!(voxels.len(), chunk::X_AXIS_SIZE * chunk::Y_AXIS_SIZE);
-                }
+            .for_each(|(_side, voxels)| {
+                assert_eq!(voxels.len(), chunk::X_AXIS_SIZE * chunk::Y_AXIS_SIZE);
             });
 
         neighbor_propagation.into_iter().for_each(
             |NeighborLightPropagation {
-                 dir,
                  voxel,
                  ty,
                  intensity,
+                 ..
              }| {
                 assert_eq!(
                     ty,
                     LightTy::Natural,
                     "Only natural light should be propagated"
                 );
-                if dir == voxel::Side::Down.dir() {
-                    assert_eq!(
-                        intensity,
-                        voxel::Light::MAX_NATURAL_INTENSITY,
-                        "Downwards propagation should keep max natural intensity"
-                    );
-                } else {
-                    assert_eq!(
-                        intensity,
-                        voxel::Light::MAX_NATURAL_INTENSITY - 1,
-                        "Non-downwards propagation should reduce natural intensity"
-                    );
-                }
+                assert_eq!(
+                    intensity,
+                    voxel::Light::MAX_NATURAL_INTENSITY - 1,
+                    "Non-downwards propagation should reduce natural intensity"
+                );
                 assert!(
-                    chunk::is_at_bounds(voxel),
+                    chunk::is_at_edge(voxel),
                     "All voxels propagated should be at boundry"
                 );
             },
@@ -480,10 +477,10 @@ mod test {
 
         neighbor_propagation
             .into_iter()
-            .for_each(|NeighborLightPropagation { dir, .. }| {
+            .for_each(|NeighborLightPropagation { side, .. }| {
                 assert_ne!(
-                    dir,
-                    voxel::Side::Left.dir(),
+                    side,
+                    chunk::ChunkSide::Left,
                     "No light should be propagated to left"
                 );
             });

@@ -1,14 +1,15 @@
 use bevy::math::{IVec3, Vec3};
 use projekto_core::{
-    chunk::{self, ChunkStorage},
     math,
     voxel::{self, FacesOcclusion},
 };
 
+use crate::chunk::{self, ChunkSide, ChunkStorage};
+
 pub(super) fn faces_occlusion(
     kind: &ChunkStorage<voxel::Kind>,
     faces_occlusion: &mut ChunkStorage<voxel::FacesOcclusion>,
-    neighboorhood: &[Option<&ChunkStorage<voxel::Kind>>; voxel::SIDE_COUNT],
+    neighboorhood: &[Option<&ChunkStorage<voxel::Kind>>; chunk::SIDE_COUNT],
 ) {
     chunk::voxels().for_each(|voxel| {
         if kind.get(voxel).is_none() {
@@ -18,12 +19,17 @@ pub(super) fn faces_occlusion(
             voxel::SIDES.iter().for_each(|&side| {
                 let neighbor = voxel + side.dir();
 
-                let neighbor_kind = if chunk::is_within_bounds(neighbor) {
+                let neighbor_kind = if chunk::is_inside(neighbor) {
                     kind.get(neighbor)
                 } else {
-                    let Some(neighbor_kind) = neighboorhood[side as usize] else {
+                    let Some(chunk_side) = ChunkSide::from_voxel_side(side) else {
                         return;
                     };
+
+                    let Some(neighbor_kind) = neighboorhood[chunk_side as usize] else {
+                        return;
+                    };
+
                     let neighbor_chunk_voxel = math::euclid_rem(
                         neighbor,
                         IVec3::new(
@@ -189,7 +195,7 @@ fn should_merge(
     side: voxel::Side,
     chunk: &ChunkData,
 ) -> bool {
-    chunk::is_within_bounds(next_voxel)
+    chunk::is_inside(next_voxel)
         && !should_skip_voxel(merged, next_voxel, side, chunk.kind.get(next_voxel), chunk)
         && chunk.kind.get(voxel) == chunk.kind.get(next_voxel)
         && chunk.faces_soft_light.get(voxel).get(side)
@@ -452,12 +458,12 @@ mod test {
     fn faces_occlusion_empty_chunk() {
         let kind = Default::default();
         let mut faces_occlusion = Default::default();
-        let neighborhood = [None; voxel::SIDE_COUNT];
+        let neighborhood = [None; chunk::SIDE_COUNT];
 
         super::faces_occlusion(&kind, &mut faces_occlusion, &neighborhood);
 
         assert!(
-            faces_occlusion.is_fully_occluded(),
+            faces_occlusion.iter().all(|occ| occ.is_fully_occluded()),
             "Should be fully occluded in an empty chunk"
         );
     }
@@ -466,7 +472,7 @@ mod test {
     fn faces_occlusion_opaque_voxel() {
         let mut kind = ChunkStorage::<voxel::Kind>::default();
         let mut faces_occlusion = Default::default();
-        let neighborhood = [None; voxel::SIDE_COUNT];
+        let neighborhood = [None; chunk::SIDE_COUNT];
 
         kind.set([0, 0, 0].into(), 1.into());
 
@@ -484,7 +490,7 @@ mod test {
         let mut kind = ChunkStorage::<voxel::Kind>::default();
         let mut neighbor_kind = ChunkStorage::<voxel::Kind>::default();
         let mut faces_occlusion = Default::default();
-        let mut neighborhood = [None; voxel::SIDE_COUNT];
+        let mut neighborhood = [None; chunk::SIDE_COUNT];
 
         kind.set([0, 0, 0].into(), 1.into());
         neighbor_kind.set([chunk::X_END, 0, 0].into(), 1.into());
