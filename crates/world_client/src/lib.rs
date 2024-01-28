@@ -44,9 +44,10 @@ fn remove_unloaded_chunks(
     mut map: ResMut<ChunkMap>,
     q_vertex: Query<(Entity, &ChunkVertex)>,
 ) {
-    map.retain(|_, entity| {
+    map.retain(|chunk, entity| {
         let retain = q_vertex.contains(*entity);
         if !retain {
+            trace!("Despawning chunk [{}]", chunk);
             commands.entity(*entity).despawn();
         }
         retain
@@ -59,11 +60,15 @@ fn update_chunk_mesh(
     q_vertex: Query<(&ChunkLocal, &ChunkVertex), Changed<ChunkVertex>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
+    let mut count = 0;
     for (chunk, vertex) in &q_vertex {
         let mesh_handler = meshes.add(generate_mesh(vertex));
         if let Some(&entity) = map.get(&**chunk) {
+            trace!("Updating chunk [{}]", **chunk);
             commands.entity(entity).insert(mesh_handler);
         } else {
+            trace!("Spawning chunk [{}]", **chunk);
+
             let entity = commands
                 .spawn(ChunkBundle {
                     chunk: *chunk,
@@ -73,10 +78,13 @@ fn update_chunk_mesh(
                         ..Default::default()
                     },
                 })
+                .insert(Name::new(format!("Client Chunk {}", **chunk)))
                 .id();
             map.insert(**chunk, entity);
         }
+        count += 1;
     }
+    trace!("[update_chunk_mesh] {count} chunks mesh updated.");
 }
 
 fn generate_mesh(vertices: &Vec<Vertex>) -> Mesh {

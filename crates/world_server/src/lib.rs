@@ -29,7 +29,7 @@ impl Plugin for WorldServerPlugin {
             .add_event::<ChunkGen>()
             .add_event::<LightUpdate>()
             .add_systems(
-                Update,
+                FixedUpdate,
                 (
                     // Landscape Update
                     (update_landscape.run_if(resource_changed_or_removed::<Landscape>()),)
@@ -55,11 +55,11 @@ impl Plugin for WorldServerPlugin {
                         .after(WorldSet::ChunkInitialization),
                     // Meshing
                     (
-                        faces_occlusion.run_if(any_chunk::<Changed<ChunkKind>>),
-                        faces_light_softening
-                            .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
-                        generate_vertices
-                            .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
+                        faces_occlusion, //.run_if(any_chunk::<Changed<ChunkKind>>),
+                        faces_light_softening,
+                        // .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
+                        generate_vertices,
+                        // .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
                     )
                         .chain()
                         .in_set(WorldSet::Meshing)
@@ -239,12 +239,11 @@ struct ChunkLoad(Chunk);
 #[derive(Event, Debug, Clone, Copy)]
 struct ChunkGen(Chunk);
 
-#[derive(Event, Debug, Clone, Copy)]
+#[derive(Event, Debug, Clone)]
 struct LightUpdate {
     chunk: Chunk,
-    voxel: Voxel,
     ty: voxel::LightTy,
-    intensity: u8,
+    values: Vec<(Voxel, u8)>,
 }
 
 fn update_landscape(
@@ -267,21 +266,25 @@ fn update_landscape(
         }
     };
 
-    println!("{new_landscape_chunks:?}");
-
+    let mut unloaded = 0;
     chunk_map
         .keys()
         .filter(|&c| !new_landscape_chunks.contains(c))
         .for_each(|&c| {
             unload_writer.send(ChunkUnload(c));
+            unloaded += 1;
         });
 
+    let mut loaded = 0;
     new_landscape_chunks
         .into_iter()
         .filter(|c| !chunk_map.contains_key(c))
         .for_each(|c| {
             load_writer.send(ChunkLoad(c));
+            loaded += 1
         });
+
+    trace!("[update_landscape] Unloaded: {unloaded}, loaded: {loaded}");
 }
 
 fn chunks_unload(
@@ -289,14 +292,17 @@ fn chunks_unload(
     mut chunk_map: ResMut<ChunkMap>,
     mut reader: EventReader<ChunkUnload>,
 ) {
+    let mut count = 0;
     reader.read().for_each(|evt| {
         if let Some(entity) = chunk_map.remove(&evt.0) {
             commands.entity(entity).despawn();
+            count += 1;
         } else {
             let local = evt.0;
             warn!("Chunk {local} entity not found.");
         }
     });
+    trace!("[chunks_unload] {count} chunks despawned");
 }
 
 fn chunks_load(mut reader: EventReader<ChunkLoad>, mut writer: EventWriter<ChunkGen>) {
@@ -314,20 +320,23 @@ fn chunks_gen(
     mut reader: EventReader<ChunkGen>,
     mut chunk_map: ResMut<ChunkMap>,
 ) {
-    for &ChunkGen(local) in reader.read() {
-        let GeneratedChunk { kind, light } = genesis::generate_chunk(local);
+    let mut count = 0;
+    for &ChunkGen(chunk) in reader.read() {
+        let GeneratedChunk { kind, light } = genesis::generate_chunk(chunk);
         let entity = commands
             .spawn(ChunkBundle {
                 kind: ChunkKind(kind),
                 light: ChunkLight(light),
                 ..Default::default()
             })
+            .insert(Name::new(format!("Server Chunk {chunk}")))
             .id();
 
-        let existing = chunk_map.insert(local, entity);
-
-        debug_assert_eq!(existing, None, "Can't replace existing chunk {local}");
+        let existing = chunk_map.insert(chunk, entity);
+        debug_assert_eq!(existing, None, "Can't replace existing chunk {chunk}");
+        count += 1;
     }
+    trace!("[chunks_gen] {count} chunks generated and spawned.");
 }
 
 fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
@@ -338,6 +347,9 @@ fn init_light(
     mut q: Query<(&ChunkLocal, &ChunkKind, &mut ChunkLight), Added<ChunkLight>>,
     mut writer: EventWriter<LightUpdate>,
 ) {
+    let mut map = HashMap::new();
+    let mut count = 0;
+
     q.for_each_mut(|(local, kind, mut light)| {
         let top_voxels = (0..=chunk::X_END)
             .zip(0..chunk::Z_END)
@@ -355,74 +367,88 @@ fn init_light(
                  intensity,
              }| {
                 let chunk = local.neighbor(side.dir());
-
-                writer.send(LightUpdate {
-                    chunk,
-                    voxel,
-                    ty,
-                    intensity,
-                });
+                map.entry((chunk, ty))
+                    .or_insert(vec![])
+                    .push((voxel, intensity));
             },
         );
+
+        count += 1;
     });
+
+    let events = map.len();
+
+    map.into_iter().for_each(|((chunk, ty), values)| {
+        writer.send(LightUpdate { chunk, ty, values });
+    });
+
+    trace!("[init_light] {count} chunks light initialized. {events} propagation events sent.");
 }
 
 fn propagate_light(
     mut q_light: ChunkQuery<(&ChunkKind, &mut ChunkLight)>,
     mut params: ParamSet<(EventReader<LightUpdate>, EventWriter<LightUpdate>)>,
 ) {
-    let events = params.p0().read().copied().collect::<Vec<_>>();
-    let mut writer = params.p1();
+    let mut count = 0;
 
-    events
-        .into_iter()
+    let propagate_to_neighbors = params
+        .p0()
+        .read()
         .fold(
             HashMap::<(Chunk, voxel::LightTy), Vec<Voxel>>::new(),
-            |mut map,
-             LightUpdate {
-                 chunk,
-                 voxel,
-                 ty,
-                 intensity,
-             }| {
-                let Some((_, mut light)) = q_light.get_chunk_mut(chunk) else {
+            |mut map, LightUpdate { chunk, ty, values }| {
+                let Some((_, mut light)) = q_light.get_chunk_mut(*chunk) else {
                     warn!("Failed to set light on chunk {chunk}. Entity not found on query");
                     return map;
                 };
 
-                if intensity > light.get(voxel).get(ty) {
-                    light.set_type(voxel, ty, intensity);
-                    map.entry((chunk, ty)).or_default().push(voxel);
-                }
+                values.iter().for_each(|&(voxel, intensity)| {
+                    if intensity > light.get(voxel).get(*ty) {
+                        light.set_type(voxel, *ty, intensity);
+                        map.entry((*chunk, *ty)).or_default().push(voxel);
+                    }
+                });
+
+                count += 1;
 
                 map
             },
         )
         .into_iter()
-        .for_each(|((chunk, light_ty), voxels)| {
-            let (kind, mut light) = q_light
-                .get_chunk_mut(chunk)
-                .expect("Missing entities was filtered already");
-            let neighborhood_propagation = light::propagate(kind, &mut light, light_ty, &voxels);
+        .fold(
+            HashMap::<(Chunk, voxel::LightTy), Vec<_>>::new(),
+            |mut map, ((chunk, light_ty), voxels)| {
+                let (kind, mut light) = q_light
+                    .get_chunk_mut(chunk)
+                    .expect("Missing entities was filtered already");
+                let neighborhood_propagation =
+                    light::propagate(kind, &mut light, light_ty, &voxels);
 
-            neighborhood_propagation.into_iter().for_each(
-                |NeighborLightPropagation {
-                     side,
-                     voxel,
-                     ty,
-                     intensity,
-                 }| {
-                    let neighbor = chunk.neighbor(side.dir());
+                neighborhood_propagation.into_iter().for_each(
+                    |NeighborLightPropagation {
+                         side,
+                         voxel,
+                         ty,
+                         intensity,
+                     }| {
+                        let neighbor = chunk.neighbor(side.dir());
+                        map.entry((neighbor, ty))
+                            .or_insert(vec![])
+                            .push((voxel, intensity));
+                    },
+                );
 
-                    writer.send(LightUpdate {
-                        chunk: neighbor,
-                        voxel,
-                        ty,
-                        intensity,
-                    });
-                },
-            );
-        });
+                map
+            },
+        );
+
+    let events = propagate_to_neighbors.len();
+    let mut writer = params.p1();
+    propagate_to_neighbors
+        .into_iter()
+        .for_each(|((chunk, ty), values)| writer.send(LightUpdate { chunk, ty, values }));
+
+    trace!("[propagate_light] {count} chunks light propagated. {events} propagation events sent.");
 }
 
 fn faces_occlusion(
@@ -430,6 +456,9 @@ fn faces_occlusion(
     q_kinds: ChunkQuery<&ChunkKind>,
     mut q_occlusions: ChunkQuery<&mut ChunkFacesOcclusion>,
 ) {
+    let mut count = 0;
+    let mut fully_occluded = 0;
+
     q_changed_chunks
         .iter()
         .flat_map(|local| {
@@ -452,7 +481,16 @@ fn faces_occlusion(
             let mut faces_occlusion = q_occlusions.get_chunk_mut(chunk).expect("Entity exists");
             let kind = q_kinds.get_chunk(chunk).expect("Entity exists");
             meshing::faces_occlusion(kind, &mut faces_occlusion, &neighborhood);
+
+            if faces_occlusion.iter().all(|occ| occ.is_fully_occluded()) {
+                fully_occluded += 1;
+            }
+            count += 1;
         });
+
+    if count > 0 {
+        trace!("[faces_occlusion] {count} chunks faces occlusion computed. {fully_occluded} chunks fully occluded.");
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -461,6 +499,8 @@ fn faces_light_softening(
     q_chunks: ChunkQuery<(&ChunkLocal, &ChunkKind, &ChunkLight, &ChunkFacesOcclusion)>,
     mut q_soft_light: ChunkQuery<&mut ChunkFacesSoftLight>,
 ) {
+    let mut count = 0;
+
     q_changed_chunks
         .iter()
         .flat_map(|local| {
@@ -495,7 +535,13 @@ fn faces_light_softening(
                         .map(|c| &**c)
                 },
             );
+
+            count += 1;
         });
+
+    if count > 0 {
+        trace!("[faces_light_softening] {count} chunks faces light softened.");
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -511,6 +557,7 @@ fn generate_vertices(
     >,
     mut q_vertex: Query<&mut ChunkVertex>,
 ) {
+    let mut count = 0;
     q_changed_chunks
         .iter()
         .for_each(|(entity, kind, faces_occlusion, faces_soft_light)| {
@@ -523,7 +570,13 @@ fn generate_vertices(
 
             let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
             std::mem::swap(&mut vertex, &mut chunk_vertex);
+
+            count += 1;
         });
+
+    if count > 0 {
+        trace!("[generate_vertices] {count} chunks vertices generated.");
+    }
 }
 
 #[cfg(test)]

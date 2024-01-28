@@ -266,8 +266,8 @@ pub fn to_world(chunk: Chunk) -> Vec3 {
 // }
 
 pub fn overlap_voxel(voxel: Voxel) -> (IVec2, Voxel) {
-    assert!(!is_inside(voxel), "Voxel {voxel} does't overlap");
-    assert!(
+    debug_assert!(!is_inside(voxel), "Voxel {voxel} does't overlap");
+    debug_assert!(
         voxel.y >= 0 && voxel.y < Y_AXIS_SIZE as i32,
         "Can't overlap up or down. There is never chunk above or bellow"
     );

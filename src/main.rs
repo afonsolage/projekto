@@ -14,7 +14,9 @@ use projekto_camera::{
     orbit::{OrbitCamera, OrbitCameraTarget},
     CameraPlugin,
 };
-use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
+use projekto_world_client::WorldClientPlugin;
+use projekto_world_server::{Landscape, WorldServerPlugin};
+use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter};
 
 // mod ui;
 // use ui::UiPlugin;
@@ -43,10 +45,12 @@ fn main() {
         .add_plugins((
             DebugPlugin,
             CameraPlugin,
-            WorldPlugin,
             CameraControllerPlugin,
             CharacterControllerPlugin,
+            WorldServerPlugin,
+            WorldClientPlugin,
         ))
+        .init_resource::<Landscape>()
         // .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
         .add_systems(Startup, setup);
 

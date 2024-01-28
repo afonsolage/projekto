@@ -118,6 +118,9 @@ fn gather_neighborhood_light<'a>(
                     } else {
                         Some(intensity)
                     }
+                } else if y != 0 {
+                    // There is no chunk above or below
+                    Some(voxel::Light::MAX_NATURAL_INTENSITY)
                 } else {
                     let (dir, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
                     let neighbor_chunk = chunk.neighbor(dir);
