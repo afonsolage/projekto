@@ -148,19 +148,10 @@ struct ChunkBundle {
     vertex: ChunkVertex,
 }
 
-#[derive(Resource, Debug, Clone, Copy)]
+#[derive(Resource, Default, Debug, Clone, Copy)]
 pub struct Landscape {
     pub center: IVec2,
     pub radius: u8,
-}
-
-impl Default for Landscape {
-    fn default() -> Self {
-        Self {
-            center: Default::default(),
-            radius: 1,
-        }
-    }
 }
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
@@ -200,6 +191,10 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuer
             }
         }
         None
+    }
+
+    fn chunk_exists(&self, chunk: Chunk) -> bool {
+        self.map.0.contains_key(&chunk)
     }
 
     // fn get_chunk_component_mut<T: Component>(&mut self, chunk: IVec3) -> Option<Mut<'_, T>> {
@@ -327,6 +322,7 @@ fn chunks_gen(
             .spawn(ChunkBundle {
                 kind: ChunkKind(kind),
                 light: ChunkLight(light),
+                local: ChunkLocal(chunk),
                 ..Default::default()
             })
             .insert(Name::new(format!("Server Chunk {chunk}")))
@@ -397,19 +393,16 @@ fn propagate_light(
         .fold(
             HashMap::<(Chunk, voxel::LightTy), Vec<Voxel>>::new(),
             |mut map, LightUpdate { chunk, ty, values }| {
-                let Some((_, mut light)) = q_light.get_chunk_mut(*chunk) else {
-                    warn!("Failed to set light on chunk {chunk}. Entity not found on query");
-                    return map;
+                if let Some((_, mut light)) = q_light.get_chunk_mut(*chunk) {
+                    values.iter().for_each(|&(voxel, intensity)| {
+                        if intensity > light.get(voxel).get(*ty) {
+                            light.set_type(voxel, *ty, intensity);
+                            map.entry((*chunk, *ty)).or_default().push(voxel);
+                        }
+                    });
+
+                    count += 1;
                 };
-
-                values.iter().for_each(|&(voxel, intensity)| {
-                    if intensity > light.get(voxel).get(*ty) {
-                        light.set_type(voxel, *ty, intensity);
-                        map.entry((*chunk, *ty)).or_default().push(voxel);
-                    }
-                });
-
-                count += 1;
 
                 map
             },
@@ -469,6 +462,7 @@ fn faces_occlusion(
         })
         .collect::<HashSet<_>>()
         .into_iter()
+        .filter(|&chunk| q_kinds.chunk_exists(chunk))
         .for_each(|chunk| {
             let mut neighborhood = [None; chunk::SIDE_COUNT];
 
@@ -511,6 +505,7 @@ fn faces_light_softening(
         })
         .collect::<HashSet<_>>()
         .into_iter()
+        .filter(|&chunk| q_chunks.chunk_exists(chunk))
         .for_each(|chunk| {
             let occlusion = &**q_chunks
                 .get_chunk_component::<ChunkFacesOcclusion>(chunk)

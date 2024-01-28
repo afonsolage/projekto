@@ -16,7 +16,7 @@ use projekto_camera::{
 };
 use projekto_world_client::WorldClientPlugin;
 use projekto_world_server::{Landscape, WorldServerPlugin};
-use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter};
+use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
 
 // mod ui;
 // use ui::UiPlugin;
@@ -47,6 +47,7 @@ fn main() {
             CameraPlugin,
             CameraControllerPlugin,
             CharacterControllerPlugin,
+            // WorldPlugin,
             WorldServerPlugin,
             WorldClientPlugin,
         ))

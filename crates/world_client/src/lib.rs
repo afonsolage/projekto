@@ -1,11 +1,12 @@
 use bevy::{
     ecs::query::ReadOnlyWorldQuery,
     prelude::*,
+    reflect::TypeUuid,
     render::{mesh::Indices, render_resource::PrimitiveTopology},
     utils::HashMap,
 };
 use material::ChunkMaterial;
-use projekto_core::voxel::Vertex;
+use projekto_core::voxel::{self, Vertex};
 use projekto_world_server::{chunk, Chunk, ChunkLocal, ChunkVertex};
 
 mod material;
@@ -16,6 +17,9 @@ impl Plugin for WorldClientPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkMap>()
             .register_type::<ChunkMaterial>()
+            .add_plugins(MaterialPlugin::<ChunkMaterial>::default())
+            .add_systems(PreStartup, load_assets)
+            .add_systems(Startup, setup_material)
             .add_systems(
                 Update,
                 (
@@ -29,6 +33,9 @@ impl Plugin for WorldClientPlugin {
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
 struct ChunkMap(HashMap<Chunk, Entity>);
 
+#[derive(Resource, Debug, Clone)]
+pub struct ChunkMaterialHandle(pub Handle<ChunkMaterial>);
+
 #[derive(Bundle, Default)]
 struct ChunkBundle {
     chunk: ChunkLocal,
@@ -39,19 +46,48 @@ fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLo
     !q_changed_chunks.is_empty()
 }
 
+#[derive(TypeUuid, Debug, Resource)]
+#[uuid = "e6edff2a-e206-500f-996c-bdebd1f95f59"]
+pub struct KindsAtlasRes {
+    pub atlas: Handle<Image>,
+}
+
+fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let kinds_path = format!("{}{}", env!("ASSETS_PATH"), "/voxels/kind.ron");
+    let descs = voxel::KindsDescs::init(kinds_path);
+
+    let atlas = asset_server.load(&descs.atlas_path);
+
+    commands.insert_resource(KindsAtlasRes { atlas });
+}
+
+fn setup_material(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<ChunkMaterial>>,
+    kinds_res: Res<KindsAtlasRes>,
+) {
+    let material = materials.add(ChunkMaterial {
+        texture: kinds_res.atlas.clone(),
+        tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
+        show_back_faces: false,
+    });
+
+    commands.insert_resource(ChunkMaterialHandle(material));
+}
+
 fn remove_unloaded_chunks(
     mut commands: Commands,
     mut map: ResMut<ChunkMap>,
     q_vertex: Query<(Entity, &ChunkVertex)>,
 ) {
-    map.retain(|chunk, entity| {
-        let retain = q_vertex.contains(*entity);
-        if !retain {
-            trace!("Despawning chunk [{}]", chunk);
-            commands.entity(*entity).despawn();
-        }
-        retain
-    });
+    // map.retain(|chunk, entity| {
+    //     let retain = q_vertex.contains(*entity);
+    //     if !retain {
+    //         trace!("Despawning chunk [{}]", chunk);
+    //         commands.entity(*entity).despawn();
+    //     }
+    //     retain
+    // });
 }
 
 fn update_chunk_mesh(
@@ -59,6 +95,7 @@ fn update_chunk_mesh(
     mut map: ResMut<ChunkMap>,
     q_vertex: Query<(&ChunkLocal, &ChunkVertex), Changed<ChunkVertex>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    material: Res<ChunkMaterialHandle>,
 ) {
     let mut count = 0;
     for (chunk, vertex) in &q_vertex {
@@ -75,6 +112,7 @@ fn update_chunk_mesh(
                     mesh: MaterialMeshBundle {
                         mesh: mesh_handler,
                         transform: Transform::from_translation(chunk::to_world(**chunk)),
+                        material: material.0.clone(),
                         ..Default::default()
                     },
                 })
