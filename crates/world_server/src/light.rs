@@ -94,8 +94,8 @@ fn gather_neighborhood_light<'a>(
 ) -> [Option<u8>; NEIGHBOR_COUNT] {
     let mut neighborhood = [Default::default(); NEIGHBOR_COUNT];
 
-    let light = get_light(chunk).expect("chunk exists");
-    let kind = get_kind(chunk).expect("chunk exists");
+    let light = get_light(chunk).expect("base chunk must exists");
+    let kind = get_kind(chunk).expect("base chunk must exists");
 
     let mut i = 0;
     for y in -1..=1 {
@@ -175,7 +175,8 @@ fn smooth_ambient_occlusion<const VERTEX: usize>(
     let side2 = side2.unwrap_or(0) as f32;
 
     // Convert from i32, which has the info if the voxel is opaque, to pure light intensity
-    (side) + side1 + side2 + corner / 4.0
+    // (side + side1 + side2 + corner) / 4.0
+    side
 }
 
 fn soft_vertex_light(neighbors: &[Option<u8>; NEIGHBOR_COUNT], side: voxel::Side) -> [f32; 4] {
@@ -228,9 +229,9 @@ fn calc_propagated_intensity(ty: LightTy, side: voxel::Side, intensity: u8) -> u
         && ty == LightTy::Natural
         && intensity == voxel::Light::MAX_NATURAL_INTENSITY
     {
-        intensity
+        voxel::Light::MAX_NATURAL_INTENSITY
     } else {
-        assert!(intensity > 0);
+        debug_assert!(intensity > 0);
         intensity - 1
     }
 }
@@ -252,6 +253,10 @@ pub fn propagate(
     let mut neighbor_light_propagation = vec![];
 
     while let Some(voxel) = queue.pop_front() {
+        if kind.get(voxel).is_opaque() {
+            continue;
+        }
+
         let current_intensity = light.get(voxel).get(light_ty);
 
         for side in voxel::SIDES {
@@ -295,6 +300,7 @@ pub fn propagate(
             }
 
             light.set_type(side_voxel, light_ty, propagated_intensity);
+
             if propagated_intensity > 1 {
                 queue.push_back(side_voxel);
             }
@@ -487,5 +493,69 @@ mod test {
                     "No light should be propagated to left"
                 );
             });
+    }
+
+    #[test]
+    fn gather_neighborhood_light() {
+        let chunk = Chunk::default();
+        let voxel = Voxel::new(10, 10, 10);
+        let kind = ChunkStorage::<voxel::Kind>::default();
+        let mut light = ChunkStorage::<voxel::Light>::default();
+
+        let mut i = 0;
+        for y in -1..=1 {
+            for z in -1..=1 {
+                for x in -1..=1 {
+                    light.set(voxel + Voxel::new(x, y, z), voxel::Light::natural(i));
+                    i += 1
+                }
+            }
+        }
+
+        let get_kind = |_| -> _ { Some(&kind) };
+        let get_light = |_| -> _ { Some(&light) };
+
+        let neighbors = super::gather_neighborhood_light(chunk, voxel, get_kind, get_light);
+
+        let mut i = 0;
+        for y in -1..=1 {
+            for z in -1..=1 {
+                for x in -1..=1 {
+                    let neighbor = voxel + Voxel::new(x, y, z);
+
+                    if neighbor == voxel {
+                        continue;
+                    }
+
+                    assert_eq!(
+                        light.get(neighbor).get_greater_intensity(),
+                        neighbors[i].unwrap(),
+                        "Failed at {neighbor} [{i}]"
+                    );
+                    i += 1
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn neighbor_lookup_table() {
+        let mut count = vec![0; NEIGHBOR_COUNT];
+
+        let corners = [0usize, 2, 19, 17, 6, 8, 25, 23];
+
+        for s in NEIGHBOR_VERTEX_LOOKUP {
+            for v in s {
+                for i in v {
+                    count[i] += 1;
+                }
+            }
+        }
+
+        for (i, cnt) in count.into_iter().enumerate() {
+            let expected = if corners.contains(&i) { 3 } else { 4 };
+
+            assert_eq!(cnt, expected, "In Lookup each neighbor should appears 4 times, except corners, which should appears 3 times.");
+        }
     }
 }

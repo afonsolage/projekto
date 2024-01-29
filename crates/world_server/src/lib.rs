@@ -10,7 +10,6 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use chunk::ChunkStorage;
-use genesis::GeneratedChunk;
 use light::NeighborLightPropagation;
 use projekto_core::voxel::{self};
 
@@ -317,11 +316,10 @@ fn chunks_gen(
 ) {
     let mut count = 0;
     for &ChunkGen(chunk) in reader.read() {
-        let GeneratedChunk { kind, light } = genesis::generate_chunk(chunk);
+        let kind = genesis::generate_chunk(chunk);
         let entity = commands
             .spawn(ChunkBundle {
                 kind: ChunkKind(kind),
-                light: ChunkLight(light),
                 local: ChunkLocal(chunk),
                 ..Default::default()
             })
@@ -351,6 +349,14 @@ fn init_light(
             .zip(0..chunk::Z_END)
             .map(|(x, z)| Voxel::new(x, chunk::Y_END, z))
             .collect::<Vec<_>>();
+
+        top_voxels.iter().for_each(|&voxel| {
+            light.set_type(
+                voxel,
+                voxel::LightTy::Natural,
+                voxel::Light::MAX_NATURAL_INTENSITY,
+            );
+        });
 
         let neighbor_propagation =
             light::propagate(kind, &mut light, voxel::LightTy::Natural, &top_voxels);

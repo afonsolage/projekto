@@ -79,7 +79,6 @@ fn setup(
     // camera
     commands
         .spawn(Camera3dBundle::default())
-        .insert(OrbitCamera)
         .insert(FlyByCamera)
         .insert(Transform::from_xyz(0.0, 22.0, 5.0).looking_at(Vec3::new(2.0, 20.0, 7.0), Vec3::Y))
         .insert(Name::new("Main Camera"));
@@ -99,7 +98,6 @@ fn setup(
         .insert(Name::new("Character"))
         .insert(TerraformationCenter)
         .insert(LandscapeCenter)
-        .insert(OrbitCameraTarget)
         .insert(CharacterController)
         .with_children(|p| {
             p.spawn(PbrBundle {
