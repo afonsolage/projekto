@@ -58,7 +58,7 @@ impl AxisRange {
         if end_inclusive >= begin {
             Self::Iter(begin..=end_inclusive)
         } else {
-            Self::Rev((begin..=end_inclusive).rev())
+            Self::Rev((end_inclusive..=begin).rev())
         }
     }
 }
@@ -281,6 +281,7 @@ pub(super) fn faces_merge(
 
     for side in voxel::SIDES {
         let walk_axis = get_side_walk_axis(side);
+
         let mut merged = vec![false; chunk::BUFFER_SIZE];
 
         for voxel in MergerIterator::new(side) {
@@ -450,9 +451,753 @@ pub(super) fn generate_vertices(faces: Vec<voxel::Face>) -> Vec<voxel::Vertex> {
     vertices
 }
 
+// pub(super) fn generate_faces(
+//     kind: &ChunkStorage<voxel::Kind>,
+//     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
+//     soft_light: &ChunkStorage<voxel::FacesSoftLight>,
+// ) -> Vec<voxel::Face> {
+//     let mut faces_vertices = vec![];
+//
+//     for voxel in chunk::voxels() {
+//         for side in voxel::SIDES {
+//             let kind = kind.get(voxel);
+//
+//             if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
+//                 continue;
+//             }
+//
+//             let voxel_soft_light = soft_light.get(voxel);
+//
+//             let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
+//             faces_vertices.push(voxel::Face {
+//                 vertices: [v1, v2, v3, v4],
+//                 side,
+//                 kind,
+//                 light: voxel_soft_light.get(side),
+//             });
+//         }
+//     }
+//
+//     faces_vertices
+// }
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn merge_right_faces() {
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Y     2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |        +-------------------+        +----       --------+
+        // |     1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // Z -----+        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 4   3   2   1   0
+        //
+        // Merge direction (-Z, Y)[->, ^]
+
+        let mut kinds = ChunkStorage::<voxel::Kind>::default();
+
+        kinds.set((0, 0, 0).into(), 1.into());
+        kinds.set((0, 0, 2).into(), 1.into());
+        kinds.set((0, 0, 3).into(), 1.into());
+        kinds.set((0, 1, 1).into(), 1.into());
+        kinds.set((0, 1, 2).into(), 1.into());
+        kinds.set((0, 1, 3).into(), 1.into());
+        kinds.set((0, 2, 1).into(), 2.into());
+        kinds.set((0, 2, 2).into(), 1.into());
+        kinds.set((0, 2, 3).into(), 1.into());
+        kinds.set((0, 3, 1).into(), 2.into());
+        kinds.set((0, 3, 2).into(), 2.into());
+        kinds.set((0, 4, 1).into(), 2.into());
+        kinds.set((0, 4, 2).into(), 2.into());
+
+        let merged = super::faces_merge(&kinds, &Default::default(), &Default::default())
+            .into_iter()
+            .filter(|vf| vf.side == voxel::Side::Right) // We care only for right faces here
+            .collect::<Vec<_>>();
+
+        let test_merged: Vec<voxel::Face> = vec![
+            voxel::Face {
+                vertices: [
+                    (0, 0, 3).into(),
+                    (0, 0, 2).into(),
+                    (0, 2, 2).into(),
+                    (0, 2, 3).into(),
+                ],
+                side: voxel::Side::Right,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (0, 0, 0).into(),
+                    (0, 0, 0).into(),
+                    (0, 0, 0).into(),
+                    (0, 0, 0).into(),
+                ],
+                side: voxel::Side::Right,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (0, 1, 1).into(),
+                    (0, 1, 1).into(),
+                    (0, 1, 1).into(),
+                    (0, 1, 1).into(),
+                ],
+                side: voxel::Side::Right,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (0, 2, 1).into(),
+                    (0, 2, 1).into(),
+                    (0, 4, 1).into(),
+                    (0, 4, 1).into(),
+                ],
+                side: voxel::Side::Right,
+                kind: 2.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (0, 3, 2).into(),
+                    (0, 3, 2).into(),
+                    (0, 4, 2).into(),
+                    (0, 4, 2).into(),
+                ],
+                side: voxel::Side::Right,
+                kind: 2.into(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(&merged.len(), &test_merged.len());
+
+        test_merged.into_iter().enumerate().for_each(|(i, f)| {
+            assert_eq!(&merged[i], &f, "Failed on index {}", i);
+        });
+    }
+
+    #[test]
+    fn merge_left_faces() {
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Y            2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |               +-------------------+        +----       --------+
+        // |            1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // +----- Z        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (Z, Y)[->, ^]
+
+        let mut kinds = ChunkStorage::<voxel::Kind>::default();
+
+        kinds.set((0, 0, 1).into(), 1.into());
+        kinds.set((0, 0, 2).into(), 1.into());
+        kinds.set((0, 0, 4).into(), 1.into());
+        kinds.set((0, 1, 1).into(), 1.into());
+        kinds.set((0, 1, 2).into(), 1.into());
+        kinds.set((0, 1, 3).into(), 1.into());
+        kinds.set((0, 2, 1).into(), 1.into());
+        kinds.set((0, 2, 2).into(), 1.into());
+        kinds.set((0, 2, 3).into(), 2.into());
+        kinds.set((0, 3, 2).into(), 2.into());
+        kinds.set((0, 3, 3).into(), 2.into());
+        kinds.set((0, 4, 2).into(), 2.into());
+        kinds.set((0, 4, 3).into(), 2.into());
+
+        let merged = super::faces_merge(&kinds, &Default::default(), &Default::default())
+            .into_iter()
+            .filter(|vf| vf.side == voxel::Side::Left) // We care only for left faces here
+            .collect::<Vec<_>>();
+
+        let test_merged: Vec<voxel::Face> = vec![
+            voxel::Face {
+                vertices: [
+                    (0, 0, 1).into(),
+                    (0, 0, 2).into(),
+                    (0, 2, 2).into(),
+                    (0, 2, 1).into(),
+                ],
+                side: voxel::Side::Left,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (0, 0, 4).into(),
+                    (0, 0, 4).into(),
+                    (0, 0, 4).into(),
+                    (0, 0, 4).into(),
+                ],
+                side: voxel::Side::Left,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (0, 1, 3).into(),
+                    (0, 1, 3).into(),
+                    (0, 1, 3).into(),
+                    (0, 1, 3).into(),
+                ],
+                side: voxel::Side::Left,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (0, 2, 3).into(),
+                    (0, 2, 3).into(),
+                    (0, 4, 3).into(),
+                    (0, 4, 3).into(),
+                ],
+                side: voxel::Side::Left,
+                kind: 2.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (0, 3, 2).into(),
+                    (0, 3, 2).into(),
+                    (0, 4, 2).into(),
+                    (0, 4, 2).into(),
+                ],
+                side: voxel::Side::Left,
+                kind: 2.into(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(&merged.len(), &test_merged.len());
+
+        test_merged.into_iter().enumerate().for_each(|(i, f)| {
+            assert_eq!(&merged[i], &f, "Failed on index {}", i);
+        });
+    }
+
+    #[test]
+    fn merge_up_faces() {
+        // +-------------------+        +-------------------+
+        // 0  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 1  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // +----- X     2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |               +-------------------+        +----       --------+
+        // |            3  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // Z               +-------------------+        +----       --------+
+        // 4  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (X, -Z)[->, ^]
+
+        let mut kinds = ChunkStorage::<voxel::Kind>::default();
+
+        kinds.set((1, 0, 4).into(), 1.into());
+        kinds.set((2, 0, 4).into(), 1.into());
+        kinds.set((4, 0, 4).into(), 1.into());
+        kinds.set((1, 0, 3).into(), 1.into());
+        kinds.set((2, 0, 3).into(), 1.into());
+        kinds.set((3, 0, 3).into(), 1.into());
+        kinds.set((1, 0, 2).into(), 1.into());
+        kinds.set((2, 0, 2).into(), 1.into());
+        kinds.set((3, 0, 2).into(), 2.into());
+        kinds.set((2, 0, 1).into(), 2.into());
+        kinds.set((3, 0, 1).into(), 2.into());
+        kinds.set((2, 0, 0).into(), 2.into());
+        kinds.set((3, 0, 0).into(), 2.into());
+
+        let merged = super::faces_merge(&kinds, &Default::default(), &Default::default())
+            .into_iter()
+            .filter(|vf| vf.side == voxel::Side::Up) // We care only for Up faces here
+            .collect::<Vec<_>>();
+
+        let test_merged: Vec<voxel::Face> = vec![
+            voxel::Face {
+                vertices: [
+                    (1, 0, 4).into(),
+                    (2, 0, 4).into(),
+                    (2, 0, 2).into(),
+                    (1, 0, 2).into(),
+                ],
+                side: voxel::Side::Up,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (4, 0, 4).into(),
+                    (4, 0, 4).into(),
+                    (4, 0, 4).into(),
+                    (4, 0, 4).into(),
+                ],
+                side: voxel::Side::Up,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (3, 0, 3).into(),
+                    (3, 0, 3).into(),
+                    (3, 0, 3).into(),
+                    (3, 0, 3).into(),
+                ],
+                side: voxel::Side::Up,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (3, 0, 2).into(),
+                    (3, 0, 2).into(),
+                    (3, 0, 0).into(),
+                    (3, 0, 0).into(),
+                ],
+                side: voxel::Side::Up,
+                kind: 2.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (2, 0, 1).into(),
+                    (2, 0, 1).into(),
+                    (2, 0, 0).into(),
+                    (2, 0, 0).into(),
+                ],
+                side: voxel::Side::Up,
+                kind: 2.into(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(&merged.len(), &test_merged.len());
+
+        test_merged.into_iter().enumerate().for_each(|(i, f)| {
+            assert_eq!(&merged[i], &f, "Failed on index {}", i);
+        });
+    }
+
+    #[test]
+    fn merge_up_faces_sub_divide() {
+        // +-------------------+        +-------------------+
+        // 0  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
+        // +-------------------+        +----   1   --------+
+        // 1  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
+        // +-------------------+        +-------------------+
+        // +----- X     2  | 0 | 1 | 2 | 0 | 0 |   ->   | 0 | 1 | 2 | 0 | 0 |
+        // |               +-------------------+        +-------------------+
+        // |            3  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
+        // Z               +-------------------+        +----   1   --------+
+        // 4  | 0 | 1 | 1 | 0 | 0 |        | 0 |       | 0 | 0 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (X, -Z)[->, ^]
+
+        let mut kinds = ChunkStorage::<voxel::Kind>::default();
+
+        kinds.set((1, 0, 4).into(), 1.into());
+        kinds.set((2, 0, 4).into(), 1.into());
+        kinds.set((1, 0, 3).into(), 1.into());
+        kinds.set((2, 0, 3).into(), 1.into());
+        kinds.set((1, 0, 2).into(), 1.into());
+        kinds.set((2, 0, 2).into(), 2.into());
+        kinds.set((1, 0, 1).into(), 1.into());
+        kinds.set((2, 0, 1).into(), 1.into());
+        kinds.set((1, 0, 0).into(), 1.into());
+        kinds.set((2, 0, 0).into(), 1.into());
+
+        let merged = super::faces_merge(&kinds, &Default::default(), &Default::default())
+            .into_iter()
+            .filter(|vf| vf.side == voxel::Side::Up) // We care only for Up faces here
+            .collect::<Vec<_>>();
+
+        let test_merged: Vec<voxel::Face> = vec![
+            voxel::Face {
+                vertices: [
+                    (1, 0, 4).into(),
+                    (2, 0, 4).into(),
+                    (2, 0, 3).into(),
+                    (1, 0, 3).into(),
+                ],
+                side: voxel::Side::Up,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (1, 0, 2).into(),
+                    (1, 0, 2).into(),
+                    (1, 0, 2).into(),
+                    (1, 0, 2).into(),
+                ],
+                side: voxel::Side::Up,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (2, 0, 2).into(),
+                    (2, 0, 2).into(),
+                    (2, 0, 2).into(),
+                    (2, 0, 2).into(),
+                ],
+                side: voxel::Side::Up,
+                kind: 2.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (1, 0, 1).into(),
+                    (2, 0, 1).into(),
+                    (2, 0, 0).into(),
+                    (1, 0, 0).into(),
+                ],
+                side: voxel::Side::Up,
+                kind: 1.into(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(&merged.len(), &test_merged.len());
+
+        test_merged.into_iter().enumerate().for_each(|(i, f)| {
+            assert_eq!(&merged[i], &f, "Failed on index {}", i);
+        });
+    }
+
+    #[test]
+    fn merge_down_faces() {
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Z            2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |               +-------------------+        +----       --------+
+        // |            1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // +----- X        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (X, Z)[->, ^]
+
+        let mut kinds = ChunkStorage::<voxel::Kind>::default();
+
+        kinds.set((1, 0, 0).into(), 1.into());
+        kinds.set((2, 0, 0).into(), 1.into());
+        kinds.set((4, 0, 0).into(), 1.into());
+        kinds.set((1, 0, 1).into(), 1.into());
+        kinds.set((2, 0, 1).into(), 1.into());
+        kinds.set((3, 0, 1).into(), 1.into());
+        kinds.set((1, 0, 2).into(), 1.into());
+        kinds.set((2, 0, 2).into(), 1.into());
+        kinds.set((3, 0, 2).into(), 2.into());
+        kinds.set((2, 0, 3).into(), 2.into());
+        kinds.set((3, 0, 3).into(), 2.into());
+        kinds.set((2, 0, 4).into(), 2.into());
+        kinds.set((3, 0, 4).into(), 2.into());
+
+        let merged = super::faces_merge(&kinds, &Default::default(), &Default::default())
+            .into_iter()
+            .filter(|vf| vf.side == voxel::Side::Down) // We care only for Down faces here
+            .collect::<Vec<_>>();
+
+        let test_merged: Vec<voxel::Face> = vec![
+            voxel::Face {
+                vertices: [
+                    (1, 0, 0).into(),
+                    (2, 0, 0).into(),
+                    (2, 0, 2).into(),
+                    (1, 0, 2).into(),
+                ],
+                side: voxel::Side::Down,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (4, 0, 0).into(),
+                    (4, 0, 0).into(),
+                    (4, 0, 0).into(),
+                    (4, 0, 0).into(),
+                ],
+                side: voxel::Side::Down,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (3, 0, 1).into(),
+                    (3, 0, 1).into(),
+                    (3, 0, 1).into(),
+                    (3, 0, 1).into(),
+                ],
+                side: voxel::Side::Down,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (3, 0, 2).into(),
+                    (3, 0, 2).into(),
+                    (3, 0, 4).into(),
+                    (3, 0, 4).into(),
+                ],
+                side: voxel::Side::Down,
+                kind: 2.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (2, 0, 3).into(),
+                    (2, 0, 3).into(),
+                    (2, 0, 4).into(),
+                    (2, 0, 4).into(),
+                ],
+                side: voxel::Side::Down,
+                kind: 2.into(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(&merged.len(), &test_merged.len());
+
+        test_merged.into_iter().enumerate().for_each(|(i, f)| {
+            assert_eq!(&merged[i], &f, "Failed on index {}", i);
+        });
+    }
+
+    #[test]
+    fn merge_front_faces() {
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Y            2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |               +-------------------+        +----       --------+
+        // |            1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // +----- X        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 0   1   2   3   4
+        //
+        // Merge direction (X, Y)[->, ^]
+
+        let mut kinds = ChunkStorage::<voxel::Kind>::default();
+
+        kinds.set((1, 0, 0).into(), 1.into());
+        kinds.set((2, 0, 0).into(), 1.into());
+        kinds.set((4, 0, 0).into(), 1.into());
+        kinds.set((1, 1, 0).into(), 1.into());
+        kinds.set((2, 1, 0).into(), 1.into());
+        kinds.set((3, 1, 0).into(), 1.into());
+        kinds.set((1, 2, 0).into(), 1.into());
+        kinds.set((2, 2, 0).into(), 1.into());
+        kinds.set((3, 2, 0).into(), 2.into());
+        kinds.set((2, 3, 0).into(), 2.into());
+        kinds.set((3, 3, 0).into(), 2.into());
+        kinds.set((2, 4, 0).into(), 2.into());
+        kinds.set((3, 4, 0).into(), 2.into());
+
+        let merged = super::faces_merge(&kinds, &Default::default(), &Default::default())
+            .into_iter()
+            .filter(|vf| vf.side == voxel::Side::Front) // We care only for Front faces here
+            .collect::<Vec<_>>();
+
+        let test_merged: Vec<voxel::Face> = vec![
+            voxel::Face {
+                vertices: [
+                    (1, 0, 0).into(),
+                    (2, 0, 0).into(),
+                    (2, 2, 0).into(),
+                    (1, 2, 0).into(),
+                ],
+                side: voxel::Side::Front,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (4, 0, 0).into(),
+                    (4, 0, 0).into(),
+                    (4, 0, 0).into(),
+                    (4, 0, 0).into(),
+                ],
+                side: voxel::Side::Front,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (3, 1, 0).into(),
+                    (3, 1, 0).into(),
+                    (3, 1, 0).into(),
+                    (3, 1, 0).into(),
+                ],
+                side: voxel::Side::Front,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (3, 2, 0).into(),
+                    (3, 2, 0).into(),
+                    (3, 4, 0).into(),
+                    (3, 4, 0).into(),
+                ],
+                side: voxel::Side::Front,
+                kind: 2.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (2, 3, 0).into(),
+                    (2, 3, 0).into(),
+                    (2, 4, 0).into(),
+                    (2, 4, 0).into(),
+                ],
+                side: voxel::Side::Front,
+                kind: 2.into(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(&merged.len(), &test_merged.len());
+
+        test_merged.into_iter().enumerate().for_each(|(i, f)| {
+            assert_eq!(&merged[i], &f, "Failed on index {}", i);
+        });
+    }
+
+    #[test]
+    fn merge_back_faces() {
+        // +-------------------+        +-------------------+
+        // 4  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   |   | 0 |
+        // +-------------------+        +-------- 2 -   ----+
+        // 3  | 0 | 0 | 2 | 2 | 0 |        | 0 | 0 |   | 2 | 0 |
+        // +-------------------+        +------------   ----+
+        // Y     2  | 0 | 1 | 1 | 2 | 0 |   ->   | 0 |       |   | 0 |
+        // |        +-------------------+        +----       --------+
+        // |     1  | 0 | 1 | 1 | 1 | 0 |        | 0 |   1   | 1 | 0 |
+        // X -----+        +-------------------+        +----       --------+
+        // 0  | 0 | 1 | 1 | 0 | 1 |        | 0 |       | 0 | 1 |
+        // +-------------------+        +-------------------+
+        //
+        // + 4   3   2   1   0
+        //
+        // Merge direction (-X, Y)[->, ^]
+
+        let mut kinds = ChunkStorage::<voxel::Kind>::default();
+
+        kinds.set((3, 0, 0).into(), 1.into());
+        kinds.set((2, 0, 0).into(), 1.into());
+        kinds.set((0, 0, 0).into(), 1.into());
+        kinds.set((3, 1, 0).into(), 1.into());
+        kinds.set((2, 1, 0).into(), 1.into());
+        kinds.set((1, 1, 0).into(), 1.into());
+        kinds.set((3, 2, 0).into(), 1.into());
+        kinds.set((2, 2, 0).into(), 1.into());
+        kinds.set((1, 2, 0).into(), 2.into());
+        kinds.set((2, 3, 0).into(), 2.into());
+        kinds.set((1, 3, 0).into(), 2.into());
+        kinds.set((2, 4, 0).into(), 2.into());
+        kinds.set((1, 4, 0).into(), 2.into());
+
+        let merged = super::faces_merge(&kinds, &Default::default(), &Default::default())
+            .into_iter()
+            .filter(|vf| vf.side == voxel::Side::Back) // We care only for Back faces here
+            .collect::<Vec<_>>();
+
+        let test_merged: Vec<voxel::Face> = vec![
+            voxel::Face {
+                vertices: [
+                    (3, 0, 0).into(),
+                    (2, 0, 0).into(),
+                    (2, 2, 0).into(),
+                    (3, 2, 0).into(),
+                ],
+                side: voxel::Side::Back,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (0, 0, 0).into(),
+                    (0, 0, 0).into(),
+                    (0, 0, 0).into(),
+                    (0, 0, 0).into(),
+                ],
+                side: voxel::Side::Back,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (1, 1, 0).into(),
+                    (1, 1, 0).into(),
+                    (1, 1, 0).into(),
+                    (1, 1, 0).into(),
+                ],
+                side: voxel::Side::Back,
+                kind: 1.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (1, 2, 0).into(),
+                    (1, 2, 0).into(),
+                    (1, 4, 0).into(),
+                    (1, 4, 0).into(),
+                ],
+                side: voxel::Side::Back,
+                kind: 2.into(),
+                ..Default::default()
+            },
+            voxel::Face {
+                vertices: [
+                    (2, 3, 0).into(),
+                    (2, 3, 0).into(),
+                    (2, 4, 0).into(),
+                    (2, 4, 0).into(),
+                ],
+                side: voxel::Side::Back,
+                kind: 2.into(),
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(&merged.len(), &test_merged.len());
+
+        test_merged.into_iter().enumerate().for_each(|(i, f)| {
+            assert_eq!(&merged[i], &f, "Failed on index {}", i);
+        });
+    }
 
     #[test]
     fn faces_occlusion_empty_chunk() {
@@ -510,5 +1255,255 @@ mod test {
                 );
             }
         })
+    }
+
+    #[test]
+    fn calc_walked_voxels_negative_axis() {
+        let v1 = (0, 0, 3).into();
+        let v2 = (0, 0, 2).into();
+        let v3 = (0, 2, 2).into();
+        let current_axis = (0, 0, -1).into();
+        let perpendicular_axis = (0, 1, 0).into();
+
+        let walked = super::calc_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis);
+        let test_walked: Vec<IVec3> = vec![
+            (0, 0, 3).into(),
+            (0, 0, 2).into(),
+            (0, 1, 3).into(),
+            (0, 1, 2).into(),
+            (0, 2, 3).into(),
+            (0, 2, 2).into(),
+        ];
+
+        assert_eq!(&walked.len(), &test_walked.len());
+
+        test_walked.into_iter().enumerate().for_each(|(i, w)| {
+            assert_eq!(walked[i], w, "Failed on index {}", i);
+        });
+    }
+
+    #[test]
+    fn calc_walked_voxels_negative_x_axis() {
+        let v1 = (3, 0, 0).into();
+        let v2 = (2, 0, 0).into();
+        let v3 = (2, 2, 0).into();
+        let current_axis = (-1, 0, 0).into();
+        let perpendicular_axis = (0, 1, 0).into();
+
+        let walked = super::calc_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis);
+        let test_walked: Vec<IVec3> = vec![
+            (3, 0, 0).into(),
+            (2, 0, 0).into(),
+            (3, 1, 0).into(),
+            (2, 1, 0).into(),
+            (3, 2, 0).into(),
+            (2, 2, 0).into(),
+        ];
+
+        assert_eq!(&walked.len(), &test_walked.len());
+
+        test_walked.into_iter().enumerate().for_each(|(i, w)| {
+            assert_eq!(walked[i], w, "Failed on index {}", i);
+        });
+    }
+
+    #[test]
+    fn calc_walked_voxels_positive_axis() {
+        let v1 = (1, 2, 0).into();
+        let v2 = (4, 2, 0).into();
+        let v3 = (4, 4, 0).into();
+        let current_axis = (1, 0, 0).into();
+        let perpendicular_axis = (0, 1, 0).into();
+
+        let walked = super::calc_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis);
+        let test_walked: Vec<IVec3> = vec![
+            (1, 2, 0).into(),
+            (2, 2, 0).into(),
+            (3, 2, 0).into(),
+            (4, 2, 0).into(),
+            (1, 3, 0).into(),
+            (2, 3, 0).into(),
+            (3, 3, 0).into(),
+            (4, 3, 0).into(),
+            (1, 4, 0).into(),
+            (2, 4, 0).into(),
+            (3, 4, 0).into(),
+            (4, 4, 0).into(),
+        ];
+
+        assert_eq!(&walked.len(), &test_walked.len());
+
+        test_walked.into_iter().enumerate().for_each(|(i, w)| {
+            assert_eq!(walked[i], w, "Failed on index {}", i);
+        });
+    }
+
+    #[test]
+    fn unswizzle() {
+        let walk_axis = ((0, 1, 0).into(), (0, 0, 1).into(), (-1, 0, 0).into());
+
+        let unswizzled = super::unswizzle(walk_axis, 3, 5, 2);
+
+        assert_eq!(unswizzled, (2, 3, 5).into());
+    }
+
+    #[test]
+    fn merger_iterator_right() {
+        let side = voxel::Side::Right;
+
+        let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
+        let normal_it = {
+            let mut vec = vec![];
+            for x in 0..chunk::X_AXIS_SIZE {
+                for y in 0..chunk::Y_AXIS_SIZE {
+                    for z in (0..=chunk::Z_END).rev() {
+                        vec.push(IVec3::new(x as i32, y as i32, z));
+                    }
+                }
+            }
+            vec
+        };
+
+        assert!(!merger_it.is_empty(), "Merger iterator must be non empty");
+
+        merger_it.into_iter().enumerate().for_each(|(i, v)| {
+            assert_eq!(&normal_it[i], &v);
+        })
+    }
+
+    #[test]
+    fn merger_iterator_left() {
+        let side = voxel::Side::Left;
+
+        let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
+        let normal_it = {
+            let mut vec = vec![];
+            for x in 0..chunk::X_AXIS_SIZE {
+                for y in 0..chunk::Y_AXIS_SIZE {
+                    for z in 0..chunk::Z_AXIS_SIZE {
+                        vec.push(IVec3::new(x as i32, y as i32, z as i32));
+                    }
+                }
+            }
+            vec
+        };
+
+        assert!(!merger_it.is_empty(), "Merger iterator must be non empty");
+
+        merger_it.into_iter().enumerate().for_each(|(i, v)| {
+            assert_eq!(&normal_it[i], &v);
+        })
+    }
+
+    #[test]
+    fn merger_iterator_up() {
+        let side = voxel::Side::Up;
+
+        let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
+        let normal_it = {
+            let mut vec = vec![];
+            for y in 0..chunk::Y_AXIS_SIZE {
+                for z in (0..=chunk::Z_END).rev() {
+                    for x in 0..chunk::X_AXIS_SIZE {
+                        vec.push(IVec3::new(x as i32, y as i32, z));
+                    }
+                }
+            }
+            vec
+        };
+
+        assert!(!merger_it.is_empty(), "Merger iterator must be non empty");
+
+        merger_it.into_iter().enumerate().for_each(|(i, v)| {
+            assert_eq!(&normal_it[i], &v, "Failed to match at index {}", i);
+        })
+    }
+
+    #[test]
+    fn merger_iterator_down() {
+        let side = voxel::Side::Down;
+
+        let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
+        let normal_it = {
+            let mut vec = vec![];
+            for y in 0..chunk::Y_AXIS_SIZE {
+                for z in 0..chunk::Z_AXIS_SIZE {
+                    for x in 0..chunk::X_AXIS_SIZE {
+                        vec.push(IVec3::new(x as i32, y as i32, z as i32));
+                    }
+                }
+            }
+            vec
+        };
+
+        assert!(!merger_it.is_empty(), "Merger iterator must be non empty");
+
+        merger_it.into_iter().enumerate().for_each(|(i, v)| {
+            assert_eq!(&normal_it[i], &v, "Failed to match at index {}", i);
+        })
+    }
+
+    #[test]
+    fn merger_iterator_front() {
+        let side = voxel::Side::Front;
+
+        let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
+        let normal_it = {
+            let mut vec = vec![];
+            for z in 0..chunk::Z_AXIS_SIZE {
+                for y in 0..chunk::Y_AXIS_SIZE {
+                    for x in 0..chunk::X_AXIS_SIZE {
+                        vec.push(IVec3::new(x as i32, y as i32, z as i32));
+                    }
+                }
+            }
+            vec
+        };
+
+        assert!(!merger_it.is_empty(), "Merger iterator must be non empty");
+
+        merger_it.into_iter().enumerate().for_each(|(i, v)| {
+            assert_eq!(&normal_it[i], &v, "Failed to match at index {}", i);
+        })
+    }
+
+    #[test]
+    fn merger_iterator_back() {
+        let side = voxel::Side::Back;
+
+        let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
+        let normal_it = {
+            let mut vec = vec![];
+            for z in 0..chunk::Z_AXIS_SIZE {
+                for y in 0..chunk::Y_AXIS_SIZE {
+                    for x in (0..=chunk::X_END).rev() {
+                        vec.push(IVec3::new(x, y as i32, z as i32));
+                    }
+                }
+            }
+            vec
+        };
+
+        assert!(!merger_it.is_empty(), "Merger iterator must be non empty");
+
+        merger_it.into_iter().enumerate().for_each(|(i, v)| {
+            assert_eq!(&normal_it[i], &v, "Failed to match at index {}", i);
+        })
+    }
+
+    #[test]
+    fn axis_range_inc() {
+        let range = AxisRange::new(0, 10);
+        let v = range.collect::<Vec<_>>();
+
+        assert_eq!(&v, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn axis_range_dec() {
+        let range = AxisRange::new(10, 0);
+        let v = range.collect::<Vec<_>>();
+
+        assert_eq!(&v, &[10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
     }
 }

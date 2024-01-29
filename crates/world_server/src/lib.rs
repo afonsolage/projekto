@@ -29,7 +29,7 @@ impl Plugin for WorldServerPlugin {
             .add_event::<ChunkGen>()
             .add_event::<LightUpdate>()
             .add_systems(
-                FixedUpdate,
+                Update,
                 (
                     // Landscape Update
                     (update_landscape.run_if(resource_changed_or_removed::<Landscape>()),)
@@ -553,6 +553,7 @@ fn generate_vertices(
     mut q_vertex: Query<&mut ChunkVertex>,
 ) {
     let mut count = 0;
+    let mut map = [0; voxel::SIDE_COUNT];
     q_changed_chunks
         .iter()
         .for_each(|(entity, kind, faces_occlusion, faces_soft_light)| {
@@ -561,6 +562,12 @@ fn generate_vertices(
             }
 
             let faces = meshing::faces_merge(kind, faces_occlusion, faces_soft_light);
+            // let faces = meshing::generate_faces(kind, faces_occlusion, faces_soft_light);
+
+            faces.iter().for_each(|face| {
+                map[face.side.index()] += 1;
+            });
+
             let mut vertex = meshing::generate_vertices(faces);
 
             let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
@@ -570,7 +577,7 @@ fn generate_vertices(
         });
 
     if count > 0 {
-        trace!("[generate_vertices] {count} chunks vertices generated.");
+        trace!("[generate_vertices] {count} chunks vertices generated. {map:?}");
     }
 }
 
