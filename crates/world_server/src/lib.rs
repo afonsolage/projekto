@@ -345,12 +345,7 @@ fn init_light(
     let mut count = 0;
 
     q.for_each_mut(|(local, kind, mut light)| {
-        let top_voxels = (0..=chunk::X_END)
-            .zip(0..chunk::Z_END)
-            .map(|(x, z)| Voxel::new(x, chunk::Y_END, z))
-            .collect::<Vec<_>>();
-
-        top_voxels.iter().for_each(|&voxel| {
+        chunk::top_voxels().for_each(|voxel| {
             light.set_type(
                 voxel,
                 voxel::LightTy::Natural,
@@ -358,8 +353,12 @@ fn init_light(
             );
         });
 
-        let neighbor_propagation =
-            light::propagate(kind, &mut light, voxel::LightTy::Natural, &top_voxels);
+        let neighbor_propagation = light::propagate(
+            kind,
+            &mut light,
+            voxel::LightTy::Natural,
+            chunk::top_voxels(),
+        );
 
         neighbor_propagation.into_iter().for_each(
             |NeighborLightPropagation {
@@ -421,7 +420,7 @@ fn propagate_light(
                     .get_chunk_mut(chunk)
                     .expect("Missing entities was filtered already");
                 let neighborhood_propagation =
-                    light::propagate(kind, &mut light, light_ty, &voxels);
+                    light::propagate(kind, &mut light, light_ty, voxels.iter().copied());
 
                 neighborhood_propagation.into_iter().for_each(
                     |NeighborLightPropagation {

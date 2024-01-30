@@ -247,9 +247,9 @@ pub fn propagate(
     kind: &ChunkStorage<voxel::Kind>,
     light: &mut ChunkStorage<voxel::Light>,
     light_ty: LightTy,
-    voxels: &[Voxel],
+    voxels: impl Iterator<Item = Voxel>,
 ) -> Vec<NeighborLightPropagation> {
-    let mut queue = voxels.iter().copied().collect::<VecDeque<_>>();
+    let mut queue = voxels.collect::<VecDeque<_>>();
     let mut neighbor_light_propagation = vec![];
 
     while let Some(voxel) = queue.pop_front() {
@@ -260,13 +260,13 @@ pub fn propagate(
         let current_intensity = light.get(voxel).get(light_ty);
 
         for side in voxel::SIDES {
-            let side_voxel = voxel + side.dir();
             let propagated_intensity = calc_propagated_intensity(light_ty, side, current_intensity);
 
             if propagated_intensity == 0 {
                 continue;
             }
 
+            let side_voxel = voxel + side.dir();
             if !chunk::is_inside(side_voxel) {
                 if let Some(chunk_side) = ChunkSide::from_voxel_side(side) {
                     let neighbor_voxel = math::euclid_rem(
@@ -321,15 +321,11 @@ mod test {
         let kind = ChunkStorage::<voxel::Kind>::default();
         let mut light = ChunkStorage::<voxel::Light>::default();
 
-        let top_voxels = (0..=chunk::X_END)
-            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
-            .collect::<Vec<_>>();
-
-        top_voxels.iter().for_each(|&voxel| {
+        chunk::top_voxels().for_each(|voxel| {
             light.set_type(voxel, LightTy::Natural, voxel::Light::MAX_NATURAL_INTENSITY);
         });
 
-        let _ = propagate(&kind, &mut light, LightTy::Natural, &top_voxels);
+        let _ = propagate(&kind, &mut light, LightTy::Natural, chunk::top_voxels());
 
         assert!(
             light
@@ -344,11 +340,7 @@ mod test {
         let mut kind = ChunkStorage::<voxel::Kind>::default();
         let mut light = ChunkStorage::<voxel::Light>::default();
 
-        let top_voxels = (0..=chunk::X_END)
-            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
-            .collect::<Vec<_>>();
-
-        top_voxels.iter().for_each(|&voxel| {
+        chunk::top_voxels().for_each(|voxel| {
             light.set_type(voxel, LightTy::Natural, voxel::Light::MAX_NATURAL_INTENSITY);
         });
 
@@ -356,7 +348,7 @@ mod test {
         kind.set(IVec3::new(0, 1, 0), 1.into());
         kind.set(IVec3::new(0, 0, 1), 1.into());
 
-        let _ = propagate(&kind, &mut light, LightTy::Natural, &top_voxels);
+        let _ = propagate(&kind, &mut light, LightTy::Natural, chunk::top_voxels());
 
         assert_eq!(
             light.get(IVec3::ZERO).get(LightTy::Natural),
@@ -382,11 +374,7 @@ mod test {
         let mut kind = ChunkStorage::<voxel::Kind>::default();
         let mut light = ChunkStorage::<voxel::Light>::default();
 
-        let top_voxels = (0..=chunk::X_END)
-            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
-            .collect::<Vec<_>>();
-
-        top_voxels.iter().for_each(|&voxel| {
+        chunk::top_voxels().for_each(|voxel| {
             light.set_type(voxel, LightTy::Natural, voxel::Light::MAX_NATURAL_INTENSITY);
         });
 
@@ -398,7 +386,7 @@ mod test {
                 kind.set(v, 1.into());
             });
 
-        let _ = propagate(&kind, &mut light, LightTy::Natural, &top_voxels);
+        let _ = propagate(&kind, &mut light, LightTy::Natural, chunk::top_voxels());
 
         (0..=chunk::Z_END).enumerate().for_each(|(i, z)| {
             let voxel = IVec3::new(0, 0, z);
@@ -415,15 +403,12 @@ mod test {
         let kind = ChunkStorage::<voxel::Kind>::default();
         let mut light = ChunkStorage::<voxel::Light>::default();
 
-        let top_voxels = (0..=chunk::X_END)
-            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
-            .collect::<Vec<_>>();
-
-        top_voxels.iter().for_each(|&voxel| {
+        chunk::top_voxels().for_each(|voxel| {
             light.set_type(voxel, LightTy::Natural, voxel::Light::MAX_NATURAL_INTENSITY);
         });
 
-        let neighbor_propagation = propagate(&kind, &mut light, LightTy::Natural, &top_voxels);
+        let neighbor_propagation =
+            propagate(&kind, &mut light, LightTy::Natural, chunk::top_voxels());
         neighbor_propagation
             .iter()
             .fold(
@@ -468,12 +453,7 @@ mod test {
         let mut kind = ChunkStorage::<voxel::Kind>::default();
         let mut light = ChunkStorage::<voxel::Light>::default();
 
-        let top_voxels = (0..=chunk::X_END)
-            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, chunk::Y_END, z)))
-            .filter(|v| v.x != 0)
-            .collect::<Vec<_>>();
-
-        top_voxels.iter().for_each(|&voxel| {
+        chunk::top_voxels().for_each(|voxel| {
             light.set_type(voxel, LightTy::Natural, voxel::Light::MAX_NATURAL_INTENSITY);
         });
 
@@ -482,7 +462,8 @@ mod test {
             .collect::<Vec<_>>();
         left_wall.iter().for_each(|&v| kind.set(v, 1.into()));
 
-        let neighbor_propagation = propagate(&kind, &mut light, LightTy::Natural, &top_voxels);
+        let neighbor_propagation =
+            propagate(&kind, &mut light, LightTy::Natural, chunk::top_voxels());
 
         neighbor_propagation
             .into_iter()

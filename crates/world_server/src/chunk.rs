@@ -230,6 +230,10 @@ pub fn voxels() -> impl Iterator<Item = Voxel> {
     (0..BUFFER_SIZE).map(from_index)
 }
 
+pub fn top_voxels() -> impl Iterator<Item = Voxel> {
+    (0..=X_END).flat_map(|x| (0..=Z_END).map(move |z| Voxel::new(x, Y_END, z)))
+}
+
 #[inline]
 pub fn is_inside(voxel: Voxel) -> bool {
     voxel.x >= 0
@@ -419,7 +423,7 @@ mod tests {
     // }
 
     #[test]
-    fn into_iter() {
+    fn voxels() {
         let mut first = None;
         let mut last = IVec3::ZERO;
 
@@ -444,6 +448,16 @@ mod tests {
             )
                 .into()
         );
+    }
+
+    #[test]
+    fn top_voxels() {
+        let top_voxels = super::top_voxels().collect::<Vec<_>>();
+
+        assert_eq!(top_voxels.len(), X_AXIS_SIZE * Z_AXIS_SIZE);
+        top_voxels
+            .into_iter()
+            .for_each(|voxel| assert_eq!(voxel.y, Y_END));
     }
 
     #[test]
