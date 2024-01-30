@@ -101,11 +101,8 @@ fn update_chunk_mesh(
     for (chunk, vertex) in &q_vertex {
         let mesh_handler = meshes.add(generate_mesh(vertex));
         if let Some(&entity) = map.get(&**chunk) {
-            trace!("Updating chunk [{}]", **chunk);
             commands.entity(entity).insert(mesh_handler);
         } else {
-            trace!("Spawning chunk [{}]", **chunk);
-
             let entity = commands
                 .spawn(ChunkBundle {
                     chunk: *chunk,

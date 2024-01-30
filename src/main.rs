@@ -51,7 +51,10 @@ fn main() {
             WorldServerPlugin,
             WorldClientPlugin,
         ))
-        .init_resource::<Landscape>()
+        .insert_resource(Landscape {
+            radius: 1,
+            ..Default::default()
+        })
         // .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
         .add_systems(Startup, setup);
 
