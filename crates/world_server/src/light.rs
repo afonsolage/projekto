@@ -175,8 +175,7 @@ fn smooth_ambient_occlusion<const VERTEX: usize>(
     let side2 = side2.unwrap_or(0) as f32;
 
     // Convert from i32, which has the info if the voxel is opaque, to pure light intensity
-    // (side + side1 + side2 + corner) / 4.0
-    side
+    (side + side1 + side2 + corner) / 4.0
 }
 
 fn soft_vertex_light(neighbors: &[Option<u8>; NEIGHBOR_COUNT], side: voxel::Side) -> [f32; 4] {
