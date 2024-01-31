@@ -7,9 +7,6 @@ impl Plugin for CameraControllerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_camera)
             .add_systems(Update, grab_mouse);
-        // .add_startup_system(setup_camera)
-        // .add_system(toggle_camera)
-        // .add_system(grab_mouse);
     }
 }
 

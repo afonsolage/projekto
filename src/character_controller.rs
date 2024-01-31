@@ -1,5 +1,4 @@
-use bevy::prelude::*;
-use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
+use bevy::{input::common_conditions::input_just_pressed, prelude::*};
 
 pub struct CharacterControllerPlugin;
 
@@ -14,13 +13,15 @@ impl Plugin for CharacterControllerPlugin {
             .register_type::<ChunkMaterialImage>()
             .add_systems(
                 Update,
-                ((
-                    move_character,
-                    sync_rotation,
-                    update_character_position.in_set(CharacterPositionUpdate),
-                )
-                    .in_set(CharacterUpdate)
-                    .run_if(is_active),),
+                (
+                    toggle_controller.run_if(input_just_pressed(KeyCode::F9)),
+                    (
+                        move_character,
+                        update_character_position.in_set(CharacterPositionUpdate),
+                    )
+                        .in_set(CharacterUpdate)
+                        .run_if(is_active),
+                ),
             );
     }
 }
@@ -49,40 +50,28 @@ impl Default for CharacterControllerConfig {
     }
 }
 
+#[derive(Component, Default, Reflect)]
+pub struct CharacterCamera;
+
 #[derive(Default, Debug, Reflect, Deref, DerefMut, Resource)]
 pub struct ChunkMaterialImage(pub Handle<Image>);
 
 #[derive(Default, Debug, Reflect, Deref, DerefMut, Resource)]
 pub struct CharacterPosition(IVec3);
 
-fn is_active(
-    char_config: Res<CharacterControllerConfig>,
-    cam_config: Res<OrbitCameraConfig>,
-) -> bool {
-    char_config.active && cam_config.active
+fn is_active(char_config: Res<CharacterControllerConfig>) -> bool {
+    char_config.active
 }
 
-fn sync_rotation(
-    q_cam: Query<
-        &Transform,
-        (
-            With<OrbitCamera>,
-            Without<CharacterController>,
-            Changed<Transform>,
-        ),
-    >,
-    mut q: Query<&mut Transform, With<CharacterController>>,
+fn toggle_controller(
+    mut config: ResMut<CharacterControllerConfig>,
+    mut other_cam: Query<&mut Camera, Without<CharacterCamera>>,
+    mut char_cam: Query<&mut Camera, With<CharacterCamera>>,
 ) {
-    let Ok(cam_transform) = q_cam.get_single() else {
-        return;
-    };
+    config.active = !config.active;
 
-    let Ok(mut transform) = q.get_single_mut() else {
-        return;
-    };
-
-    let (y, _, _) = cam_transform.rotation.to_euler(EulerRot::YXZ);
-    transform.rotation = Quat::from_euler(EulerRot::YXZ, y, 0.0, 0.0);
+    other_cam.single_mut().is_active = !config.active;
+    char_cam.single_mut().is_active = config.active;
 }
 
 fn move_character(

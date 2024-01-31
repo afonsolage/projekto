@@ -1,22 +1,17 @@
 #![allow(clippy::type_complexity)]
 #![feature(test)]
 
-use bevy::{prelude::*, window::PresentMode};
+use bevy::{prelude::*, render::view::RenderLayers, window::PresentMode};
 
 mod debug;
 use camera_controller::CameraControllerPlugin;
-use character_controller::{CharacterController, CharacterControllerPlugin};
+use character_controller::{CharacterCamera, CharacterController, CharacterControllerPlugin};
 use debug::DebugPlugin;
 
 mod world;
-use projekto_camera::{
-    fly_by::FlyByCamera,
-    orbit::{OrbitCamera, OrbitCameraTarget},
-    CameraPlugin,
-};
+use projekto_camera::{fly_by::FlyByCamera, CameraPlugin};
 use projekto_world_client::WorldClientPlugin;
 use projekto_world_server::{Landscape, WorldServerPlugin};
-use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
 
 // mod ui;
 // use ui::UiPlugin;
@@ -25,8 +20,6 @@ mod camera_controller;
 mod character_controller;
 
 fn main() {
-    // env_logger::init();
-
     let mut app = App::new();
 
     app.insert_resource(Msaa::Sample4)
@@ -80,13 +73,18 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // camera
-    commands
-        .spawn(Camera3dBundle::default())
-        .insert(FlyByCamera)
-        .insert(Transform::from_xyz(0.0, 22.0, 5.0).looking_at(Vec3::new(2.0, 20.0, 7.0), Vec3::Y))
-        .insert(Name::new("Main Camera"));
+    commands.spawn((
+        Camera3dBundle {
+            transform: Transform::from_xyz(0.0, 22.0, 5.0)
+                .looking_at(Vec3::new(2.0, 20.0, 7.0), Vec3::Y),
+            ..Default::default()
+        },
+        RenderLayers::from_layers(&[0, 1]),
+        FlyByCamera,
+        Name::new("FlyByCamera"),
+    ));
 
-    // focus
+    // character
     commands
         .spawn(PbrBundle {
             transform: Transform::from_xyz(2.0, 20.0, 7.0),
@@ -99,22 +97,35 @@ fn setup(
             ..Default::default()
         })
         .insert(Name::new("Character"))
-        .insert(TerraformationCenter)
-        .insert(LandscapeCenter)
         .insert(CharacterController)
         .with_children(|p| {
-            p.spawn(PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::Box {
-                    min_x: 0.0,
-                    max_x: 0.05,
-                    min_y: 0.0,
-                    max_y: 0.05,
-                    min_z: 0.0,
-                    max_z: -0.5,
-                })),
-                material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
-                ..Default::default()
-            });
+            // Front indicator
+            p.spawn((
+                PbrBundle {
+                    mesh: meshes.add(Mesh::from(shape::Box {
+                        min_x: 0.0,
+                        max_x: 0.05,
+                        min_y: 0.0,
+                        max_y: 0.05,
+                        min_z: 0.0,
+                        max_z: -0.5,
+                    })),
+                    material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
+                    ..Default::default()
+                },
+                RenderLayers::from_layers(&[1]),
+            ));
+            p.spawn((
+                Camera3dBundle {
+                    camera: Camera {
+                        is_active: false,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                Name::new("FirstPersonCamera"),
+                CharacterCamera,
+            ));
         });
 
     // X axis
