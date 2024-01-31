@@ -78,16 +78,18 @@ fn setup_material(
 fn remove_unloaded_chunks(
     mut commands: Commands,
     mut map: ResMut<ChunkMap>,
-    q_vertex: Query<(Entity, &ChunkVertex)>,
+    q_vertex: Query<&ChunkLocal, With<ChunkVertex>>,
 ) {
-    // map.retain(|chunk, entity| {
-    //     let retain = q_vertex.contains(*entity);
-    //     if !retain {
-    //         trace!("Despawning chunk [{}]", chunk);
-    //         commands.entity(*entity).despawn();
-    //     }
-    //     retain
-    // });
+    let server_chunks = q_vertex.iter().map(|l| **l).collect::<Vec<_>>();
+
+    map.retain(|chunk, entity| {
+        let retain = server_chunks.contains(chunk);
+        if !retain {
+            trace!("[remove_unloaded_chunks] despawning chunk [{}]", chunk);
+            commands.entity(*entity).despawn();
+        }
+        retain
+    });
 }
 
 fn update_chunk_mesh(
@@ -97,11 +99,13 @@ fn update_chunk_mesh(
     mut meshes: ResMut<Assets<Mesh>>,
     material: Res<ChunkMaterialHandle>,
 ) {
-    let mut count = 0;
+    let mut spawned = 0;
+    let mut updated = 0;
     for (chunk, vertex) in &q_vertex {
         let mesh_handler = meshes.add(generate_mesh(vertex));
         if let Some(&entity) = map.get(&**chunk) {
             commands.entity(entity).insert(mesh_handler);
+            updated += 1;
         } else {
             let entity = commands
                 .spawn(ChunkBundle {
@@ -116,10 +120,13 @@ fn update_chunk_mesh(
                 .insert(Name::new(format!("Client Chunk {}", **chunk)))
                 .id();
             map.insert(**chunk, entity);
+            spawned += 1;
         }
-        count += 1;
     }
-    trace!("[update_chunk_mesh] {count} chunks mesh updated.");
+    let count = spawned + updated;
+    trace!(
+        "[update_chunk_mesh] {count} chunks mesh updated. {spawned} spawned, {updated} updated."
+    );
 }
 
 fn generate_mesh(vertices: &Vec<Vertex>) -> Mesh {
