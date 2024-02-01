@@ -98,9 +98,21 @@ impl From<IVec2> for Chunk {
     }
 }
 
+impl From<Chunk> for IVec2 {
+    fn from(value: Chunk) -> Self {
+        value.0
+    }
+}
+
 impl From<(i32, i32)> for Chunk {
     fn from(value: (i32, i32)) -> Self {
         Self(value.into())
+    }
+}
+
+impl From<Vec3> for Chunk {
+    fn from(value: Vec3) -> Self {
+        chunk::to_chunk(value)
     }
 }
 
@@ -147,7 +159,7 @@ struct ChunkBundle {
     vertex: ChunkVertex,
 }
 
-#[derive(Resource, Default, Debug, Clone, Copy)]
+#[derive(Resource, Default, Debug, Clone, Copy, Reflect)]
 pub struct Landscape {
     pub center: IVec2,
     pub radius: u8,

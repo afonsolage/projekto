@@ -262,12 +262,12 @@ pub fn to_world(chunk: Chunk) -> Vec3 {
     )
 }
 
-// pub fn to_chunk(world: Vec3) -> Chunk {
-//     Chunk::new(
-//         (world.x / X_AXIS_SIZE as f32).floor() as i32,
-//         (world.z / Z_AXIS_SIZE as f32).floor() as i32,
-//     )
-// }
+pub fn to_chunk(world: Vec3) -> Chunk {
+    Chunk::new(
+        (world.x / X_AXIS_SIZE as f32).floor() as i32,
+        (world.z / Z_AXIS_SIZE as f32).floor() as i32,
+    )
+}
 
 pub fn overlap_voxel(voxel: Voxel) -> (IVec2, Voxel) {
     debug_assert!(!is_inside(voxel), "Voxel {voxel} does't overlap");

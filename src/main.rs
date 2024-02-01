@@ -11,7 +11,7 @@ use debug::DebugPlugin;
 mod world;
 use projekto_camera::{fly_by::FlyByCamera, CameraPlugin};
 use projekto_world_client::WorldClientPlugin;
-use projekto_world_server::{Landscape, WorldServerPlugin};
+use projekto_world_server::{Chunk, Landscape, WorldServerPlugin};
 
 // mod ui;
 // use ui::UiPlugin;
@@ -48,13 +48,27 @@ fn main() {
             radius: 1,
             ..Default::default()
         })
+        .register_type::<Landscape>()
         // .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
+        .add_systems(Update, update_landscape_center)
         .add_systems(Startup, setup);
 
     #[cfg(feature = "inspector")]
     app.add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::new());
 
     app.run();
+}
+
+fn update_landscape_center(
+    mut landscape: ResMut<Landscape>,
+    character: Query<&Transform, With<CharacterController>>,
+) {
+    let pos: Chunk = character.single().translation.into();
+    let center: Chunk = landscape.center.into();
+
+    if pos != center {
+        landscape.center = pos.into();
+    }
 }
 
 // fn limit_fps(time: Res<Time>) {
