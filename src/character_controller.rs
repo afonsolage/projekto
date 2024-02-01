@@ -44,7 +44,7 @@ pub struct CharacterControllerConfig {
 impl Default for CharacterControllerConfig {
     fn default() -> Self {
         Self {
-            active: true,
+            active: false,
             move_speed: 10.0,
         }
     }
@@ -63,15 +63,8 @@ fn is_active(char_config: Res<CharacterControllerConfig>) -> bool {
     char_config.active
 }
 
-fn toggle_controller(
-    mut config: ResMut<CharacterControllerConfig>,
-    mut other_cam: Query<&mut Camera, Without<CharacterCamera>>,
-    mut char_cam: Query<&mut Camera, With<CharacterCamera>>,
-) {
+fn toggle_controller(mut config: ResMut<CharacterControllerConfig>) {
     config.active = !config.active;
-
-    other_cam.single_mut().is_active = !config.active;
-    char_cam.single_mut().is_active = config.active;
 }
 
 fn move_character(
