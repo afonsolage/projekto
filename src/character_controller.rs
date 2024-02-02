@@ -1,4 +1,4 @@
-use bevy::{input::common_conditions::input_just_pressed, prelude::*};
+use bevy::prelude::*;
 
 pub struct CharacterControllerPlugin;
 
@@ -13,15 +13,12 @@ impl Plugin for CharacterControllerPlugin {
             .register_type::<ChunkMaterialImage>()
             .add_systems(
                 Update,
-                (
-                    toggle_controller.run_if(input_just_pressed(KeyCode::F9)),
-                    (
-                        move_character,
-                        update_character_position.in_set(CharacterPositionUpdate),
-                    )
-                        .in_set(CharacterUpdate)
-                        .run_if(is_active),
-                ),
+                ((
+                    move_character,
+                    update_character_position.in_set(CharacterPositionUpdate),
+                )
+                    .in_set(CharacterUpdate)
+                    .run_if(is_active),),
             );
     }
 }
@@ -50,9 +47,6 @@ impl Default for CharacterControllerConfig {
     }
 }
 
-#[derive(Component, Default, Reflect)]
-pub struct CharacterCamera;
-
 #[derive(Default, Debug, Reflect, Deref, DerefMut, Resource)]
 pub struct ChunkMaterialImage(pub Handle<Image>);
 
@@ -61,10 +55,6 @@ pub struct CharacterPosition(IVec3);
 
 fn is_active(char_config: Res<CharacterControllerConfig>) -> bool {
     char_config.active
-}
-
-fn toggle_controller(mut config: ResMut<CharacterControllerConfig>) {
-    config.active = !config.active;
 }
 
 fn move_character(

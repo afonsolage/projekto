@@ -1,9 +1,11 @@
-use bevy::{
-    ecs::system::SystemParam, input::common_conditions::input_just_pressed, prelude::*,
-    window::PrimaryWindow,
-};
+use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
 use bevy_egui::EguiContexts;
-use projekto_camera::{first_person::FirstPersonCameraConfig, fly_by::FlyByCameraConfig};
+use projekto_camera::{
+    first_person::{FirstPersonCamera, FirstPersonCameraConfig},
+    fly_by::{FlyByCamera, FlyByCameraConfig},
+};
+
+use crate::character_controller::CharacterControllerConfig;
 
 pub struct CameraControllerPlugin;
 
@@ -14,11 +16,24 @@ impl Plugin for CameraControllerPlugin {
             .add_systems(
                 Update,
                 (
-                    toggle_cam.run_if(input_just_pressed(KeyCode::F9)),
+                    switch_camera.run_if(input_any_just_pressed([
+                        KeyCode::I,
+                        KeyCode::O,
+                        KeyCode::P,
+                    ])),
                     grab_mouse,
                 ),
             );
     }
+}
+
+fn input_any_just_pressed<T>(
+    inputs: impl IntoIterator<Item = T> + Copy,
+) -> impl Fn(Res<'_, Input<T>>) -> bool + Clone
+where
+    T: Clone + Copy + Eq + std::hash::Hash + Send + Sync + 'static,
+{
+    move |input: Res<Input<T>>| input.any_just_pressed(inputs)
 }
 
 fn setup_camera(
@@ -37,26 +52,41 @@ enum ActiveCamera {
 }
 
 #[derive(SystemParam)]
-struct CameraConfig<'w> {
+struct CameraConfig<'w, 's> {
     flyby: ResMut<'w, FlyByCameraConfig>,
     first_person: ResMut<'w, FirstPersonCameraConfig>,
+    q: ParamSet<
+        'w,
+        's,
+        (
+            Query<'w, 's, &'static mut Camera, With<FlyByCamera>>,
+            Query<'w, 's, &'static mut Camera, With<FirstPersonCamera>>,
+        ),
+    >,
     active_cam: ResMut<'w, ActiveCamera>,
+    character_controller: ResMut<'w, CharacterControllerConfig>,
 }
 
-impl<'w> CameraConfig<'w> {
-    fn toggle(&mut self) {
+impl<'w, 's> CameraConfig<'w, 's> {
+    fn set_cam(&mut self, active_camera: ActiveCamera) {
         trace!("Toggling cameras");
 
+        self.first_person.active = false;
+        self.flyby.active = false;
+        self.character_controller.active = false;
+        self.q.p0().single_mut().is_active = false;
+        self.q.p1().single_mut().is_active = false;
+
+        *self.active_cam = active_camera;
         match *self.active_cam {
             ActiveCamera::FlyBy => {
-                *self.active_cam = ActiveCamera::FirstPerson;
-                self.flyby.active = false;
-                self.first_person.active = true;
+                self.flyby.active = true;
+                self.q.p0().single_mut().is_active = true;
             }
             ActiveCamera::FirstPerson => {
-                *self.active_cam = ActiveCamera::FlyBy;
-                self.flyby.active = true;
-                self.first_person.active = false;
+                self.character_controller.active = true;
+                self.first_person.active = true;
+                self.q.p1().single_mut().is_active = true;
             }
         }
     }
@@ -64,13 +94,20 @@ impl<'w> CameraConfig<'w> {
     fn set_active(&mut self, active: bool) {
         match *self.active_cam {
             ActiveCamera::FlyBy => self.flyby.active = active,
-            ActiveCamera::FirstPerson => self.first_person.active = active,
+            ActiveCamera::FirstPerson => {
+                self.character_controller.active = active;
+                self.first_person.active = active;
+            }
         }
     }
 }
 
-fn toggle_cam(mut config: CameraConfig) {
-    config.toggle()
+fn switch_camera(key_btn: Res<Input<KeyCode>>, mut config: CameraConfig) {
+    if key_btn.just_pressed(KeyCode::I) {
+        config.set_cam(ActiveCamera::FlyBy);
+    } else if key_btn.just_pressed(KeyCode::P) {
+        config.set_cam(ActiveCamera::FirstPerson);
+    }
 }
 
 fn grab_mouse(

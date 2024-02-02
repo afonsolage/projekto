@@ -5,11 +5,11 @@ use bevy::{prelude::*, render::view::RenderLayers, window::PresentMode};
 
 mod debug;
 use camera_controller::CameraControllerPlugin;
-use character_controller::{CharacterCamera, CharacterController, CharacterControllerPlugin};
+use character_controller::{CharacterController, CharacterControllerPlugin};
 use debug::DebugPlugin;
 
 mod world;
-use projekto_camera::{fly_by::FlyByCamera, CameraPlugin};
+use projekto_camera::{first_person::FirstPersonCamera, fly_by::FlyByCamera, CameraPlugin};
 use projekto_world_client::WorldClientPlugin;
 use projekto_world_server::{Chunk, Landscape, WorldServerPlugin};
 
@@ -138,7 +138,7 @@ fn setup(
                     ..Default::default()
                 },
                 Name::new("FirstPersonCamera"),
-                CharacterCamera,
+                FirstPersonCamera,
             ));
         });
 
