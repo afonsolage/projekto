@@ -5,7 +5,7 @@ use bevy_utils::HashSet;
 use bracket_noise::prelude::{FastNoise, FractalType, NoiseType};
 use itertools::Itertools;
 
-use light_smoother::ChunkSmoothLight;
+// use light_smoother::ChunkSmoothLight;
 use projekto_core::{
     chunk::{ChunkKind, ChunkLight},
     voxel::{self, ChunkFacesOcclusion, FacesOcclusion},
@@ -13,11 +13,11 @@ use projekto_core::{
 
 use projekto_core::{
     chunk::{self, Chunk, ChunkNeighborhood},
-    voxel::{VoxelFace, VoxelVertex},
+    voxel::{Face, Vertex},
     VoxWorld,
 };
 
-// mod faces_merger;
+pub mod faces_merger;
 mod light_propagator;
 mod light_smoother;
 
@@ -268,10 +268,7 @@ fn update_kind(world: &mut VoxWorld, update: &[(IVec3, Vec<(IVec3, voxel::Kind)>
 }
 
 /// Generate the final list of vertices of the given chunks.
-pub fn generate_chunk_vertices(
-    world: &VoxWorld,
-    locals: &[IVec3],
-) -> Vec<(IVec3, Vec<VoxelVertex>)> {
+pub fn generate_chunk_vertices(world: &VoxWorld, locals: &[IVec3]) -> Vec<(IVec3, Vec<Vertex>)> {
     trace!("Generating vertices for {} chunks", locals.len());
 
     let temp_data = locals
@@ -292,7 +289,8 @@ pub fn generate_chunk_vertices(
             if occlusion.is_fully_occluded() {
                 Some((local, vec![]))
             } else {
-                let faces = generate_faces(occlusion, smooth_light, world.get(local)?);
+                let faces = faces_merger::merge(occlusion, smooth_light, world.get(local)?);
+                // let faces = generate_faces(occlusion, smooth_light, world.get(local)?);
                 Some((local, generate_vertices(faces)))
             }
         })
@@ -328,53 +326,47 @@ fn faces_occlusion(chunk: &Chunk) -> ChunkFacesOcclusion {
     occlusion
 }
 
-fn generate_faces(
-    occlusion: ChunkFacesOcclusion,
-    smooth_light: ChunkSmoothLight,
-    chunk: &Chunk,
-) -> Vec<VoxelFace> {
-    let mut faces_vertices = vec![];
-
-    for voxel in chunk::voxels() {
-        for side in voxel::SIDES {
-            // Since this is a top-down game, we don't need down face at all
-            if side == voxel::Side::Down {
-                continue;
-            }
-
-            let kind = chunk.kinds.get(voxel);
-
-            if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
-                continue;
-            }
-
-            let smooth_light = smooth_light.get(voxel);
-
-            let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
-            faces_vertices.push(VoxelFace {
-                vertices: [v1, v2, v3, v4],
-                side,
-                kind,
-                light: smooth_light.get(side),
-                voxel: [
-                    projekto_core::math::pack(v1.x as u8, v1.y as u8, v1.z as u8, 0),
-                    projekto_core::math::pack(v2.x as u8, v2.y as u8, v2.z as u8, 0),
-                    projekto_core::math::pack(v3.x as u8, v3.y as u8, v3.z as u8, 0),
-                    projekto_core::math::pack(v4.x as u8, v4.y as u8, v4.z as u8, 0),
-                ],
-            });
-        }
-    }
-
-    faces_vertices
-}
+// fn generate_faces(
+//     occlusion: ChunkFacesOcclusion,
+//     smooth_light: ChunkSmoothLight,
+//     chunk: &Chunk,
+// ) -> Vec<VoxelFace> {
+//     let mut faces_vertices = vec![];
+//
+//     for voxel in chunk::voxels() {
+//         for side in voxel::SIDES {
+//             // Since this is a top-down game, we don't need down face at all
+//             if side == voxel::Side::Down {
+//                 continue;
+//             }
+//
+//             let kind = chunk.kinds.get(voxel);
+//
+//             if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
+//                 continue;
+//             }
+//
+//             let smooth_light = smooth_light.get(voxel);
+//
+//             let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
+//             faces_vertices.push(VoxelFace {
+//                 vertices: [v1, v2, v3, v4],
+//                 side,
+//                 kind,
+//                 light: smooth_light.get(side),
+//             });
+//         }
+//     }
+//
+//     faces_vertices
+// }
 
 /// Generates vertices data from a given [`VoxelFace`] list.
 ///
 /// All generated indices will be relative to a triangle list.
 ///
 /// Returns** a list of generated [`VoxelVertex`].
-fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
+fn generate_vertices(faces: Vec<Face>) -> Vec<Vertex> {
     let mut vertices = vec![];
     let kinds_descs = voxel::KindsDescs::get();
     let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
@@ -419,13 +411,12 @@ fn generate_vertices(faces: Vec<VoxelFace>) -> Vec<VoxelVertex> {
         let light_fraction = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
 
         for (i, v) in faces_vertices.into_iter().enumerate() {
-            vertices.push(VoxelVertex {
+            vertices.push(Vertex {
                 position: v,
                 normal,
                 uv: tile_uv[i],
                 tile_coord_start,
                 light: Vec3::splat(face.light[i] * light_fraction),
-                voxel: face.voxel[i],
             });
         }
     }
@@ -868,7 +859,7 @@ mod tests {
         let side = voxel::Side::Up;
 
         // This face is 2 voxels wide on the -Z axis (0,0) (0,-1)
-        let faces = vec![VoxelFace {
+        let faces = vec![Face {
             side,
             vertices: [
                 (0, 0, 0).into(),
@@ -888,28 +879,28 @@ mod tests {
         assert_eq!(
             vertices,
             vec![
-                VoxelVertex {
+                Vertex {
                     normal,
                     position: (0.0, 1.0, 1.0).into(),
                     uv: (0.0, 0.2).into(),
                     tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
-                VoxelVertex {
+                Vertex {
                     normal,
                     position: (1.0, 1.0, 1.0).into(),
                     uv: (0.1, 0.2).into(),
                     tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
-                VoxelVertex {
+                Vertex {
                     normal,
                     position: (1.0, 1.0, -1.0).into(),
                     uv: (0.1, 0.0).into(),
                     tile_coord_start: (0.2, 0.1).into(),
                     ..Default::default()
                 },
-                VoxelVertex {
+                Vertex {
                     normal,
                     position: (0.0, 1.0, -1.0).into(),
                     uv: (0.0, 0.0).into(),

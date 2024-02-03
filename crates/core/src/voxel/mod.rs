@@ -10,7 +10,7 @@ pub use kind::*;
 
 pub const SIDE_COUNT: usize = 6;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub enum LightTy {
     Natural,
     Artificial,
@@ -72,7 +72,7 @@ impl From<Light> for u8 {
 
 impl ChunkStorageType for Light {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Serialize, Deserialize)]
 pub enum Side {
     #[default]
     Right = 0,
@@ -93,6 +93,27 @@ pub const SIDES: [Side; SIDE_COUNT] = [
 ];
 
 impl Side {
+    pub fn opposite(&self) -> Side {
+        match self {
+            Side::Right => Side::Left,
+            Side::Left => Side::Right,
+            Side::Up => Side::Down,
+            Side::Down => Side::Up,
+            Side::Front => Side::Back,
+            Side::Back => Side::Front,
+        }
+    }
+    pub fn index(&self) -> usize {
+        match self {
+            Side::Right => 0,
+            Side::Left => 1,
+            Side::Up => 2,
+            Side::Down => 3,
+            Side::Front => 4,
+            Side::Back => 5,
+        }
+    }
+
     pub fn normal(&self) -> Vec3 {
         match self {
             Side::Right => Vec3::X,
@@ -141,6 +162,10 @@ pub struct FacesOcclusion(u8);
 const FULL_OCCLUDED_MASK: u8 = 0b0011_1111;
 
 impl FacesOcclusion {
+    pub fn fully_occluded() -> Self {
+        Self(FULL_OCCLUDED_MASK)
+    }
+
     pub fn set_all(&mut self, occluded: bool) {
         if occluded {
             self.0 = FULL_OCCLUDED_MASK;
@@ -194,23 +219,45 @@ impl ChunkFacesOcclusion {
     }
 }
 
-#[derive(Debug, PartialEq, Default)]
-pub struct VoxelFace {
+/// Contains smoothed vertex light for each face
+#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct FacesSoftLight([[f32; 4]; SIDE_COUNT]);
+
+impl FacesSoftLight {
+    pub fn new(soft_light: [[f32; 4]; SIDE_COUNT]) -> Self {
+        Self(soft_light)
+    }
+
+    pub fn with_intensity(intensity: u8) -> Self {
+        Self([[intensity as f32; 4]; SIDE_COUNT])
+    }
+
+    pub fn set(&mut self, side: Side, light: [f32; 4]) {
+        self.0[side as usize] = light;
+    }
+
+    pub fn get(&self, side: Side) -> [f32; 4] {
+        self.0[side as usize]
+    }
+}
+
+impl ChunkStorageType for FacesSoftLight {}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Face {
     pub vertices: [IVec3; 4],
     pub side: Side,
     pub kind: Kind,
     pub light: [f32; 4],
-    pub voxel: [u32; 4],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct VoxelVertex {
+pub struct Vertex {
     pub position: Vec3,
     pub normal: Vec3,
     pub uv: Vec2,
     pub tile_coord_start: Vec2,
     pub light: Vec3,
-    pub voxel: u32,
     // TODO: color
 }
 

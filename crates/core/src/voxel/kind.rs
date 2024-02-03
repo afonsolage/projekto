@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chunk::ChunkStorageType;
 
-use super::{Side, VoxelFace};
+use super::{Face, Side};
 
 static KINDS_DESCS: OnceCell<KindsDescs> = OnceCell::new();
 
@@ -88,7 +88,7 @@ impl KindsDescs {
     }
 
     /// **Returns** how a given face should be rendered
-    pub fn get_face_desc(&self, face: &VoxelFace) -> KindSideTexture {
+    pub fn get_face_desc(&self, face: &Face) -> KindSideTexture {
         let kind_desc = self
             .descriptions
             .iter()

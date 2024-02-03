@@ -1,75 +1,112 @@
 use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
-// use bevy_egui::EguiContexts;
-use projekto_camera::{fly_by::FlyByCameraConfig, orbit::OrbitCameraConfig};
+use bevy_egui::EguiContexts;
+use projekto_camera::{
+    first_person::{FirstPersonCamera, FirstPersonCameraConfig},
+    fly_by::{FlyByCamera, FlyByCameraConfig},
+};
+
+use crate::character_controller::CharacterControllerConfig;
 
 pub struct CameraControllerPlugin;
 
 impl Plugin for CameraControllerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CurrentCameraType>()
+        app.init_resource::<ActiveCamera>()
             .add_systems(Startup, setup_camera)
-            .add_systems(Update, (toggle_camera, grab_mouse));
-        // .add_startup_system(setup_camera)
-        // .add_system(toggle_camera)
-        // .add_system(grab_mouse);
+            .add_systems(
+                Update,
+                (
+                    switch_camera.run_if(input_any_just_pressed([
+                        KeyCode::I,
+                        KeyCode::O,
+                        KeyCode::P,
+                    ])),
+                    grab_mouse,
+                ),
+            );
     }
 }
 
+fn input_any_just_pressed<T>(
+    inputs: impl IntoIterator<Item = T> + Copy,
+) -> impl Fn(Res<'_, Input<T>>) -> bool + Clone
+where
+    T: Clone + Copy + Eq + std::hash::Hash + Send + Sync + 'static,
+{
+    move |input: Res<Input<T>>| input.any_just_pressed(inputs)
+}
+
 fn setup_camera(
-    mut orbit_config: ResMut<OrbitCameraConfig>,
     mut flyby_config: ResMut<FlyByCameraConfig>,
+    mut fp_config: ResMut<FirstPersonCameraConfig>,
 ) {
-    orbit_config.key_rotate_speed = 1.0;
-    orbit_config.max_polar_angle = std::f32::consts::FRAC_PI_2 - 0.001;
     flyby_config.rotate_speed = 1.0;
+    fp_config.rotate_speed = 1.0;
 }
 
 #[derive(Default, Debug, Resource)]
-enum CurrentCameraType {
+enum ActiveCamera {
     #[default]
-    Orbit,
     FlyBy,
+    FirstPerson,
 }
 
 #[derive(SystemParam)]
 struct CameraConfig<'w, 's> {
-    orbit: ResMut<'w, OrbitCameraConfig>,
     flyby: ResMut<'w, FlyByCameraConfig>,
-    cam_type: ResMut<'w, CurrentCameraType>,
-
-    #[system_param(ignore)]
-    _pd: std::marker::PhantomData<&'s ()>,
+    first_person: ResMut<'w, FirstPersonCameraConfig>,
+    q: ParamSet<
+        'w,
+        's,
+        (
+            Query<'w, 's, &'static mut Camera, With<FlyByCamera>>,
+            Query<'w, 's, &'static mut Camera, With<FirstPersonCamera>>,
+        ),
+    >,
+    active_cam: ResMut<'w, ActiveCamera>,
+    character_controller: ResMut<'w, CharacterControllerConfig>,
 }
 
 impl<'w, 's> CameraConfig<'w, 's> {
-    fn toggle(&mut self) {
+    fn set_cam(&mut self, active_camera: ActiveCamera) {
         trace!("Toggling cameras");
 
-        match *self.cam_type {
-            CurrentCameraType::Orbit => {
-                *self.cam_type = CurrentCameraType::FlyBy;
+        self.first_person.active = false;
+        self.flyby.active = false;
+        self.character_controller.active = false;
+        self.q.p0().single_mut().is_active = false;
+        self.q.p1().single_mut().is_active = false;
+
+        *self.active_cam = active_camera;
+        match *self.active_cam {
+            ActiveCamera::FlyBy => {
                 self.flyby.active = true;
-                self.orbit.active = false;
+                self.q.p0().single_mut().is_active = true;
             }
-            CurrentCameraType::FlyBy => {
-                *self.cam_type = CurrentCameraType::Orbit;
-                self.flyby.active = false;
-                self.orbit.active = true;
+            ActiveCamera::FirstPerson => {
+                self.character_controller.active = true;
+                self.first_person.active = true;
+                self.q.p1().single_mut().is_active = true;
             }
         }
     }
 
     fn set_active(&mut self, active: bool) {
-        match *self.cam_type {
-            CurrentCameraType::Orbit => self.orbit.active = active,
-            CurrentCameraType::FlyBy => self.flyby.active = active,
+        match *self.active_cam {
+            ActiveCamera::FlyBy => self.flyby.active = active,
+            ActiveCamera::FirstPerson => {
+                self.character_controller.active = active;
+                self.first_person.active = active;
+            }
         }
     }
 }
 
-fn toggle_camera(input: Res<Input<KeyCode>>, mut config: CameraConfig) {
-    if input.just_pressed(KeyCode::F9) {
-        config.toggle();
+fn switch_camera(key_btn: Res<Input<KeyCode>>, mut config: CameraConfig) {
+    if key_btn.just_pressed(KeyCode::I) {
+        config.set_cam(ActiveCamera::FlyBy);
+    } else if key_btn.just_pressed(KeyCode::P) {
+        config.set_cam(ActiveCamera::FirstPerson);
     }
 }
 
@@ -78,15 +115,15 @@ fn grab_mouse(
     mouse_btn: Res<Input<MouseButton>>,
     key_btn: Res<Input<KeyCode>>,
     mut config: CameraConfig,
-    // #[cfg(feature = "inspector")] egui_context: EguiContexts,
+    #[cfg(feature = "inspector")] mut egui_context: EguiContexts,
 ) {
-    // #[cfg(feature = "inspector")]
-    // if let Some(mut context) = egui_context {
-    //     let ctx = context.ctx_mut();
-    //     if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
-    //         return;
-    //     }
-    // }
+    #[cfg(feature = "inspector")]
+    {
+        let ctx = egui_context.ctx_mut();
+        if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
+            return;
+        }
+    }
 
     let Ok(mut window) = primary_window.get_single_mut() else {
         return;

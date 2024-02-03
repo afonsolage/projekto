@@ -1,7 +1,7 @@
 #![allow(clippy::type_complexity)]
 #![feature(test)]
 
-use bevy::{prelude::*, window::PresentMode};
+use bevy::{prelude::*, render::view::RenderLayers, window::PresentMode};
 
 mod debug;
 use camera_controller::CameraControllerPlugin;
@@ -10,11 +10,12 @@ use debug::DebugPlugin;
 
 mod world;
 use projekto_camera::{
+    first_person::{FirstPersonCamera, FirstPersonTarget},
     fly_by::FlyByCamera,
-    orbit::{OrbitCamera, OrbitCameraTarget},
     CameraPlugin,
 };
-use world::{rendering::LandscapeCenter, terraformation::TerraformationCenter, WorldPlugin};
+use projekto_world_client::WorldClientPlugin;
+use projekto_world_server::{Chunk, Landscape, WorldServerPlugin};
 
 // mod ui;
 // use ui::UiPlugin;
@@ -23,8 +24,6 @@ mod camera_controller;
 mod character_controller;
 
 fn main() {
-    // env_logger::init();
-
     let mut app = App::new();
 
     app.insert_resource(Msaa::Sample4)
@@ -43,17 +42,37 @@ fn main() {
         .add_plugins((
             DebugPlugin,
             CameraPlugin,
-            WorldPlugin,
             CameraControllerPlugin,
             CharacterControllerPlugin,
+            // WorldPlugin,
+            WorldServerPlugin,
+            WorldClientPlugin,
         ))
+        .insert_resource(Landscape {
+            radius: 1,
+            ..Default::default()
+        })
+        .register_type::<Landscape>()
         // .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
+        .add_systems(Update, update_landscape_center)
         .add_systems(Startup, setup);
 
     #[cfg(feature = "inspector")]
     app.add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::new());
 
     app.run();
+}
+
+fn update_landscape_center(
+    mut landscape: ResMut<Landscape>,
+    character: Query<&Transform, With<CharacterController>>,
+) {
+    let pos: Chunk = character.single().translation.into();
+    let center: Chunk = landscape.center.into();
+
+    if pos != center {
+        landscape.center = pos.into();
+    }
 }
 
 // fn limit_fps(time: Res<Time>) {
@@ -72,43 +91,62 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // camera
-    commands
-        .spawn(Camera3dBundle::default())
-        .insert(OrbitCamera)
-        .insert(FlyByCamera)
-        .insert(Transform::from_xyz(0.0, 22.0, 5.0).looking_at(Vec3::new(2.0, 20.0, 7.0), Vec3::Y))
-        .insert(Name::new("Main Camera"));
-
-    // focus
-    commands
-        .spawn(PbrBundle {
-            transform: Transform::from_xyz(2.0, 20.0, 7.0),
-            mesh: meshes.add(Mesh::from(shape::Capsule {
-                radius: 0.25,
-                depth: 1.5,
-                ..default()
-            })),
-            material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+    commands.spawn((
+        Camera3dBundle {
+            transform: Transform::from_xyz(0.0, 22.0, 5.0)
+                .looking_at(Vec3::new(2.0, 20.0, 7.0), Vec3::Y),
             ..Default::default()
-        })
-        .insert(Name::new("Character"))
-        .insert(TerraformationCenter)
-        .insert(LandscapeCenter)
-        .insert(OrbitCameraTarget)
-        .insert(CharacterController)
-        .with_children(|p| {
-            p.spawn(PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::Box {
-                    min_x: 0.0,
-                    max_x: 0.05,
-                    min_y: 0.0,
-                    max_y: 0.05,
-                    min_z: 0.0,
-                    max_z: -0.5,
+        },
+        RenderLayers::from_layers(&[0, 1]),
+        FlyByCamera,
+        Name::new("FlyByCamera"),
+    ));
+
+    // character
+    commands
+        .spawn((
+            PbrBundle {
+                transform: Transform::from_xyz(2.0, 20.0, 7.0),
+                mesh: meshes.add(Mesh::from(shape::Capsule {
+                    radius: 0.25,
+                    depth: 1.5,
+                    ..default()
                 })),
-                material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
+                material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
                 ..Default::default()
-            });
+            },
+            Name::new("Character"),
+            CharacterController,
+            FirstPersonTarget,
+        ))
+        .with_children(|p| {
+            // Front indicator
+            p.spawn((
+                PbrBundle {
+                    mesh: meshes.add(Mesh::from(shape::Box {
+                        min_x: 0.0,
+                        max_x: 0.05,
+                        min_y: 0.0,
+                        max_y: 0.05,
+                        min_z: 0.0,
+                        max_z: -0.5,
+                    })),
+                    material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
+                    ..Default::default()
+                },
+                RenderLayers::from_layers(&[1]),
+            ));
+            p.spawn((
+                Camera3dBundle {
+                    camera: Camera {
+                        is_active: false,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                Name::new("FirstPersonCamera"),
+                FirstPersonCamera,
+            ));
         });
 
     // X axis

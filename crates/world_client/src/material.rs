@@ -8,9 +8,6 @@ use bevy::{
     },
 };
 
-#[derive(Reflect, Resource, Debug, Deref, DerefMut)]
-pub struct ChunkMaterialHandle(pub Handle<ChunkMaterial>);
-
 #[derive(Reflect, AsBindGroup, Asset, Debug, Clone)]
 #[bind_group_data(bool)]
 pub struct ChunkMaterial {

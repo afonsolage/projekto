@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use projekto_camera::orbit::{OrbitCamera, OrbitCameraConfig};
 
 pub struct CharacterControllerPlugin;
 
@@ -16,7 +15,6 @@ impl Plugin for CharacterControllerPlugin {
                 Update,
                 ((
                     move_character,
-                    sync_rotation,
                     update_character_position.in_set(CharacterPositionUpdate),
                 )
                     .in_set(CharacterUpdate)
@@ -43,7 +41,7 @@ pub struct CharacterControllerConfig {
 impl Default for CharacterControllerConfig {
     fn default() -> Self {
         Self {
-            active: true,
+            active: false,
             move_speed: 10.0,
         }
     }
@@ -55,34 +53,8 @@ pub struct ChunkMaterialImage(pub Handle<Image>);
 #[derive(Default, Debug, Reflect, Deref, DerefMut, Resource)]
 pub struct CharacterPosition(IVec3);
 
-fn is_active(
-    char_config: Res<CharacterControllerConfig>,
-    cam_config: Res<OrbitCameraConfig>,
-) -> bool {
-    char_config.active && cam_config.active
-}
-
-fn sync_rotation(
-    q_cam: Query<
-        &Transform,
-        (
-            With<OrbitCamera>,
-            Without<CharacterController>,
-            Changed<Transform>,
-        ),
-    >,
-    mut q: Query<&mut Transform, With<CharacterController>>,
-) {
-    let Ok(cam_transform) = q_cam.get_single() else {
-        return;
-    };
-
-    let Ok(mut transform) = q.get_single_mut() else {
-        return;
-    };
-
-    let (y, _, _) = cam_transform.rotation.to_euler(EulerRot::YXZ);
-    transform.rotation = Quat::from_euler(EulerRot::YXZ, y, 0.0, 0.0);
+fn is_active(char_config: Res<CharacterControllerConfig>) -> bool {
+    char_config.active
 }
 
 fn move_character(

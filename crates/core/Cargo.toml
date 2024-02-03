@@ -18,4 +18,4 @@ rand = "0.8.5"
 
 [features]
 auto_load_kinds_descs = []
-default = ["bevy_math/serialize"]
+default = ["bevy_math/serialize", "auto_load_kinds_descs"]

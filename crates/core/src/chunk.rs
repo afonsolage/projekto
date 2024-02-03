@@ -32,7 +32,7 @@ pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
 pub struct Chunk {
     pub kinds: ChunkKind,
     pub lights: ChunkLight,
-    pub vertices: Vec<voxel::VoxelVertex>,
+    pub vertices: Vec<voxel::Vertex>,
 }
 
 impl PartialEq for Chunk {
@@ -142,6 +142,10 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
     pub fn is_all(&self, value: T) -> bool {
         self.iter().all(|t| *t == value)
     }
+
+    pub fn copy_from(&mut self, other: &Self) {
+        self.main.copy_from_slice(&other.main);
+    }
 }
 
 impl<T: ChunkStorageType> std::ops::Index<usize> for ChunkStorage<T> {
@@ -167,6 +171,26 @@ impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
     }
 }
 
+pub trait GetChunkStorage<'a, T: ChunkStorageType + 'a>:
+    Fn(IVec3) -> Option<&'a ChunkStorage<T>> + Copy
+{
+}
+
+impl<'a, T: ChunkStorageType + 'a, F: Copy> GetChunkStorage<'a, T> for F where
+    F: Fn(IVec3) -> Option<&'a ChunkStorage<T>>
+{
+}
+
+pub trait GetChunkStorageMut<'a, T: ChunkStorageType + 'a>:
+    FnMut(IVec3) -> Option<&'a mut ChunkStorage<T>> + Copy
+{
+}
+
+impl<'a, T: ChunkStorageType + 'a, F: Copy> GetChunkStorageMut<'a, T> for F where
+    F: FnMut(IVec3) -> Option<&'a mut ChunkStorage<T>>
+{
+}
+
 pub type ChunkKind = ChunkStorage<voxel::Kind>;
 pub type ChunkLight = ChunkStorage<voxel::Light>;
 
@@ -188,7 +212,8 @@ pub fn to_index_2d(local: IVec2) -> usize {
     (local.x << Z_AXIS_SIZE.ilog2() | local.y << Y_SHIFT) as usize
 }
 
-fn from_index(index: usize) -> IVec3 {
+#[inline]
+pub fn from_index(index: usize) -> IVec3 {
     IVec3::new(
         ((index & X_MASK) >> X_SHIFT) as i32,
         ((index & Y_MASK) >> Y_SHIFT) as i32,
