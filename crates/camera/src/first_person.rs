@@ -23,6 +23,10 @@ impl Plugin for FirstPersonCameraPlugin {
 #[reflect(Component)]
 pub struct FirstPersonCamera;
 
+#[derive(Component, Reflect, Default)]
+#[reflect(Component)]
+pub struct FirstPersonTarget;
+
 /// Allows to configure [`FirstPersonCamera`] behavior.
 #[derive(Debug, Resource)]
 pub struct FirstPersonCameraConfig {
@@ -53,7 +57,7 @@ fn rotate_camera(
     time: Res<Time>,
     mut motion_evt: EventReader<MouseMotion>,
     config: Res<FirstPersonCameraConfig>,
-    mut q: Query<&mut Transform, With<FirstPersonCamera>>,
+    mut q: Query<&mut Transform, With<FirstPersonTarget>>,
 ) {
     if let Ok(mut transform) = q.get_single_mut() {
         let mut delta = Vec2::ZERO;

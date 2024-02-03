@@ -9,7 +9,11 @@ use character_controller::{CharacterController, CharacterControllerPlugin};
 use debug::DebugPlugin;
 
 mod world;
-use projekto_camera::{first_person::FirstPersonCamera, fly_by::FlyByCamera, CameraPlugin};
+use projekto_camera::{
+    first_person::{FirstPersonCamera, FirstPersonTarget},
+    fly_by::FlyByCamera,
+    CameraPlugin,
+};
 use projekto_world_client::WorldClientPlugin;
 use projekto_world_server::{Chunk, Landscape, WorldServerPlugin};
 
@@ -100,18 +104,21 @@ fn setup(
 
     // character
     commands
-        .spawn(PbrBundle {
-            transform: Transform::from_xyz(2.0, 20.0, 7.0),
-            mesh: meshes.add(Mesh::from(shape::Capsule {
-                radius: 0.25,
-                depth: 1.5,
-                ..default()
-            })),
-            material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
-            ..Default::default()
-        })
-        .insert(Name::new("Character"))
-        .insert(CharacterController)
+        .spawn((
+            PbrBundle {
+                transform: Transform::from_xyz(2.0, 20.0, 7.0),
+                mesh: meshes.add(Mesh::from(shape::Capsule {
+                    radius: 0.25,
+                    depth: 1.5,
+                    ..default()
+                })),
+                material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+                ..Default::default()
+            },
+            Name::new("Character"),
+            CharacterController,
+            FirstPersonTarget,
+        ))
         .with_children(|p| {
             // Front indicator
             p.spawn((
