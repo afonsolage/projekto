@@ -578,8 +578,8 @@ fn generate_vertices(
                 return;
             }
 
-            let faces = meshing::faces_merge(kind, faces_occlusion, faces_soft_light);
-            // let faces = meshing::generate_faces(kind, faces_occlusion, faces_soft_light);
+            // let faces = meshing::faces_merge(kind, faces_occlusion, faces_soft_light);
+            let faces = meshing::generate_faces(kind, faces_occlusion, faces_soft_light);
 
             faces.iter().for_each(|face| {
                 map[face.side.index()] += 1;

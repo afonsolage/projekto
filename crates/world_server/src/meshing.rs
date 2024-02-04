@@ -451,35 +451,35 @@ pub(super) fn generate_vertices(faces: Vec<voxel::Face>) -> Vec<voxel::Vertex> {
     vertices
 }
 
-// pub(super) fn generate_faces(
-//     kind: &ChunkStorage<voxel::Kind>,
-//     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
-//     soft_light: &ChunkStorage<voxel::FacesSoftLight>,
-// ) -> Vec<voxel::Face> {
-//     let mut faces_vertices = vec![];
-//
-//     for voxel in chunk::voxels() {
-//         for side in voxel::SIDES {
-//             let kind = kind.get(voxel);
-//
-//             if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
-//                 continue;
-//             }
-//
-//             let voxel_soft_light = soft_light.get(voxel);
-//
-//             let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
-//             faces_vertices.push(voxel::Face {
-//                 vertices: [v1, v2, v3, v4],
-//                 side,
-//                 kind,
-//                 light: voxel_soft_light.get(side),
-//             });
-//         }
-//     }
-//
-//     faces_vertices
-// }
+pub(super) fn generate_faces(
+    kind: &ChunkStorage<voxel::Kind>,
+    occlusion: &ChunkStorage<voxel::FacesOcclusion>,
+    soft_light: &ChunkStorage<voxel::FacesSoftLight>,
+) -> Vec<voxel::Face> {
+    let mut faces_vertices = vec![];
+
+    for voxel in chunk::voxels() {
+        for side in voxel::SIDES {
+            let kind = kind.get(voxel);
+
+            if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
+                continue;
+            }
+
+            let voxel_soft_light = soft_light.get(voxel);
+
+            let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
+            faces_vertices.push(voxel::Face {
+                vertices: [v1, v2, v3, v4],
+                side,
+                kind,
+                light: voxel_soft_light.get(side),
+            });
+        }
+    }
+
+    faces_vertices
+}
 
 #[cfg(test)]
 mod test {

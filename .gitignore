@@ -20,3 +20,4 @@ Cargo.lock
 .history/
 
 cache/
+tracy/

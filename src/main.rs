@@ -28,17 +28,15 @@ fn main() {
 
     app.insert_resource(Msaa::Sample4)
         // This may cause problems later on. Ideally this setup should be done per image
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        present_mode: PresentMode::AutoNoVsync,
-                        ..Default::default()
-                    }),
+        .add_plugins((DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    present_mode: PresentMode::AutoNoVsync,
                     ..Default::default()
-                })
-                .set(ImagePlugin::default_nearest()),
-        )
+                }),
+                ..Default::default()
+            })
+            .set(ImagePlugin::default_nearest()),))
         .add_plugins((
             DebugPlugin,
             CameraPlugin,
