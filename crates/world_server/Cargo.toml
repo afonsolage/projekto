@@ -6,6 +6,10 @@ license = "MIT"
 readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+faces_merging = []
+
 [dependencies]
 projekto_core = {path = "../core"}
 

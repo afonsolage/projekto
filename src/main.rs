@@ -8,7 +8,6 @@ use camera_controller::CameraControllerPlugin;
 use character_controller::{CharacterController, CharacterControllerPlugin};
 use debug::DebugPlugin;
 
-mod world;
 use projekto_camera::{
     first_person::{FirstPersonCamera, FirstPersonTarget},
     fly_by::FlyByCamera,
@@ -42,7 +41,6 @@ fn main() {
             CameraPlugin,
             CameraControllerPlugin,
             CharacterControllerPlugin,
-            // WorldPlugin,
             WorldServerPlugin,
             WorldClientPlugin,
         ))

@@ -12,15 +12,11 @@ members = ["crates/*"]
 [dependencies]
 # Internal
 projekto_core = { path = "crates/core" }
-projekto_shaping = { path = "crates/shaping" }
 projekto_camera = { path = "crates/camera" }
-projekto_genesis = { path = "crates/genesis" }
 projekto_world_server = { path = "crates/world_server" }
 projekto_world_client = { path = "crates/world_client" }
 
 bevy = { version = "0.12", default-features = false }
-
-itertools = "0.12"
 
 # Used by inspector
 bevy-inspector-egui = { version = "0.22.0", optional = true }
