@@ -6,9 +6,7 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-bevy_math = "0.12"
-bevy_utils = "0.12"
-bevy_log = "0.12"
+bevy = "0.12"
 serde = "1.0"
 once_cell = "1.19"
 ron = "0.8"
@@ -18,4 +16,4 @@ rand = "0.8.5"
 
 [features]
 auto_load_kinds_descs = []
-default = ["bevy_math/serialize", "auto_load_kinds_descs"]
+default = ["auto_load_kinds_descs"]

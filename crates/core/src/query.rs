@@ -1,4 +1,4 @@
-use bevy_math::{IVec3, Vec3};
+use bevy::math::{IVec3, Vec3};
 
 use crate::{chunk, math, voxel};
 

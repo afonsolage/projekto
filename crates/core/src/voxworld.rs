@@ -1,5 +1,4 @@
-use bevy_math::IVec3;
-use bevy_utils::HashMap;
+use bevy::{math::IVec3, utils::HashMap};
 
 use super::chunk::Chunk;
 

@@ -16,7 +16,7 @@ projekto_camera = { path = "crates/camera" }
 projekto_world_server = { path = "crates/world_server" }
 projekto_world_client = { path = "crates/world_client" }
 
-bevy = { version = "0.12", default-features = false }
+bevy = { version = "0.12"}
 
 # Used by inspector
 bevy-inspector-egui = { version = "0.22.0", optional = true }
@@ -38,14 +38,6 @@ default = [
 # Only enable used bevy features, to reduce clean compile time.
 dev = [
     "bevy/dynamic_linking",            # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
-    "bevy/bevy_asset",
-    "bevy/bevy_scene",
-    "bevy/bevy_winit",
-    "bevy/bevy_render",
-    "bevy/bevy_pbr",
-    "bevy/png",
-    "bevy/file_watcher",
-    "bevy/x11",
 ]
 
 inspector = ["dep:bevy-inspector-egui", "dep:bevy_egui"]
