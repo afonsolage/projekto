@@ -16,7 +16,6 @@ projekto_core = {path = "../core"}
 bevy = {version = "0.12", default_features = false}
 
 serde = "1.0"
-futures-lite = "1.12"
 
 # genesis
 bracket-noise = "0.8.7"
