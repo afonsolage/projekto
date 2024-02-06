@@ -13,7 +13,7 @@ faces_merging = []
 [dependencies]
 projekto_core = {path = "../core"}
 
-bevy = {version = "0.12"}
+bevy = {version = "0.12", default-features = false}
 
 serde = "1.0"
 

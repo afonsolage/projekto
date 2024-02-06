@@ -9,4 +9,4 @@ edition = "2021"
 projekto_core = {path = "../core"}
 projekto_world_server = {path = "../world_server"}
 
-bevy = "0.12"
+bevy = {version = "0.12", default-features = false}

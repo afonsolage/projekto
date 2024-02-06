@@ -6,7 +6,7 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-bevy = "0.12"
+bevy = {version = "0.12", default-features = false}
 serde = "1.0"
 once_cell = "1.19"
 ron = "0.8"
