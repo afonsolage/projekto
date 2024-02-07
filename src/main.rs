@@ -13,8 +13,9 @@ use projekto_camera::{
     fly_by::FlyByCamera,
     CameraPlugin,
 };
+use projekto_core::chunk::Chunk;
 use projekto_world_client::WorldClientPlugin;
-use projekto_world_server::{Chunk, Landscape, WorldServerPlugin};
+use projekto_world_server::{Landscape, WorldServerPlugin};
 
 // mod ui;
 // use ui::UiPlugin;

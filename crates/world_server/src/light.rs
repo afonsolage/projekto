@@ -2,13 +2,9 @@ use std::collections::VecDeque;
 
 use bevy::math::IVec3;
 use projekto_core::{
+    chunk::{self, Chunk, ChunkSide, ChunkStorage, GetChunkStorage},
     math,
-    voxel::{self, LightTy},
-};
-
-use crate::{
-    chunk::{self, ChunkSide, ChunkStorage, GetChunkStorage},
-    Chunk, Voxel,
+    voxel::{self, LightTy, Voxel},
 };
 
 /// Number of neighbors per voxel

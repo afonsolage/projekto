@@ -6,8 +6,11 @@ use bevy::{
     utils::HashMap,
 };
 use material::ChunkMaterial;
-use projekto_core::voxel::{self, Vertex};
-use projekto_world_server::{chunk, Chunk, ChunkLocal, ChunkVertex};
+use projekto_core::{
+    chunk::{self, Chunk},
+    voxel::{self, Vertex},
+};
+use projekto_world_server::{ChunkLocal, ChunkVertex};
 
 mod material;
 

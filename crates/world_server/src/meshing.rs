@@ -1,8 +1,6 @@
-#![allow(dead_code)]
-
-use crate::chunk::{self, ChunkSide, ChunkStorage};
 use bevy::math::{IVec3, Vec3};
 use projekto_core::{
+    chunk::{self, ChunkSide, ChunkStorage},
     math,
     voxel::{self, FacesOcclusion},
 };
@@ -187,8 +185,10 @@ pub(super) use faces_merging::generate_faces;
 mod faces_merging {
     use bevy::math::IVec3;
 
-    use crate::chunk::{self, ChunkStorage};
-    use projekto_core::voxel::{self};
+    use projekto_core::{
+        chunk::{self, ChunkStorage},
+        voxel::{self},
+    };
 
     enum AxisRange {
         Iter(std::ops::RangeInclusive<i32>),

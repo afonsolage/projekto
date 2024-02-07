@@ -1,9 +1,12 @@
 use bevy::math::{IVec3, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
-use crate::{chunk::ChunkStorage, math};
+use crate::{
+    chunk::{Chunk, ChunkStorage},
+    math,
+};
 
-use super::{chunk, chunk::ChunkStorageType};
+use super::chunk;
 
 mod kind;
 pub use kind::*;
@@ -31,6 +34,8 @@ impl LightTy {
         }
     }
 }
+
+pub type Voxel = IVec3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Light(u8);
@@ -69,8 +74,6 @@ impl From<Light> for u8 {
         val.0
     }
 }
-
-impl ChunkStorageType for Light {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Serialize, Deserialize)]
 pub enum Side {
@@ -209,8 +212,6 @@ impl From<[bool; 6]> for FacesOcclusion {
     }
 }
 
-impl ChunkStorageType for FacesOcclusion {}
-
 pub type ChunkFacesOcclusion = ChunkStorage<FacesOcclusion>;
 
 impl ChunkFacesOcclusion {
@@ -240,8 +241,6 @@ impl FacesSoftLight {
         self.0[side as usize]
     }
 }
-
-impl ChunkStorageType for FacesSoftLight {}
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Face {
@@ -278,8 +277,8 @@ pub fn to_local(world: Vec3) -> IVec3 {
     )
 }
 
-pub fn to_world(local: IVec3, chunk_local: IVec3) -> Vec3 {
-    chunk::to_world(chunk_local) + local.as_vec3()
+pub fn to_world(voxel: IVec3, chunk: Chunk) -> Vec3 {
+    chunk::to_world(chunk) + voxel.as_vec3()
 }
 
 #[cfg(test)]
@@ -357,8 +356,7 @@ mod tests {
         const MAG: f32 = 100.0;
 
         for _ in 0..TEST_COUNT {
-            let base_chunk = IVec3::new(
-                (random::<f32>() * MAG) as i32 * if random::<bool>() { -1 } else { 1 },
+            let base_chunk = Chunk::new(
                 (random::<f32>() * MAG) as i32 * if random::<bool>() { -1 } else { 1 },
                 (random::<f32>() * MAG) as i32 * if random::<bool>() { -1 } else { 1 },
             );
@@ -369,12 +367,8 @@ mod tests {
                 (random::<f32>() * chunk::Z_AXIS_SIZE as f32) as i32,
             );
 
-            let chunk_world = base_chunk.as_vec3()
-                * Vec3::new(
-                    chunk::X_AXIS_SIZE as f32,
-                    chunk::Y_AXIS_SIZE as f32,
-                    chunk::Z_AXIS_SIZE as f32,
-                );
+            let chunk_world = Vec3::new(base_chunk.x() as f32, 0.0, base_chunk.z() as f32)
+                * Vec3::new(chunk::X_AXIS_SIZE as f32, 0.0, chunk::Z_AXIS_SIZE as f32);
 
             assert_eq!(
                 chunk_world + base_voxel.as_vec3(),

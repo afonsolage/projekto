@@ -4,8 +4,6 @@ use bevy::{log::trace, math::IVec2};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
-use crate::chunk::ChunkStorageType;
-
 use super::{Face, Side};
 
 static KINDS_DESCS: OnceCell<KindsDescs> = OnceCell::new();
@@ -226,8 +224,6 @@ impl Kind {
         panic!("Failed to find kind description {}", self.0);
     }
 }
-
-impl ChunkStorageType for Kind {}
 
 #[cfg(test)]
 mod tests {

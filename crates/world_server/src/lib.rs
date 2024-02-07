@@ -9,11 +9,12 @@ use bevy::{
     time::common_conditions::on_timer,
     utils::{HashMap, HashSet},
 };
-use chunk::ChunkStorage;
 use light::NeighborLightPropagation;
-use projekto_core::voxel::{self};
+use projekto_core::{
+    chunk::{self, Chunk, ChunkStorage},
+    voxel::{self, Voxel},
+};
 
-pub mod chunk;
 mod genesis;
 mod light;
 mod meshing;
@@ -78,57 +79,6 @@ enum WorldSet {
     Propagation,
     Meshing,
 }
-
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Chunk(IVec2);
-
-impl Chunk {
-    pub fn new(x: i32, z: i32) -> Self {
-        Self(IVec2::new(x, z))
-    }
-
-    pub fn neighbor(&self, dir: IVec2) -> Self {
-        Chunk(self.0 + dir)
-    }
-}
-
-impl From<IVec2> for Chunk {
-    fn from(value: IVec2) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Chunk> for IVec2 {
-    fn from(value: Chunk) -> Self {
-        value.0
-    }
-}
-
-impl From<(i32, i32)> for Chunk {
-    fn from(value: (i32, i32)) -> Self {
-        Self(value.into())
-    }
-}
-
-impl From<Vec3> for Chunk {
-    fn from(value: Vec3) -> Self {
-        chunk::to_chunk(value)
-    }
-}
-
-impl From<Chunk> for Vec3 {
-    fn from(value: Chunk) -> Self {
-        chunk::to_world(value)
-    }
-}
-
-impl std::fmt::Display for Chunk {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-pub type Voxel = IVec3;
 
 // Components
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
