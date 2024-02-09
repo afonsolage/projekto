@@ -47,9 +47,6 @@ impl Plugin for WorldServerPlugin {
                 Update,
                 (
                     apply_deferred.in_set(WorldSet::FlushCommands),
-                    // Chunk Initialization
-                    (init_light.run_if(any_chunk::<Added<ChunkLight>>),)
-                        .in_set(WorldSet::ChunkInitialization),
                     // Chunk Propagation
                     (propagate_light.run_if(on_event::<LightUpdate>()),)
                         .in_set(WorldSet::Propagation),
@@ -108,64 +105,15 @@ struct ChunkBundle {
     vertex: ChunkVertex,
 }
 
-#[derive(Event, Debug, Clone)]
-struct LightUpdate {
-    chunk: Chunk,
-    ty: voxel::LightTy,
-    values: Vec<(Voxel, u8)>,
-}
-
 fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
     !q_changed_chunks.is_empty()
 }
 
-fn init_light(
-    mut q: Query<(&ChunkLocal, &ChunkKind, &mut ChunkLight), Added<ChunkLight>>,
-    mut writer: EventWriter<LightUpdate>,
-) {
-    let mut map = HashMap::new();
-    let mut count = 0;
-
-    q.for_each_mut(|(local, kind, mut light)| {
-        chunk::top_voxels().for_each(|voxel| {
-            light.set_type(
-                voxel,
-                voxel::LightTy::Natural,
-                voxel::Light::MAX_NATURAL_INTENSITY,
-            );
-        });
-
-        let neighbor_propagation = light::propagate(
-            kind,
-            &mut light,
-            voxel::LightTy::Natural,
-            chunk::top_voxels(),
-        );
-
-        neighbor_propagation.into_iter().for_each(
-            |NeighborLightPropagation {
-                 side,
-                 voxel,
-                 ty,
-                 intensity,
-             }| {
-                let chunk = local.neighbor(side.dir());
-                map.entry((chunk, ty))
-                    .or_insert(vec![])
-                    .push((voxel, intensity));
-            },
-        );
-
-        count += 1;
-    });
-
-    let events = map.len();
-
-    map.into_iter().for_each(|((chunk, ty), values)| {
-        writer.send(LightUpdate { chunk, ty, values });
-    });
-
-    trace!("[init_light] {count} chunks light initialized. {events} propagation events sent.");
+#[derive(Event, Debug, Clone)]
+pub struct LightUpdate {
+    chunk: Chunk,
+    ty: voxel::LightTy,
+    values: Vec<(Voxel, u8)>,
 }
 
 fn propagate_light(

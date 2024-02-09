@@ -3,7 +3,7 @@ use projekto_core::chunk::Chunk;
 
 use crate::{chunk_map::ChunkMap, genesis, ChunkBundle, ChunkKind, ChunkLocal, WorldSet};
 
-pub(crate) struct ChunkManagementPlugin;
+pub struct ChunkManagementPlugin;
 
 impl Plugin for ChunkManagementPlugin {
     fn build(&self, app: &mut App) {
@@ -25,13 +25,13 @@ impl Plugin for ChunkManagementPlugin {
 }
 
 #[derive(Event, Debug, Clone, Copy)]
-pub(crate) struct ChunkUnload(pub Chunk);
+pub struct ChunkUnload(pub Chunk);
 
 #[derive(Event, Debug, Clone, Copy)]
-pub(crate) struct ChunkLoad(pub Chunk);
+pub struct ChunkLoad(pub Chunk);
 
 #[derive(Event, Debug, Clone, Copy)]
-pub(crate) struct ChunkGen(pub Chunk);
+pub struct ChunkGen(pub Chunk);
 
 fn chunks_unload(
     mut commands: Commands,
