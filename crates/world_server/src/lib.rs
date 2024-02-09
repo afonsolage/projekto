@@ -15,6 +15,8 @@ use projekto_core::{
     voxel::{self, Voxel},
 };
 
+pub mod app;
+pub mod channel;
 mod genesis;
 mod light;
 mod meshing;
@@ -208,6 +210,7 @@ fn update_landscape(
     mut load_writer: EventWriter<ChunkLoad>,
     mut unload_writer: EventWriter<ChunkUnload>,
 ) {
+    trace!("Updating landscape!");
     let new_landscape_chunks = {
         if let Some(landscape) = maybe_landscape {
             let radius = landscape.radius as i32;

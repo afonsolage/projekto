@@ -16,9 +16,14 @@ projekto_core = {path = "../core"}
 bevy = {version = "0.12", default-features = false}
 
 serde = "1.0"
+crossbeam-channel = "0.5"
 
 # genesis
 bracket-noise = "0.8.7"
 
 [dev-dependencies]
 rand = "0.8"
+
+[[example]]
+name = "server"
+path = "examples/server.rs"
