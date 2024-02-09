@@ -71,3 +71,43 @@ fn init_light(
 
     trace!("[init_light] {count} chunks light initialized. {events} propagation events sent.");
 }
+
+#[cfg(test)]
+mod tests {
+    use bevy::app::ScheduleRunnerPlugin;
+
+    use crate::ChunkBundle;
+
+    use super::*;
+
+    #[test]
+    fn init_light_empty_chunk() {
+        // Arrange
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_event::<LightUpdate>()
+            .add_plugins(ChunkInitializationPlugin);
+
+        app.world.spawn(ChunkBundle::default());
+
+        // Act
+        app.update();
+
+        // Assert
+        let light = app.world.query::<&ChunkLight>().single(&app.world);
+        assert!(
+            light
+                .iter()
+                .all(|light| light.get(voxel::LightTy::Natural)
+                    == voxel::Light::MAX_NATURAL_INTENSITY),
+            "All voxels should have max natural light on empty chunk"
+        );
+
+        let light_update_events = app.world.resource::<Events<LightUpdate>>();
+        assert_eq!(
+            light_update_events.len(),
+            4,
+            "Init light should propagate to all 4 neighbors"
+        );
+    }
+}
