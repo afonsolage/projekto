@@ -15,7 +15,7 @@ use projekto_camera::{
 };
 use projekto_core::chunk::Chunk;
 use projekto_world_client::WorldClientPlugin;
-use projekto_world_server::{Landscape, WorldServerPlugin};
+use projekto_world_server::{set::Landscape, WorldServerPlugin};
 
 // mod ui;
 // use ui::UiPlugin;

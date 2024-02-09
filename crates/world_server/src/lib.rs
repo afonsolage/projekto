@@ -1,19 +1,18 @@
 use std::time::Duration;
 
 use bevy::{
-    ecs::{
-        query::{QueryItem, ReadOnlyWorldQuery, WorldQuery},
-        system::SystemParam,
-    },
+    ecs::query::ReadOnlyWorldQuery,
     prelude::*,
     time::common_conditions::on_timer,
     utils::{HashMap, HashSet},
 };
+use chunk_map::ChunkQuery;
 use light::NeighborLightPropagation;
 use projekto_core::{
     chunk::{self, Chunk, ChunkStorage},
     voxel::{self, Voxel},
 };
+use set::{ChunkManagementPlugin, LandscapePlugin};
 
 pub mod app;
 pub mod channel;
@@ -21,40 +20,39 @@ mod genesis;
 mod light;
 mod meshing;
 
+pub mod chunk_map;
+pub mod set;
+
+const MESHING_TICK_MS: u64 = 500;
+
 pub struct WorldServerPlugin;
 
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ChunkMap>()
-            .add_event::<ChunkUnload>()
-            .add_event::<ChunkLoad>()
-            .add_event::<ChunkGen>()
-            .add_event::<LightUpdate>()
+        app.add_event::<LightUpdate>()
+            .configure_sets(
+                Update,
+                (
+                    WorldSet::LandscapeUpdate.before(WorldSet::ChunkManagement),
+                    WorldSet::ChunkManagement.before(WorldSet::FlushCommands),
+                    WorldSet::ChunkInitialization.after(WorldSet::FlushCommands),
+                    WorldSet::Propagation.after(WorldSet::ChunkInitialization),
+                    WorldSet::Meshing
+                        .after(WorldSet::Propagation)
+                        .run_if(on_timer(Duration::from_millis(MESHING_TICK_MS))),
+                ),
+            )
+            .add_plugins((LandscapePlugin, ChunkManagementPlugin))
             .add_systems(
                 Update,
                 (
-                    // Landscape Update
-                    (update_landscape.run_if(resource_changed_or_removed::<Landscape>()),)
-                        .in_set(WorldSet::LandscapeUpdate)
-                        .before(WorldSet::ChunkManagement),
-                    // Chunk Management
-                    (
-                        chunks_unload.run_if(on_event::<ChunkUnload>()),
-                        chunks_load.run_if(on_event::<ChunkLoad>()),
-                        chunks_gen.run_if(on_event::<ChunkGen>()),
-                    )
-                        .chain()
-                        .in_set(WorldSet::ChunkManagement)
-                        .before(WorldSet::FlushCommands),
                     apply_deferred.in_set(WorldSet::FlushCommands),
                     // Chunk Initialization
                     (init_light.run_if(any_chunk::<Added<ChunkLight>>),)
-                        .in_set(WorldSet::ChunkInitialization)
-                        .after(WorldSet::FlushCommands),
+                        .in_set(WorldSet::ChunkInitialization),
                     // Chunk Propagation
                     (propagate_light.run_if(on_event::<LightUpdate>()),)
-                        .in_set(WorldSet::Propagation)
-                        .after(WorldSet::ChunkInitialization),
+                        .in_set(WorldSet::Propagation),
                     // Meshing
                     (
                         faces_occlusion, //.run_if(any_chunk::<Changed<ChunkKind>>),
@@ -65,7 +63,6 @@ impl Plugin for WorldServerPlugin {
                     )
                         .chain()
                         .in_set(WorldSet::Meshing)
-                        .after(WorldSet::Propagation)
                         .run_if(on_timer(Duration::from_secs_f32(0.5))),
                 ),
             );
@@ -111,191 +108,11 @@ struct ChunkBundle {
     vertex: ChunkVertex,
 }
 
-#[derive(Resource, Default, Debug, Clone, Copy, Reflect)]
-pub struct Landscape {
-    pub center: IVec2,
-    pub radius: u8,
-}
-
-#[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkMap(HashMap<Chunk, Entity>);
-
-#[derive(SystemParam)]
-struct ChunkQuery<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static = ()> {
-    map: Res<'w, ChunkMap>,
-    query: Query<'w, 's, Q, F>,
-}
-
-impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuery<'w, 's, Q, F> {
-    // fn get_chunk_entity(&self, chunk: IVec3) -> Option<Entity> {
-    //     self.map.0.get(&chunk).copied()
-    // }
-
-    fn get_chunk(&self, chunk: Chunk) -> Option<QueryItem<'_, <Q as WorldQuery>::ReadOnly>> {
-        self.map.0.get(&chunk).map(|&entity| {
-            self.query
-                .get(entity)
-                .expect("All entities inside the map must exists")
-        })
-    }
-
-    fn get_chunk_mut(&mut self, chunk: Chunk) -> Option<Q::Item<'_>> {
-        self.map.0.get(&chunk).map(|&entity| {
-            self.query
-                .get_mut(entity)
-                .expect("All entities inside the map must exists")
-        })
-    }
-
-    fn get_chunk_component<T: Component>(&self, chunk: Chunk) -> Option<&T> {
-        if let Some(&entity) = self.map.0.get(&chunk) {
-            if let Ok(component) = self.query.get_component::<T>(entity) {
-                return Some(component);
-            }
-        }
-        None
-    }
-
-    fn chunk_exists(&self, chunk: Chunk) -> bool {
-        self.map.0.contains_key(&chunk)
-    }
-
-    // fn get_chunk_component_mut<T: Component>(&mut self, chunk: IVec3) -> Option<Mut<'_, T>> {
-    //     if let Some(&entity) = self.map.0.get(&chunk) {
-    //         if let Ok(component) = self.query.get_component_mut::<T>(entity) {
-    //             return Some(component);
-    //         }
-    //     }
-    //     None
-    // }
-}
-
-impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops::Deref
-    for ChunkQuery<'w, 's, Q, F>
-{
-    type Target = Query<'w, 's, Q, F>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.query
-    }
-}
-
-impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops::DerefMut
-    for ChunkQuery<'w, 's, Q, F>
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.query
-    }
-}
-
-#[derive(Event, Debug, Clone, Copy)]
-struct ChunkUnload(Chunk);
-
-#[derive(Event, Debug, Clone, Copy)]
-struct ChunkLoad(Chunk);
-
-#[derive(Event, Debug, Clone, Copy)]
-struct ChunkGen(Chunk);
-
 #[derive(Event, Debug, Clone)]
 struct LightUpdate {
     chunk: Chunk,
     ty: voxel::LightTy,
     values: Vec<(Voxel, u8)>,
-}
-
-fn update_landscape(
-    maybe_landscape: Option<Res<Landscape>>,
-    chunk_map: Res<ChunkMap>,
-    mut load_writer: EventWriter<ChunkLoad>,
-    mut unload_writer: EventWriter<ChunkUnload>,
-) {
-    trace!("Updating landscape!");
-    let new_landscape_chunks = {
-        if let Some(landscape) = maybe_landscape {
-            let radius = landscape.radius as i32;
-            let center = landscape.center;
-            (-radius..=radius)
-                .flat_map(|x| {
-                    (-radius..=radius).map(move |z| Chunk::new(x + center.x, z + center.y))
-                })
-                .collect::<HashSet<_>>()
-        } else {
-            HashSet::new()
-        }
-    };
-
-    let mut unloaded = 0;
-    chunk_map
-        .keys()
-        .filter(|&c| !new_landscape_chunks.contains(c))
-        .for_each(|&c| {
-            unload_writer.send(ChunkUnload(c));
-            unloaded += 1;
-        });
-
-    let mut loaded = 0;
-    new_landscape_chunks
-        .into_iter()
-        .filter(|c| !chunk_map.contains_key(c))
-        .for_each(|c| {
-            load_writer.send(ChunkLoad(c));
-            loaded += 1
-        });
-
-    trace!("[update_landscape] Unloaded: {unloaded}, loaded: {loaded}");
-}
-
-fn chunks_unload(
-    mut commands: Commands,
-    mut chunk_map: ResMut<ChunkMap>,
-    mut reader: EventReader<ChunkUnload>,
-) {
-    let mut count = 0;
-    reader.read().for_each(|evt| {
-        if let Some(entity) = chunk_map.remove(&evt.0) {
-            commands.entity(entity).despawn();
-            count += 1;
-        } else {
-            let local = evt.0;
-            warn!("Chunk {local} entity not found.");
-        }
-    });
-    trace!("[chunks_unload] {count} chunks despawned");
-}
-
-fn chunks_load(mut reader: EventReader<ChunkLoad>, mut writer: EventWriter<ChunkGen>) {
-    let locals = reader.read().map(|evt| evt.0).collect::<Vec<_>>();
-
-    // TODO: Include load generated chunks from cache
-
-    locals
-        .into_iter()
-        .for_each(|local| writer.send(ChunkGen(local)));
-}
-
-fn chunks_gen(
-    mut commands: Commands,
-    mut reader: EventReader<ChunkGen>,
-    mut chunk_map: ResMut<ChunkMap>,
-) {
-    let mut count = 0;
-    for &ChunkGen(chunk) in reader.read() {
-        let kind = genesis::generate_chunk(chunk);
-        let entity = commands
-            .spawn(ChunkBundle {
-                kind: ChunkKind(kind),
-                local: ChunkLocal(chunk),
-                ..Default::default()
-            })
-            .insert(Name::new(format!("Server Chunk {chunk}")))
-            .id();
-
-        let existing = chunk_map.insert(chunk, entity);
-        debug_assert_eq!(existing, None, "Can't replace existing chunk {chunk}");
-        count += 1;
-    }
-    trace!("[chunks_gen] {count} chunks generated and spawned.");
 }
 
 fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
@@ -563,167 +380,6 @@ mod test {
             .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .add_plugins(super::WorldServerPlugin)
             .run()
-    }
-
-    #[test]
-    fn update_no_landscape() {
-        // arrange
-        let mut app = App::new();
-
-        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-            .add_plugins(super::WorldServerPlugin);
-
-        // act
-        app.update();
-
-        // assert
-        assert!(
-            app.world.entities().is_empty(),
-            "No entity should be spawned"
-        );
-    }
-
-    #[test]
-    fn update_landscape_radius_remove() {
-        // arrange
-        let mut app = App::new();
-
-        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-            .add_plugins(super::WorldServerPlugin);
-
-        app.world.insert_resource(Landscape {
-            radius: 1,
-            ..Default::default()
-        });
-
-        app.update();
-        app.world.remove_resource::<Landscape>();
-
-        // act
-        app.update();
-
-        // assert
-        assert!(
-            app.world.entities().is_empty(),
-            "All chunks should be removed and landscape is removed"
-        );
-    }
-
-    #[test]
-    fn update_landscape_radius_1() {
-        // arrange
-        let mut app = App::new();
-
-        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-            .add_plugins(super::WorldServerPlugin);
-
-        app.world.insert_resource(Landscape {
-            radius: 1,
-            ..Default::default()
-        });
-
-        // act
-        app.update();
-
-        // assert
-        assert_eq!(
-            app.world.entities().len(),
-            9,
-            "There should be 9 entities in a landscape with radius 1"
-        );
-    }
-
-    #[test]
-    fn update_landscape_zero() {
-        // arrange
-        let mut app = App::new();
-
-        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-            .add_plugins(super::WorldServerPlugin);
-
-        app.world.insert_resource(Landscape {
-            radius: 0,
-            ..Default::default()
-        });
-
-        // act
-        app.update();
-
-        // assert
-        assert_eq!(
-            app.world.entities().len(),
-            1,
-            "Only a single chunk should be spawned in a landscape with 0 radius"
-        );
-    }
-
-    #[test]
-    fn chunk_load() {
-        // arrange
-        let mut app = App::new();
-
-        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-            .add_plugins(super::WorldServerPlugin);
-
-        app.world.send_event(ChunkLoad((0, 0).into()));
-
-        // act
-        app.update();
-
-        // assert
-        assert_eq!(
-            app.world.entities().len(),
-            1,
-            "One entity should be spawned"
-        );
-        assert_eq!(
-            app.world.get_resource::<ChunkMap>().unwrap().len(),
-            1,
-            "One entity should be inserted on map"
-        );
-    }
-
-    #[test]
-    fn chunk_gen() {
-        // arrange
-        let mut app = App::new();
-
-        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-            .add_plugins(super::WorldServerPlugin);
-
-        app.world.send_event(ChunkLoad((0, 0).into()));
-
-        // act
-        app.update();
-
-        // assert
-        let (kind, light) = app
-            .world
-            .query::<(&ChunkKind, &ChunkLight)>()
-            .get_single(&app.world)
-            .unwrap();
-
-        for x in 0..=chunk::X_END {
-            for z in 0..=chunk::Z_END {
-                assert_eq!(
-                    light
-                        .get((x, chunk::Y_END, z).into())
-                        .get(voxel::LightTy::Natural),
-                    voxel::Light::MAX_NATURAL_INTENSITY,
-                    "All y-most voxels should have max natural light"
-                );
-            }
-        }
-
-        chunk::voxels().for_each(|voxel| {
-            if kind.get(voxel).is_opaque() {
-                assert_eq!(
-                    light.get(voxel).get_greater_intensity(),
-                    0,
-                    "Opaque voxels should have no light value"
-                );
-            }
-        });
     }
 }
 

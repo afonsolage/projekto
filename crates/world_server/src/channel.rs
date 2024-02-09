@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
-use crate::{Landscape, WorldSet};
+use crate::{set::Landscape, WorldSet};
 
 pub enum ServerCommand {
     LandscapeUpdateCenter(IVec2),
@@ -13,7 +13,7 @@ pub enum ServerCommand {
 pub struct WorldServerChannelPlugin;
 
 #[derive(Resource, Deref, DerefMut)]
-struct ServerCommandSender(Sender<ServerCommand>);
+pub struct ServerCommandSender(Sender<ServerCommand>);
 
 #[derive(Resource, Deref, DerefMut)]
 struct ServerCommandReceiver(Receiver<ServerCommand>);
