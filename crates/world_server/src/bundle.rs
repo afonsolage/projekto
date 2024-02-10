@@ -46,7 +46,7 @@ pub fn any_chunk<T: ReadOnlyWorldQuery>(
 }
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
-pub(crate) struct ChunkMap(HashMap<Chunk, Entity>);
+pub(crate) struct ChunkMap(pub HashMap<Chunk, Entity>);
 
 #[derive(SystemParam)]
 pub(crate) struct ChunkQuery<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static = ()>

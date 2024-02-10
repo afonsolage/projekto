@@ -1,10 +1,7 @@
 use bevy::prelude::*;
 use projekto_core::chunk::Chunk;
 
-use crate::{
-    bundle::{ChunkBundle, ChunkKind, ChunkLocal, ChunkMap},
-    genesis, WorldSet,
-};
+use crate::{bundle::ChunkMap, WorldSet};
 
 pub struct ChunkManagementPlugin;
 
@@ -19,7 +16,6 @@ impl Plugin for ChunkManagementPlugin {
                 (
                     chunks_unload.run_if(on_event::<ChunkUnload>()),
                     chunks_load.run_if(on_event::<ChunkLoad>()),
-                    chunks_gen.run_if(on_event::<ChunkGen>()),
                 )
                     .chain()
                     .in_set(WorldSet::ChunkManagement),
@@ -64,35 +60,14 @@ fn chunks_load(mut reader: EventReader<ChunkLoad>, mut writer: EventWriter<Chunk
         .for_each(|local| writer.send(ChunkGen(local)));
 }
 
-fn chunks_gen(
-    mut commands: Commands,
-    mut reader: EventReader<ChunkGen>,
-    mut chunk_map: ResMut<ChunkMap>,
-) {
-    let mut count = 0;
-    for &ChunkGen(chunk) in reader.read() {
-        let kind = genesis::generate_chunk(chunk);
-        let entity = commands
-            .spawn(ChunkBundle {
-                kind: ChunkKind(kind),
-                local: ChunkLocal(chunk),
-                ..Default::default()
-            })
-            .insert(Name::new(format!("Server Chunk {chunk}")))
-            .id();
-
-        let existing = chunk_map.insert(chunk, entity);
-        debug_assert_eq!(existing, None, "Can't replace existing chunk {chunk}");
-        count += 1;
-    }
-    trace!("[chunks_gen] {count} chunks generated and spawned.");
-}
-
 #[cfg(test)]
 mod tests {
     use bevy::app::ScheduleRunnerPlugin;
 
-    use crate::{bundle::ChunkMap, set::Landscape};
+    use crate::{
+        bundle::{ChunkKind, ChunkMap},
+        set::Landscape,
+    };
 
     use super::*;
 

@@ -170,6 +170,7 @@ pub fn is_active(config: Res<OrbitCameraConfig>) -> bool {
 /// This does nothing if the [`Transform`] of an [`Entity`] with [`OrbitCameraTarget`] is not
 /// [`Changed`].
 
+#[allow(clippy::type_complexity)]
 fn target_moved(
     config: Res<OrbitCameraConfig>,
     target: Query<
