@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 use projekto_core::chunk::Chunk;
 
-use crate::{chunk_map::ChunkMap, genesis, ChunkBundle, ChunkKind, ChunkLocal, WorldSet};
+use crate::{
+    bundle::{ChunkBundle, ChunkKind, ChunkLocal, ChunkMap},
+    genesis, WorldSet,
+};
 
 pub struct ChunkManagementPlugin;
 
@@ -89,7 +92,7 @@ fn chunks_gen(
 mod tests {
     use bevy::app::ScheduleRunnerPlugin;
 
-    use crate::{chunk_map::ChunkMap, set::Landscape};
+    use crate::{bundle::ChunkMap, set::Landscape};
 
     use super::*;
 

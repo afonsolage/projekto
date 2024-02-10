@@ -10,7 +10,7 @@ use projekto_core::{
     chunk::{self, Chunk},
     voxel::{self, Vertex},
 };
-use projekto_world_server::{ChunkLocal, ChunkVertex};
+use projekto_world_server::bundle::{ChunkLocal, ChunkVertex};
 
 mod material;
 

@@ -1,9 +1,11 @@
 use bevy::{prelude::*, utils::HashSet};
 use projekto_core::{chunk, voxel};
 
-use crate::{
-    chunk_map::ChunkQuery, light, meshing, ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind,
-    ChunkLight, ChunkLocal, ChunkVertex, WorldSet,
+use crate::{light, meshing, WorldSet};
+
+use crate::bundle::{
+    ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal, ChunkQuery,
+    ChunkVertex,
 };
 
 pub struct MeshingPlugin;

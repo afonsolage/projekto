@@ -5,9 +5,9 @@ use projekto_core::{
 };
 
 use crate::{
-    chunk_map::ChunkQuery,
+    bundle::{ChunkKind, ChunkLight, ChunkQuery},
     light::{self, NeighborLightPropagation},
-    ChunkKind, ChunkLight, WorldSet,
+    WorldSet,
 };
 
 pub struct PropagationPlugin;

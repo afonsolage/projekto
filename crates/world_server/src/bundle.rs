@@ -6,7 +6,44 @@ use bevy::{
     prelude::*,
     utils::HashMap,
 };
-use projekto_core::chunk::Chunk;
+use projekto_core::{
+    chunk::{Chunk, ChunkStorage},
+    voxel,
+};
+
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+pub struct ChunkKind(pub ChunkStorage<voxel::Kind>);
+
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+pub struct ChunkLight(pub ChunkStorage<voxel::Light>);
+
+#[derive(Component, Default, Debug, Clone, Copy, Deref, DerefMut)]
+pub struct ChunkLocal(pub Chunk);
+
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+pub struct ChunkFacesOcclusion(pub ChunkStorage<voxel::FacesOcclusion>);
+
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+pub struct ChunkFacesSoftLight(pub ChunkStorage<voxel::FacesSoftLight>);
+
+#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
+pub struct ChunkVertex(pub Vec<voxel::Vertex>);
+
+#[derive(Bundle, Default)]
+pub struct ChunkBundle {
+    pub kind: ChunkKind,
+    pub light: ChunkLight,
+    pub local: ChunkLocal,
+    pub occlusion: ChunkFacesOcclusion,
+    pub soft_light: ChunkFacesSoftLight,
+    pub vertex: ChunkVertex,
+}
+
+pub fn any_chunk<T: ReadOnlyWorldQuery>(
+    q_changed_chunks: Query<(), (T, With<ChunkLocal>)>,
+) -> bool {
+    !q_changed_chunks.is_empty()
+}
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
 pub(crate) struct ChunkMap(HashMap<Chunk, Entity>);

@@ -5,9 +5,9 @@ use projekto_core::{
 };
 
 use crate::{
-    any_chunk,
+    bundle::{any_chunk, ChunkKind, ChunkLight, ChunkLocal},
     light::{self, NeighborLightPropagation},
-    ChunkKind, ChunkLight, ChunkLocal, WorldSet,
+    WorldSet,
 };
 
 use super::LightUpdate;
@@ -78,7 +78,7 @@ fn init_light(
 mod tests {
     use bevy::app::ScheduleRunnerPlugin;
 
-    use crate::ChunkBundle;
+    use crate::bundle::ChunkBundle;
 
     use super::*;
 

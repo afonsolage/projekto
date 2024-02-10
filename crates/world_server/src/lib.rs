@@ -1,10 +1,6 @@
 use std::time::Duration;
 
-use bevy::{ecs::query::ReadOnlyWorldQuery, prelude::*, time::common_conditions::on_timer};
-use projekto_core::{
-    chunk::{Chunk, ChunkStorage},
-    voxel::{self},
-};
+use bevy::{prelude::*, time::common_conditions::on_timer};
 use set::{
     ChunkInitializationPlugin, ChunkManagementPlugin, LandscapePlugin, MeshingPlugin,
     PropagationPlugin,
@@ -16,7 +12,7 @@ mod genesis;
 mod light;
 mod meshing;
 
-pub mod chunk_map;
+pub mod bundle;
 pub mod set;
 
 const MESHING_TICK_MS: u64 = 500;
@@ -58,39 +54,6 @@ enum WorldSet {
     Meshing,
 }
 
-// Components
-#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkKind(ChunkStorage<voxel::Kind>);
-
-#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkLight(ChunkStorage<voxel::Light>);
-
-#[derive(Component, Default, Debug, Clone, Copy, Deref, DerefMut)]
-pub struct ChunkLocal(Chunk);
-
-#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkFacesOcclusion(ChunkStorage<voxel::FacesOcclusion>);
-
-#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkFacesSoftLight(ChunkStorage<voxel::FacesSoftLight>);
-
-#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
-pub struct ChunkVertex(Vec<voxel::Vertex>);
-
-#[derive(Bundle, Default)]
-struct ChunkBundle {
-    kind: ChunkKind,
-    light: ChunkLight,
-    local: ChunkLocal,
-    occlusion: ChunkFacesOcclusion,
-    soft_light: ChunkFacesSoftLight,
-    vertex: ChunkVertex,
-}
-
-fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
-    !q_changed_chunks.is_empty()
-}
-
 #[cfg(test)]
 mod test {
     use bevy::app::ScheduleRunnerPlugin;
@@ -105,5 +68,3 @@ mod test {
             .run()
     }
 }
-
-// TODO: Extract and render to check if its working.
