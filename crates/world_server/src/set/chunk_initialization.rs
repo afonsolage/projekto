@@ -7,8 +7,10 @@ use projekto_core::{
 use crate::{
     any_chunk,
     light::{self, NeighborLightPropagation},
-    ChunkKind, ChunkLight, ChunkLocal, LightUpdate, WorldSet,
+    ChunkKind, ChunkLight, ChunkLocal, WorldSet,
 };
+
+use super::LightUpdate;
 
 pub struct ChunkInitializationPlugin;
 

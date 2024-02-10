@@ -1,18 +1,14 @@
 use std::time::Duration;
 
 use bevy::{
-    ecs::query::ReadOnlyWorldQuery,
-    prelude::*,
-    time::common_conditions::on_timer,
-    utils::{HashMap, HashSet},
+    ecs::query::ReadOnlyWorldQuery, prelude::*, time::common_conditions::on_timer, utils::HashSet,
 };
 use chunk_map::ChunkQuery;
-use light::NeighborLightPropagation;
 use projekto_core::{
     chunk::{self, Chunk, ChunkStorage},
-    voxel::{self, Voxel},
+    voxel::{self},
 };
-use set::{ChunkManagementPlugin, LandscapePlugin};
+use set::{ChunkInitializationPlugin, ChunkManagementPlugin, LandscapePlugin, PropagationPlugin};
 
 pub mod app;
 pub mod channel;
@@ -29,40 +25,40 @@ pub struct WorldServerPlugin;
 
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<LightUpdate>()
-            .configure_sets(
-                Update,
+        app.configure_sets(
+            Update,
+            (
+                WorldSet::LandscapeUpdate.before(WorldSet::ChunkManagement),
+                WorldSet::ChunkManagement.before(WorldSet::FlushCommands),
+                WorldSet::ChunkInitialization.after(WorldSet::FlushCommands),
+                WorldSet::Propagation.after(WorldSet::ChunkInitialization),
+                WorldSet::Meshing
+                    .after(WorldSet::Propagation)
+                    .run_if(on_timer(Duration::from_millis(MESHING_TICK_MS))),
+            ),
+        )
+        .add_plugins((
+            LandscapePlugin,
+            ChunkManagementPlugin,
+            ChunkInitializationPlugin,
+            PropagationPlugin,
+        ))
+        .add_systems(
+            Update,
+            (
+                apply_deferred.in_set(WorldSet::FlushCommands),
+                // Meshing
                 (
-                    WorldSet::LandscapeUpdate.before(WorldSet::ChunkManagement),
-                    WorldSet::ChunkManagement.before(WorldSet::FlushCommands),
-                    WorldSet::ChunkInitialization.after(WorldSet::FlushCommands),
-                    WorldSet::Propagation.after(WorldSet::ChunkInitialization),
-                    WorldSet::Meshing
-                        .after(WorldSet::Propagation)
-                        .run_if(on_timer(Duration::from_millis(MESHING_TICK_MS))),
-                ),
-            )
-            .add_plugins((LandscapePlugin, ChunkManagementPlugin))
-            .add_systems(
-                Update,
-                (
-                    apply_deferred.in_set(WorldSet::FlushCommands),
-                    // Chunk Propagation
-                    (propagate_light.run_if(on_event::<LightUpdate>()),)
-                        .in_set(WorldSet::Propagation),
-                    // Meshing
-                    (
-                        faces_occlusion, //.run_if(any_chunk::<Changed<ChunkKind>>),
-                        faces_light_softening,
-                        // .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
-                        generate_vertices,
-                        // .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
-                    )
-                        .chain()
-                        .in_set(WorldSet::Meshing)
-                        .run_if(on_timer(Duration::from_secs_f32(0.5))),
-                ),
-            );
+                    faces_occlusion, //.run_if(any_chunk::<Changed<ChunkKind>>),
+                    faces_light_softening,
+                    // .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
+                    generate_vertices,
+                    // .run_if(any_chunk::<Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>),
+                )
+                    .chain()
+                    .in_set(WorldSet::Meshing),
+            ),
+        );
     }
 }
 
@@ -107,76 +103,6 @@ struct ChunkBundle {
 
 fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
     !q_changed_chunks.is_empty()
-}
-
-#[derive(Event, Debug, Clone)]
-pub struct LightUpdate {
-    chunk: Chunk,
-    ty: voxel::LightTy,
-    values: Vec<(Voxel, u8)>,
-}
-
-fn propagate_light(
-    mut q_light: ChunkQuery<(&ChunkKind, &mut ChunkLight)>,
-    mut params: ParamSet<(EventReader<LightUpdate>, EventWriter<LightUpdate>)>,
-) {
-    let mut count = 0;
-
-    let propagate_to_neighbors = params
-        .p0()
-        .read()
-        .fold(
-            HashMap::<(Chunk, voxel::LightTy), Vec<Voxel>>::new(),
-            |mut map, LightUpdate { chunk, ty, values }| {
-                if let Some((_, mut light)) = q_light.get_chunk_mut(*chunk) {
-                    values.iter().for_each(|&(voxel, intensity)| {
-                        if intensity > light.get(voxel).get(*ty) {
-                            light.set_type(voxel, *ty, intensity);
-                            map.entry((*chunk, *ty)).or_default().push(voxel);
-                        }
-                    });
-
-                    count += 1;
-                };
-
-                map
-            },
-        )
-        .into_iter()
-        .fold(
-            HashMap::<(Chunk, voxel::LightTy), Vec<_>>::new(),
-            |mut map, ((chunk, light_ty), voxels)| {
-                let (kind, mut light) = q_light
-                    .get_chunk_mut(chunk)
-                    .expect("Missing entities was filtered already");
-                let neighborhood_propagation =
-                    light::propagate(kind, &mut light, light_ty, voxels.iter().copied());
-
-                neighborhood_propagation.into_iter().for_each(
-                    |NeighborLightPropagation {
-                         side,
-                         voxel,
-                         ty,
-                         intensity,
-                     }| {
-                        let neighbor = chunk.neighbor(side.dir());
-                        map.entry((neighbor, ty))
-                            .or_insert(vec![])
-                            .push((voxel, intensity));
-                    },
-                );
-
-                map
-            },
-        );
-
-    let events = propagate_to_neighbors.len();
-    let mut writer = params.p1();
-    propagate_to_neighbors
-        .into_iter()
-        .for_each(|((chunk, ty), values)| writer.send(LightUpdate { chunk, ty, values }));
-
-    trace!("[propagate_light] {count} chunks light propagated. {events} propagation events sent.");
 }
 
 fn faces_occlusion(
