@@ -8,5 +8,4 @@ readme = "README.md"
 [dependencies]
 bevy = { version = "0.12"}
 
-
 [features]

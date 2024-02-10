@@ -28,7 +28,7 @@ projekto_core = { path = "crates/core", features = ["auto_load_kinds_descs"] }
 
 [features]
 default = [
-     "dev",
+    "dev",
     #     "inspector",
     "bevy/tonemapping_luts",
      # "mem_alloc",
