@@ -1,5 +1,4 @@
 use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
-use bevy_egui::EguiContexts;
 use projekto_camera::{
     first_person::{FirstPersonCamera, FirstPersonCameraConfig},
     fly_by::{FlyByCamera, FlyByCameraConfig},
@@ -115,16 +114,7 @@ fn grab_mouse(
     mouse_btn: Res<Input<MouseButton>>,
     key_btn: Res<Input<KeyCode>>,
     mut config: CameraConfig,
-    #[cfg(feature = "inspector")] mut egui_context: EguiContexts,
 ) {
-    #[cfg(feature = "inspector")]
-    {
-        let ctx = egui_context.ctx_mut();
-        if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
-            return;
-        }
-    }
-
     let Ok(mut window) = primary_window.get_single_mut() else {
         return;
     };

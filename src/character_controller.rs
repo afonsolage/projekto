@@ -6,9 +6,6 @@ impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CharacterControllerConfig>()
             .init_resource::<CharacterPosition>()
-            .add_plugins(bevy_inspector_egui::quick::ResourceInspectorPlugin::<
-                CharacterPosition,
-            >::new())
             .init_resource::<ChunkMaterialImage>()
             .register_type::<ChunkMaterialImage>()
             .add_systems(

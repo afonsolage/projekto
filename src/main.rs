@@ -54,9 +54,6 @@ fn main() {
         .add_systems(Update, update_landscape_center)
         .add_systems(Startup, setup);
 
-    #[cfg(feature = "inspector")]
-    app.add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::new());
-
     app.run();
 }
 

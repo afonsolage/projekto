@@ -19,8 +19,8 @@ projekto_world_client = { path = "crates/world_client" }
 bevy = { version = "0.12"}
 
 # Used by inspector
-bevy-inspector-egui = { version = "0.22.0", optional = true }
-bevy_egui = { version = "0.24.0", default-features = false, optional = true }
+#bevy-inspector-egui = { version = "0.22.0", optional = true }
+#bevy_egui = { version = "0.24.0", default-features = false, optional = true }
 
 [dev-dependencies]
 rand = "0.8"
@@ -29,7 +29,7 @@ projekto_core = { path = "crates/core", features = ["auto_load_kinds_descs"] }
 [features]
 default = [
      "dev",
-     "inspector",
+    #     "inspector",
     "bevy/tonemapping_luts",
      # "mem_alloc",
 ]
@@ -40,7 +40,7 @@ dev = [
     "bevy/dynamic_linking",            # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
 ]
 
-inspector = ["dep:bevy-inspector-egui", "dep:bevy_egui"]
+#inspector = ["dep:bevy-inspector-egui", "dep:bevy_egui"]
 mem_alloc = []
 
 [profile.dev.package."*"]
