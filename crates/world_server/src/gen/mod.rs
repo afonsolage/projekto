@@ -34,7 +34,6 @@ fn chunks_gen(mut commands: Commands, chunks: Res<Chunks>, mut chunk_map: ResMut
                 local: ChunkLocal(chunk),
                 ..Default::default()
             })
-            .insert(Name::new(format!("Server Chunk {chunk}")))
             .id();
 
         let existing = chunk_map.insert(chunk, entity);
@@ -44,7 +43,6 @@ fn chunks_gen(mut commands: Commands, chunks: Res<Chunks>, mut chunk_map: ResMut
     trace!("[chunks_gen] {count} chunks generated and spawned.");
 }
 
-#[allow(clippy::type_complexity)]
 fn save_chunks(world: &mut World) {
     let entities = world.query::<Entity>().iter(world).collect::<Vec<_>>();
 
@@ -73,6 +71,4 @@ fn save_chunks(world: &mut World) {
 
         cache.save();
     }
-
-    //
 }

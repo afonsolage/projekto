@@ -39,6 +39,11 @@ impl ChunkCache {
         true
     }
 
+    pub fn exists(chunk: Chunk) -> bool {
+        let path = Self::path(chunk);
+        path.exists()
+    }
+
     pub fn load(chunk: Chunk) -> Option<Self> {
         let path = Self::path(chunk);
         let file = std::fs::OpenOptions::new().read(true).open(path);
@@ -124,7 +129,7 @@ impl ChunkCache {
 
     pub fn path(chunk: Chunk) -> PathBuf {
         PathBuf::from(CACHE_PATH.get_or_init(|| init_path(std::env::temp_dir().to_str().unwrap())))
-            .with_file_name(Self::file_name(chunk))
+            .join(Self::file_name(chunk))
             .with_extension(CACHE_EXT)
     }
 }
@@ -166,7 +171,7 @@ mod tests {
 
         let cache = ChunkCache::default();
         let path = ChunkCache::path(cache.chunk);
-        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(&path);
 
         let saved = cache.save();
 
@@ -177,6 +182,29 @@ mod tests {
             "File must be created"
         );
 
+        println!("Path: {path:?}");
+
         ChunkCache::delete(Chunk::default());
+    }
+
+    #[test]
+    fn load() {
+        let _ = tracing_subscriber::fmt().try_init();
+
+        let chunk = Chunk::new(1, 2);
+
+        if !ChunkCache::exists(chunk) {
+            let cache = ChunkCache {
+                chunk,
+                ..Default::default()
+            };
+            assert!(cache.save(), "Should be able to save chunk");
+            assert!(ChunkCache::exists(chunk));
+        }
+
+        let loaded = ChunkCache::load(chunk);
+        assert!(loaded.is_some(), "Should be able to load saved chunk");
+
+        ChunkCache::delete(chunk);
     }
 }

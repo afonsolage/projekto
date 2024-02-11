@@ -7,7 +7,7 @@ use projekto_core::chunk::Chunk;
 
 use crate::{gen::setup_gen_app, WorldSet};
 
-use super::ChunkGen;
+use super::{ChunkGen, ChunkLoad};
 
 pub struct CollectDispatchPlugin;
 
@@ -35,13 +35,13 @@ struct WorldGenContext {
     running: Vec<Chunk>,
 }
 
-fn collect_world_gen(mut context: ResMut<WorldGenContext>) {
+fn collect_world_gen(mut context: ResMut<WorldGenContext>, mut writer: EventWriter<ChunkLoad>) {
     if let Some(ref mut task) = context.task {
         if block_on(futures_lite::future::poll_once(task)).is_some() {
-            // TODO: Notify about generation completed.
-
             context.task = None;
-            context.running.clear();
+            context.running.drain(..).for_each(|chunk| {
+                writer.send(ChunkLoad(chunk));
+            });
         }
     }
 }
