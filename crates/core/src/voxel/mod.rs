@@ -221,7 +221,7 @@ impl ChunkFacesOcclusion {
 }
 
 /// Contains smoothed vertex light for each face
-#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct FacesSoftLight([[f32; 4]; SIDE_COUNT]);
 
 impl FacesSoftLight {
