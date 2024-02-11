@@ -14,12 +14,18 @@ pub struct CollectDispatchPlugin;
 impl Plugin for CollectDispatchPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WorldGenContext>()
+            .add_systems(Startup, setup_chunk_cache)
             .add_systems(PreUpdate, collect_world_gen.in_set(WorldSet::CollectAsync))
             .add_systems(
                 PostUpdate,
                 dispatch_world_gen.in_set(WorldSet::DispatchAsync),
             );
     }
+}
+
+fn setup_chunk_cache() {
+    #[cfg(not(test))]
+    crate::cache::ChunkCache::init("");
 }
 
 #[derive(Resource, Default, Debug)]
@@ -31,7 +37,7 @@ struct WorldGenContext {
 
 fn collect_world_gen(mut context: ResMut<WorldGenContext>) {
     if let Some(ref mut task) = context.task {
-        if let Some(_) = block_on(futures_lite::future::poll_once(task)) {
+        if block_on(futures_lite::future::poll_once(task)).is_some() {
             // TODO: Notify about generation completed.
 
             context.task = None;

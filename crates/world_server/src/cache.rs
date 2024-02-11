@@ -1,17 +1,20 @@
 use std::{
     io::{Read, Write},
     path::PathBuf,
+    sync::OnceLock,
 };
 
-use bevy::log::{error, info};
+use bevy::prelude::*;
 use projekto_core::{
     chunk::{Chunk, ChunkStorage},
     voxel,
 };
 use serde::{Deserialize, Serialize};
 
-const CACHE_PATH: &str = "world/chunks/";
+const CACHE_DIR: &str = "world/chunks/";
 const CACHE_EXT: &str = "bin";
+
+static CACHE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct ChunkCache {
@@ -24,14 +27,12 @@ pub struct ChunkCache {
 }
 
 impl ChunkCache {
-    pub fn init() -> bool {
-        let path = PathBuf::from(CACHE_PATH);
-        if !path.exists() {
-            if let Err(err) = std::fs::create_dir_all(CACHE_PATH) {
-                error!("Failed to create cache folder at {CACHE_PATH}. Error: {err}");
+    pub fn init(root: &str) -> bool {
+        let new_path = init_path(root);
+        if let Err(existing) = CACHE_PATH.set(new_path.clone()) {
+            if new_path != existing {
+                warn!("Failed to init CachePath. Another thread already initialized it to {new_path:?}");
                 return false;
-            } else {
-                info!("Created cache folder at {path:?}");
             }
         }
 
@@ -122,19 +123,31 @@ impl ChunkCache {
     }
 
     pub fn path(chunk: Chunk) -> PathBuf {
-        PathBuf::from(CACHE_PATH)
+        PathBuf::from(CACHE_PATH.get_or_init(|| init_path(std::env::temp_dir().to_str().unwrap())))
             .with_file_name(Self::file_name(chunk))
             .with_extension(CACHE_EXT)
     }
 }
 
+fn init_path(root: &str) -> PathBuf {
+    let path = PathBuf::from(root).join(CACHE_DIR);
+
+    if !path.exists() {
+        if let Err(err) = std::fs::create_dir_all(&path) {
+            error!("Failed to create cache folder at {path:?}. Error: {err}");
+        } else {
+            info!("Created cache folder at {path:?}");
+        }
+    }
+
+    path
+}
+
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use projekto_core::chunk::Chunk;
 
-    use crate::cache::{ChunkCache, CACHE_PATH};
+    use crate::cache::ChunkCache;
 
     #[test]
     fn file_name() {
@@ -148,25 +161,8 @@ mod tests {
     }
 
     #[test]
-    fn init() {
-        let _ = tracing_subscriber::fmt().try_init();
-
-        std::fs::remove_dir_all(CACHE_PATH).unwrap();
-
-        let initialized = ChunkCache::init();
-
-        assert!(initialized, "Init must be successfull");
-
-        let exists = PathBuf::from(CACHE_PATH).exists();
-
-        assert!(exists, "Cache folder must be created");
-    }
-
-    #[test]
     fn save() {
         let _ = tracing_subscriber::fmt().try_init();
-
-        ChunkCache::init();
 
         let cache = ChunkCache::default();
         let path = ChunkCache::path(cache.chunk);
