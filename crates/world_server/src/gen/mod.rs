@@ -44,7 +44,10 @@ fn chunks_gen(mut commands: Commands, chunks: Res<Chunks>, mut chunk_map: ResMut
 }
 
 fn save_chunks(world: &mut World) {
-    let entities = world.query::<Entity>().iter(world).collect::<Vec<_>>();
+    let entities = world
+        .query_filtered::<Entity, With<ChunkLocal>>()
+        .iter(world)
+        .collect::<Vec<_>>();
 
     for entity in entities {
         let ChunkBundle {
@@ -56,7 +59,6 @@ fn save_chunks(world: &mut World) {
             vertex,
         } = world
             .entity_mut(entity)
-            .remove::<ChunkBundle>()
             .take::<ChunkBundle>()
             .expect("No components from bundle is removed");
 
