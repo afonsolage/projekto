@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use projekto_core::chunk::Chunk;
 
 use crate::{
+    asset::ChunkAsset,
     bundle::{
         ChunkBundle, ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal,
         ChunkMap, ChunkVertex,
@@ -62,40 +63,45 @@ fn chunks_load(
     mut chunk_map: ResMut<ChunkMap>,
     mut reader: EventReader<ChunkLoad>,
     mut writer: EventWriter<ChunkGen>,
+    asset_server: Res<AssetServer>,
 ) {
-    for &ChunkLoad(chunk) in reader.read() {
-        if ChunkCache::exists(chunk) {
-            if let Some(ChunkCache {
-                chunk,
-                kind,
-                light,
-                occlusion,
-                soft_light,
-                vertex,
-            }) = ChunkCache::load(chunk)
-            {
-                let entity = commands
-                    .spawn((
-                        ChunkBundle {
-                            kind: ChunkKind(kind),
-                            light: ChunkLight(light),
-                            local: ChunkLocal(chunk),
-                            occlusion: ChunkFacesOcclusion(occlusion),
-                            soft_light: ChunkFacesSoftLight(soft_light),
-                            vertex: ChunkVertex(vertex),
-                        },
-                        Name::new(format!("Server Chunk {chunk:?}")),
-                    ))
-                    .id();
+    let handle = asset_server.load::<ChunkAsset>("chunk://0_0.cnk");
 
-                if chunk_map.insert(chunk, entity).is_some() {
-                    warn!("An entity was overwritten on chunk {chunk:?}. This means something went wrong.");
-                }
-            }
-        } else {
-            writer.send(ChunkGen(chunk));
-        }
-    }
+    commands.spawn(handle);
+
+    // for &ChunkLoad(chunk) in reader.read() {
+    //     if ChunkCache::exists(chunk) {
+    //         if let Some(ChunkCache {
+    //             chunk,
+    //             kind,
+    //             light,
+    //             occlusion,
+    //             soft_light,
+    //             vertex,
+    //         }) = ChunkCache::load(chunk)
+    //         {
+    //             let entity = commands
+    //                 .spawn((
+    //                     ChunkBundle {
+    //                         kind: ChunkKind(kind),
+    //                         light: ChunkLight(light),
+    //                         local: ChunkLocal(chunk),
+    //                         occlusion: ChunkFacesOcclusion(occlusion),
+    //                         soft_light: ChunkFacesSoftLight(soft_light),
+    //                         vertex: ChunkVertex(vertex),
+    //                     },
+    //                     Name::new(format!("Server Chunk {chunk:?}")),
+    //                 ))
+    //                 .id();
+    //
+    //             if chunk_map.insert(chunk, entity).is_some() {
+    //                 warn!("An entity was overwritten on chunk {chunk:?}. This means something
+    // went wrong.");             }
+    //         }
+    //     } else {
+    //         writer.send(ChunkGen(chunk));
+    //     }
+    // }
 }
 
 // #[cfg(test)]

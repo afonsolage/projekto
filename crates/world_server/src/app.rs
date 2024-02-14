@@ -10,11 +10,12 @@ pub fn new() -> App {
     let mut app = App::new();
 
     app.add_plugins((
+        WorldServerPlugin,
         MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(
             TICK_EVERY_MILLIS,
         ))),
         LogPlugin::default(),
-        WorldServerPlugin,
+        AssetPlugin::default(),
     ));
 
     app

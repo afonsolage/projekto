@@ -1,17 +1,27 @@
 use bevy::{app::ScheduleRunnerPlugin, prelude::*};
-use projekto_core::chunk::Chunk;
-
-use crate::{
-    bundle::{ChunkBundle, ChunkKind, ChunkLocal, ChunkMap},
-    cache::ChunkCache,
+use projekto_core::{
+    chunk::{Chunk, ChunkStorage},
+    voxel,
 };
 
+use crate::bundle::{ChunkBundle, ChunkKind, ChunkLocal, ChunkMap};
+
 mod genesis;
+
+#[derive(Debug, Default)]
+pub(crate) struct GeneratedChunks {
+    pub chunk: Chunk,
+    pub kind: ChunkStorage<voxel::Kind>,
+    pub light: ChunkStorage<voxel::Light>,
+    pub occlusion: ChunkStorage<voxel::FacesOcclusion>,
+    pub soft_light: ChunkStorage<voxel::FacesSoftLight>,
+    pub vertex: Vec<voxel::Vertex>,
+}
 
 #[derive(Resource)]
 struct Chunks(Vec<Chunk>);
 
-pub fn setup_gen_app(chunks: Vec<Chunk>) -> App {
+pub(crate) fn setup_gen_app(chunks: Vec<Chunk>) -> App {
     let mut app = App::new();
 
     app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()));
@@ -19,7 +29,6 @@ pub fn setup_gen_app(chunks: Vec<Chunk>) -> App {
     app.insert_resource(Chunks(chunks));
 
     app.add_systems(Update, chunks_gen);
-    app.add_systems(Last, save_chunks);
 
     app
 }
@@ -43,34 +52,43 @@ fn chunks_gen(mut commands: Commands, chunks: Res<Chunks>, mut chunk_map: ResMut
     trace!("[chunks_gen] {count} chunks generated and spawned.");
 }
 
-fn save_chunks(world: &mut World) {
-    let entities = world
-        .query_filtered::<Entity, With<ChunkLocal>>()
-        .iter(world)
-        .collect::<Vec<_>>();
+pub(crate) trait ExtractChunks {
+    fn extract_chunks(&mut self) -> Vec<GeneratedChunks>;
+}
 
-    for entity in entities {
-        let ChunkBundle {
-            kind,
-            light,
-            local,
-            occlusion,
-            soft_light,
-            vertex,
-        } = world
-            .entity_mut(entity)
-            .take::<ChunkBundle>()
-            .expect("No components from bundle is removed");
+impl ExtractChunks for App {
+    fn extract_chunks(&mut self) -> Vec<GeneratedChunks> {
+        let world = &mut self.world;
 
-        let cache = ChunkCache {
-            chunk: local.0,
-            kind: kind.0,
-            light: light.0,
-            occlusion: occlusion.0,
-            soft_light: soft_light.0,
-            vertex: vertex.0,
-        };
+        let entities = world
+            .query_filtered::<Entity, With<ChunkLocal>>()
+            .iter(world)
+            .collect::<Vec<_>>();
 
-        cache.save();
+        entities
+            .into_iter()
+            .map(|entity| {
+                let ChunkBundle {
+                    kind,
+                    light,
+                    local,
+                    occlusion,
+                    soft_light,
+                    vertex,
+                } = world
+                    .entity_mut(entity)
+                    .take::<ChunkBundle>()
+                    .expect("No components from bundle is removed");
+
+                GeneratedChunks {
+                    chunk: local.0,
+                    kind: kind.0,
+                    light: light.0,
+                    occlusion: occlusion.0,
+                    soft_light: soft_light.0,
+                    vertex: vertex.0,
+                }
+            })
+            .collect()
     }
 }

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use asset::ChunkAssetPlugin;
 use bevy::{prelude::*, time::common_conditions::on_timer};
 use set::{
     ChunkInitializationPlugin, ChunkManagementPlugin, CollectDispatchPlugin, LandscapePlugin,
@@ -9,6 +10,10 @@ use set::{
 pub mod app;
 mod light;
 mod meshing;
+
+mod asset;
+
+pub use asset::setup_chunk_asset_loader;
 
 pub mod cache;
 pub mod gen;
@@ -43,6 +48,7 @@ impl Plugin for WorldServerPlugin {
                 ChunkInitializationPlugin,
                 PropagationPlugin,
                 MeshingPlugin,
+                ChunkAssetPlugin,
             ))
             .add_systems(Update, (apply_deferred.in_set(WorldSet::FlushCommands),));
     }

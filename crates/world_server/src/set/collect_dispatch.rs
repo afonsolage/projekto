@@ -5,7 +5,10 @@ use bevy::{
 };
 use projekto_core::chunk::Chunk;
 
-use crate::{gen::setup_gen_app, WorldSet};
+use crate::{
+    gen::{setup_gen_app, ExtractChunks, GeneratedChunks},
+    WorldSet,
+};
 
 use super::{ChunkGen, ChunkLoad};
 
@@ -30,14 +33,14 @@ fn setup_chunk_cache() {
 
 #[derive(Resource, Default, Debug)]
 struct WorldGenContext {
-    task: Option<Task<()>>,
+    task: Option<Task<Vec<GeneratedChunks>>>,
     pending: HashSet<Chunk>,
     running: Vec<Chunk>,
 }
 
 fn collect_world_gen(mut context: ResMut<WorldGenContext>, mut writer: EventWriter<ChunkLoad>) {
     if let Some(ref mut task) = context.task {
-        if block_on(futures_lite::future::poll_once(task)).is_some() {
+        if let Some(generated_chunks) = block_on(futures_lite::future::poll_once(task)) {
             context.task = None;
             context.running.drain(..).for_each(|chunk| {
                 writer.send(ChunkLoad(chunk));
@@ -58,7 +61,9 @@ fn dispatch_world_gen(mut context: ResMut<WorldGenContext>, mut reader: EventRea
 
         let chunks = context.running.clone();
         let task = AsyncComputeTaskPool::get().spawn(async {
-            setup_gen_app(chunks).run();
+            let mut app = setup_gen_app(chunks);
+            app.run();
+            app.extract_chunks()
         });
 
         context.task = Some(task);

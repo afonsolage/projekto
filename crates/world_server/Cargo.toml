@@ -17,6 +17,8 @@ bevy = {version = "0.12", default-features = false}
 
 serde = "1.0"
 futures-lite = "2.2"
+thiserror = "1.0"
+async-channel = "2.2"
 
 # IO
 lz4_flex = "0.11"
