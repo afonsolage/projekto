@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use async_channel::{Receiver, Sender};
+use async_lock::OnceCell;
 use bevy::{
     asset::{
         io::{
@@ -33,7 +37,7 @@ pub fn setup_chunk_asset_loader(app: &mut App) {
         .world
         .get_resource_or_insert_with::<AssetSourceBuilders>(Default::default);
 
-    let (sender, receiver) = async_channel::unbounded::<async_channel::Sender<()>>();
+    let (sender, receiver) = async_channel::unbounded();
 
     let source = AssetSourceBuilder::default()
         .with_reader(move || Box::new(ChunkAssetReader::new(sender.clone())));
@@ -42,8 +46,36 @@ pub fn setup_chunk_asset_loader(app: &mut App) {
     app.world.insert_resource(ChunkAssetGenReceiver(receiver));
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ChunkAssetGenRequest {
+    pub chunk: Chunk,
+    cell: Arc<OnceCell<Result<(), ()>>>,
+}
+
+impl ChunkAssetGenRequest {
+    fn new(path: &std::path::Path) -> Self {
+        Self {
+            chunk: Chunk::from_path(path),
+            cell: Arc::new(OnceCell::new()),
+        }
+    }
+
+    async fn get_result(self) -> Result<(), ()> {
+        Arc::into_inner(self.cell)
+            .expect("To have only a single ref to cell.")
+            .into_inner()
+            .expect("To be initialized")
+    }
+
+    pub(crate) fn finish(self, result: Result<(), ()>) {
+        self.cell
+            .set_blocking(result)
+            .expect("Cell to not be initialized yet.");
+    }
+}
+
 #[derive(Resource)]
-pub(crate) struct ChunkAssetGenReceiver(pub async_channel::Receiver<async_channel::Sender<()>>);
+pub(crate) struct ChunkAssetGenReceiver(pub Receiver<ChunkAssetGenRequest>);
 
 #[derive(Asset, Default, TypePath, Serialize, Deserialize)]
 pub(crate) struct ChunkAsset {
@@ -60,8 +92,6 @@ struct ChunkAssetLoader;
 
 #[derive(Debug, Error)]
 enum ChunkAssetLoaderError {
-    #[error("Failed to generate chunk. Error with generation channel.")]
-    GenChannel,
     #[error("Could not load chunk. Error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -88,13 +118,13 @@ impl AssetLoader for ChunkAssetLoader {
 }
 
 struct ChunkAssetReader {
-    sender: async_channel::Sender<async_channel::Sender<()>>,
+    sender: Sender<ChunkAssetGenRequest>,
     reader: Box<dyn AssetReader>,
     writer: Box<dyn AssetWriter>,
 }
 
 impl ChunkAssetReader {
-    fn new(sender: async_channel::Sender<async_channel::Sender<()>>) -> Self {
+    fn new(sender: Sender<ChunkAssetGenRequest>) -> Self {
         Self {
             sender,
             reader: AssetSource::get_default_reader("chunks".to_string())(),
@@ -106,10 +136,14 @@ impl ChunkAssetReader {
         &'a self,
         path: &'a std::path::Path,
     ) -> Result<Box<Reader<'a>>, AssetReaderError> {
-        let (s, r) = async_channel::unbounded();
-        self.sender.try_send(s).unwrap();
-        r.recv().await.unwrap();
-        self.reader.read(path).await
+        let request = ChunkAssetGenRequest::new(path);
+        self.sender.try_send(request.clone()).unwrap();
+
+        if request.get_result().await.is_ok() {
+            self.reader.read(path).await
+        } else {
+            Err(AssetReaderError::NotFound(path.to_path_buf()))
+        }
     }
 }
 

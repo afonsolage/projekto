@@ -35,6 +35,14 @@ impl Chunk {
         Self(IVec2::new(x, z))
     }
 
+    pub fn from_path(path: &std::path::Path) -> Self {
+        // 0_0.cnk
+        // TODO: too many unwraps
+        let (name, _ext) = path.to_str().unwrap().split_once('.').unwrap();
+        let (x, z) = name.split_once('_').unwrap();
+        Self(IVec2::new(x.parse().unwrap(), z.parse().unwrap()))
+    }
+
     pub fn z(&self) -> i32 {
         self.0.y
     }
