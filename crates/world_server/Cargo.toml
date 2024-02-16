@@ -15,11 +15,15 @@ projekto_core = {path = "../core"}
 
 bevy = {version = "0.12", default-features = false}
 
-serde = "1.0"
-futures-lite = "2.2"
 thiserror = "1.0"
+
+# smol
+futures-lite = "2.2"
 async-channel = "2.2"
 async-lock = "3.3"
+async-io = "2.3"
+
+serde = "1.0"
 
 # IO
 lz4_flex = "0.11"

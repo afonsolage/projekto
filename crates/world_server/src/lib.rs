@@ -3,8 +3,8 @@ use std::time::Duration;
 use asset::ChunkAssetPlugin;
 use bevy::{prelude::*, time::common_conditions::on_timer};
 use set::{
-    ChunkInitializationPlugin, ChunkManagementPlugin, CollectDispatchPlugin, LandscapePlugin,
-    MeshingPlugin, PropagationPlugin,
+    ChunkInitializationPlugin, ChunkManagementPlugin, LandscapePlugin, MeshingPlugin,
+    PropagationPlugin,
 };
 
 pub mod app;
@@ -42,7 +42,7 @@ impl Plugin for WorldServerPlugin {
             )
             .configure_sets(PostUpdate, WorldSet::DispatchAsync)
             .add_plugins((
-                CollectDispatchPlugin,
+                // CollectDispatchPlugin,
                 LandscapePlugin,
                 ChunkManagementPlugin,
                 ChunkInitializationPlugin,

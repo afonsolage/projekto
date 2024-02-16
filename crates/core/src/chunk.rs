@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::{
     math,
     voxel::{self, Voxel},
@@ -61,6 +63,10 @@ impl Chunk {
 
     pub fn distance(&self, other: Chunk) -> IVec2 {
         other.0 - self.0
+    }
+
+    pub fn path(&self) -> PathBuf {
+        format!("{}_{}.cnk", self.0.x, self.0.y).into()
     }
 }
 

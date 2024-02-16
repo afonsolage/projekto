@@ -1,94 +1,104 @@
-use bevy::{app::ScheduleRunnerPlugin, prelude::*};
-use projekto_core::{
-    chunk::{Chunk, ChunkStorage},
-    voxel,
-};
+use std::time::Duration;
 
-use crate::bundle::{ChunkBundle, ChunkKind, ChunkLocal, ChunkMap};
+use async_channel::Receiver;
+use bevy::prelude::*;
+
+use crate::{
+    app::AsyncRunnnerPlugin,
+    asset::{ChunkAsset, ChunkAssetGenRequest},
+    bundle::{ChunkKind, ChunkMap},
+};
 
 mod genesis;
 
-#[derive(Debug, Default)]
-pub(crate) struct GeneratedChunks {
-    pub chunk: Chunk,
-    pub kind: ChunkStorage<voxel::Kind>,
-    pub light: ChunkStorage<voxel::Light>,
-    pub occlusion: ChunkStorage<voxel::FacesOcclusion>,
-    pub soft_light: ChunkStorage<voxel::FacesSoftLight>,
-    pub vertex: Vec<voxel::Vertex>,
-}
+#[derive(Component, Debug, Deref, DerefMut)]
+struct ChunkRequest(ChunkAssetGenRequest);
 
-#[derive(Resource)]
-struct Chunks(Vec<Chunk>);
+#[derive(Resource, Deref, DerefMut)]
+pub(crate) struct ChunkAssetGenReceiver(pub Receiver<ChunkAssetGenRequest>);
 
-pub(crate) fn setup_gen_app(chunks: Vec<Chunk>) -> App {
+const TICK_EVERY_MILLIS: u64 = 1000;
+
+pub(crate) fn create(receiver: Receiver<ChunkAssetGenRequest>) -> App {
     let mut app = App::new();
 
-    app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()));
-    app.init_resource::<ChunkMap>();
-    app.insert_resource(Chunks(chunks));
+    app.add_plugins((
+        AssetPlugin::default(),
+        MinimalPlugins,
+        AsyncRunnnerPlugin::new("WorldGen", Duration::from_millis(TICK_EVERY_MILLIS)),
+    ));
 
-    app.add_systems(Update, chunks_gen);
+    app.insert_resource(ChunkAssetGenReceiver(receiver));
+    app.init_resource::<ChunkMap>();
+
+    app.add_systems(First, collect_requests);
+    app.add_systems(Update, generate_structure);
+    app.add_systems(Last, dispatch_requests);
 
     app
 }
 
-fn chunks_gen(mut commands: Commands, chunks: Res<Chunks>, mut chunk_map: ResMut<ChunkMap>) {
-    let mut count = 0;
-    for &chunk in &chunks.0 {
-        let kind = genesis::generate_chunk(chunk);
+fn collect_requests(
+    mut commands: Commands,
+    receiver: Res<ChunkAssetGenReceiver>,
+    mut chunk_map: ResMut<ChunkMap>,
+) {
+    let mut count = receiver.len();
+    if count == 0 {
+        return;
+    }
+
+    while let Ok(msg) = receiver.try_recv() {
+        let chunk = msg.chunk;
         let entity = commands
-            .spawn(ChunkBundle {
-                kind: ChunkKind(kind),
-                local: ChunkLocal(chunk),
-                ..Default::default()
-            })
+            .spawn((ChunkRequest(msg), ChunkKind::default()))
             .id();
 
         let existing = chunk_map.insert(chunk, entity);
         debug_assert_eq!(existing, None, "Can't replace existing chunk {chunk}");
         count += 1;
     }
-    trace!("[chunks_gen] {count} chunks generated and spawned.");
+
+    trace!("[collect_request] {count} chunks requests received.");
 }
 
-pub(crate) trait ExtractChunks {
-    fn extract_chunks(&mut self) -> Vec<GeneratedChunks>;
-}
-
-impl ExtractChunks for App {
-    fn extract_chunks(&mut self) -> Vec<GeneratedChunks> {
-        let world = &mut self.world;
-
-        let entities = world
-            .query_filtered::<Entity, With<ChunkLocal>>()
-            .iter(world)
-            .collect::<Vec<_>>();
-
-        entities
-            .into_iter()
-            .map(|entity| {
-                let ChunkBundle {
-                    kind,
-                    light,
-                    local,
-                    occlusion,
-                    soft_light,
-                    vertex,
-                } = world
-                    .entity_mut(entity)
-                    .take::<ChunkBundle>()
-                    .expect("No components from bundle is removed");
-
-                GeneratedChunks {
-                    chunk: local.0,
-                    kind: kind.0,
-                    light: light.0,
-                    occlusion: occlusion.0,
-                    soft_light: soft_light.0,
-                    vertex: vertex.0,
-                }
-            })
-            .collect()
+fn generate_structure(mut q: Query<(&mut ChunkKind, &ChunkRequest)>) {
+    if q.is_empty() {
+        return;
     }
+
+    let mut count = 0;
+    for (mut kind, req) in q.iter_mut() {
+        count += 1;
+        genesis::generate_chunk(req.chunk, &mut kind);
+    }
+
+    trace!("[generate_structure] {count} chunks structures generated.");
+}
+
+fn dispatch_requests(world: &mut World) {
+    let entities = world
+        .query_filtered::<Entity, With<ChunkRequest>>()
+        .iter(world)
+        .collect::<Vec<_>>();
+
+    entities.into_iter().for_each(|entity| {
+        let (ChunkRequest(req), ChunkKind(kind)) = world
+            .entity_mut(entity)
+            .take::<(ChunkRequest, ChunkKind)>()
+            .expect("All components to exists");
+
+        let asset = ChunkAsset {
+            chunk: req.chunk,
+            kind,
+            ..Default::default()
+        };
+
+        if let Ok(bytes) = bincode::serialize(&asset) {
+            req.finish(Ok(bytes));
+        } else {
+            let chunk = asset.chunk;
+            error!("Failed to serialize chunk {chunk:?}.");
+        }
+    });
 }

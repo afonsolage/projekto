@@ -15,7 +15,7 @@ use projekto_camera::{
 };
 use projekto_core::chunk::Chunk;
 use projekto_world_client::WorldClientPlugin;
-use projekto_world_server::{set::Landscape, setup_chunk_asset_loader, WorldServerPlugin};
+use projekto_world_server::{app::RunAsync, set::Landscape};
 
 // mod ui;
 // use ui::UiPlugin;
@@ -24,9 +24,9 @@ mod camera_controller;
 mod character_controller;
 
 fn main() {
-    let mut app = App::new();
+    projekto_world_server::app::create().run_async();
 
-    setup_chunk_asset_loader(&mut app);
+    let mut app = App::new();
 
     app.insert_resource(Msaa::Sample4)
         // This may cause problems later on. Ideally this setup should be done per image
@@ -44,7 +44,6 @@ fn main() {
             CameraPlugin,
             CameraControllerPlugin,
             CharacterControllerPlugin,
-            WorldServerPlugin,
             WorldClientPlugin,
         ))
         .insert_resource(Landscape {

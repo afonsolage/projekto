@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use async_channel::{Receiver, Sender};
+use async_channel::Sender;
 use async_lock::OnceCell;
 use bevy::{
     asset::{
         io::{
             AssetReader, AssetReaderError, AssetSource, AssetSourceBuilder, AssetSourceBuilders,
-            AssetWriter, PathStream, Reader,
+            AssetWriter, PathStream, Reader, VecReader,
         },
-        AssetLoader, LoadContext,
+        AssetLoader, AsyncReadExt, LoadContext,
     },
     prelude::*,
     utils::BoxedFuture,
@@ -19,6 +19,8 @@ use projekto_core::{
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::{app::RunAsync, gen};
 
 pub(crate) struct ChunkAssetPlugin;
 
@@ -43,13 +45,13 @@ pub fn setup_chunk_asset_loader(app: &mut App) {
         .with_reader(move || Box::new(ChunkAssetReader::new(sender.clone())));
     sources_builder.insert("chunk", source);
 
-    app.world.insert_resource(ChunkAssetGenReceiver(receiver));
+    gen::create(receiver).run_async();
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct ChunkAssetGenRequest {
     pub chunk: Chunk,
-    cell: Arc<OnceCell<Result<(), ()>>>,
+    cell: Arc<OnceCell<Result<Vec<u8>, ()>>>,
 }
 
 impl ChunkAssetGenRequest {
@@ -60,24 +62,22 @@ impl ChunkAssetGenRequest {
         }
     }
 
-    async fn get_result(self) -> Result<(), ()> {
+    async fn get_result(self) -> Result<Vec<u8>, ()> {
+        let _ = self.cell.wait().await;
         Arc::into_inner(self.cell)
             .expect("To have only a single ref to cell.")
             .into_inner()
             .expect("To be initialized")
     }
 
-    pub(crate) fn finish(self, result: Result<(), ()>) {
+    pub(crate) fn finish(self, result: Result<Vec<u8>, ()>) {
         self.cell
             .set_blocking(result)
             .expect("Cell to not be initialized yet.");
     }
 }
 
-#[derive(Resource)]
-pub(crate) struct ChunkAssetGenReceiver(pub Receiver<ChunkAssetGenRequest>);
-
-#[derive(Asset, Default, TypePath, Serialize, Deserialize)]
+#[derive(Asset, Default, Debug, TypePath, Serialize, Deserialize)]
 pub(crate) struct ChunkAsset {
     pub chunk: Chunk,
     pub kind: ChunkStorage<voxel::Kind>,
@@ -92,6 +92,8 @@ struct ChunkAssetLoader;
 
 #[derive(Debug, Error)]
 enum ChunkAssetLoaderError {
+    #[error("Failed to deserialize chunk. Error: {0}")]
+    Deserialize(#[from] bincode::Error),
     #[error("Could not load chunk. Error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -105,11 +107,19 @@ impl AssetLoader for ChunkAssetLoader {
 
     fn load<'a>(
         &'a self,
-        _reader: &'a mut Reader,
+        reader: &'a mut Reader,
         _settings: &'a Self::Settings,
         _load_context: &'a mut LoadContext,
     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        todo!()
+        // TODO: Get the exact size from .meta file
+        Box::pin(async move {
+            let mut bytes = vec![0; 1024];
+
+            reader.read_to_end(&mut bytes).await?;
+            let asset = bincode::deserialize::<ChunkAsset>(&bytes)?;
+
+            Ok(asset)
+        })
     }
 
     fn extensions(&self) -> &[&str] {
@@ -120,7 +130,7 @@ impl AssetLoader for ChunkAssetLoader {
 struct ChunkAssetReader {
     sender: Sender<ChunkAssetGenRequest>,
     reader: Box<dyn AssetReader>,
-    writer: Box<dyn AssetWriter>,
+    _writer: Box<dyn AssetWriter>,
 }
 
 impl ChunkAssetReader {
@@ -128,7 +138,7 @@ impl ChunkAssetReader {
         Self {
             sender,
             reader: AssetSource::get_default_reader("chunks".to_string())(),
-            writer: AssetSource::get_default_writer("chunks".to_string())().unwrap(),
+            _writer: AssetSource::get_default_writer("chunks".to_string())().unwrap(),
         }
     }
 
@@ -136,11 +146,16 @@ impl ChunkAssetReader {
         &'a self,
         path: &'a std::path::Path,
     ) -> Result<Box<Reader<'a>>, AssetReaderError> {
+        trace!("Chunk asset {path:?} not found local. Requesting to generate it.");
+
         let request = ChunkAssetGenRequest::new(path);
         self.sender.try_send(request.clone()).unwrap();
 
-        if request.get_result().await.is_ok() {
-            self.reader.read(path).await
+        if let Ok(bytes) = request.get_result().await {
+            // if let Err(err) = self.writer.write_bytes(path, &bytes).await {
+            //     error!("Failed to save chunk {path:?} to disk: {err}");
+            // }
+            Ok(Box::new(VecReader::new(bytes)))
         } else {
             Err(AssetReaderError::NotFound(path.to_path_buf()))
         }

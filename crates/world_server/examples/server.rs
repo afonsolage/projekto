@@ -1,7 +1,10 @@
-use bevy::asset::Assets;
-use projekto_world_server::app;
+use projekto_world_server::set::Landscape;
 
 fn main() {
-    let mut server_app = app::new();
-    server_app.run();
+    let mut app = projekto_world_server::app::create();
+    app.insert_resource(Landscape {
+        radius: 1,
+        ..Default::default()
+    })
+    .run();
 }

@@ -7,7 +7,6 @@ use crate::{
         ChunkBundle, ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal,
         ChunkMap, ChunkVertex,
     },
-    cache::ChunkCache,
     WorldSet,
 };
 
@@ -24,6 +23,7 @@ impl Plugin for ChunkManagementPlugin {
                 (
                     chunks_unload.run_if(on_event::<ChunkUnload>()),
                     chunks_load.run_if(on_event::<ChunkLoad>()),
+                    chunks_spawn.run_if(any_chunk_to_spawn),
                 )
                     .chain()
                     .in_set(WorldSet::ChunkManagement),
@@ -60,48 +60,70 @@ fn chunks_unload(
 
 fn chunks_load(
     mut commands: Commands,
-    mut chunk_map: ResMut<ChunkMap>,
     mut reader: EventReader<ChunkLoad>,
-    mut writer: EventWriter<ChunkGen>,
     asset_server: Res<AssetServer>,
 ) {
-    let handle = asset_server.load::<ChunkAsset>("chunk://0_0.cnk");
+    for &ChunkLoad(chunk) in reader.read() {
+        let path = chunk.path();
+        let handle = asset_server.load::<ChunkAsset>(&format!("chunk://{path:?}"));
+        commands.spawn(handle);
+    }
+}
 
-    commands.spawn(handle);
+fn any_chunk_to_spawn(q: Query<(Entity, &Handle<ChunkAsset>), Without<ChunkLocal>>) -> bool {
+    !q.is_empty()
+}
 
-    // for &ChunkLoad(chunk) in reader.read() {
-    //     if ChunkCache::exists(chunk) {
-    //         if let Some(ChunkCache {
-    //             chunk,
-    //             kind,
-    //             light,
-    //             occlusion,
-    //             soft_light,
-    //             vertex,
-    //         }) = ChunkCache::load(chunk)
-    //         {
-    //             let entity = commands
-    //                 .spawn((
-    //                     ChunkBundle {
-    //                         kind: ChunkKind(kind),
-    //                         light: ChunkLight(light),
-    //                         local: ChunkLocal(chunk),
-    //                         occlusion: ChunkFacesOcclusion(occlusion),
-    //                         soft_light: ChunkFacesSoftLight(soft_light),
-    //                         vertex: ChunkVertex(vertex),
-    //                     },
-    //                     Name::new(format!("Server Chunk {chunk:?}")),
-    //                 ))
-    //                 .id();
-    //
-    //             if chunk_map.insert(chunk, entity).is_some() {
-    //                 warn!("An entity was overwritten on chunk {chunk:?}. This means something
-    // went wrong.");             }
-    //         }
-    //     } else {
-    //         writer.send(ChunkGen(chunk));
-    //     }
-    // }
+fn chunks_spawn(
+    mut commands: Commands,
+    mut chunk_map: ResMut<ChunkMap>,
+    asset_server: Res<AssetServer>,
+    mut assets: ResMut<Assets<ChunkAsset>>,
+    q: Query<(Entity, &Handle<ChunkAsset>), Without<ChunkLocal>>,
+) {
+    for (entity, handle) in &q {
+        let loaded = match asset_server.load_state(handle) {
+            bevy::asset::LoadState::Loading => continue,
+            bevy::asset::LoadState::NotLoaded => {
+                let path = handle.path().expect("All chunk assets must have a path");
+                warn!("Chunk not loaded: {path:?}");
+                false
+            }
+            bevy::asset::LoadState::Loaded => true,
+            bevy::asset::LoadState::Failed => false,
+        };
+
+        if loaded {
+            let ChunkAsset {
+                chunk,
+                kind,
+                light,
+                occlusion,
+                soft_light,
+                vertex,
+            } = assets.remove(handle).expect("Chunk asset exists");
+
+            let entity = commands
+                .spawn((
+                    ChunkBundle {
+                        kind: ChunkKind(kind),
+                        light: ChunkLight(light),
+                        local: ChunkLocal(chunk),
+                        occlusion: ChunkFacesOcclusion(occlusion),
+                        soft_light: ChunkFacesSoftLight(soft_light),
+                        vertex: ChunkVertex(vertex),
+                    },
+                    Name::new(format!("Server Chunk {chunk:?}")),
+                ))
+                .id();
+
+            if chunk_map.insert(chunk, entity).is_some() {
+                warn!("Chunk {chunk:?} overwritten an existing entity on map.");
+            }
+        }
+
+        commands.entity(entity).despawn();
+    }
 }
 
 // #[cfg(test)]
