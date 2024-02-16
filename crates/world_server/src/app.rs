@@ -13,7 +13,10 @@ use crate::{setup_chunk_asset_loader, WorldServerPlugin};
 const TICK_EVERY_MILLIS: u64 = 50;
 
 pub fn create() -> App {
+    trace!("Creating app");
     let mut app = App::new();
+
+    app.add_plugins(LogPlugin::default());
 
     setup_chunk_asset_loader(&mut app);
 
@@ -22,7 +25,6 @@ pub fn create() -> App {
         MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(
             TICK_EVERY_MILLIS,
         ))),
-        LogPlugin::default(),
         WorldServerPlugin,
         AsyncRunnnerPlugin::new("WorldServer", Duration::from_millis(TICK_EVERY_MILLIS)),
     ));
@@ -36,6 +38,7 @@ pub trait RunAsync {
 
 impl RunAsync for App {
     fn run_async(&mut self) {
+        trace!("Running async!");
         let plugins = self.get_added_plugins::<AsyncRunnnerPlugin>();
         let async_plugin = plugins
             .last()
@@ -64,7 +67,7 @@ impl AsyncRunnnerPlugin {
     fn run(mut app: App, name: String, tick_interval: Duration) {
         AsyncComputeTaskPool::get_or_init(Default::default)
             .spawn(async move {
-                info!("[{name}] starting runner.");
+                trace!("[{name}] starting runner.");
                 let plugins_state = app.plugins_state();
                 if plugins_state != PluginsState::Cleaned {
                     while app.plugins_state() == PluginsState::Adding {

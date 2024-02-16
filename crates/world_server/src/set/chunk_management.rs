@@ -64,8 +64,8 @@ fn chunks_load(
     asset_server: Res<AssetServer>,
 ) {
     for &ChunkLoad(chunk) in reader.read() {
-        let path = chunk.path();
-        let handle = asset_server.load::<ChunkAsset>(&format!("chunk://{path:?}"));
+        trace!("Requesting to load: {:?}", chunk.path());
+        let handle = asset_server.load::<ChunkAsset>(chunk.path());
         commands.spawn(handle);
     }
 }

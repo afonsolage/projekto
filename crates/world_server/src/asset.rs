@@ -35,15 +35,18 @@ pub fn setup_chunk_asset_loader(app: &mut App) {
     if app.is_plugin_added::<AssetPlugin>() {
         panic!("ChunkAssetPlugin must be added before AssetPlugin");
     }
-    let mut sources_builder = app
-        .world
-        .get_resource_or_insert_with::<AssetSourceBuilders>(Default::default);
 
     let (sender, receiver) = async_channel::unbounded();
 
-    let source = AssetSourceBuilder::default()
-        .with_reader(move || Box::new(ChunkAssetReader::new(sender.clone())));
-    sources_builder.insert("chunk", source);
+    app.world
+        .get_resource_or_insert_with::<AssetSourceBuilders>(Default::default)
+        .insert(
+            "chunk",
+            AssetSourceBuilder::default()
+                .with_reader(move || Box::new(ChunkAssetReader::new(sender.clone()))),
+        );
+
+    trace!("Chunk asset source was added.");
 
     gen::create(receiver).run_async();
 }
@@ -167,7 +170,8 @@ impl AssetReader for ChunkAssetReader {
         &'a self,
         path: &'a std::path::Path,
     ) -> BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
-        Box::pin(async {
+        Box::pin(async move {
+            debug!("Loading chunk at {path:?}");
             let result = self.reader.read(path).await;
             match result {
                 Err(AssetReaderError::NotFound(_)) => self.generate(path).await,

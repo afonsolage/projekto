@@ -66,7 +66,7 @@ impl Chunk {
     }
 
     pub fn path(&self) -> PathBuf {
-        format!("{}_{}.cnk", self.0.x, self.0.y).into()
+        format!("chunk://{}_{}.cnk", self.0.x, self.0.y).into()
     }
 }
 
@@ -579,5 +579,14 @@ mod tests {
 
         let voxel = (2, 1, 14).into();
         assert!(!super::is_at_edge(voxel));
+    }
+
+    #[test]
+    fn path() {
+        let chunk = Chunk::new(-1, 9999);
+        assert_eq!(
+            chunk.path(),
+            std::path::PathBuf::from("chunk://-1_9999.cnk")
+        );
     }
 }
