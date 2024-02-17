@@ -1,0 +1,26 @@
+[package]
+name = "projekto_client"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bevy.workspace = true
+projekto_core.workspace = true
+projekto_camera.workspace = true
+projekto_world_server.workspace = true
+projekto_world_client.workspace = true
+
+[features]
+default = [
+    "dev",
+    #     "inspector",
+    "bevy/tonemapping_luts",
+     # "mem_alloc",
+]
+
+# Only enable used bevy features, to reduce clean compile time.
+dev = [
+    "bevy/dynamic_linking",            # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
+]

@@ -6,13 +6,14 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-bevy = {version = "0.12", default-features = false}
-serde = "1.0"
+bevy.workspace = true
+serde.workspace = true
+
 once_cell = "1.19"
 ron = "0.8"
 
 [dev-dependencies]
-rand = "0.8.5"
+rand.workspace = true
 
 [features]
 auto_load_kinds_descs = []

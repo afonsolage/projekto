@@ -116,6 +116,7 @@ impl AssetLoader for ChunkAssetLoader {
     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         // TODO: Get the exact size from .meta file
         Box::pin(async move {
+            trace!("[AssetLoader] loading asset");
             let mut bytes = vec![0; 1024];
 
             reader.read_to_end(&mut bytes).await?;
@@ -171,7 +172,7 @@ impl AssetReader for ChunkAssetReader {
         path: &'a std::path::Path,
     ) -> BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
         Box::pin(async move {
-            debug!("Loading chunk at {path:?}");
+            trace!("Loading chunk at {path:?}");
             let result = self.reader.read(path).await;
             match result {
                 Err(AssetReaderError::NotFound(_)) => self.generate(path).await,

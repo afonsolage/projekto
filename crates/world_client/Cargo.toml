@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-projekto_core = {path = "../core"}
-projekto_world_server = {path = "../world_server"}
+projekto_core.workspace = true
+projekto_world_server.workspace = true
 
-bevy = {version = "0.12", default-features = false}
+bevy.workspace = true

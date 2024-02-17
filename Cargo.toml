@@ -2,53 +2,31 @@
 name = "projekto"
 version = "0.1.0"
 edition = "2021"
-default-run = "main"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
 members = ["crates/*"]
+default-members = ["crates/client"]
 
-[dependencies]
-# Internal
-projekto_core = { path = "crates/core" }
+[workspace.dependencies]
+projekto_core = { path = "crates/core",features = ["auto_load_kinds_descs"]  }
 projekto_camera = { path = "crates/camera" }
 projekto_world_server = { path = "crates/world_server" }
 projekto_world_client = { path = "crates/world_client" }
 
-bevy = { version = "0.12"}
+bevy = "0.12"
 
-# Used by inspector
-#bevy-inspector-egui = { version = "0.22.0", optional = true }
-#bevy_egui = { version = "0.24.0", default-features = false, optional = true }
+rand = "0.8"
+thiserror = "1.0"
+serde = "1.0"
 
 [dev-dependencies]
-rand = "0.8"
-projekto_core = { path = "crates/core", features = ["auto_load_kinds_descs"] }
-
-[features]
-default = [
-    "dev",
-    #     "inspector",
-    "bevy/tonemapping_luts",
-     # "mem_alloc",
-]
-
-
-# Only enable used bevy features, to reduce clean compile time.
-dev = [
-    "bevy/dynamic_linking",            # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
-]
-
-#inspector = ["dep:bevy-inspector-egui", "dep:bevy_egui"]
-mem_alloc = []
+bevy.workspace = true
+projekto_camera.workspace = true
 
 [profile.dev.package."*"]
 opt-level = 3
-
-[[bin]]
-name = "main"
-path = "src/main.rs"
 
 [[example]]
 name = "orbit_cam"
