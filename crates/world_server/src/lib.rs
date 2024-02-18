@@ -76,6 +76,7 @@ mod test {
     fn plugin() {
         App::new()
             .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_plugins(AssetPlugin::default())
             .add_plugins(super::WorldServerPlugin)
             .run()
     }
