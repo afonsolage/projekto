@@ -13,7 +13,7 @@ fn main() {
 }
 
 fn move_target(
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut q: Query<&mut Transform, With<OrbitCameraTarget>>,
 ) {
@@ -44,12 +44,11 @@ fn setup_environment(
     commands
         .spawn(PbrBundle {
             transform: Transform::from_xyz(3.0, 5.0, 3.0),
-            mesh: meshes.add(Mesh::from(shape::Capsule {
+            mesh: meshes.add(Capsule3d {
                 radius: 0.25,
-                depth: 1.5,
-                ..default()
-            })),
-            material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+                half_length: 0.75,
+            }),
+            material: materials.add(Color::rgb(0.3, 0.3, 0.3)),
             ..Default::default()
         })
         .insert(OrbitCameraTarget)
@@ -57,43 +56,22 @@ fn setup_environment(
 
     // X axis
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Box {
-            min_x: 0.0,
-            max_x: 3.0,
-            min_y: 0.0,
-            max_y: 0.1,
-            min_z: 0.0,
-            max_z: 0.1,
-        })),
-        material: materials.add(Color::rgb(1.0, 0.3, 0.3).into()),
+        mesh: meshes.add(Cuboid::new(3.0, 0.1, 0.1)),
+        material: materials.add(Color::rgb(1.0, 0.3, 0.3)),
         ..Default::default()
     });
 
     // Y axis
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Box {
-            min_x: 0.0,
-            max_x: 0.1,
-            min_y: 0.0,
-            max_y: 3.0,
-            min_z: 0.0,
-            max_z: 0.1,
-        })),
-        material: materials.add(Color::rgb(0.3, 1.0, 0.3).into()),
+        mesh: meshes.add(Cuboid::new(0.1, 3.0, 0.1)),
+        material: materials.add(Color::rgb(0.3, 1.0, 0.3)),
         ..Default::default()
     });
 
     // Z axis
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Box {
-            min_x: 0.0,
-            max_x: 0.1,
-            min_y: 0.0,
-            max_y: 0.1,
-            min_z: 0.0,
-            max_z: 3.0,
-        })),
-        material: materials.add(Color::rgb(0.3, 0.3, 1.0).into()),
+        mesh: meshes.add(Cuboid::new(0.1, 0.1, 3.0)),
+        material: materials.add(Color::rgb(0.3, 0.3, 1.0)),
         ..Default::default()
     });
 
@@ -105,22 +83,22 @@ fn setup_environment(
     config.active = true;
 }
 
-fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {
+fn calc_input_vector(input: &Res<ButtonInput<KeyCode>>) -> Vec3 {
     let mut res = Vec3::ZERO;
 
-    if input.pressed(KeyCode::W) {
+    if input.pressed(KeyCode::KeyW) {
         res.z += 1.0
     }
 
-    if input.pressed(KeyCode::S) {
+    if input.pressed(KeyCode::KeyS) {
         res.z -= 1.0
     }
 
-    if input.pressed(KeyCode::D) {
+    if input.pressed(KeyCode::KeyD) {
         res.x += 1.0
     }
 
-    if input.pressed(KeyCode::A) {
+    if input.pressed(KeyCode::KeyA) {
         res.x -= 1.0
     }
 

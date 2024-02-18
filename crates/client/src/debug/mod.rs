@@ -25,7 +25,7 @@ fn setup_hold_est_to_exit(mut commands: Commands) {
 fn hold_esc_to_exit(
     mut esc_holding: ResMut<EscHolding>,
     time: Res<Time>,
-    input_keys: Res<Input<KeyCode>>,
+    input_keys: Res<ButtonInput<KeyCode>>,
     mut exit_writer: EventWriter<AppExit>,
 ) {
     if input_keys.pressed(KeyCode::Escape) {

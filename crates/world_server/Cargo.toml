@@ -38,6 +38,9 @@ bevy = {workspace = true, features = ["multi-threaded"]}
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
+[lints]
+workspace = true
+
 [[example]]
 name = "server"
 path = "examples/server.rs"

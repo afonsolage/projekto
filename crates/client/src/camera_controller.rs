@@ -16,9 +16,9 @@ impl Plugin for CameraControllerPlugin {
                 Update,
                 (
                     switch_camera.run_if(input_any_just_pressed([
-                        KeyCode::I,
-                        KeyCode::O,
-                        KeyCode::P,
+                        KeyCode::KeyI,
+                        KeyCode::KeyO,
+                        KeyCode::KeyP,
                     ])),
                     grab_mouse,
                 ),
@@ -28,11 +28,11 @@ impl Plugin for CameraControllerPlugin {
 
 fn input_any_just_pressed<T>(
     inputs: impl IntoIterator<Item = T> + Copy,
-) -> impl Fn(Res<'_, Input<T>>) -> bool + Clone
+) -> impl Fn(Res<'_, ButtonInput<T>>) -> bool + Clone
 where
     T: Clone + Copy + Eq + std::hash::Hash + Send + Sync + 'static,
 {
-    move |input: Res<Input<T>>| input.any_just_pressed(inputs)
+    move |input: Res<ButtonInput<T>>| input.any_just_pressed(inputs)
 }
 
 fn setup_camera(
@@ -101,18 +101,18 @@ impl<'w, 's> CameraConfig<'w, 's> {
     }
 }
 
-fn switch_camera(key_btn: Res<Input<KeyCode>>, mut config: CameraConfig) {
-    if key_btn.just_pressed(KeyCode::I) {
+fn switch_camera(key_btn: Res<ButtonInput<KeyCode>>, mut config: CameraConfig) {
+    if key_btn.just_pressed(KeyCode::KeyI) {
         config.set_cam(ActiveCamera::FlyBy);
-    } else if key_btn.just_pressed(KeyCode::P) {
+    } else if key_btn.just_pressed(KeyCode::KeyP) {
         config.set_cam(ActiveCamera::FirstPerson);
     }
 }
 
 fn grab_mouse(
     mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
-    mouse_btn: Res<Input<MouseButton>>,
-    key_btn: Res<Input<KeyCode>>,
+    mouse_btn: Res<ButtonInput<MouseButton>>,
+    key_btn: Res<ButtonInput<KeyCode>>,
     mut config: CameraConfig,
 ) {
     let Ok(mut window) = primary_window.get_single_mut() else {

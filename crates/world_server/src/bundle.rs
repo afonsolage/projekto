@@ -1,6 +1,6 @@
 use bevy::{
     ecs::{
-        query::{QueryItem, ReadOnlyWorldQuery, WorldQuery},
+        query::{QueryData, QueryFilter, QueryItem},
         system::SystemParam,
     },
     prelude::*,
@@ -39,9 +39,7 @@ pub struct ChunkBundle {
     pub vertex: ChunkVertex,
 }
 
-pub fn any_chunk<T: ReadOnlyWorldQuery>(
-    q_changed_chunks: Query<(), (T, With<ChunkLocal>)>,
-) -> bool {
+pub fn any_chunk<T: QueryFilter>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
     !q_changed_chunks.is_empty()
 }
 
@@ -49,18 +47,17 @@ pub fn any_chunk<T: ReadOnlyWorldQuery>(
 pub(crate) struct ChunkMap(pub HashMap<Chunk, Entity>);
 
 #[derive(SystemParam)]
-pub(crate) struct ChunkQuery<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static = ()>
-{
+pub(crate) struct ChunkQuery<'w, 's, Q: QueryData + 'static, F: QueryFilter + 'static = ()> {
     map: Res<'w, ChunkMap>,
     query: Query<'w, 's, Q, F>,
 }
 
-impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuery<'w, 's, Q, F> {
+impl<'w, 's, Q: QueryData + 'static, F: QueryFilter + 'static> ChunkQuery<'w, 's, Q, F> {
     // fn get_chunk_entity(&self, chunk: IVec3) -> Option<Entity> {
     //     self.map.0.get(&chunk).copied()
     // }
 
-    pub fn get_chunk(&self, chunk: Chunk) -> Option<QueryItem<'_, <Q as WorldQuery>::ReadOnly>> {
+    pub fn get_chunk(&self, chunk: Chunk) -> Option<QueryItem<'_, <Q as QueryData>::ReadOnly>> {
         self.map.0.get(&chunk).map(|&entity| {
             self.query
                 .get(entity)
@@ -74,15 +71,6 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuer
                 .get_mut(entity)
                 .expect("All entities inside the map must exists")
         })
-    }
-
-    pub fn get_chunk_component<T: Component>(&self, chunk: Chunk) -> Option<&T> {
-        if let Some(&entity) = self.map.0.get(&chunk) {
-            if let Ok(component) = self.query.get_component::<T>(entity) {
-                return Some(component);
-            }
-        }
-        None
     }
 
     pub fn chunk_exists(&self, chunk: Chunk) -> bool {
@@ -99,7 +87,7 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> ChunkQuer
     // }
 }
 
-impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops::Deref
+impl<'w, 's, Q: QueryData + 'static, F: QueryFilter + 'static> std::ops::Deref
     for ChunkQuery<'w, 's, Q, F>
 {
     type Target = Query<'w, 's, Q, F>;
@@ -109,7 +97,7 @@ impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops:
     }
 }
 
-impl<'w, 's, Q: WorldQuery + 'static, F: ReadOnlyWorldQuery + 'static> std::ops::DerefMut
+impl<'w, 's, Q: QueryData + 'static, F: QueryFilter + 'static> std::ops::DerefMut
     for ChunkQuery<'w, 's, Q, F>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {

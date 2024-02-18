@@ -59,7 +59,7 @@ impl<'w, 's> CameraConfig<'w, 's> {
     }
 }
 
-fn toggle_camera(input: Res<Input<KeyCode>>, mut config: CameraConfig) {
+fn toggle_camera(input: Res<ButtonInput<KeyCode>>, mut config: CameraConfig) {
     if input.just_pressed(KeyCode::F1) {
         config.toggle();
     }
@@ -67,8 +67,8 @@ fn toggle_camera(input: Res<Input<KeyCode>>, mut config: CameraConfig) {
 
 fn grab_mouse(
     mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
-    mouse_btn: Res<Input<MouseButton>>,
-    key_btn: Res<Input<KeyCode>>,
+    mouse_btn: Res<ButtonInput<MouseButton>>,
+    key_btn: Res<ButtonInput<KeyCode>>,
     mut config: CameraConfig,
     // #[cfg(feature = "inspector")] egui_context: Option<ResMut<bevy_egui::EguiContext>>,
 ) {
@@ -110,12 +110,11 @@ fn setup_environment(
     commands
         .spawn(PbrBundle {
             transform: Transform::from_xyz(3.0, 5.0, 3.0),
-            mesh: meshes.add(Mesh::from(shape::Capsule {
+            mesh: meshes.add(Capsule3d {
                 radius: 0.25,
-                depth: 1.5,
-                ..default()
-            })),
-            material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+                half_length: 0.75,
+            }),
+            material: materials.add(Color::rgb(0.3, 0.3, 0.3)),
             ..Default::default()
         })
         .insert(OrbitCameraTarget)
@@ -123,43 +122,22 @@ fn setup_environment(
 
     // X axis
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Box {
-            min_x: 0.0,
-            max_x: 3.0,
-            min_y: 0.0,
-            max_y: 0.1,
-            min_z: 0.0,
-            max_z: 0.1,
-        })),
-        material: materials.add(Color::rgb(1.0, 0.3, 0.3).into()),
+        mesh: meshes.add(Cuboid::new(3.0, 0.1, 0.1)),
+        material: materials.add(Color::rgb(1.0, 0.3, 0.3)),
         ..Default::default()
     });
 
     // Y axis
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Box {
-            min_x: 0.0,
-            max_x: 0.1,
-            min_y: 0.0,
-            max_y: 3.0,
-            min_z: 0.0,
-            max_z: 0.1,
-        })),
-        material: materials.add(Color::rgb(0.3, 1.0, 0.3).into()),
+        mesh: meshes.add(Cuboid::new(0.1, 3.0, 0.1)),
+        material: materials.add(Color::rgb(0.3, 1.0, 0.3)),
         ..Default::default()
     });
 
     // Z axis
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Box {
-            min_x: 0.0,
-            max_x: 0.1,
-            min_y: 0.0,
-            max_y: 0.1,
-            min_z: 0.0,
-            max_z: 3.0,
-        })),
-        material: materials.add(Color::rgb(0.3, 0.3, 1.0).into()),
+        mesh: meshes.add(Cuboid::new(0.1, 0.1, 3.0)),
+        material: materials.add(Color::rgb(0.3, 0.3, 1.0)),
         ..Default::default()
     });
 

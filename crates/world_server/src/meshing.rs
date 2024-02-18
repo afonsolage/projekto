@@ -112,7 +112,7 @@ pub(super) fn faces_occlusion(
 ) {
     chunk::voxels().for_each(|voxel| {
         if kind.get(voxel).is_none() {
-            faces_occlusion.set(voxel, voxel::FacesOcclusion::fully_occluded())
+            faces_occlusion.set(voxel, voxel::FacesOcclusion::fully_occluded());
         } else {
             let mut faces = FacesOcclusion::default();
             voxel::SIDES.iter().for_each(|&side| {
@@ -144,7 +144,7 @@ pub(super) fn faces_occlusion(
             });
             faces_occlusion.set(voxel, faces);
         }
-    })
+    });
 }
 
 #[cfg(not(feature = "faces_merging"))]

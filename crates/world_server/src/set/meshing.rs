@@ -90,9 +90,7 @@ fn faces_light_softening(
         .into_iter()
         .filter(|&chunk| q_chunks.chunk_exists(chunk))
         .for_each(|chunk| {
-            let occlusion = &**q_chunks
-                .get_chunk_component::<ChunkFacesOcclusion>(chunk)
-                .expect("Chunk must exists");
+            let (_, _, _, occlusion) = q_chunks.get_chunk(chunk).expect("Chunk must exists");
 
             let mut soft_light = q_soft_light
                 .get_chunk_mut(chunk)
@@ -102,16 +100,8 @@ fn faces_light_softening(
                 chunk,
                 occlusion,
                 &mut soft_light,
-                |chunk| {
-                    q_chunks
-                        .get_chunk_component::<ChunkKind>(chunk)
-                        .map(|c| &**c)
-                },
-                |chunk| {
-                    q_chunks
-                        .get_chunk_component::<ChunkLight>(chunk)
-                        .map(|c| &**c)
-                },
+                |chunk| q_chunks.get_chunk(chunk).map(|c| &**c.1),
+                |chunk| q_chunks.get_chunk(chunk).map(|c| &**c.2),
             );
 
             count += 1;

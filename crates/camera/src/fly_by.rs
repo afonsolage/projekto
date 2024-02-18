@@ -53,10 +53,10 @@ pub struct KeyBindings {
 impl Default for KeyBindings {
     fn default() -> Self {
         Self {
-            forward: KeyCode::W,
-            backward: KeyCode::S,
-            left: KeyCode::A,
-            right: KeyCode::D,
+            forward: KeyCode::KeyW,
+            backward: KeyCode::KeyS,
+            left: KeyCode::KeyA,
+            right: KeyCode::KeyD,
             up: KeyCode::Space,
             down: KeyCode::ControlLeft,
             boost: KeyCode::ShiftLeft,
@@ -105,7 +105,7 @@ pub fn is_active(config: Res<FlyByCameraConfig>) -> bool {
 /// This system is gated by [`is_active`] run criteria.
 fn move_camera(
     time: Res<Time>,
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     config: Res<FlyByCameraConfig>,
     mut q: Query<&mut Transform, With<FlyByCamera>>,
 ) {
@@ -163,31 +163,31 @@ fn rotate_camera(
     }
 }
 
-fn calc_input_vector(input: &Res<Input<KeyCode>>, bindings: &KeyBindings) -> Vec3 {
+fn calc_input_vector(input: &Res<ButtonInput<KeyCode>>, bindings: &KeyBindings) -> Vec3 {
     let mut res = Vec3::ZERO;
 
     if input.pressed(bindings.forward) {
-        res.z += 1.0
+        res.z += 1.0;
     }
 
     if input.pressed(bindings.backward) {
-        res.z -= 1.0
+        res.z -= 1.0;
     }
 
     if input.pressed(bindings.right) {
-        res.x += 1.0
+        res.x += 1.0;
     }
 
     if input.pressed(bindings.left) {
-        res.x -= 1.0
+        res.x -= 1.0;
     }
 
     if input.pressed(bindings.up) {
-        res.y += 1.0
+        res.y += 1.0;
     }
 
     if input.pressed(bindings.down) {
-        res.y -= 1.0
+        res.y -= 1.0;
     }
 
     res

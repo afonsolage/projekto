@@ -59,7 +59,7 @@ fn update_landscape(
         .filter(|c| !chunk_map.contains_key(c))
         .for_each(|c| {
             load_writer.send(ChunkLoad(c));
-            loaded += 1
+            loaded += 1;
         });
 
     trace!("[update_landscape] Unloaded: {unloaded}, loaded: {loaded}");

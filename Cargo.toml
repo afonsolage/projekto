@@ -15,7 +15,7 @@ projekto_camera = { path = "crates/camera" }
 projekto_world_server = { path = "crates/world_server" }
 projekto_world_client = { path = "crates/world_client" }
 
-bevy = "0.12"
+bevy = "0.13"
 
 rand = "0.8"
 thiserror = "1.0"
@@ -24,6 +24,27 @@ serde = "1.0"
 [dev-dependencies]
 bevy.workspace = true
 projekto_camera.workspace = true
+
+[workspace.lints.clippy]
+type_complexity = "allow"
+doc_markdown = "warn"
+manual_let_else = "warn"
+undocumented_unsafe_blocks = "warn"
+redundant_else = "warn"
+match_same_arms = "warn"
+semicolon_if_nothing_returned = "warn"
+
+ptr_as_ptr = "warn"
+ptr_cast_constness = "warn"
+#TODO(rust 1.77): enable `ref_as_ptr`
+# ref_as_ptr = "warn"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+# missing_docs = "warn"
+
+[lints]
+workspace = true
 
 [profile.dev.package."*"]
 opt-level = 3

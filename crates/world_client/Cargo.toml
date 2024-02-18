@@ -10,3 +10,6 @@ projekto_core.workspace = true
 projekto_world_server.workspace = true
 
 bevy.workspace = true
+
+[lints]
+workspace = true

@@ -57,7 +57,7 @@ fn is_active(char_config: Res<CharacterControllerConfig>) -> bool {
 fn move_character(
     config: Res<CharacterControllerConfig>,
     time: Res<Time>,
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     mut q: Query<&mut Transform, With<CharacterController>>,
 ) {
     let input_vec = calc_input_vector(&input);
@@ -79,31 +79,31 @@ fn move_character(
     transform.translation += config.move_speed * time.delta_seconds() * move_vector;
 }
 
-fn calc_input_vector(input: &Res<Input<KeyCode>>) -> Vec3 {
+fn calc_input_vector(input: &Res<ButtonInput<KeyCode>>) -> Vec3 {
     let mut res = Vec3::ZERO;
 
-    if input.pressed(KeyCode::W) {
-        res.z += 1.0
+    if input.pressed(KeyCode::KeyW) {
+        res.z += 1.0;
     }
 
-    if input.pressed(KeyCode::S) {
-        res.z -= 1.0
+    if input.pressed(KeyCode::KeyS) {
+        res.z -= 1.0;
     }
 
-    if input.pressed(KeyCode::D) {
-        res.x += 1.0
+    if input.pressed(KeyCode::KeyD) {
+        res.x += 1.0;
     }
 
-    if input.pressed(KeyCode::A) {
-        res.x -= 1.0
+    if input.pressed(KeyCode::KeyA) {
+        res.x -= 1.0;
     }
 
     if input.pressed(KeyCode::Space) {
-        res.y += 1.0
+        res.y += 1.0;
     }
 
     if input.pressed(KeyCode::ControlLeft) {
-        res.y -= 1.0
+        res.y -= 1.0;
     }
 
     res

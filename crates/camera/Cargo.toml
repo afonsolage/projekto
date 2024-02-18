@@ -9,3 +9,6 @@ readme = "README.md"
 bevy.workspace = true
 
 [features]
+
+[lints]
+workspace = true

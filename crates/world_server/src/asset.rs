@@ -139,10 +139,11 @@ struct ChunkAssetReader {
 
 impl ChunkAssetReader {
     fn new(sender: Sender<ChunkAssetGenRequest>) -> Self {
+        let create_root = true;
         Self {
             sender,
             reader: AssetSource::get_default_reader("chunks".to_string())(),
-            _writer: AssetSource::get_default_writer("chunks".to_string())().unwrap(),
+            _writer: AssetSource::get_default_writer("chunks".to_string())(create_root).unwrap(),
         }
     }
 

@@ -102,12 +102,11 @@ fn setup(
         .spawn((
             PbrBundle {
                 transform: Transform::from_xyz(2.0, 20.0, 7.0),
-                mesh: meshes.add(Mesh::from(shape::Capsule {
+                mesh: meshes.add(Capsule3d {
                     radius: 0.25,
-                    depth: 1.5,
-                    ..default()
-                })),
-                material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+                    half_length: 0.75,
+                }),
+                material: materials.add(Color::rgb(0.3, 0.3, 0.3)),
                 ..Default::default()
             },
             Name::new("Character"),
@@ -118,15 +117,8 @@ fn setup(
             // Front indicator
             p.spawn((
                 PbrBundle {
-                    mesh: meshes.add(Mesh::from(shape::Box {
-                        min_x: 0.0,
-                        max_x: 0.05,
-                        min_y: 0.0,
-                        max_y: 0.05,
-                        min_z: 0.0,
-                        max_z: -0.5,
-                    })),
-                    material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
+                    mesh: meshes.add(Cuboid::new(0.05, 0.05, -0.5)),
+                    material: materials.add(Color::rgb(1.0, 1.0, 1.0)),
                     ..Default::default()
                 },
                 RenderLayers::from_layers(&[1]),
@@ -146,43 +138,22 @@ fn setup(
 
     // X axis
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Box {
-            min_x: 0.0,
-            max_x: 3.0,
-            min_y: 0.0,
-            max_y: 0.1,
-            min_z: 0.0,
-            max_z: 0.1,
-        })),
-        material: materials.add(Color::rgb(1.0, 0.3, 0.3).into()),
+        mesh: meshes.add(Cuboid::new(3.0, 0.1, 0.1)),
+        material: materials.add(Color::rgb(1.0, 0.3, 0.3)),
         ..Default::default()
     });
 
     // Y axis
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Box {
-            min_x: 0.0,
-            max_x: 0.1,
-            min_y: 0.0,
-            max_y: 3.0,
-            min_z: 0.0,
-            max_z: 0.1,
-        })),
-        material: materials.add(Color::rgb(0.3, 1.0, 0.3).into()),
+        mesh: meshes.add(Cuboid::new(0.1, 3.0, 0.1)),
+        material: materials.add(Color::rgb(0.3, 1.0, 0.3)),
         ..Default::default()
     });
 
     // Z axis
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Box {
-            min_x: 0.0,
-            max_x: 0.1,
-            min_y: 0.0,
-            max_y: 0.1,
-            min_z: 0.0,
-            max_z: 3.0,
-        })),
-        material: materials.add(Color::rgb(0.3, 0.3, 1.0).into()),
+        mesh: meshes.add(Cuboid::new(0.1, 0.1, 3.0)),
+        material: materials.add(Color::rgb(0.3, 0.3, 1.0)),
         ..Default::default()
     });
 

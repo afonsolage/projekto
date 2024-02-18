@@ -24,3 +24,6 @@ default = [
 dev = [
     "bevy/dynamic_linking",            # On Windows 11, dynamic and cargo-lld doesn't work if bevy_gilrs is enabled
 ]
+
+[lints]
+workspace = true

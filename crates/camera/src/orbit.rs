@@ -63,10 +63,10 @@ pub struct KeyBindings {
 impl Default for KeyBindings {
     fn default() -> Self {
         Self {
-            left: KeyCode::Left,
-            right: KeyCode::Right,
-            up: KeyCode::Up,
-            down: KeyCode::Down,
+            left: KeyCode::ArrowLeft,
+            right: KeyCode::ArrowRight,
+            up: KeyCode::ArrowUp,
+            down: KeyCode::ArrowDown,
             zoom_in: KeyCode::PageUp,
             zoom_out: KeyCode::PageDown,
         }
@@ -258,7 +258,7 @@ fn spherical_to_cartesian(radius: f32, polar: f32, azimuth: f32, center: Vec3) -
 /// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on
 /// [`OrbitCameraConfig`]
 fn move_camera_keycode(
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut config: ResMut<OrbitCameraConfig>,
 ) {
@@ -293,7 +293,7 @@ fn move_camera_keycode(
 /// This system doesn't change the [`Transform`] directly, but instead, change spherical settings on
 /// [`OrbitCameraConfig`]
 fn move_camera_mouse(
-    input: Res<Input<MouseButton>>,
+    input: Res<ButtonInput<MouseButton>>,
     mut mouse_move: EventReader<MouseMotion>,
     mut mouse_wheel: EventReader<MouseWheel>,
     time: Res<Time>,

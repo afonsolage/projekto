@@ -86,7 +86,9 @@ fn propagate_light(
     let mut writer = params.p1();
     propagate_to_neighbors
         .into_iter()
-        .for_each(|((chunk, ty), values)| writer.send(LightUpdate { chunk, ty, values }));
+        .for_each(|((chunk, ty), values)| {
+            writer.send(LightUpdate { chunk, ty, values });
+        });
 
     trace!("[propagate_light] {count} chunks light propagated. {events} propagation events sent.");
 }

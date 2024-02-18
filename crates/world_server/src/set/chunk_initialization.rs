@@ -32,7 +32,7 @@ fn init_light(
     let mut map = HashMap::new();
     let mut count = 0;
 
-    q.for_each_mut(|(local, kind, mut light)| {
+    q.iter_mut().for_each(|(local, kind, mut light)| {
         chunk::top_voxels().for_each(|voxel| {
             light.set_type(
                 voxel,
