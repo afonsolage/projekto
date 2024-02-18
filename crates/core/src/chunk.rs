@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::{
     math,
     voxel::{self, Voxel},
@@ -38,10 +36,9 @@ impl Chunk {
     }
 
     pub fn from_path(path: &std::path::Path) -> Self {
-        // 0_0.cnk
+        // 0_0
         // TODO: too many unwraps
-        let (name, _ext) = path.to_str().unwrap().split_once('.').unwrap();
-        let (x, z) = name.split_once('_').unwrap();
+        let (x, z) = path.to_str().unwrap().split_once('_').unwrap();
         Self(IVec2::new(x.parse().unwrap(), z.parse().unwrap()))
     }
 
@@ -65,8 +62,8 @@ impl Chunk {
         other.0 - self.0
     }
 
-    pub fn path(&self) -> PathBuf {
-        format!("chunk://{}_{}.cnk", self.0.x, self.0.y).into()
+    pub fn path(&self) -> String {
+        format!("chunk://{}_{}", self.0.x, self.0.y)
     }
 }
 
@@ -188,7 +185,7 @@ impl ChunkStorageType for voxel::Light {}
 impl ChunkStorageType for voxel::FacesOcclusion {}
 impl ChunkStorageType for voxel::FacesSoftLight {}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ChunkStorage<T>(Vec<T>);
 
 impl<T: ChunkStorageType> Default for ChunkStorage<T> {
@@ -200,6 +197,12 @@ impl<T: ChunkStorageType> Default for ChunkStorage<T> {
 impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
+    }
+}
+
+impl<T: ChunkStorageType> std::fmt::Debug for ChunkStorage<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ChunkStorage(len: {})", self.0.len())
     }
 }
 
@@ -584,9 +587,6 @@ mod tests {
     #[test]
     fn path() {
         let chunk = Chunk::new(-1, 9999);
-        assert_eq!(
-            chunk.path(),
-            std::path::PathBuf::from("chunk://-1_9999.cnk")
-        );
+        assert_eq!(chunk.path(), format!("chunk://-1_9999"));
     }
 }

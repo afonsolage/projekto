@@ -17,7 +17,7 @@ struct ChunkRequest(ChunkAssetGenRequest);
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct ChunkAssetGenReceiver(pub Receiver<ChunkAssetGenRequest>);
 
-const TICK_EVERY_MILLIS: u64 = 1000;
+const TICK_EVERY_MILLIS: u64 = 5000;
 
 pub(crate) fn create(receiver: Receiver<ChunkAssetGenRequest>) -> App {
     let mut app = App::new();
@@ -94,7 +94,17 @@ fn dispatch_requests(world: &mut World) {
             ..Default::default()
         };
 
+        trace!(
+            "[dispatch_requests] Chunk {} generated: {asset:?}",
+            req.chunk
+        );
+
         if let Ok(bytes) = bincode::serialize(&asset) {
+            trace!(
+                "[dispatch_requests] Chunk {} serialized. Size: {} bytes",
+                req.chunk,
+                bytes.len()
+            );
             req.finish(Ok(bytes));
         } else {
             let chunk = asset.chunk;

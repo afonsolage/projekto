@@ -116,18 +116,15 @@ impl AssetLoader for ChunkAssetLoader {
     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         // TODO: Get the exact size from .meta file
         Box::pin(async move {
-            trace!("[AssetLoader] loading asset");
-            let mut bytes = vec![0; 1024];
-
+            let mut bytes = vec![];
             reader.read_to_end(&mut bytes).await?;
+
             let asset = bincode::deserialize::<ChunkAsset>(&bytes)?;
+
+            trace!("[AssetLoader] Loaded asset: {asset:?}");
 
             Ok(asset)
         })
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["cnk"]
     }
 }
 
@@ -184,9 +181,9 @@ impl AssetReader for ChunkAssetReader {
 
     fn read_meta<'a>(
         &'a self,
-        _path: &'a std::path::Path,
+        path: &'a std::path::Path,
     ) -> BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
-        todo!()
+        Box::pin(async move { Err(AssetReaderError::NotFound(path.into())) })
     }
 
     fn read_directory<'a>(
@@ -201,5 +198,26 @@ impl AssetReader for ChunkAssetReader {
         _path: &'a std::path::Path,
     ) -> BoxedFuture<'a, Result<bool, AssetReaderError>> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asset_serde() {
+        let asset = ChunkAsset::default();
+
+        let bytes = bincode::serialize(&asset).unwrap();
+
+        assert!(!bytes.is_empty());
+
+        let serde_asset: ChunkAsset = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(asset.chunk, serde_asset.chunk);
+        assert_eq!(asset.kind, serde_asset.kind);
+        assert_eq!(asset.light, serde_asset.light);
+        assert_eq!(asset.vertex, serde_asset.vertex);
     }
 }
