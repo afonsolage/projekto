@@ -17,7 +17,7 @@ struct ChunkRequest(ChunkAssetGenRequest);
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct ChunkAssetGenReceiver(pub Receiver<ChunkAssetGenRequest>);
 
-const TICK_EVERY_MILLIS: u64 = 5000;
+const TICK_EVERY_MILLIS: u64 = 1500;
 
 pub(crate) fn create(receiver: Receiver<ChunkAssetGenRequest>) -> App {
     let mut app = App::new();

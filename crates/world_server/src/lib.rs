@@ -15,6 +15,8 @@ mod asset;
 
 pub use asset::setup_chunk_asset_loader;
 
+pub mod protocol;
+
 pub mod cache;
 pub mod gen;
 
@@ -31,26 +33,22 @@ impl Plugin for WorldServerPlugin {
             .configure_sets(
                 Update,
                 (
-                    WorldSet::LandscapeUpdate.before(WorldSet::ChunkManagement),
-                    WorldSet::ChunkManagement.before(WorldSet::FlushCommands),
-                    WorldSet::ChunkInitialization.after(WorldSet::FlushCommands),
-                    WorldSet::Propagation.after(WorldSet::ChunkInitialization),
-                    WorldSet::Meshing
-                        .after(WorldSet::Propagation)
-                        .run_if(on_timer(Duration::from_millis(MESHING_TICK_MS))),
-                ),
+                    WorldSet::LandscapeUpdate,
+                    WorldSet::ChunkManagement,
+                    WorldSet::Propagation,
+                    WorldSet::Meshing.run_if(on_timer(Duration::from_millis(MESHING_TICK_MS))),
+                )
+                    .chain(),
             )
             .configure_sets(PostUpdate, WorldSet::DispatchAsync)
             .add_plugins((
-                // CollectDispatchPlugin,
                 LandscapePlugin,
                 ChunkManagementPlugin,
                 ChunkInitializationPlugin,
                 PropagationPlugin,
                 MeshingPlugin,
                 ChunkAssetPlugin,
-            ))
-            .add_systems(Update, (apply_deferred.in_set(WorldSet::FlushCommands),));
+            ));
     }
 }
 
@@ -59,7 +57,6 @@ pub enum WorldSet {
     CollectAsync,
     LandscapeUpdate,
     ChunkManagement,
-    FlushCommands,
     ChunkInitialization,
     Propagation,
     Meshing,
@@ -78,6 +75,6 @@ mod test {
             .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .add_plugins(AssetPlugin::default())
             .add_plugins(super::WorldServerPlugin)
-            .run()
+            .run();
     }
 }
