@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use asset::ChunkAssetPlugin;
 use bevy::{prelude::*, time::common_conditions::on_timer};
+use proto::ProtocolPlugin;
 use set::{
     ChunkInitializationPlugin, ChunkManagementPlugin, LandscapePlugin, MeshingPlugin,
     PropagationPlugin,
@@ -15,7 +16,7 @@ mod asset;
 
 pub use asset::setup_chunk_asset_loader;
 
-pub mod protocol;
+pub mod proto;
 
 pub mod cache;
 pub mod gen;
@@ -48,6 +49,7 @@ impl Plugin for WorldServerPlugin {
                 PropagationPlugin,
                 MeshingPlugin,
                 ChunkAssetPlugin,
+                ProtocolPlugin,
             ));
     }
 }

@@ -108,6 +108,7 @@ fn update_chunk_mesh(
             commands.entity(entity).insert(mesh_handler);
             updated += 1;
         } else {
+            trace!("Spawning chunk!");
             let entity = commands
                 .spawn(ChunkBundle {
                     chunk: *chunk,
