@@ -1,11 +1,8 @@
 use std::path::Path;
 
-use bevy_log::trace;
-use bevy_math::IVec2;
+use bevy::{log::trace, math::IVec2};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-
-use crate::chunk::ChunkStorageType;
 
 use super::{Face, Side};
 
@@ -227,8 +224,6 @@ impl Kind {
         panic!("Failed to find kind description {}", self.0);
     }
 }
-
-impl ChunkStorageType for Kind {}
 
 #[cfg(test)]
 mod tests {

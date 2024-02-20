@@ -1,4 +1,3 @@
-#![allow(clippy::type_complexity)]
 use bevy::prelude::*;
 use first_person::FirstPersonCameraPlugin;
 use orbit::OrbitCameraPlugin;

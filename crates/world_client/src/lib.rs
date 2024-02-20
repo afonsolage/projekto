@@ -1,13 +1,15 @@
 use bevy::{
-    ecs::query::ReadOnlyWorldQuery,
+    ecs::query::QueryFilter,
     prelude::*,
-    reflect::TypeUuid,
-    render::{mesh::Indices, render_resource::PrimitiveTopology},
+    render::{mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology},
     utils::HashMap,
 };
 use material::ChunkMaterial;
-use projekto_core::voxel::{self, Vertex};
-use projekto_world_server::{chunk, Chunk, ChunkLocal, ChunkVertex};
+use projekto_core::{
+    chunk::{self, Chunk},
+    voxel::{self, Vertex},
+};
+use projekto_world_server::bundle::{ChunkLocal, ChunkVertex};
 
 mod material;
 
@@ -42,12 +44,11 @@ struct ChunkBundle {
     mesh: MaterialMeshBundle<ChunkMaterial>,
 }
 
-fn any_chunk<T: ReadOnlyWorldQuery>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
+fn any_chunk<T: QueryFilter>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
     !q_changed_chunks.is_empty()
 }
 
-#[derive(TypeUuid, Debug, Resource)]
-#[uuid = "e6edff2a-e206-500f-996c-bdebd1f95f59"]
+#[derive(Debug, Resource)]
 pub struct KindsAtlasRes {
     pub atlas: Handle<Image>,
 }
@@ -107,6 +108,7 @@ fn update_chunk_mesh(
             commands.entity(entity).insert(mesh_handler);
             updated += 1;
         } else {
+            trace!("Spawning chunk!");
             let entity = commands
                 .spawn(ChunkBundle {
                     chunk: *chunk,
@@ -130,7 +132,10 @@ fn update_chunk_mesh(
 }
 
 fn generate_mesh(vertices: &Vec<Vertex>) -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
 
     let mut positions: Vec<[f32; 3]> = vec![];
     let mut normals: Vec<[f32; 3]> = vec![];
@@ -148,7 +153,7 @@ fn generate_mesh(vertices: &Vec<Vertex>) -> Mesh {
         lights.push(vertex.light.into());
     }
 
-    mesh.set_indices(Some(Indices::U32(compute_indices(vertex_count))));
+    mesh.insert_indices(Indices::U32(compute_indices(vertex_count)));
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
