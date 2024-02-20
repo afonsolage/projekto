@@ -3,10 +3,6 @@ use std::time::Duration;
 use asset::ChunkAssetPlugin;
 use bevy::{prelude::*, time::common_conditions::on_timer};
 use proto::ProtocolPlugin;
-use set::{
-    ChunkInitializationPlugin, ChunkManagementPlugin, LandscapePlugin, MeshingPlugin,
-    PropagationPlugin,
-};
 
 pub mod app;
 mod light;
@@ -30,7 +26,7 @@ pub struct WorldServerPlugin;
 
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
-        app.configure_sets(PreUpdate, WorldSet::CollectAsync)
+        app.configure_sets(PreUpdate, WorldSet::ReceiveRequests)
             .configure_sets(
                 Update,
                 (
@@ -41,28 +37,30 @@ impl Plugin for WorldServerPlugin {
                 )
                     .chain(),
             )
-            .configure_sets(PostUpdate, WorldSet::DispatchAsync)
+            .configure_sets(PostUpdate, WorldSet::SendResponses)
             .add_plugins((
-                LandscapePlugin,
-                ChunkManagementPlugin,
-                ChunkInitializationPlugin,
-                PropagationPlugin,
-                MeshingPlugin,
                 ChunkAssetPlugin,
                 ProtocolPlugin,
+                set::LandscapePlugin,
+                set::ChunkManagementPlugin,
+                set::ChunkInitializationPlugin,
+                set::PropagationPlugin,
+                set::MeshingPlugin,
+                set::SendResponsesPlugin,
+                set::ReceiveRequestsPlugin,
             ));
     }
 }
 
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum WorldSet {
-    CollectAsync,
+    ReceiveRequests,
     LandscapeUpdate,
     ChunkManagement,
     ChunkInitialization,
     Propagation,
     Meshing,
-    DispatchAsync,
+    SendResponses,
 }
 
 #[cfg(test)]

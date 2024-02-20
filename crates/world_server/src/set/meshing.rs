@@ -70,7 +70,6 @@ fn faces_occlusion(
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn faces_light_softening(
     q_changed_chunks: Query<&ChunkLocal, Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>,
     q_chunks: ChunkQuery<(&ChunkLocal, &ChunkKind, &ChunkLight, &ChunkFacesOcclusion)>,
@@ -112,7 +111,6 @@ fn faces_light_softening(
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn generate_vertices(
     q_changed_chunks: Query<
         (
@@ -121,7 +119,7 @@ fn generate_vertices(
             &ChunkFacesOcclusion,
             &ChunkFacesSoftLight,
         ),
-        Or<(Changed<ChunkKind>, Changed<ChunkLight>)>,
+        Or<(Changed<ChunkKind>, Changed<ChunkFacesSoftLight>)>,
     >,
     mut q_vertex: Query<&mut ChunkVertex>,
 ) {

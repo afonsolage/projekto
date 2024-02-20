@@ -13,8 +13,8 @@ pub enum MessageError {
 pub mod channel;
 mod plugin;
 
-pub(crate) use plugin::ProtocolPlugin;
 pub use plugin::WorldClientChannel;
+pub(crate) use plugin::*;
 
 #[derive(Debug)]
 pub enum MessageType {
