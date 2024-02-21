@@ -1,4 +1,6 @@
 use bevy::prelude::*;
+use projekto_core::chunk::Chunk;
+use projekto_world_client::PlayerLandscape;
 
 pub struct CharacterControllerPlugin;
 
@@ -110,14 +112,17 @@ fn calc_input_vector(input: &Res<ButtonInput<KeyCode>>) -> Vec3 {
 }
 
 fn update_character_position(
-    mut position: ResMut<CharacterPosition>,
+    mut landscape: ResMut<PlayerLandscape>,
     q: Query<&Transform, (With<CharacterController>, Changed<Transform>)>,
 ) {
     let Ok(transform) = q.get_single() else {
         return;
     };
 
-    if projekto_core::math::floor(transform.translation) != **position {
-        **position = projekto_core::math::floor(transform.translation);
+    let new_chunk: Chunk = transform.translation.into();
+    let current_chunk: Chunk = landscape.center.into();
+
+    if new_chunk != current_chunk {
+        landscape.center = new_chunk.into();
     }
 }

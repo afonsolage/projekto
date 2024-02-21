@@ -19,7 +19,7 @@ pub use plugin::{has_messages, MessageQueue, WorldClientChannel};
 #[derive(Debug)]
 pub enum ClientMessage {
     ChunkLoad,
-    LandscapeSpawn,
+    LandscapeUpdate,
 }
 
 #[derive(Debug)]
@@ -109,13 +109,13 @@ impl Message for ChunkVertexNfy {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LandscapeSpawnReq {
+pub struct LandscapeUpdate {
     pub center: IVec2,
     pub radius: u8,
 }
 
-impl Message for LandscapeSpawnReq {
+impl Message for LandscapeUpdate {
     fn msg_source(&self) -> MessageSource {
-        ClientMessage::LandscapeSpawn.into()
+        ClientMessage::LandscapeUpdate.into()
     }
 }

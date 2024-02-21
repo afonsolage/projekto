@@ -7,11 +7,13 @@ use projekto_core::{
 use projekto_world_server::{
     app::RunAsync,
     bundle::{ChunkLocal, ChunkVertex},
-    proto::{LandscapeSpawnReq, WorldClientChannel},
+    proto::WorldClientChannel,
 };
 
 mod material;
 mod set;
+
+pub use set::PlayerLandscape;
 
 pub struct WorldClientPlugin;
 
@@ -21,8 +23,13 @@ impl Plugin for WorldClientPlugin {
             .register_type::<ChunkMaterial>()
             .configure_sets(PreUpdate, WorldClientSet::ReceiveMessages)
             .configure_sets(Update, WorldClientSet::Meshing)
+            .configure_sets(PostUpdate, WorldClientSet::SendInput)
             .add_plugins(MaterialPlugin::<ChunkMaterial>::default())
-            .add_plugins((set::ReceiveMessagesPlugin, set::MeshingPlugin))
+            .add_plugins((
+                set::ReceiveMessagesPlugin,
+                set::MeshingPlugin,
+                set::SendInputPlugin,
+            ))
             .add_systems(PreStartup, load_assets)
             .add_systems(Startup, (setup_world_server, setup_material))
             .add_systems(
@@ -43,18 +50,13 @@ fn setup_world_server(mut commands: Commands) {
 
     app.run_async();
 
-    // TODO: Move this to another place
-    client_channel.send(LandscapeSpawnReq {
-        center: IVec2::default(),
-        radius: 1,
-    });
-
     commands.insert_resource(client_channel.clone());
 }
 
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum WorldClientSet {
     ReceiveMessages,
+    SendInput,
     Meshing,
 }
 
