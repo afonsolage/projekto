@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::{
-    proto::{ChunkLoadReq, LandscapeSpawnReq, MessageType, WorldServerChannel},
+    proto::{ChunkLoadReq, ClientMessage, LandscapeSpawnReq, MessageSource, WorldServerChannel},
     set::Landscape,
     WorldSet,
 };
@@ -31,17 +31,22 @@ fn handle_request(
     mut writer: EventWriter<ChunkLoad>,
 ) {
     while let Some(message) = channel.recv() {
-        trace!("Handling request: {:?}", message.msg_type());
-        match message.msg_type() {
-            MessageType::ChunkLoadReq => {
+        let MessageSource::Client(message_type) = message.msg_source() else {
+            error!("Ignoring server message received: {message:?}");
+            continue;
+        };
+
+        trace!("Handling client message: {:?}", message.msg_source());
+
+        match message_type {
+            ClientMessage::ChunkLoad => {
                 let ChunkLoadReq { chunk } = message.downcast().unwrap();
                 writer.send(ChunkLoad(chunk));
             }
-            MessageType::LandscapeSpawnReq => {
+            ClientMessage::LandscapeSpawn => {
                 let LandscapeSpawnReq { center, radius } = message.downcast().unwrap();
                 commands.insert_resource(Landscape { center, radius });
             }
-            _ => todo!(),
         }
     }
 }

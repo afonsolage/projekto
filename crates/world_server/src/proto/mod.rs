@@ -7,23 +7,45 @@ use serde::{Deserialize, Serialize};
 #[derive(thiserror::Error, Debug)]
 pub enum MessageError {
     #[error("Failed to downcast message: {0:?}")]
-    Downcasting(MessageType),
+    Downcasting(MessageSource),
 }
 
 pub mod channel;
 mod plugin;
 
-pub use plugin::WorldClientChannel;
 pub(crate) use plugin::*;
+pub use plugin::{has_messages, MessageQueue, WorldClientChannel};
 
 #[derive(Debug)]
-pub enum MessageType {
-    ChunkLoadReq,
-    ChunkVertexNfy,
-    LandscapeSpawnReq,
+pub enum ClientMessage {
+    ChunkLoad,
+    LandscapeSpawn,
 }
 
-pub type BoxedMessasing = Box<dyn Message + Send + 'static>;
+#[derive(Debug)]
+pub enum ServerMessage {
+    ChunkVertex,
+}
+
+#[derive(Debug)]
+pub enum MessageSource {
+    Client(ClientMessage),
+    Server(ServerMessage),
+}
+
+impl From<ClientMessage> for MessageSource {
+    fn from(value: ClientMessage) -> Self {
+        Self::Client(value)
+    }
+}
+
+impl From<ServerMessage> for MessageSource {
+    fn from(value: ServerMessage) -> Self {
+        Self::Server(value)
+    }
+}
+
+pub type BoxedMessage = Box<dyn Message + Send + 'static>;
 
 trait Downcast: Any {
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
@@ -42,7 +64,7 @@ impl<T: Any> Downcast for T {
 
 #[allow(private_bounds)]
 pub trait Message: Downcast + std::fmt::Debug {
-    fn msg_type(&self) -> MessageType;
+    fn msg_source(&self) -> MessageSource;
 }
 
 impl dyn Message + Send {
@@ -69,8 +91,8 @@ pub struct ChunkLoadReq {
 }
 
 impl Message for ChunkLoadReq {
-    fn msg_type(&self) -> MessageType {
-        MessageType::ChunkLoadReq
+    fn msg_source(&self) -> MessageSource {
+        ClientMessage::ChunkLoad.into()
     }
 }
 
@@ -81,8 +103,8 @@ pub struct ChunkVertexNfy {
 }
 
 impl Message for ChunkVertexNfy {
-    fn msg_type(&self) -> MessageType {
-        MessageType::ChunkVertexNfy
+    fn msg_source(&self) -> MessageSource {
+        ServerMessage::ChunkVertex.into()
     }
 }
 
@@ -93,7 +115,7 @@ pub struct LandscapeSpawnReq {
 }
 
 impl Message for LandscapeSpawnReq {
-    fn msg_type(&self) -> MessageType {
-        MessageType::LandscapeSpawnReq
+    fn msg_source(&self) -> MessageSource {
+        ClientMessage::LandscapeSpawn.into()
     }
 }

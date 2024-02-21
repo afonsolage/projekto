@@ -1,6 +1,6 @@
 use async_channel::{Receiver, Sender};
 
-use super::{BoxedMessasing, Message};
+use super::{BoxedMessage, Message};
 
 pub struct WorldChannelPair {
     pub client: WorldChannel,
@@ -9,8 +9,8 @@ pub struct WorldChannelPair {
 
 #[derive(Debug, Clone)]
 pub struct WorldChannel {
-    sender: Sender<BoxedMessasing>,
-    receiver: Receiver<BoxedMessasing>,
+    sender: Sender<BoxedMessage>,
+    receiver: Receiver<BoxedMessage>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -43,11 +43,21 @@ impl WorldChannel {
         self.receiver.is_empty()
     }
 
-    pub fn recv(&self) -> Option<BoxedMessasing> {
+    pub fn recv(&self) -> Option<BoxedMessage> {
         self.receiver.try_recv().ok()
     }
 
-    pub async fn wait(&self) -> Result<BoxedMessasing, WorldChannelError> {
+    pub fn recv_all(&self) -> Vec<BoxedMessage> {
+        let mut messages = vec![];
+
+        while let Ok(msg) = self.receiver.try_recv() {
+            messages.push(msg);
+        }
+
+        messages
+    }
+
+    pub async fn wait(&self) -> Result<BoxedMessage, WorldChannelError> {
         Ok(self.receiver.recv().await?)
     }
 

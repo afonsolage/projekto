@@ -13,14 +13,7 @@ use projekto_camera::{
     fly_by::FlyByCamera,
     CameraPlugin,
 };
-use projekto_core::chunk::Chunk;
 use projekto_world_client::WorldClientPlugin;
-use projekto_world_server::{
-    app::RunAsync,
-    bundle::{ChunkLocal, ChunkVertex},
-    proto::{ChunkVertexNfy, LandscapeSpawnReq, MessageType, WorldClientChannel},
-    set::Landscape,
-};
 
 // mod ui;
 // use ui::UiPlugin;
@@ -29,19 +22,9 @@ mod camera_controller;
 mod character_controller;
 
 fn main() {
-    let mut app = projekto_world_server::app::create();
-    let client_channel = app
-        .world
-        .get_resource::<WorldClientChannel>()
-        .expect("Resource must be added by ChannelPlugin")
-        .clone();
-
-    app.run_async();
-
     let mut app = App::new();
 
     app.insert_resource(Msaa::Sample4)
-        .insert_resource(client_channel)
         // This may cause problems later on. Ideally this setup should be done per image
         .add_plugins((DefaultPlugins
             .set(WindowPlugin {
@@ -59,66 +42,13 @@ fn main() {
             CharacterControllerPlugin,
             WorldClientPlugin,
         ))
-        .insert_resource(Landscape {
-            radius: 1,
-            ..Default::default()
-        })
-        .register_type::<Landscape>()
         // .add_system_to_stage(CoreStage::PreUpdate, limit_fps)
-        .add_systems(Update, (update_landscape_center, test_vertex))
-        .add_systems(Startup, (setup, set_landscape));
+        .add_systems(Startup, setup_mockup_scene);
 
     app.run();
 }
 
-fn update_landscape_center(
-    mut landscape: ResMut<Landscape>,
-    character: Query<&Transform, With<CharacterController>>,
-) {
-    let pos: Chunk = character.single().translation.into();
-    let center: Chunk = landscape.center.into();
-
-    if pos != center {
-        landscape.center = pos.into();
-    }
-}
-
-// fn limit_fps(time: Res<Time>) {
-//     let target_fps = 60.0f32;
-//     let frame_time = target_fps.recip();
-
-//     let sleep = frame_time - time.delta_seconds();
-//     if sleep > f32::EPSILON {
-//         std::thread::sleep(std::time::Duration::from_secs_f32(sleep));
-//     }
-// }
-
-fn test_vertex(channel: Res<WorldClientChannel>, mut commands: Commands) {
-    if channel.is_empty() {
-        return;
-    }
-
-    while let Some(msg) = channel.recv() {
-        let msg_type = msg.msg_type();
-        trace!("Received: {msg_type:?}");
-        match msg_type {
-            MessageType::ChunkVertexNfy => {
-                let ChunkVertexNfy { chunk, vertex } = msg.downcast().unwrap();
-                commands.spawn((ChunkLocal(chunk), ChunkVertex(vertex)));
-            }
-            _ => todo!(),
-        }
-    }
-}
-
-fn set_landscape(channel: Res<WorldClientChannel>) {
-    channel.send(LandscapeSpawnReq {
-        center: IVec2::default(),
-        radius: 1,
-    });
-}
-
-fn setup(
+fn setup_mockup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
