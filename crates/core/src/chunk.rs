@@ -36,10 +36,18 @@ impl Chunk {
     }
 
     pub fn from_path(path: &std::path::Path) -> Self {
-        // 0_0
-        // TODO: too many unwraps
-        let (x, z) = path.to_str().unwrap().split_once('_').unwrap();
-        Self(IVec2::new(x.parse().unwrap(), z.parse().unwrap()))
+        let file_name = path
+            .file_name()
+            .expect("To be a valid chunk path")
+            .to_str()
+            .expect("To be UTF-8 string");
+        let (x, z) = file_name
+            .split_once('_')
+            .expect("Chunk path must be composed of X_Z");
+        Self(IVec2::new(
+            x.parse().expect("X on chunk path to be a valid i32"),
+            z.parse().expect("Z on chunk path to be a valid i32"),
+        ))
     }
 
     pub fn z(&self) -> i32 {
