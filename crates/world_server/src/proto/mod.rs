@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use bevy::math::IVec2;
+use bevy::{ecs::world::World, log::error, math::IVec2};
 use projekto_core::{chunk::Chunk, voxel};
 use serde::{Deserialize, Serialize};
 
@@ -11,32 +11,22 @@ pub enum MessageError {
 }
 
 pub mod channel;
+mod client;
 mod plugin;
 
+pub use client::*;
+pub use plugin::WorldClientChannel;
 pub(crate) use plugin::*;
-pub use plugin::{has_messages, MessageQueue, WorldClientChannel};
 
-#[derive(Debug)]
-pub enum ClientMessage {
-    ChunkLoad,
-    LandscapeUpdate,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Hash, Eq, PartialEq)]
 pub enum ServerMessage {
     ChunkVertex,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, Eq, PartialEq)]
 pub enum MessageSource {
     Client(ClientMessage),
     Server(ServerMessage),
-}
-
-impl From<ClientMessage> for MessageSource {
-    fn from(value: ClientMessage) -> Self {
-        Self::Client(value)
-    }
 }
 
 impl From<ServerMessage> for MessageSource {
@@ -65,6 +55,14 @@ impl<T: Any> Downcast for T {
 #[allow(private_bounds)]
 pub trait Message: Downcast + std::fmt::Debug {
     fn msg_source(&self) -> MessageSource;
+    fn get_handler<T: Message + Send + Sync + 'static>(
+        world: &mut World,
+    ) -> Option<&MessageHandlers<T>>
+    where
+        Self: Sized,
+    {
+        world.get_resource()
+    }
 }
 
 impl dyn Message + Send {
@@ -79,21 +77,6 @@ impl dyn Message + Send {
             Err(self)
         }
     }
-
-    // fn downcast_ref<T: Message>(&self) -> Option<&T> {
-    //     Downcast::as_any(self).downcast_ref::<T>()
-    // }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ChunkLoadReq {
-    pub chunk: Chunk,
-}
-
-impl Message for ChunkLoadReq {
-    fn msg_source(&self) -> MessageSource {
-        ClientMessage::ChunkLoad.into()
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -105,17 +88,5 @@ pub struct ChunkVertexNfy {
 impl Message for ChunkVertexNfy {
     fn msg_source(&self) -> MessageSource {
         ServerMessage::ChunkVertex.into()
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LandscapeUpdate {
-    pub center: IVec2,
-    pub radius: u8,
-}
-
-impl Message for LandscapeUpdate {
-    fn msg_source(&self) -> MessageSource {
-        ClientMessage::LandscapeUpdate.into()
     }
 }
