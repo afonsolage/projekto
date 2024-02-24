@@ -5,60 +5,50 @@ use bevy::{
 use projekto_core::{chunk, voxel};
 use projekto_world_server::{
     bundle::ChunkLocal,
-    proto::{has_messages, ChunkVertexNfy, MessageQueue},
+    proto::{server, RegisterMessageHandler},
 };
 
-use crate::{material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle, WorldClientSet};
+use crate::{material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle};
 
 pub(crate) struct MeshingPlugin;
 
 impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            update_chunk_mesh
-                .run_if(has_messages::<ChunkVertexNfy>)
-                .in_set(WorldClientSet::Meshing),
-        );
+        app.set_message_handler(update_chunk_mesh);
     }
 }
 
 fn update_chunk_mesh(
+    In(vertex): In<server::ChunkVertex>,
     mut commands: Commands,
     mut map: ResMut<ChunkMap>,
-    mut queue: ResMut<MessageQueue<ChunkVertexNfy>>,
     mut meshes: ResMut<Assets<Mesh>>,
     material: Res<ChunkMaterialHandle>,
 ) {
-    let mut spawned = 0;
-    let mut updated = 0;
-    for ChunkVertexNfy { chunk, vertex } in queue.drain(..) {
-        let mesh_handler = meshes.add(generate_mesh(&vertex));
-        if let Some(&entity) = map.get(&chunk) {
-            commands.entity(entity).insert(mesh_handler);
-            updated += 1;
-        } else {
-            trace!("Spawning chunk!");
-            let entity = commands
-                .spawn(ChunkBundle {
-                    chunk: ChunkLocal(chunk),
-                    mesh: MaterialMeshBundle {
-                        mesh: mesh_handler,
-                        transform: Transform::from_translation(chunk::to_world(chunk)),
-                        material: material.0.clone(),
-                        ..Default::default()
-                    },
-                })
-                .insert(Name::new(format!("Client Chunk {}", chunk)))
-                .id();
-            map.insert(chunk, entity);
-            spawned += 1;
-        }
+    let server::ChunkVertex { chunk, vertex } = vertex;
+
+    let mesh_handler = meshes.add(generate_mesh(&vertex));
+
+    if let Some(&entity) = map.get(&chunk) {
+        commands.entity(entity).insert(mesh_handler);
+    } else {
+        trace!("Spawning chunk!");
+        let entity = commands
+            .spawn(ChunkBundle {
+                chunk: ChunkLocal(chunk),
+                mesh: MaterialMeshBundle {
+                    mesh: mesh_handler,
+                    transform: Transform::from_translation(chunk::to_world(chunk)),
+                    material: material.0.clone(),
+                    ..Default::default()
+                },
+            })
+            .insert(Name::new(format!("Client Chunk {}", chunk)))
+            .id();
+        map.insert(chunk, entity);
     }
-    let count = spawned + updated;
-    trace!(
-        "[update_chunk_mesh] {count} chunks mesh updated. {spawned} spawned, {updated} updated."
-    );
+
+    trace!("[update_chunk_mesh] chunk {chunk:?} mesh updated");
 }
 
 fn generate_mesh(vertices: &[voxel::Vertex]) -> Mesh {

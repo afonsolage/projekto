@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::{
-    proto::{ChunkLoadReq, ClientMessage, LandscapeUpdate, MessageSource, WorldServerChannel},
+    proto::{client, MessageSource, WorldServerChannel},
     set::Landscape,
     WorldSet,
 };
@@ -39,12 +39,12 @@ fn handle_request(
         trace!("Handling client message: {:?}", message.msg_source());
 
         match message_type {
-            ClientMessage::ChunkLoad => {
-                let ChunkLoadReq { chunk } = message.downcast().unwrap();
+            client::ClientMessage::ChunkLoad => {
+                let client::ChunkLoad { chunk } = message.downcast().unwrap();
                 writer.send(ChunkLoad(chunk));
             }
-            ClientMessage::LandscapeUpdate => {
-                let LandscapeUpdate { center, radius } = message.downcast().unwrap();
+            client::ClientMessage::LandscapeUpdate => {
+                let client::LandscapeUpdate { center, radius } = message.downcast().unwrap();
                 commands.insert_resource(Landscape { center, radius });
             }
         }

@@ -12,6 +12,7 @@ faces_merging = []
 
 [dependencies]
 projekto_core.workspace = true
+projekto_world_server_macros = { path = "macros"}
 
 bevy.workspace = true
 

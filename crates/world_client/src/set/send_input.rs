@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use projekto_world_server::proto::{LandscapeUpdate, WorldClientChannel};
+use projekto_world_server::proto::{client, WorldClientChannel};
 
 use crate::WorldClientSet;
 
@@ -28,5 +28,5 @@ pub struct PlayerLandscape {
 
 fn update_player_landscape(channel: Res<WorldClientChannel>, landscape: Res<PlayerLandscape>) {
     let PlayerLandscape { center, radius } = *landscape;
-    channel.send(LandscapeUpdate { center, radius });
+    channel.send(client::LandscapeUpdate { center, radius });
 }

@@ -4,7 +4,7 @@ use bevy::{ecs::system::SystemId, prelude::*};
 
 use super::{
     channel::{WorldChannel, WorldChannelPair},
-    ChunkLoadReq, ChunkVertexNfy, LandscapeUpdate, Message,
+    client, server, Message,
 };
 
 pub(crate) struct ProtocolPlugin;
@@ -12,25 +12,40 @@ pub(crate) struct ProtocolPlugin;
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
         let WorldChannelPair { client, server } = WorldChannel::new_pair();
-        app.add_systems(PreUpdate, handle_messages);
+        app.add_systems(PreUpdate, handle_client_messages);
 
         app.insert_resource(WorldClientChannel(client))
             .insert_resource(WorldServerChannel(server));
     }
 }
 
-fn handle_messages(world: &mut World) {
+fn handle_client_messages(world: &mut World) {
     let channel = world.resource::<WorldClientChannel>();
     for msg in channel.recv_all() {
         let source = msg.msg_source();
         match source {
             super::MessageSource::Client(msg_type) => match msg_type {
-                super::ClientMessage::ChunkLoad => world.run_handlers::<ChunkLoadReq>(msg),
-                super::ClientMessage::LandscapeUpdate => world.run_handlers::<LandscapeUpdate>(msg),
+                client::ClientMessage::ChunkLoad => world.run_handlers::<client::ChunkLoad>(msg),
+                client::ClientMessage::LandscapeUpdate => {
+                    world.run_handlers::<client::LandscapeUpdate>(msg);
+                }
             },
+            _ => error!("Invalid message received: {source:?}"),
+        }
+    }
+}
+
+pub fn handle_server_messages(world: &mut World) {
+    let channel = world.resource::<WorldClientChannel>();
+    for msg in channel.recv_all() {
+        let source = msg.msg_source();
+        match source {
             super::MessageSource::Server(msg_type) => match msg_type {
-                super::ServerMessage::ChunkVertex => world.run_handlers::<ChunkVertexNfy>(msg),
+                server::ServerMessage::ChunkVertex => {
+                    world.run_handlers::<server::ChunkVertex>(msg);
+                }
             },
+            _ => error!("Invalid message received: {source:?}"),
         }
     }
 }
@@ -80,6 +95,14 @@ impl RegisterMessageHandler for App {
         system: S,
     ) -> &mut Self {
         let id = self.world.register_system(system);
+
+        #[cfg(debug_assertions)]
+        if self
+            .world
+            .contains_resource::<MessageHandler<SystemId<I, O>>>()
+        {
+            panic!("Already exists a message handler. Duplicated handler id: {id:?}");
+        }
 
         self.world.insert_resource(MessageHandler(id));
 

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     bundle::{ChunkLocal, ChunkVertex},
-    proto::{ChunkVertexNfy, WorldServerChannel},
+    proto::{server, WorldServerChannel},
     WorldSet,
 };
 
@@ -25,7 +25,7 @@ fn notify_chunk_vertex_updated(
         if vertex.is_empty() {
             continue;
         }
-        channel.send(ChunkVertexNfy {
+        channel.send(server::ChunkVertex {
             chunk: *chunk,
             vertex: vertex.clone(),
         });
