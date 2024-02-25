@@ -32,7 +32,6 @@ fn update_chunk_mesh(
     if let Some(&entity) = map.get(&chunk) {
         commands.entity(entity).insert(mesh_handler);
     } else {
-        trace!("Spawning chunk!");
         let entity = commands
             .spawn(ChunkBundle {
                 chunk: ChunkLocal(chunk),

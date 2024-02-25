@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use async_channel::{Receiver, Sender};
 
 use super::{BoxedMessage, Message, MessageType};
@@ -19,7 +21,7 @@ pub enum WorldChannelError {
     Recv(#[from] async_channel::RecvError),
 }
 
-impl<S: MessageType, R: MessageType> WorldChannel<S, R> {
+impl<S: MessageType + Debug + 'static, R: MessageType + Debug + 'static> WorldChannel<S, R> {
     pub fn new_pair() -> WorldChannelPair<S, R> {
         let (server_sender, server_receiver) = async_channel::unbounded();
         let (client_sender, client_receiver) = async_channel::unbounded();
@@ -44,13 +46,20 @@ impl<S: MessageType, R: MessageType> WorldChannel<S, R> {
     }
 
     pub fn recv(&self) -> Option<BoxedMessage<R>> {
-        self.receiver.try_recv().ok()
+        self.receiver.try_recv().ok().map(|msg| {
+             bevy::log::trace!(
+                 "[{:?}] Received message: {:?}",
+                 msg.msg_source(),
+                 msg.msg_type()
+             );
+            msg
+        })
     }
 
     pub fn recv_all(&self) -> Vec<BoxedMessage<R>> {
         let mut messages = vec![];
 
-        while let Ok(msg) = self.receiver.try_recv() {
+        while let Some(msg) = self.recv() {
             messages.push(msg);
         }
 
@@ -64,7 +73,11 @@ impl<S: MessageType, R: MessageType> WorldChannel<S, R> {
     pub fn send(&self, msg: impl Message<S> + Send) {
         let boxed = Box::new(msg);
 
-        bevy::log::trace!("Sending message: {:?}", boxed.msg_source());
+        bevy::log::trace!(
+             "[{:?}] Sending message: {:?}",
+             boxed.msg_source(),
+             boxed.msg_type()
+         );
 
         self.sender
             .try_send(boxed)
