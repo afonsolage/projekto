@@ -17,13 +17,17 @@ pub mod server;
 pub(crate) use plugin::*;
 pub use plugin::{handle_server_messages, RegisterMessageHandler, WorldClientChannel};
 
-#[derive(Debug, Hash, Eq, PartialEq)]
-pub enum MessageSource {
-    Client(client::ClientMessage),
-    Server(server::ServerMessage),
+pub trait MessageType {
+    fn source() -> MessageSource;
 }
 
-pub type BoxedMessage = Box<dyn Message + Send + 'static>;
+#[derive(Debug, Hash, Eq, PartialEq)]
+pub enum MessageSource {
+    Client,
+    Server,
+}
+
+pub type BoxedMessage<T> = Box<dyn Message<T> + Send + 'static>;
 
 trait Downcast: Any {
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
@@ -41,11 +45,16 @@ impl<T: Any> Downcast for T {
 }
 
 #[allow(private_bounds)]
-pub trait Message: Downcast + std::fmt::Debug {
-    fn msg_source(&self) -> MessageSource;
-    fn get_handler<T: Message + Send + Sync + 'static>(
+pub trait Message<T: MessageType>: Downcast + std::fmt::Debug {
+    fn msg_type(&self) -> T;
+
+    fn msg_source(&self) -> MessageSource {
+        T::source()
+    }
+
+    fn get_handler<M: Message<T> + Send + Sync + 'static>(
         world: &mut World,
-    ) -> Option<&MessageHandlers<T>>
+    ) -> Option<&MessageHandlers<M>>
     where
         Self: Sized,
     {
@@ -53,14 +62,14 @@ pub trait Message: Downcast + std::fmt::Debug {
     }
 }
 
-impl dyn Message + Send {
-    fn is<T: Message>(&self) -> bool {
-        Downcast::as_any(self).is::<T>()
+impl<T: MessageType + 'static> dyn Message<T> + Send {
+    fn is<M: Message<T>>(&self) -> bool {
+        Downcast::as_any(self).is::<M>()
     }
 
-    pub fn downcast<T: Message>(self: Box<Self>) -> Result<T, Box<Self>> {
-        if self.is::<T>() {
-            Ok(*Downcast::into_any(self).downcast::<T>().unwrap())
+    pub fn downcast<M: Message<T>>(self: Box<Self>) -> Result<M, Box<Self>> {
+        if self.is::<M>() {
+            Ok(*Downcast::into_any(self).downcast::<M>().unwrap())
         } else {
             Err(self)
         }

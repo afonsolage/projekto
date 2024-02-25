@@ -3,13 +3,7 @@ use projekto_world_server_macros::message_source;
 
 use super::MessageSource;
 
-impl From<ServerMessage> for MessageSource {
-    fn from(value: ServerMessage) -> Self {
-        Self::Server(value)
-    }
-}
-
-#[message_source]
+#[message_source(MessageSource::Server)]
 pub enum ServerMessage {
     ChunkVertex {
         pub chunk: Chunk,

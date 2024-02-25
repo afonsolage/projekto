@@ -3,19 +3,24 @@ use proc_macro2::Ident;
 use quote::{quote, ToTokens};
 use syn::{
     parse_macro_input, punctuated::Punctuated, token::Comma, Data, DataEnum, DeriveInput, Fields,
-    Variant,
+    Path, Variant,
 };
 
 #[proc_macro_attribute]
-pub fn message_source(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(item as DeriveInput);
-    let name = &ast.ident;
+pub fn message_source(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if attr.is_empty() {
+        panic!("You must provide the MessageSource variant");
+    }
 
+    let source = parse_macro_input!(attr as Path);
+
+    let ast = parse_macro_input!(item as DeriveInput);
     let Data::Enum(DataEnum { variants, .. }) = &ast.data else {
         panic!("message_source proc macro can only be used on enums");
     };
+    let name = &ast.ident;
 
-    let simplified_enum = generate_simplified_enum(name, variants);
+    let simplified_enum = generate_simplified_enum(name, &source, variants);
     let structs = generate_structs(variants);
     let impls = generate_impls(name, variants);
 
@@ -30,13 +35,20 @@ pub fn message_source(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 fn generate_simplified_enum(
     name: &Ident,
+    source: &Path,
     variants: &Punctuated<Variant, Comma>,
 ) -> proc_macro2::TokenStream {
     let variant_names = variants.iter().map(|v| &v.ident);
     quote! {
-        #[derive(Debug, Hash, Eq, PartialEq)]
+        #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
         pub enum #name {
             #(#variant_names),*
+        }
+
+        impl crate::proto::MessageType for #name {
+            fn source() -> MessageSource {
+                #source
+            }
         }
     }
 }
@@ -77,9 +89,9 @@ fn generate_impls(
     let impls = variants.iter().map(|v| {
         let name = &v.ident;
         quote! {
-            impl crate::proto::Message for #name {
-                fn msg_source(&self) -> MessageSource {
-                    #enum_name::#name.into()
+            impl crate::proto::Message<#enum_name> for #name {
+                fn msg_type(&self) -> #enum_name {
+                    #enum_name::#name
                 }
             }
         }

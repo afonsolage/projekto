@@ -4,7 +4,8 @@ use bevy::{ecs::system::SystemId, prelude::*};
 
 use super::{
     channel::{WorldChannel, WorldChannelPair},
-    client, server, Message,
+    client::{self, ClientMessage},
+    server, Message, MessageType,
 };
 
 pub(crate) struct ProtocolPlugin;
@@ -12,49 +13,43 @@ pub(crate) struct ProtocolPlugin;
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
         let WorldChannelPair { client, server } = WorldChannel::new_pair();
-        app.add_systems(PreUpdate, handle_client_messages);
-
         app.insert_resource(WorldClientChannel(client))
             .insert_resource(WorldServerChannel(server));
-    }
-}
-
-fn handle_client_messages(world: &mut World) {
-    let channel = world.resource::<WorldClientChannel>();
-    for msg in channel.recv_all() {
-        let source = msg.msg_source();
-        match source {
-            super::MessageSource::Client(msg_type) => match msg_type {
-                client::ClientMessage::ChunkLoad => world.run_handlers::<client::ChunkLoad>(msg),
-                client::ClientMessage::LandscapeUpdate => {
-                    world.run_handlers::<client::LandscapeUpdate>(msg);
-                }
-            },
-            _ => error!("Invalid message received: {source:?}"),
-        }
     }
 }
 
 pub fn handle_server_messages(world: &mut World) {
     let channel = world.resource::<WorldClientChannel>();
     for msg in channel.recv_all() {
-        let source = msg.msg_source();
-        match source {
-            super::MessageSource::Server(msg_type) => match msg_type {
-                server::ServerMessage::ChunkVertex => {
-                    world.run_handlers::<server::ChunkVertex>(msg);
-                }
-            },
-            _ => error!("Invalid message received: {source:?}"),
+        let msg_type = msg.msg_type();
+
+        trace!("[Client] Received message: {msg_type:?}");
+
+        match msg_type {
+            server::ServerMessage::ChunkVertex => world.run_handlers::<server::ChunkVertex>(msg),
+        }
+    }
+}
+
+pub(crate) fn handle_client_messages(world: &mut World) {
+    let channel = world.resource::<WorldServerChannel>();
+    for msg in channel.recv_all() {
+        let msg_type = msg.msg_type();
+
+        trace!("[Server] Received message: {msg_type:?}");
+
+        match msg_type {
+            ClientMessage::ChunkLoad => world.run_handlers::<client::ChunkLoad>(msg),
+            ClientMessage::LandscapeUpdate => world.run_handlers::<client::LandscapeUpdate>(msg),
         }
     }
 }
 
 #[derive(Resource, Debug, Deref)]
-pub struct WorldServerChannel(WorldChannel);
+pub(crate) struct WorldServerChannel(WorldChannel<server::ServerMessage, client::ClientMessage>);
 
 #[derive(Resource, Debug, Clone, Deref)]
-pub struct WorldClientChannel(WorldChannel);
+pub struct WorldClientChannel(WorldChannel<client::ClientMessage, server::ServerMessage>);
 
 #[derive(Resource, Default, Debug, Deref, DerefMut)]
 pub struct MessageHandlers<I = (), O = ()>(pub Vec<SystemId<I, O>>);
@@ -62,9 +57,9 @@ pub struct MessageHandlers<I = (), O = ()>(pub Vec<SystemId<I, O>>);
 #[derive(Resource, Debug, Deref, DerefMut)]
 pub struct MessageHandler<I = (), O = ()>(pub SystemId<I, O>);
 
-pub trait RegisterMessageHandler {
+pub trait RegisterMessageHandler<T: MessageType> {
     fn set_message_handler<
-        I: Message + Send + Sync + 'static,
+        I: Message<T> + Send + Sync + 'static,
         O: 'static,
         M,
         S: IntoSystem<I, O, M> + 'static,
@@ -74,7 +69,7 @@ pub trait RegisterMessageHandler {
     ) -> &mut Self;
 
     fn add_message_handler<
-        I: Message + Send + Sync,
+        I: Message<T> + Send + Sync,
         O: 'static,
         M,
         S: IntoSystem<Arc<I>, O, M> + 'static,
@@ -84,9 +79,9 @@ pub trait RegisterMessageHandler {
     ) -> &mut Self;
 }
 
-impl RegisterMessageHandler for App {
+impl<T: MessageType> RegisterMessageHandler<T> for App {
     fn set_message_handler<
-        I: Message + Send + Sync + 'static,
+        I: Message<T> + Send + Sync + 'static,
         O: 'static,
         M,
         S: IntoSystem<I, O, M> + 'static,
@@ -110,7 +105,7 @@ impl RegisterMessageHandler for App {
     }
 
     fn add_message_handler<
-        I: Message + Send + Sync,
+        I: Message<T> + Send + Sync,
         O: 'static,
         M,
         S: IntoSystem<Arc<I>, O, M> + 'static,
@@ -129,27 +124,33 @@ impl RegisterMessageHandler for App {
 }
 
 //
-pub trait RunMessageHandlers {
-    fn run_handlers<T: Message + Send + Sync + 'static>(&mut self, msg: Box<dyn Message + Send>);
+pub trait RunMessageHandlers<T: MessageType> {
+    fn run_handlers<M: Message<T> + Send + Sync + 'static>(
+        &mut self,
+        msg: Box<dyn Message<T> + Send>,
+    );
 }
 
-impl RunMessageHandlers for World {
-    fn run_handlers<T: Message + Send + Sync + 'static>(&mut self, msg: Box<dyn Message + Send>) {
+impl<T: MessageType + 'static> RunMessageHandlers<T> for World {
+    fn run_handlers<M: Message<T> + Send + Sync + 'static>(
+        &mut self,
+        msg: Box<dyn Message<T> + Send>,
+    ) {
         let src = msg.msg_source();
 
-        let found_handlers = self.contains_resource::<MessageHandlers<Arc<T>>>();
-        let found_handler = self.contains_resource::<MessageHandler<T>>();
+        let found_handlers = self.contains_resource::<MessageHandlers<Arc<M>>>();
+        let found_handler = self.contains_resource::<MessageHandler<M>>();
 
         if !found_handlers && !found_handler {
             warn!("No handlers found for message {msg:?}. Skipping it");
             return;
         }
 
-        let msg = msg.downcast::<T>().expect("To downcast message {src:?}.");
+        let msg = msg.downcast::<M>().expect("To downcast message {src:?}.");
 
         let msg = if found_handlers {
             // Clone to avoid having to use `resource_scope` due to mutable access bellow
-            let handlers = self.resource::<MessageHandlers<Arc<T>>>().0.clone();
+            let handlers = self.resource::<MessageHandlers<Arc<M>>>().0.clone();
             let msg = Arc::new(msg);
 
             for id in handlers {
@@ -163,7 +164,7 @@ impl RunMessageHandlers for World {
             msg
         };
 
-        if let Some(&MessageHandler(id)) = self.get_resource::<MessageHandler<T>>() {
+        if let Some(&MessageHandler(id)) = self.get_resource::<MessageHandler<M>>() {
             if let Err(err) = self.run_system_with_input(id, msg) {
                 error!("Failed to execute handler for message {src:?}. Error: {err}");
             }
