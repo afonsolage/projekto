@@ -56,8 +56,8 @@ fn setup_mockup_scene(
     // camera
     commands.spawn((
         Camera3dBundle {
-            transform: Transform::from_xyz(0.0, 22.0, 5.0)
-                .looking_at(Vec3::new(2.0, 20.0, 7.0), Vec3::Y),
+            transform: Transform::from_xyz(128.0, 256.0, 128.0)
+                .looking_at(Vec3::new(0.0, 128.0, 0.0), Vec3::Y),
             ..Default::default()
         },
         RenderLayers::from_layers(&[0, 1]),

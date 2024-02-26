@@ -56,8 +56,10 @@ fn setup_world_server(mut commands: Commands) {
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum WorldClientSet {
     ReceiveMessages,
-    SendInput,
+    ChunkManagement,
+    LandscapeUpdate,
     Meshing,
+    SendInput,
 }
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
