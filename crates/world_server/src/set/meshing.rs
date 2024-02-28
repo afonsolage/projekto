@@ -146,7 +146,6 @@ fn generate_vertices(
 
             count += 1;
         });
-
     if count > 0 {
         trace!("[generate_vertices] {count} chunks vertices generated. {map:?}");
     }

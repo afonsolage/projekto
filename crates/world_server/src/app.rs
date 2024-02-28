@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 use bevy::{
     app::{AppExit, PluginsState, ScheduleRunnerPlugin},
     ecs::event::ManualEventReader,
-    log::LogPlugin,
     prelude::*,
     tasks::AsyncComputeTaskPool,
 };
@@ -15,8 +14,6 @@ const TICK_EVERY_MILLIS: u64 = 50;
 pub fn create() -> App {
     trace!("Creating app");
     let mut app = App::new();
-
-    app.add_plugins(LogPlugin::default());
 
     setup_chunk_asset_loader(&mut app);
 

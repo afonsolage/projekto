@@ -80,6 +80,7 @@ fn chunks_spawn(
     mut assets: ResMut<Assets<ChunkAsset>>,
     q: Query<(Entity, &Handle<ChunkAsset>), Without<ChunkLocal>>,
 ) {
+    let mut count = 0;
     for (entity, handle) in &q {
         let loaded = match asset_server.load_state(handle) {
             bevy::asset::LoadState::Loading => continue,
@@ -119,9 +120,15 @@ fn chunks_spawn(
             if chunk_map.insert(chunk, entity).is_some() {
                 warn!("Chunk {chunk:?} overwritten an existing entity on map.");
             }
+
+            count += 1;
         }
 
         commands.entity(entity).despawn();
+    }
+
+    if count > 0 {
+        trace!("[chunks_spawn] Spawned {count} chunks!");
     }
 }
 

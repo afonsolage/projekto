@@ -8,7 +8,7 @@ use projekto_world_server::{
     proto::{server, RegisterMessageHandler},
 };
 
-use crate::{material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle};
+use crate::{material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle, PlayerLandscape};
 
 pub(crate) struct MeshingPlugin;
 

@@ -34,13 +34,22 @@ fn update_landscape(
         if let Some(landscape) = maybe_landscape {
             let radius = landscape.radius as i32;
             let center = landscape.center;
-            (-radius..=radius)
+            let mut chunks = (-radius..=radius)
                 .flat_map(|x| {
                     (-radius..=radius).map(move |z| Chunk::new(x + center.x, z + center.y))
                 })
-                .collect::<HashSet<_>>()
+                .collect::<Vec<_>>();
+
+            let center: Chunk = center.into();
+            chunks.sort_by(|a, b| {
+                let a_dist = a.distance(center).length_squared();
+                let b_dist = b.distance(center).length_squared();
+                a_dist.cmp(&b_dist)
+            });
+
+            chunks
         } else {
-            HashSet::new()
+            vec![]
         }
     };
 

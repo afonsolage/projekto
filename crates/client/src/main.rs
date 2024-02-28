@@ -1,7 +1,12 @@
 #![allow(clippy::type_complexity)]
 #![feature(test)]
 
-use bevy::{prelude::*, render::view::RenderLayers, window::PresentMode};
+use bevy::{
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    prelude::*,
+    render::view::RenderLayers,
+    window::PresentMode,
+};
 
 mod debug;
 use camera_controller::CameraControllerPlugin;
@@ -26,15 +31,19 @@ fn main() {
 
     app.insert_resource(Msaa::Sample4)
         // This may cause problems later on. Ideally this setup should be done per image
-        .add_plugins((DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    present_mode: PresentMode::AutoNoVsync,
+        .add_plugins((
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        present_mode: PresentMode::AutoNoVsync,
+                        ..Default::default()
+                    }),
                     ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .set(ImagePlugin::default_nearest()),))
+                })
+                .set(ImagePlugin::default_nearest()),
+            LogDiagnosticsPlugin::default(),
+            FrameTimeDiagnosticsPlugin,
+        ))
         .add_plugins((
             DebugPlugin,
             CameraPlugin,
