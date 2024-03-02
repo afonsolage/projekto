@@ -9,3 +9,5 @@ pub enum ClientMessage {
     ChunkLoad { pub chunk: Chunk },
     LandscapeUpdate { pub center: IVec2, pub radius: u8 },
 }
+
+

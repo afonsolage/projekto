@@ -38,6 +38,39 @@ fn generate_simplified_enum(
     source: &Path,
     variants: &Punctuated<Variant, Comma>,
 ) -> proc_macro2::TokenStream {
+    let boxed_match_items = variants.iter().map(|v| {
+        let v_name = &v.ident;
+        quote! {
+            #name::#v_name => {
+                let msg = bincode::deserialize::<#v_name>(buf)?;
+                Ok(Box::new(msg))
+            }
+        }
+    });
+    let from_u32_match_items = variants.iter().enumerate().map(|(i, v)| {
+        let v_name = &v.ident;
+        let i = i as u32;
+        quote! {
+            #i => Ok(#name::#v_name),
+        }
+    });
+
+    let to_u32_match_items = variants.iter().enumerate().map(|(i, v)| {
+        let v_name = &v.ident;
+        let i = i as u32;
+        quote! {
+            #name::#v_name => #i,
+        }
+    });
+
+    let var_cnt = variants.len();
+    let size_array_items = variants.iter().map(|v| {
+        let v_name = &v.ident;
+        quote! {
+            std::mem::size_of::<#v_name>(),
+        }
+    });
+
     let variant_names = variants.iter().map(|v| &v.ident);
     quote! {
         #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
@@ -45,9 +78,49 @@ fn generate_simplified_enum(
             #(#variant_names),*
         }
 
+        impl #name {
+            const fn max_message_size() -> usize {
+                const SIZES: [usize; #var_cnt] = [
+                    #(#size_array_items)*
+                ];
+
+                let mut i = 0;
+                let mut max = 0;
+                while i < SIZES.len() {
+                    if SIZES[i] > max {
+                        max = SIZES[i];
+                    }
+                    i += 1;
+                }
+
+                max
+            }
+        }
+
         impl crate::proto::MessageType for #name {
+            const MAX_MESSAGE_SIZE: usize = Self::max_message_size();
+
             fn source() -> MessageSource {
                 #source
+            }
+
+            fn deserialize_boxed(&self, buf: &[u8]) -> Result<crate::proto::BoxedMessage<Self>, crate::proto::MessageError> {
+                match self {
+                    #(#boxed_match_items),*
+                }
+            }
+
+            fn try_from_u32(n: u32) -> Result<Self, crate::proto::MessageError> {
+                match n {
+                    _ => Err(crate::proto::MessageError::Io(std::io::ErrorKind::InvalidData.into())),
+                    #(#from_u32_match_items)*
+                }
+            }
+
+            fn to_u32(&self) -> u32 {
+                match self {
+                    #(#to_u32_match_items)*
+                }
             }
         }
     }

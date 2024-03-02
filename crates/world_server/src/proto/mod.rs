@@ -4,6 +4,10 @@ use bevy::{ecs::world::World, log::error};
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Failed to serialize. Error: {0}")]
+    Bincode(#[from] Box<bincode::ErrorKind>),
     #[error("Failed to downcast message: {0:?}")]
     Downcasting(MessageSource),
 }
@@ -18,7 +22,14 @@ pub(crate) use plugin::*;
 pub use plugin::{handle_server_messages, RegisterMessageHandler, WorldClientChannel};
 
 pub trait MessageType {
+    const MAX_MESSAGE_SIZE: usize;
+
     fn source() -> MessageSource;
+    fn deserialize_boxed(&self, buf: &[u8]) -> Result<BoxedMessage<Self>, MessageError>;
+    fn try_from_u32(n: u32) -> Result<Self, MessageError>
+    where
+        Self: Sized;
+    fn to_u32(&self) -> u32;
 }
 
 #[derive(Debug, Hash, Eq, PartialEq)]
