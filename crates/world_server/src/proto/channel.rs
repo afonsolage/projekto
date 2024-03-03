@@ -9,10 +9,19 @@ pub struct WorldChannelPair<S: MessageType, R: MessageType> {
     pub server: WorldChannel<R, S>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct WorldChannel<S: MessageType, R: MessageType> {
     sender: Sender<BoxedMessage<S>>,
     receiver: Receiver<BoxedMessage<R>>,
+}
+
+impl<S: MessageType, R: MessageType> Clone for WorldChannel<S, R> {
+    fn clone(&self) -> Self {
+        Self {
+            sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -85,5 +94,10 @@ impl<S: MessageType + Debug + 'static, R: MessageType + Debug + 'static> WorldCh
         self.sender
             .try_send(boxed)
             .expect("Channel to be unbounded and to be always open");
+    }
+
+    pub fn close(self) {
+        let _ = self.receiver.close();
+        let _ = self.sender.close();
     }
 }
