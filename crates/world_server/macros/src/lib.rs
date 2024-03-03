@@ -38,7 +38,7 @@ fn generate_simplified_enum(
     source: &Path,
     variants: &Punctuated<Variant, Comma>,
 ) -> proc_macro2::TokenStream {
-    let boxed_match_items = variants.iter().map(|v| {
+    let des_boxed_match_items = variants.iter().map(|v| {
         let v_name = &v.ident;
         quote! {
             #name::#v_name => {
@@ -47,17 +47,33 @@ fn generate_simplified_enum(
             }
         }
     });
-    let from_u32_match_items = variants.iter().enumerate().map(|(i, v)| {
+    let ser_boxed_match_items = variants.iter().map(|v| {
         let v_name = &v.ident;
-        let i = i as u32;
+        quote! {
+            #name::#v_name => {
+                match boxed.downcast::<#v_name>() {
+                    Ok(msg) => {
+                        let size = bincode::serialized_size(&msg)?;
+                        bincode::serialize_into(buf, &msg)?;
+                        Ok(size as u32)
+                    },
+                    Err(boxed) => Err(crate::proto::MessageError::Downcasting(boxed.msg_source()))
+                }
+            }
+        }
+    });
+
+    let from_code_match_items = variants.iter().enumerate().map(|(i, v)| {
+        let v_name = &v.ident;
+        let i = i as u16;
         quote! {
             #i => Ok(#name::#v_name),
         }
     });
 
-    let to_u32_match_items = variants.iter().enumerate().map(|(i, v)| {
+    let code_match_items = variants.iter().enumerate().map(|(i, v)| {
         let v_name = &v.ident;
-        let i = i as u32;
+        let i = i as u16;
         quote! {
             #name::#v_name => #i,
         }
@@ -106,20 +122,26 @@ fn generate_simplified_enum(
 
             fn deserialize_boxed(&self, buf: &[u8]) -> Result<crate::proto::BoxedMessage<Self>, crate::proto::MessageError> {
                 match self {
-                    #(#boxed_match_items),*
+                    #(#des_boxed_match_items),*
                 }
             }
 
-            fn try_from_u32(n: u32) -> Result<Self, crate::proto::MessageError> {
+            fn serialize_boxed(&self, boxed: crate::proto::BoxedMessage<Self>, buf: &mut [u8]) -> Result<u32, crate::proto::MessageError> {
+                match self {
+                    #(#ser_boxed_match_items),*
+                }
+            }
+
+            fn try_from_code(n: u16) -> Result<Self, crate::proto::MessageError> {
                 match n {
                     _ => Err(crate::proto::MessageError::Io(std::io::ErrorKind::InvalidData.into())),
-                    #(#from_u32_match_items)*
+                    #(#from_code_match_items)*
                 }
             }
 
-            fn to_u32(&self) -> u32 {
+            fn code(&self) -> u16 {
                 match self {
-                    #(#to_u32_match_items)*
+                    #(#code_match_items)*
                 }
             }
         }

@@ -47,11 +47,11 @@ impl<S: MessageType + Debug + 'static, R: MessageType + Debug + 'static> WorldCh
 
     pub fn recv(&self) -> Option<BoxedMessage<R>> {
         self.receiver.try_recv().ok().map(|msg| {
-             bevy::log::trace!(
-                 "[{:?}] Received message: {:?}",
-                 msg.msg_source(),
-                 msg.msg_type()
-             );
+            bevy::log::trace!(
+                "[{:?}] Received message: {:?}",
+                msg.msg_source(),
+                msg.msg_type()
+            );
             msg
         })
     }
@@ -71,13 +71,16 @@ impl<S: MessageType + Debug + 'static, R: MessageType + Debug + 'static> WorldCh
     }
 
     pub fn send(&self, msg: impl Message<S> + Send) {
-        let boxed = Box::new(msg);
+        let boxed: BoxedMessage<S> = Box::new(msg);
+        self.send_boxed(boxed);
+    }
 
+    pub fn send_boxed(&self, boxed: BoxedMessage<S>) {
         bevy::log::trace!(
-             "[{:?}] Sending message: {:?}",
-             boxed.msg_source(),
-             boxed.msg_type()
-         );
+            "[{:?}] Sending message: {:?}",
+            boxed.msg_source(),
+            boxed.msg_type()
+        );
 
         self.sender
             .try_send(boxed)

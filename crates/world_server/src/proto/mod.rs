@@ -26,10 +26,15 @@ pub trait MessageType {
 
     fn source() -> MessageSource;
     fn deserialize_boxed(&self, buf: &[u8]) -> Result<BoxedMessage<Self>, MessageError>;
-    fn try_from_u32(n: u32) -> Result<Self, MessageError>
+    fn serialize_boxed(
+        &self,
+        boxed: BoxedMessage<Self>,
+        buf: &mut [u8],
+    ) -> Result<u32, MessageError>;
+    fn try_from_code(n: u16) -> Result<Self, MessageError>
     where
         Self: Sized;
-    fn to_u32(&self) -> u32;
+    fn code(&self) -> u16;
 }
 
 #[derive(Debug, Hash, Eq, PartialEq)]

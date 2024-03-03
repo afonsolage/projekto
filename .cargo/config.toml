@@ -5,16 +5,16 @@
 
 [target.x86_64-unknown-linux-gnu]
 linker = "/usr/bin/clang"
-rustflags = ["-Clink-arg=-fuse-ld=lld", "-Zshare-generics=y"]
+rustflags = ["-Clink-arg=-fuse-ld=lld", "-Zshare-generics=y", "-Zthreads=0"]
 
 # NOTE: you must manually install https://github.com/michaeleisel/zld on mac. you can easily do this with the "brew" package manager:
 # `brew install michaeleisel/zld/zld`
 [target.x86_64-apple-darwin]
-rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/zld", "-Zshare-generics=y"]
+rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/zld", "-Zshare-generics=y", "-Zthreads=0"]
 
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
-rustflags = ["-Zshare-generics=n"]
+rustflags = ["-Zshare-generics=n", "-Zthreads=0"]
 
 # Optional: Uncommenting the following improves compile times, but reduces the amount of debug info to 'line number tables only'
 # In most cases the gains are negligible, but if you are on macos and have slow compile times you should see significant gains.
@@ -22,7 +22,7 @@ rustflags = ["-Zshare-generics=n"]
 #debug = 1
 
 [env]
-RUST_LOG = "error,projekto=trace,main=trace,bevy_asset=warn,bevy_ecss=debug"
+RUST_LOG = "error,projekto=trace,main=trace"
 ASSETS_PATH = { value = "assets", relative = true }
 WGPU_BACKEND = "vulkan" # On Windows 11, DX12 has problems, so use vulkan which works everywhere
 BEVY_ASSET_ROOT = "./"
