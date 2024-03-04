@@ -10,6 +10,8 @@ pub enum MessageError {
     Bincode(#[from] Box<bincode::ErrorKind>),
     #[error("Failed to downcast message: {0:?}")]
     Downcasting(MessageSource),
+    #[error("{0}")]
+    Channel(#[from] WorldChannelError),
 }
 
 pub mod channel;
@@ -20,6 +22,8 @@ pub mod server;
 
 pub(crate) use plugin::*;
 pub use plugin::{handle_server_messages, RegisterMessageHandler, WorldClientChannel};
+
+use self::channel::WorldChannelError;
 
 pub trait MessageType {
     const MAX_MESSAGE_SIZE: usize;

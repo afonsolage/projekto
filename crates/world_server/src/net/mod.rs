@@ -1,22 +1,15 @@
-use std::{
-    io::{self},
-    sync::Arc,
-};
+use std::io::{self};
 
-use async_lock::RwLock;
 use async_net::{SocketAddr, TcpListener, TcpStream};
 use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, TaskPool},
-    utils::HashMap,
 };
 use futures_lite::{AsyncReadExt, AsyncWriteExt, StreamExt};
 
 use crate::proto::{
     channel::{WorldChannel, WorldChannelPair},
-    client::ClientMessage,
-    server::ServerMessage,
-    BoxedMessage, Message, MessageError, MessageType,
+    MessageError, MessageType,
 };
 
 pub(super) struct NetPlugin;
@@ -57,6 +50,10 @@ impl<S: MessageType + std::fmt::Debug + 'static, R: MessageType + std::fmt::Debu
     fn addr(&self) -> SocketAddr {
         self.addr
     }
+
+    fn is_closed(&self) -> bool {
+        self.channel.is_closed()
+    }
 }
 
 async fn net_to_channel<
@@ -66,27 +63,31 @@ async fn net_to_channel<
     mut stream: TcpStream,
     channel: WorldChannel<R, S>,
 ) -> Result<(), MessageError> {
-    let mut buffer = vec![0; R::MAX_MESSAGE_SIZE];
+    let mut cache_buffer = vec![0; R::MAX_MESSAGE_SIZE];
+    let mut msg_code = [0; std::mem::size_of::<u16>()];
+    let mut msg_len = [0; std::mem::size_of::<u32>()];
 
     loop {
-        let mut msg_code = [0; std::mem::size_of::<u16>()];
+        // First get the message type and check if it is a valid one.
         stream.read_exact(&mut msg_code).await?;
         let msg_type = R::try_from_code(u16::from_be_bytes(msg_code))?;
 
-        let mut msg_len = [0; std::mem::size_of::<u32>()];
+        // Then check if the message len is also valid.
         stream.read_exact(&mut msg_len).await?;
         let msg_len = u32::from_be_bytes(msg_len) as usize;
 
         if msg_len == 0 {
             return Err(MessageError::Io(std::io::ErrorKind::BrokenPipe.into()));
+        } else if msg_len >= cache_buffer.len() {
+            return Err(MessageError::Io(std::io::ErrorKind::InvalidData.into()));
         }
 
-        let buffer = &mut buffer[0..msg_len];
-
+        // Get a mutable slice which fits the incomming message.
+        let buffer = &mut cache_buffer[..msg_len];
         stream.read_exact(buffer).await?;
 
         let boxed = msg_type.deserialize_boxed(buffer)?;
-        channel.send_boxed(boxed);
+        channel.send_boxed(boxed)?;
     }
 }
 
@@ -120,36 +121,22 @@ async fn channel_to_net<
         stream.flush().await?;
     }
 
-    // channel closed.
+    stream.close().await?;
+    channel.close();
+
     Ok(())
 }
 
-#[derive(Clone)]
-struct ConnectedClients<S: MessageType, R: MessageType>(Arc<RwLock<HashMap<u32, Client<S, R>>>>);
-
-impl<S: MessageType, R: MessageType> ConnectedClients<S, R> {
-    async fn add(&self, client: Client<S, R>) {
-        let id = client.id;
-        if self.0.write().await.insert(id, client).is_some() {
-            panic!("A previous client with id {id} was overwritten");
-        }
-    }
-
-    async fn remove(&self, id: u32) {
-        self.0.write().await.remove(&id);
-    }
-
-    async fn poll_clients(&self) {
-        // self.0.read().await
-    }
-}
-
 async fn start_server<
+    F,
     S: MessageType + Send + std::fmt::Debug + 'static,
     R: MessageType + Send + std::fmt::Debug + 'static,
 >(
-    clients: ConnectedClients<S, R>,
-) -> Result<(), io::Error> {
+    on_client_connected: F,
+) -> Result<(), io::Error>
+where
+    F: Fn(Client<S, R>),
+{
     let listener = TcpListener::bind("127.0.0.1:11223").await?;
 
     let mut incoming = listener.incoming();
@@ -184,8 +171,7 @@ async fn start_server<
             })
             .detach();
 
-        let client = Client::new(id, addr, server);
-        clients.add(client).await;
+        on_client_connected(Client::new(id, addr, server));
     }
 
     Ok(())
