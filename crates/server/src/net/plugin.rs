@@ -12,7 +12,7 @@ use bevy::{
     utils::{synccell::SyncCell, HashMap},
 };
 
-use crate::proto::{client::ClientMessage, server::ServerMessage};
+use crate::proto::{client::ClientMessage, server::ServerMessage, MessageType};
 
 use super::Client;
 
@@ -69,10 +69,13 @@ fn new_client_connected(mut receiver: ResMut<NewClientReceiver>, mut clients: Re
     }
 }
 
-fn handle_messages(clients: Res<Clients>) {
-    for (id, client) in clients.iter() {
-        while let Some(boxed_msg) = client.channel().recv() {
-            //
+fn handle_messages(world: &mut World) {
+    world.resource_scope(|world, clients: Mut<Clients>| {
+        for client in clients.values() {
+            while let Some(boxed) = client.channel().recv() {
+                let msg_type = boxed.msg_type();
+                msg_type.run_handlers(boxed, world);
+            }
         }
-    }
+    });
 }

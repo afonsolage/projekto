@@ -79,6 +79,13 @@ fn generate_simplified_enum(
         }
     });
 
+    let run_handlers_match_items = variants.iter().map(|v| {
+        let v_name = &v.ident;
+        quote! {
+            #name::#v_name => crate::proto::plugin::RunMessageHandlers::run_handlers::<#v_name>(world, boxed),
+        }
+    });
+
     let var_cnt = variants.len();
     let size_array_items = variants.iter().map(|v| {
         let v_name = &v.ident;
@@ -142,6 +149,12 @@ fn generate_simplified_enum(
             fn code(&self) -> u16 {
                 match self {
                     #(#code_match_items)*
+                }
+            }
+
+            fn run_handlers(&self, boxed: crate::proto::BoxedMessage<Self>, world: &mut bevy::prelude::World) {
+                match self {
+                    #(#run_handlers_match_items)*
                 }
             }
         }

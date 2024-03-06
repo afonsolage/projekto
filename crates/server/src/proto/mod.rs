@@ -39,6 +39,7 @@ pub trait MessageType: std::fmt::Debug + Send + Sync + 'static {
     where
         Self: Sized;
     fn code(&self) -> u16;
+    fn run_handlers(&self, boxed: BoxedMessage<Self>, world: &mut World);
 }
 
 #[derive(Debug, Hash, Eq, PartialEq)]
