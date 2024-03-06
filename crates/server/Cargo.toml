@@ -1,5 +1,5 @@
 [package]
-name = "projekto_world_server"
+name = "projekto_server"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
@@ -42,7 +42,3 @@ tracing-subscriber = "0.3"
 
 [lints]
 workspace = true
-
-[[example]]
-name = "server"
-path = "examples/server.rs"

@@ -25,7 +25,7 @@ pub use plugin::{handle_server_messages, RegisterMessageHandler, WorldClientChan
 
 use self::channel::WorldChannelError;
 
-pub trait MessageType {
+pub trait MessageType: std::fmt::Debug + Send + Sync + 'static {
     const MAX_MESSAGE_SIZE: usize;
 
     fn source() -> MessageSource;
@@ -47,7 +47,7 @@ pub enum MessageSource {
     Server,
 }
 
-pub type BoxedMessage<T> = Box<dyn Message<T> + Send + 'static>;
+pub type BoxedMessage<T> = Box<dyn Message<T>>;
 
 trait Downcast: Any {
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
@@ -65,7 +65,7 @@ impl<T: Any> Downcast for T {
 }
 
 #[allow(private_bounds)]
-pub trait Message<T: MessageType>: Downcast + std::fmt::Debug {
+pub trait Message<T: MessageType>: Downcast + std::fmt::Debug + Send + 'static {
     fn msg_type(&self) -> T;
 
     fn msg_source(&self) -> MessageSource {
@@ -82,7 +82,7 @@ pub trait Message<T: MessageType>: Downcast + std::fmt::Debug {
     }
 }
 
-impl<T: MessageType + 'static> dyn Message<T> + Send {
+impl<T: MessageType> dyn Message<T> {
     fn is<M: Message<T>>(&self) -> bool {
         Downcast::as_any(self).is::<M>()
     }

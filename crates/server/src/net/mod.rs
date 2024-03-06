@@ -12,25 +12,18 @@ use crate::proto::{
     MessageError, MessageType,
 };
 
-pub(super) struct NetPlugin;
+mod plugin;
 
-impl Plugin for NetPlugin {
-    fn build(&self, _app: &mut App) {
-
-        //
-    }
-}
+pub(crate) use plugin::*;
 
 #[derive(Debug, Clone)]
-struct Client<S: MessageType, R: MessageType> {
+struct Client<S, R> {
     id: u32,
     addr: SocketAddr,
     channel: WorldChannel<R, S>,
 }
 
-impl<S: MessageType + std::fmt::Debug + 'static, R: MessageType + std::fmt::Debug + 'static>
-    Client<S, R>
-{
+impl<S: MessageType, R: MessageType> Client<S, R> {
     fn new(id: u32, addr: SocketAddr, server: WorldChannel<R, S>) -> Self {
         Self {
             id,
@@ -56,10 +49,7 @@ impl<S: MessageType + std::fmt::Debug + 'static, R: MessageType + std::fmt::Debu
     }
 }
 
-async fn net_to_channel<
-    S: MessageType + std::fmt::Debug + 'static,
-    R: MessageType + std::fmt::Debug + 'static,
->(
+async fn net_to_channel<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
     channel: WorldChannel<R, S>,
 ) -> Result<(), MessageError> {
@@ -91,10 +81,7 @@ async fn net_to_channel<
     }
 }
 
-async fn channel_to_net<
-    S: MessageType + std::fmt::Debug + 'static,
-    R: MessageType + std::fmt::Debug + 'static,
->(
+async fn channel_to_net<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
     channel: WorldChannel<S, R>,
 ) -> Result<(), MessageError> {
@@ -127,11 +114,7 @@ async fn channel_to_net<
     Ok(())
 }
 
-async fn start_server<
-    F,
-    S: MessageType + Send + std::fmt::Debug + 'static,
-    R: MessageType + Send + std::fmt::Debug + 'static,
->(
+async fn start_server<F, S: MessageType, R: MessageType>(
     on_client_connected: F,
 ) -> Result<(), io::Error>
 where

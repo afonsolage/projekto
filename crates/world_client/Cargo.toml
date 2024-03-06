@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 projekto_core.workspace = true
-projekto_world_server.workspace = true
+projekto_server.workspace = true
 
 bevy.workspace = true
 

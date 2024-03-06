@@ -19,5 +19,5 @@ fn handle_landscape_update(In(msg): In<Arc<client::LandscapeUpdate>>, mut comman
     commands.insert_resource(Landscape {
         center: msg.center,
         radius: msg.radius,
-    })
+    });
 }

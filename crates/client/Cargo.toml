@@ -9,7 +9,7 @@ edition = "2021"
 bevy.workspace = true
 projekto_core.workspace = true
 projekto_camera.workspace = true
-projekto_world_server.workspace = true
+projekto_server.workspace = true
 projekto_world_client.workspace = true
 
 [features]

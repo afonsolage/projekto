@@ -10,18 +10,18 @@ pub struct WorldChannelPair<S: MessageType, R: MessageType> {
 }
 
 #[derive(Debug)]
-pub struct WorldChannel<S: MessageType, R: MessageType> {
+pub struct WorldChannel<S, R> {
     sender: Sender<BoxedMessage<S>>,
     receiver: Receiver<BoxedMessage<R>>,
 }
 
-impl<S: MessageType, R: MessageType> WorldChannel<S, R> {
+impl<S, R> WorldChannel<S, R> {
     pub fn is_closed(&self) -> bool {
         self.sender.is_closed() || self.receiver.is_closed()
     }
 }
 
-impl<S: MessageType, R: MessageType> Clone for WorldChannel<S, R> {
+impl<S, R> Clone for WorldChannel<S, R> {
     fn clone(&self) -> Self {
         Self {
             sender: self.sender.clone(),
@@ -38,7 +38,7 @@ pub enum WorldChannelError {
     Recv(#[from] async_channel::RecvError),
 }
 
-impl<S: MessageType + Debug + 'static, R: MessageType + Debug + 'static> WorldChannel<S, R> {
+impl<S: MessageType, R: MessageType> WorldChannel<S, R> {
     pub fn new_pair() -> WorldChannelPair<S, R> {
         let (server_sender, server_receiver) = async_channel::unbounded();
         let (client_sender, client_receiver) = async_channel::unbounded();
@@ -87,7 +87,7 @@ impl<S: MessageType + Debug + 'static, R: MessageType + Debug + 'static> WorldCh
         Ok(self.receiver.recv().await?)
     }
 
-    pub fn send(&self, msg: impl Message<S> + Send) -> Result<(), WorldChannelError> {
+    pub fn send(&self, msg: impl Message<S>) -> Result<(), WorldChannelError> {
         let boxed: BoxedMessage<S> = Box::new(msg);
         self.send_boxed(boxed)
     }

@@ -58,34 +58,19 @@ pub struct MessageHandlers<I = (), O = ()>(pub Vec<SystemId<I, O>>);
 pub struct MessageHandler<I = (), O = ()>(pub SystemId<I, O>);
 
 pub trait RegisterMessageHandler<T: MessageType> {
-    fn set_message_handler<
-        I: Message<T> + Send + Sync + 'static,
-        O: 'static,
-        M,
-        S: IntoSystem<I, O, M> + 'static,
-    >(
+    fn set_message_handler<I: Message<T>, O: 'static, M, S: IntoSystem<I, O, M> + 'static>(
         &mut self,
         system: S,
     ) -> &mut Self;
 
-    fn add_message_handler<
-        I: Message<T> + Send + Sync,
-        O: 'static,
-        M,
-        S: IntoSystem<Arc<I>, O, M> + 'static,
-    >(
+    fn add_message_handler<I: Message<T>, O: 'static, M, S: IntoSystem<Arc<I>, O, M> + 'static>(
         &mut self,
         system: S,
     ) -> &mut Self;
 }
 
 impl<T: MessageType> RegisterMessageHandler<T> for App {
-    fn set_message_handler<
-        I: Message<T> + Send + Sync + 'static,
-        O: 'static,
-        M,
-        S: IntoSystem<I, O, M> + 'static,
-    >(
+    fn set_message_handler<I: Message<T>, O: 'static, M, S: IntoSystem<I, O, M> + 'static>(
         &mut self,
         system: S,
     ) -> &mut Self {
@@ -104,12 +89,7 @@ impl<T: MessageType> RegisterMessageHandler<T> for App {
         self
     }
 
-    fn add_message_handler<
-        I: Message<T> + Send + Sync,
-        O: 'static,
-        M,
-        S: IntoSystem<Arc<I>, O, M> + 'static,
-    >(
+    fn add_message_handler<I: Message<T>, O: 'static, M, S: IntoSystem<Arc<I>, O, M> + 'static>(
         &mut self,
         system: S,
     ) -> &mut Self {
@@ -125,17 +105,11 @@ impl<T: MessageType> RegisterMessageHandler<T> for App {
 
 //
 pub trait RunMessageHandlers<T: MessageType> {
-    fn run_handlers<M: Message<T> + Send + Sync + 'static>(
-        &mut self,
-        msg: Box<dyn Message<T> + Send>,
-    );
+    fn run_handlers<M: Message<T>>(&mut self, msg: Box<dyn Message<T>>);
 }
 
-impl<T: MessageType + 'static> RunMessageHandlers<T> for World {
-    fn run_handlers<M: Message<T> + Send + Sync + 'static>(
-        &mut self,
-        msg: Box<dyn Message<T> + Send>,
-    ) {
+impl<T: MessageType> RunMessageHandlers<T> for World {
+    fn run_handlers<M: Message<T>>(&mut self, msg: Box<dyn Message<T>>) {
         let src = msg.msg_source();
 
         let found_handlers = self.contains_resource::<MessageHandlers<Arc<M>>>();
