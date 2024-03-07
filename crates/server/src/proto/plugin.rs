@@ -4,7 +4,7 @@ use bevy::{ecs::system::SystemId, prelude::*};
 
 use super::{
     channel::{WorldChannel, WorldChannelPair},
-    client::{self, ClientMessage},
+    client::{self},
     server, Message, MessageType,
 };
 
@@ -15,33 +15,6 @@ impl Plugin for ProtocolPlugin {
         let WorldChannelPair { client, server } = WorldChannel::new_pair();
         app.insert_resource(WorldClientChannel(client))
             .insert_resource(WorldServerChannel(server));
-    }
-}
-
-pub fn handle_server_messages(world: &mut World) {
-    let channel = world.resource::<WorldClientChannel>();
-    for msg in channel.recv_all() {
-        let msg_type = msg.msg_type();
-
-        trace!("[Client] Received message: {msg_type:?}");
-
-        match msg_type {
-            server::ServerMessage::ChunkVertex => world.run_handlers::<server::ChunkVertex>(msg),
-        }
-    }
-}
-
-pub(crate) fn handle_client_messages(world: &mut World) {
-    let channel = world.resource::<WorldServerChannel>();
-    for msg in channel.recv_all() {
-        let msg_type = msg.msg_type();
-
-        trace!("[Server] Received message: {msg_type:?}");
-
-        match msg_type {
-            ClientMessage::ChunkLoad => world.run_handlers::<client::ChunkLoad>(msg),
-            ClientMessage::LandscapeUpdate => world.run_handlers::<client::LandscapeUpdate>(msg),
-        }
     }
 }
 

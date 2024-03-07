@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     bundle::{ChunkLocal, ChunkVertex},
-    proto::{server, WorldServerChannel},
+    proto::WorldServerChannel,
     WorldSet,
 };
 
@@ -18,8 +18,8 @@ impl Plugin for SendResponsesPlugin {
 }
 
 fn notify_chunk_vertex_updated(
-    channel: Res<WorldServerChannel>,
-    q: Query<(&ChunkLocal, &ChunkVertex), Changed<ChunkVertex>>,
+    _channel: Res<WorldServerChannel>,
+    _q: Query<(&ChunkLocal, &ChunkVertex), Changed<ChunkVertex>>,
 ) {
     // for (ChunkLocal(chunk), ChunkVertex(vertex)) in &q {
     //     if vertex.is_empty() {

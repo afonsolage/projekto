@@ -21,7 +21,7 @@ pub mod client;
 pub mod server;
 
 pub(crate) use plugin::*;
-pub use plugin::{handle_server_messages, RegisterMessageHandler, WorldClientChannel};
+pub use plugin::{RegisterMessageHandler, WorldClientChannel};
 
 use self::channel::WorldChannelError;
 

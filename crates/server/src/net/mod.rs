@@ -120,9 +120,12 @@ async fn start_server<F, S: MessageType, R: MessageType>(
 where
     F: Fn(Client<S, R>),
 {
-    let listener = TcpListener::bind("127.0.0.1:11223").await?;
+    let bind_addr = "127.0.0.1:11223";
+    let listener = TcpListener::bind(bind_addr).await?;
 
     let mut incoming = listener.incoming();
+
+    info!("[Networking] Starting to listen: {bind_addr}");
 
     let mut client_idx = 0;
     while let Some(stream) = incoming.next().await {
@@ -133,6 +136,8 @@ where
 
         client_idx += 1;
         let id = client_idx;
+
+        info!("[Networking] Client {id}({addr}) connected!");
 
         let WorldChannelPair { client, server } = WorldChannel::<S, R>::new_pair();
 

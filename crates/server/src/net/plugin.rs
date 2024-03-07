@@ -1,10 +1,4 @@
-use std::{
-    cell::{RefCell, UnsafeCell},
-    sync::{
-        mpsc::{self, Receiver},
-        Mutex,
-    },
-};
+use std::sync::mpsc::{self, Receiver};
 
 use bevy::{
     prelude::*,
@@ -23,7 +17,7 @@ impl Plugin for NetPlugin {
         app.init_resource::<Clients>()
             .add_systems(Startup, start_network_server)
             .add_systems(
-                Update,
+                PreUpdate,
                 (
                     new_client_connected,
                     remove_disconnected_clients,
@@ -37,7 +31,7 @@ impl Plugin for NetPlugin {
 struct Clients(HashMap<u32, Client<ClientMessage, ServerMessage>>);
 
 #[derive(Resource, Deref, DerefMut)]
-struct NewClientReceiver(SyncCell<Receiver<Client<ClientMessage, ServerMessage>>>);
+struct OnClientConnectedReceiver(SyncCell<Receiver<Client<ClientMessage, ServerMessage>>>);
 
 fn start_network_server(mut commands: Commands) {
     let (sender, receiver) = mpsc::channel();
@@ -53,14 +47,26 @@ fn start_network_server(mut commands: Commands) {
         })
         .detach();
 
-    commands.insert_resource(NewClientReceiver(SyncCell::new(receiver)));
+    commands.insert_resource(OnClientConnectedReceiver(SyncCell::new(receiver)));
 }
 
 fn remove_disconnected_clients(mut clients: ResMut<Clients>) {
-    clients.retain(|_, client| !client.is_closed());
+    clients.retain(|_, client| {
+        if !client.is_closed() {
+            let id = client.id();
+            let addr = client.addr();
+            debug!("[Networking] Removing disconnected client {id}({addr})");
+            false
+        } else {
+            true
+        }
+    });
 }
 
-fn new_client_connected(mut receiver: ResMut<NewClientReceiver>, mut clients: ResMut<Clients>) {
+fn new_client_connected(
+    mut receiver: ResMut<OnClientConnectedReceiver>,
+    mut clients: ResMut<Clients>,
+) {
     for new_client in receiver.get().try_iter() {
         let id = new_client.id();
         if clients.insert(id, new_client).is_some() {
