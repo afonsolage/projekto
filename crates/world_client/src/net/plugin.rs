@@ -1,4 +1,7 @@
-use std::io;
+use std::{
+    io,
+    time::{Duration, Instant},
+};
 
 use bevy::{
     prelude::*,
@@ -35,29 +38,45 @@ impl ServerConnection {
 
 fn reconnect_to_server(connection: Res<ServerConnection>, mut commands: Commands) {
     if !connection.is_active() {
-        let _ = commands.remove_resource::<ServerConnection>();
+        commands.remove_resource::<ServerConnection>();
     }
 }
 
 type ConnectToServerResult = Result<Server<ClientMessage, ServerMessage>, io::Error>;
-fn connect_to_server(
-    mut commands: Commands,
-    mut connecting_task: Local<Option<Task<ConnectToServerResult>>>,
-) {
-    if let Some(ref mut task) = *connecting_task {
+
+struct Meta {
+    task: Option<Task<ConnectToServerResult>>,
+    next_try: Instant,
+}
+
+impl Default for Meta {
+    fn default() -> Self {
+        Self {
+            task: Default::default(),
+            next_try: Instant::now(),
+        }
+    }
+}
+
+fn connect_to_server(mut commands: Commands, mut meta: Local<Meta>) {
+    if let Some(ref mut task) = meta.task {
         if let Some(result) = block_on(poll_once(task)) {
             match result {
-                Ok(server) => commands.insert_resource(ServerConnection(server)),
+                Ok(server) => {
+                    info!("Connected to server!");
+                    commands.insert_resource(ServerConnection(server));
+                }
                 Err(err) => {
                     error!("Failed to connect to server. Error: {err}");
+                    meta.next_try = Instant::now() + Duration::from_secs(1);
                 }
             }
-            let _ = connecting_task.take();
+            let _ = meta.task.take();
         }
-    } else {
+    } else if meta.next_try <= Instant::now() {
         let task = AsyncComputeTaskPool::get_or_init(TaskPool::default)
             .spawn(async move { super::connect_to_server().await });
-        *connecting_task = Some(task);
+        meta.task = Some(task);
     }
 }
 

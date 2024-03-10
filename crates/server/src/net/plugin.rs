@@ -52,7 +52,7 @@ fn start_network_server(mut commands: Commands) {
 
 fn remove_disconnected_clients(mut clients: ResMut<Clients>) {
     clients.retain(|_, client| {
-        if !client.is_closed() {
+        if client.is_closed() {
             let id = client.id();
             let addr = client.addr();
             debug!("[Networking] Removing disconnected client {id}({addr})");

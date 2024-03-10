@@ -1,13 +1,13 @@
 mod plugin;
 
-use std::io;
+use std::{io, time::Duration};
 
 use async_net::TcpStream;
 use bevy::{
-    log::debug,
+    log::{debug, trace},
     tasks::{AsyncComputeTaskPool, TaskPool},
 };
-use futures_lite::{AsyncReadExt, AsyncWriteExt};
+use futures_lite::{io::BufReader, AsyncReadExt, AsyncWriteExt};
 pub(crate) use plugin::*;
 use projekto_server::proto::{
     channel::{WorldChannel, WorldChannelPair},
@@ -42,6 +42,8 @@ async fn net_to_channel<S: MessageType, R: MessageType>(
     let mut msg_len = [0; std::mem::size_of::<u32>()];
 
     loop {
+        async_io::Timer::after(Duration::from_secs(2)).await;
+
         // First get the message type and check if it is a valid one.
         stream.read_exact(&mut msg_code).await?;
         let msg_type = R::try_from_code(u16::from_be_bytes(msg_code))?;
