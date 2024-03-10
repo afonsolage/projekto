@@ -38,6 +38,7 @@ impl ServerConnection {
 
 fn reconnect_to_server(connection: Res<ServerConnection>, mut commands: Commands) {
     if !connection.is_active() {
+        info!("Server connected is broken. Reconnecting...");
         commands.remove_resource::<ServerConnection>();
     }
 }
