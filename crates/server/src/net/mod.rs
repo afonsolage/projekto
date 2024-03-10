@@ -1,4 +1,7 @@
-use std::io::{self};
+use std::{
+    io,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use async_net::{SocketAddr, TcpListener, TcpStream};
 use bevy::{
@@ -21,14 +24,16 @@ struct Client<S, R> {
     id: u32,
     addr: SocketAddr,
     channel: WorldChannel<R, S>,
+    closed: Arc<AtomicBool>,
 }
 
 impl<S: MessageType, R: MessageType> Client<S, R> {
-    fn new(id: u32, addr: SocketAddr, server: WorldChannel<R, S>) -> Self {
+    fn new(id: u32, addr: SocketAddr, server: WorldChannel<R, S>, closed: Arc<AtomicBool>) -> Self {
         Self {
             id,
             addr,
             channel: server,
+            closed,
         }
     }
 
@@ -45,7 +50,7 @@ impl<S: MessageType, R: MessageType> Client<S, R> {
     }
 
     fn is_closed(&self) -> bool {
-        self.channel.is_closed()
+        self.closed.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -142,26 +147,31 @@ where
         info!("[Networking] Client {id}({addr}) connected!");
 
         let WorldChannelPair { client, server } = WorldChannel::<S, R>::new_pair();
+        let closed = Arc::new(AtomicBool::new(false));
 
         let stream_clone = stream.clone();
         let client_clone = client.clone();
+        let send_closed = closed.clone();
         AsyncComputeTaskPool::get_or_init(TaskPool::default)
             .spawn(async move {
                 if let Err(err) = net_to_channel(stream_clone, client_clone).await {
                     debug!("[{id}] Failed to receive messages from {addr}: Error: {err:?}");
+                    send_closed.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             })
             .detach();
 
+        let send_closed = closed.clone();
         AsyncComputeTaskPool::get_or_init(TaskPool::default)
             .spawn(async move {
                 if let Err(err) = channel_to_net(stream, client).await {
                     debug!("[{id}] Failed to send messages to {addr}: Error: {err:?}");
+                    send_closed.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             })
             .detach();
 
-        on_client_connected(Client::new(id, addr, server));
+        on_client_connected(Client::new(id, addr, server, closed));
     }
 
     Ok(())
