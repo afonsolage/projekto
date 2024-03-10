@@ -23,6 +23,14 @@ impl<S: MessageType, R: MessageType> Server<S, R> {
     fn new(server: WorldChannel<S, R>) -> Self {
         Self { channel: server }
     }
+
+    fn is_closed(&self) -> bool {
+        self.channel.is_closed()
+    }
+
+    fn channel(&self) -> &WorldChannel<S, R> {
+        &self.channel
+    }
 }
 
 async fn net_to_channel<S: MessageType, R: MessageType>(

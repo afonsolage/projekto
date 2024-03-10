@@ -10,13 +10,13 @@ impl Plugin for SendInputPlugin {
         app.insert_resource(PlayerLandscape {
             radius: 16,
             ..Default::default()
-        })
-        .add_systems(
-            Update,
-            update_player_landscape
-                .run_if(resource_changed::<PlayerLandscape>)
-                .in_set(WorldClientSet::SendInput),
-        );
+        });
+        // .add_systems(
+        //     Update,
+        //     update_player_landscape
+        //         .run_if(resource_changed::<PlayerLandscape>)
+        //         .in_set(WorldClientSet::SendInput),
+        // );
     }
 }
 
@@ -26,7 +26,7 @@ pub struct PlayerLandscape {
     pub radius: u8,
 }
 
-fn update_player_landscape(channel: Res<WorldClientChannel>, landscape: Res<PlayerLandscape>) {
-    let PlayerLandscape { center, radius } = *landscape;
-    channel.send(client::LandscapeUpdate { center, radius });
-}
+// fn update_player_landscape(channel: Res<WorldClientChannel>, landscape: Res<PlayerLandscape>) {
+//     let PlayerLandscape { center, radius } = *landscape;
+//     channel.send(client::LandscapeUpdate { center, radius });
+// }
