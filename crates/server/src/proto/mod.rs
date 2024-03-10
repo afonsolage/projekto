@@ -12,6 +12,8 @@ pub enum MessageError {
     Downcasting(MessageSource),
     #[error("{0}")]
     Channel(#[from] WorldChannelError),
+    #[error("Failed to parse {0}. Invalid message code {1}.")]
+    InvalidMessage(&'static str, u16),
 }
 
 pub mod channel;
@@ -40,6 +42,7 @@ pub trait MessageType: std::fmt::Debug + Send + Sync + 'static {
         Self: Sized;
     fn code(&self) -> u16;
     fn run_handlers(&self, boxed: BoxedMessage<Self>, world: &mut World);
+    fn name() -> &'static str;
 }
 
 #[derive(Debug, Hash, Eq, PartialEq)]

@@ -1,5 +1,6 @@
 use std::{
     io,
+    mem::size_of,
     sync::{atomic::AtomicBool, Arc},
 };
 
@@ -20,7 +21,7 @@ mod plugin;
 pub(crate) use plugin::*;
 
 #[derive(Debug, Clone)]
-struct Client<S, R> {
+pub struct Client<S, R> {
     id: u32,
     addr: SocketAddr,
     channel: WorldChannel<R, S>,
@@ -37,7 +38,7 @@ impl<S: MessageType, R: MessageType> Client<S, R> {
         }
     }
 
-    fn channel(&self) -> &WorldChannel<R, S> {
+    pub fn channel(&self) -> &WorldChannel<R, S> {
         &self.channel
     }
 
@@ -56,16 +57,18 @@ impl<S: MessageType, R: MessageType> Client<S, R> {
 
 async fn net_to_channel<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
-    channel: WorldChannel<R, S>,
+    channel: WorldChannel<S, R>,
 ) -> Result<(), MessageError> {
-    let mut cache_buffer = vec![0; R::MAX_MESSAGE_SIZE];
+    let cache_buffer_size = 1024 * 1024 * 10; // 10 MB
+    let mut cache_buffer = vec![0; cache_buffer_size];
+
     let mut msg_code = [0; std::mem::size_of::<u16>()];
     let mut msg_len = [0; std::mem::size_of::<u32>()];
 
     loop {
         // First get the message type and check if it is a valid one.
         stream.read_exact(&mut msg_code).await?;
-        let msg_type = R::try_from_code(u16::from_be_bytes(msg_code))?;
+        let msg_type = S::try_from_code(u16::from_be_bytes(msg_code))?;
 
         // Then check if the message len is also valid.
         stream.read_exact(&mut msg_len).await?;
@@ -75,7 +78,7 @@ async fn net_to_channel<S: MessageType, R: MessageType>(
             return Err(MessageError::Io(std::io::ErrorKind::BrokenPipe.into()));
         }
 
-        if msg_len >= cache_buffer.len() {
+        if msg_len >= cache_buffer_size {
             return Err(MessageError::Io(std::io::ErrorKind::InvalidData.into()));
         }
 
@@ -92,7 +95,8 @@ async fn channel_to_net<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
     channel: WorldChannel<S, R>,
 ) -> Result<(), MessageError> {
-    let mut buffer = vec![0; S::MAX_MESSAGE_SIZE];
+    let cache_buffer_size = 1024 * 1024 * 10; // 10 MB
+    let mut cache_buffer = vec![0; cache_buffer_size];
 
     while let Ok(boxed) = channel.wait().await {
         let msg_type = boxed.msg_type();
@@ -102,15 +106,15 @@ async fn channel_to_net<S: MessageType, R: MessageType>(
         let msg_offset = msg_size_offset + std::mem::size_of::<u32>();
 
         // First serialize at right offset (6 bytes - 2 + 4)
-        let msg_size = msg_type.serialize_boxed(boxed, &mut buffer[msg_offset..])?;
+        let msg_size = msg_type.serialize_boxed(boxed, &mut cache_buffer[msg_offset..])?;
         let msg_size_bytes = msg_size.to_be_bytes();
 
         // Then prepend msg type (2 bytes) and msg size (4 bytes)
-        buffer[0..].copy_from_slice(&msg_type_bytes);
-        buffer[msg_size_offset..].copy_from_slice(&msg_size_bytes);
+        cache_buffer[0..msg_size_offset].copy_from_slice(&msg_type_bytes);
+        cache_buffer[msg_size_offset..msg_offset].copy_from_slice(&msg_size_bytes);
 
         // The final packet to be send is type + size + the serialized message size.
-        let packet_buffer = &buffer[..msg_offset + msg_size as usize];
+        let packet_buffer = &cache_buffer[..msg_offset + msg_size as usize];
         stream.write_all(packet_buffer).await?;
         stream.flush().await?;
     }
@@ -155,7 +159,7 @@ where
         AsyncComputeTaskPool::get_or_init(TaskPool::default)
             .spawn(async move {
                 if let Err(err) = net_to_channel(stream_clone, client_clone).await {
-                    debug!("[{id}] Failed to receive messages from {addr}: Error: {err:?}");
+                    debug!("[{id}] Failed to receive messages from {addr}: Error: {err}");
                     send_closed.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             })
@@ -165,7 +169,7 @@ where
         AsyncComputeTaskPool::get_or_init(TaskPool::default)
             .spawn(async move {
                 if let Err(err) = channel_to_net(stream, client).await {
-                    debug!("[{id}] Failed to send messages to {addr}: Error: {err:?}");
+                    debug!("[{id}] Failed to send messages to {addr}: Error: {err}");
                     send_closed.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             })

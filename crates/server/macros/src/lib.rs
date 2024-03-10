@@ -141,8 +141,8 @@ fn generate_simplified_enum(
 
             fn try_from_code(n: u16) -> Result<Self, crate::proto::MessageError> {
                 match n {
-                    _ => Err(crate::proto::MessageError::Io(std::io::ErrorKind::InvalidData.into())),
                     #(#from_code_match_items)*
+                    _ => Err(crate::proto::MessageError::InvalidMessage(Self::name(), n)),
                 }
             }
 
@@ -150,6 +150,10 @@ fn generate_simplified_enum(
                 match self {
                     #(#code_match_items)*
                 }
+            }
+
+            fn name() -> &'static str {
+                stringify!(#name)
             }
 
             fn run_handlers(&self, boxed: crate::proto::BoxedMessage<Self>, world: &mut bevy::prelude::World) {

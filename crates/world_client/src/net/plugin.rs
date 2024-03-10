@@ -28,7 +28,7 @@ impl Plugin for NetPlugin {
 }
 
 #[derive(Resource, Debug, Deref, DerefMut)]
-struct ServerConnection(Server<ClientMessage, ServerMessage>);
+pub struct ServerConnection(Server<ClientMessage, ServerMessage>);
 
 impl ServerConnection {
     pub(crate) fn is_active(&self) -> bool {

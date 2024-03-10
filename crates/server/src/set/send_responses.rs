@@ -2,7 +2,8 @@ use bevy::prelude::*;
 
 use crate::{
     bundle::{ChunkLocal, ChunkVertex},
-    proto::WorldServerChannel,
+    net::Clients,
+    proto::server,
     WorldSet,
 };
 
@@ -18,16 +19,27 @@ impl Plugin for SendResponsesPlugin {
 }
 
 fn notify_chunk_vertex_updated(
-    _channel: Res<WorldServerChannel>,
-    _q: Query<(&ChunkLocal, &ChunkVertex), Changed<ChunkVertex>>,
+    clients: Res<Clients>,
+    q: Query<(&ChunkLocal, &ChunkVertex), Changed<ChunkVertex>>,
 ) {
-    // for (ChunkLocal(chunk), ChunkVertex(vertex)) in &q {
-    //     if vertex.is_empty() {
-    //         continue;
-    //     }
-    //     channel.send(server::ChunkVertex {
-    //         chunk: *chunk,
-    //         vertex: vertex.clone(),
-    //     });
-    // }
+    if q.is_empty() {
+        return;
+    }
+
+    if clients.is_empty() {
+        debug!("No clients connected. Skipping chunk update notify");
+        return;
+    }
+
+    for (ChunkLocal(chunk), ChunkVertex(vertex)) in &q {
+        if vertex.is_empty() {
+            continue;
+        }
+        for client in clients.values() {
+            let _ = client.channel().send(server::ChunkVertex {
+                chunk: *chunk,
+                vertex: vertex.clone(),
+            });
+        }
+    }
 }

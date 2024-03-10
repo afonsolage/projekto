@@ -1,5 +1,6 @@
 use bevy::{ecs::query::QueryFilter, prelude::*, utils::HashMap};
 use material::ChunkMaterial;
+use net::ServerConnection;
 use projekto_core::{
     chunk::Chunk,
     voxel::{self},
@@ -23,7 +24,10 @@ impl Plugin for WorldClientPlugin {
             .register_type::<ChunkMaterial>()
             .configure_sets(PreUpdate, WorldClientSet::ReceiveMessages)
             .configure_sets(Update, WorldClientSet::Meshing)
-            .configure_sets(PostUpdate, WorldClientSet::SendInput)
+            .configure_sets(
+                PostUpdate,
+                WorldClientSet::SendInput.run_if(resource_exists::<ServerConnection>),
+            )
             .add_plugins(MaterialPlugin::<ChunkMaterial>::default())
             .add_plugins((
                 net::NetPlugin,

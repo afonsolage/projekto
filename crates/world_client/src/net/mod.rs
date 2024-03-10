@@ -1,9 +1,7 @@
-mod plugin;
-
 use std::{
     io,
+    mem::size_of,
     sync::{atomic::AtomicBool, Arc},
-    time::Duration,
 };
 
 use async_net::TcpStream;
@@ -11,15 +9,17 @@ use bevy::{
     log::{debug, trace},
     tasks::{AsyncComputeTaskPool, TaskPool},
 };
-use futures_lite::{io::BufReader, AsyncReadExt, AsyncWriteExt};
-pub(crate) use plugin::*;
+use futures_lite::{AsyncReadExt, AsyncWriteExt};
 use projekto_server::proto::{
     channel::{WorldChannel, WorldChannelPair},
     MessageError, MessageType,
 };
 
+mod plugin;
+pub(crate) use plugin::*;
+
 #[derive(Debug, Clone)]
-struct Server<S, R> {
+pub struct Server<S, R> {
     channel: WorldChannel<S, R>,
     closed: Arc<AtomicBool>,
 }
@@ -32,11 +32,11 @@ impl<S: MessageType, R: MessageType> Server<S, R> {
         }
     }
 
-    fn is_closed(&self) -> bool {
+    pub fn is_closed(&self) -> bool {
         self.closed.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    fn channel(&self) -> &WorldChannel<S, R> {
+    pub fn channel(&self) -> &WorldChannel<S, R> {
         &self.channel
     }
 }
@@ -45,13 +45,13 @@ async fn net_to_channel<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
     channel: WorldChannel<R, S>,
 ) -> Result<(), MessageError> {
-    let mut cache_buffer = vec![0; R::MAX_MESSAGE_SIZE];
     let mut msg_code = [0; std::mem::size_of::<u16>()];
     let mut msg_len = [0; std::mem::size_of::<u32>()];
 
-    loop {
-        async_io::Timer::after(Duration::from_secs(2)).await;
+    let cache_buffer_size = R::MAX_MESSAGE_SIZE + msg_code.len() + msg_len.len();
+    let mut cache_buffer = vec![0; cache_buffer_size];
 
+    loop {
         // First get the message type and check if it is a valid one.
         stream.read_exact(&mut msg_code).await?;
         let msg_type = R::try_from_code(u16::from_be_bytes(msg_code))?;
@@ -64,7 +64,7 @@ async fn net_to_channel<S: MessageType, R: MessageType>(
             return Err(MessageError::Io(std::io::ErrorKind::BrokenPipe.into()));
         }
 
-        if msg_len >= cache_buffer.len() {
+        if msg_len >= cache_buffer_size {
             return Err(MessageError::Io(std::io::ErrorKind::InvalidData.into()));
         }
 
@@ -81,7 +81,8 @@ async fn channel_to_net<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
     channel: WorldChannel<S, R>,
 ) -> Result<(), MessageError> {
-    let mut buffer = vec![0; S::MAX_MESSAGE_SIZE];
+    let cache_buffer_size = S::MAX_MESSAGE_SIZE + size_of::<u16>() + size_of::<u32>();
+    let mut cache_buffer = vec![0; cache_buffer_size];
 
     while let Ok(boxed) = channel.wait().await {
         let msg_type = boxed.msg_type();
@@ -91,15 +92,16 @@ async fn channel_to_net<S: MessageType, R: MessageType>(
         let msg_offset = msg_size_offset + std::mem::size_of::<u32>();
 
         // First serialize at right offset (6 bytes - 2 + 4)
-        let msg_size = msg_type.serialize_boxed(boxed, &mut buffer[msg_offset..])?;
+        let msg_size = msg_type.serialize_boxed(boxed, &mut cache_buffer[msg_offset..])?;
         let msg_size_bytes = msg_size.to_be_bytes();
 
         // Then prepend msg type (2 bytes) and msg size (4 bytes)
-        buffer[0..].copy_from_slice(&msg_type_bytes);
-        buffer[msg_size_offset..].copy_from_slice(&msg_size_bytes);
+        cache_buffer[0..msg_size_offset].copy_from_slice(&msg_type_bytes);
+        cache_buffer[msg_size_offset..msg_offset].copy_from_slice(&msg_size_bytes);
 
         // The final packet to be send is type + size + the serialized message size.
-        let packet_buffer = &buffer[..msg_offset + msg_size as usize];
+        let packet_buffer = &cache_buffer[..msg_offset + msg_size as usize];
+        trace!("Sending {packet_buffer:?}");
         stream.write_all(packet_buffer).await?;
         stream.flush().await?;
     }

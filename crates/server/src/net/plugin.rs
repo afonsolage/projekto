@@ -28,7 +28,7 @@ impl Plugin for NetPlugin {
 }
 
 #[derive(Resource, Default, Deref, DerefMut)]
-struct Clients(HashMap<u32, Client<ClientMessage, ServerMessage>>);
+pub struct Clients(HashMap<u32, Client<ClientMessage, ServerMessage>>);
 
 #[derive(Resource, Deref, DerefMut)]
 struct OnClientConnectedReceiver(SyncCell<Receiver<Client<ClientMessage, ServerMessage>>>);

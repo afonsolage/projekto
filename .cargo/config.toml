@@ -22,7 +22,7 @@ rustflags = ["-Zshare-generics=n", "-Zthreads=0"]
 #debug = 1
 
 [env]
-RUST_LOG = "error,projekto=trace,projekto_server=trace,main=trace"
+RUST_LOG = "error,projekto=trace,projekto_server=trace,projekto_client=trace"
 ASSETS_PATH = { value = "assets", relative = true }
 WGPU_BACKEND = "vulkan" # On Windows 11, DX12 has problems, so use vulkan which works everywhere
 BEVY_ASSET_ROOT = "./"
