@@ -1,51 +1,27 @@
-use std::io::{self};
+mod plugin;
 
-use async_net::{SocketAddr, TcpListener, TcpStream};
+use std::io;
+
+use async_net::TcpStream;
 use bevy::{
-    prelude::*,
+    log::debug,
     tasks::{AsyncComputeTaskPool, TaskPool},
 };
-use futures_lite::{AsyncReadExt, AsyncWriteExt, StreamExt};
-
-use crate::proto::{
+use futures_lite::{AsyncReadExt, AsyncWriteExt};
+pub(crate) use plugin::*;
+use projekto_server::proto::{
     channel::{WorldChannel, WorldChannelPair},
     MessageError, MessageType,
 };
 
-mod plugin;
-
-pub(crate) use plugin::*;
-
 #[derive(Debug, Clone)]
-struct Client<S, R> {
-    id: u32,
-    addr: SocketAddr,
-    channel: WorldChannel<R, S>,
+struct Server<S, R> {
+    channel: WorldChannel<S, R>,
 }
 
-impl<S: MessageType, R: MessageType> Client<S, R> {
-    fn new(id: u32, addr: SocketAddr, server: WorldChannel<R, S>) -> Self {
-        Self {
-            id,
-            addr,
-            channel: server,
-        }
-    }
-
-    fn channel(&self) -> &WorldChannel<R, S> {
-        &self.channel
-    }
-
-    fn id(&self) -> u32 {
-        self.id
-    }
-
-    fn addr(&self) -> SocketAddr {
-        self.addr
-    }
-
-    fn is_closed(&self) -> bool {
-        self.channel.is_closed()
+impl<S: MessageType, R: MessageType> Server<S, R> {
+    fn new(server: WorldChannel<S, R>) -> Self {
+        Self { channel: server }
     }
 }
 
@@ -116,53 +92,30 @@ async fn channel_to_net<S: MessageType, R: MessageType>(
     Ok(())
 }
 
-async fn start_server<F, S: MessageType, R: MessageType>(
-    on_client_connected: F,
-) -> Result<(), io::Error>
-where
-    F: Fn(Client<S, R>),
-{
-    let bind_addr = "127.0.0.1:11223";
-    let listener = TcpListener::bind(bind_addr).await?;
+async fn connect_to_server<S: MessageType, R: MessageType>() -> Result<Server<S, R>, io::Error> {
+    let addr = "127.0.0.1:11223";
+    let stream = TcpStream::connect(addr).await?;
+    stream.set_nodelay(true)?;
 
-    let mut incoming = listener.incoming();
+    let WorldChannelPair { client, server } = WorldChannel::<S, R>::new_pair();
 
-    info!("[Networking] Starting to listen: {bind_addr}");
+    let stream_clone = stream.clone();
+    let server_clone = server.clone();
+    AsyncComputeTaskPool::get_or_init(TaskPool::default)
+        .spawn(async move {
+            if let Err(err) = net_to_channel(stream_clone, server_clone).await {
+                debug!("Failed to receive messages from server: Error: {err:?}");
+            }
+        })
+        .detach();
 
-    let mut client_idx = 0;
-    while let Some(stream) = incoming.next().await {
-        let stream = stream?;
-        stream.set_nodelay(true)?;
+    AsyncComputeTaskPool::get_or_init(TaskPool::default)
+        .spawn(async move {
+            if let Err(err) = channel_to_net(stream, server).await {
+                debug!("Failed to send messages to server: Error: {err:?}");
+            }
+        })
+        .detach();
 
-        let addr = stream.peer_addr()?;
-
-        client_idx += 1;
-        let id = client_idx;
-
-        info!("[Networking] Client {id}({addr}) connected!");
-
-        let WorldChannelPair { client, server } = WorldChannel::<S, R>::new_pair();
-
-        let stream_clone = stream.clone();
-        let client_clone = client.clone();
-        AsyncComputeTaskPool::get_or_init(TaskPool::default)
-            .spawn(async move {
-                if let Err(err) = net_to_channel(stream_clone, client_clone).await {
-                    debug!("[{id}] Failed to receive messages from {addr}: Error: {err:?}");
-                }
-            })
-            .detach();
-
-        AsyncComputeTaskPool::get_or_init(TaskPool::default)
-            .spawn(async move {
-                if let Err(err) = channel_to_net(stream, client).await {
-                    debug!("[{id}] Failed to send messages to {addr}: Error: {err:?}");
-                }
-            })
-            .detach();
-
-        on_client_connected(Client::new(id, addr, server));
-    }
-
-    Ok(())
+    Ok(Server::new(client))
 }

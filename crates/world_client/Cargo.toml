@@ -17,5 +17,12 @@ projekto_server.workspace = true
 
 bevy.workspace = true
 
+# smol
+futures-lite.workspace = true
+async-channel.workspace = true
+async-lock.workspace = true
+async-io.workspace = true
+async-net.workspace = true
+
 [lints]
 workspace = true

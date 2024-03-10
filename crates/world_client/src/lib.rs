@@ -10,6 +10,7 @@ use projekto_server::{
 };
 
 mod material;
+mod net;
 mod set;
 
 pub use set::PlayerLandscape;
@@ -25,6 +26,7 @@ impl Plugin for WorldClientPlugin {
             .configure_sets(PostUpdate, WorldClientSet::SendInput)
             .add_plugins(MaterialPlugin::<ChunkMaterial>::default())
             .add_plugins((
+                net::NetPlugin,
                 set::ReceiveMessagesPlugin,
                 set::MeshingPlugin,
                 set::SendInputPlugin,
