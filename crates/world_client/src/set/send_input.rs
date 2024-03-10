@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use projekto_world_server::proto::{client, WorldClientChannel};
+use projekto_server::proto::{client, WorldClientChannel};
 
 use crate::WorldClientSet;
 

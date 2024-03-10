@@ -3,7 +3,7 @@ use bevy::{
     render::{mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology},
 };
 use projekto_core::{chunk, voxel};
-use projekto_world_server::{
+use projekto_server::{
     bundle::ChunkLocal,
     proto::{server, RegisterMessageHandler},
 };

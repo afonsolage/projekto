@@ -7,8 +7,12 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = []
+default = ["dev"]
 faces_merging = []
+
+dev = [
+    "bevy/dynamic_linking",
+]
 
 [dependencies]
 projekto_core.workspace = true
@@ -36,7 +40,6 @@ bracket-noise = "0.8.7"
 
 [dev-dependencies]
 rand.workspace = true
-bevy = {workspace = true, features = ["multi-threaded"]}
 tracing = "0.1"
 tracing-subscriber = "0.3"
 

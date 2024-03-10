@@ -68,7 +68,9 @@ async fn net_to_channel<S: MessageType, R: MessageType>(
 
         if msg_len == 0 {
             return Err(MessageError::Io(std::io::ErrorKind::BrokenPipe.into()));
-        } else if msg_len >= cache_buffer.len() {
+        }
+
+        if msg_len >= cache_buffer.len() {
             return Err(MessageError::Io(std::io::ErrorKind::InvalidData.into()));
         }
 

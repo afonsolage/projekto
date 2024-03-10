@@ -4,8 +4,7 @@ use projekto_core::{
     chunk::Chunk,
     voxel::{self},
 };
-use projekto_world_server::{
-    app::RunAsync,
+use projekto_server::{
     bundle::{ChunkLocal, ChunkVertex},
     proto::WorldClientChannel,
 };
@@ -31,26 +30,11 @@ impl Plugin for WorldClientPlugin {
                 set::SendInputPlugin,
             ))
             .add_systems(PreStartup, load_assets)
-            .add_systems(Startup, (setup_world_server, setup_material))
             .add_systems(
                 Update,
                 (remove_unloaded_chunks.run_if(any_chunk::<Changed<ChunkVertex>>),),
             );
     }
-}
-
-fn setup_world_server(mut commands: Commands) {
-    let mut app = projekto_world_server::app::create();
-
-    let client_channel = app
-        .world
-        .get_resource::<WorldClientChannel>()
-        .expect("Resource must be added by ChannelPlugin")
-        .clone();
-
-    app.run_async();
-
-    commands.insert_resource(client_channel.clone());
 }
 
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
