@@ -1,0 +1,36 @@
+[package]
+name = "projekto_proto"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+
+[features]
+default = ["dev"]
+
+dev = [
+    "bevy/dynamic_linking",
+]
+
+
+[dependencies]
+projekto_proto_macros = { path = "macros"}
+
+bevy.workspace = true
+
+thiserror.workspace = true
+serde.workspace = true
+
+# smol
+futures-lite.workspace = true
+async-channel.workspace = true
+async-lock.workspace = true
+async-io.workspace = true
+async-net.workspace = true
+
+# IO
+lz4_flex = "0.11"
+bincode = "1.3"
+
+[lints]
+workspace = true
