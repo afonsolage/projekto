@@ -3,6 +3,7 @@ use std::any::Any;
 use bevy::{ecs::world::World, log::error};
 
 pub mod channel;
+pub mod net;
 
 mod ecs;
 pub use ecs::{RegisterMessageHandler, RunMessageHandlers};
