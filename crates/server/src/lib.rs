@@ -13,7 +13,6 @@ mod asset;
 pub use asset::setup_chunk_asset_loader;
 
 mod net;
-pub mod proto;
 
 pub mod cache;
 pub mod gen;

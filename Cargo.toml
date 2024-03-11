@@ -13,6 +13,7 @@ default-members = ["crates/client"]
 projekto_core = { path = "crates/core",features = ["auto_load_kinds_descs"]  }
 projekto_camera = { path = "crates/camera" }
 projekto_proto = { path = "crates/proto" }
+projekto_messages = { path = "crates/messages" }
 projekto_server = { path = "crates/server" }
 projekto_world_client = { path = "crates/world_client" }
 
@@ -21,6 +22,10 @@ bevy = "0.13"
 rand = "0.8"
 thiserror = "1.0"
 serde = "1.0"
+
+# IO
+lz4_flex = "0.11"
+bincode = "1.3"
 
 # smol
 futures-lite = "2.2"

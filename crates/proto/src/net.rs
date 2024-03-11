@@ -1,13 +1,24 @@
-use std::mem::size_of;
+use std::{
+    io,
+    mem::size_of,
+    sync::{atomic::AtomicBool, Arc},
+};
 
-use async_net::TcpStream;
-use futures_lite::{AsyncReadExt, AsyncWriteExt};
+use async_net::{SocketAddr, TcpListener, TcpStream};
+use bevy::{
+    log::{debug, info},
+    tasks::{AsyncComputeTaskPool, TaskPool},
+};
+use futures_lite::{AsyncReadExt, AsyncWriteExt, StreamExt};
 
-use crate::{channel::WorldChannel, MessageError, MessageType};
+use crate::{
+    channel::{WorldChannel, WorldChannelPair},
+    MessageError, MessageType,
+};
 
 const CACHE_BUFFER_SIZE: usize = 1024 * 1024 * 32; // 32 MB
 
-pub async fn net_to_channel<S: MessageType, R: MessageType>(
+async fn net_to_channel<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
     channel: WorldChannel<S, R>,
 ) -> Result<(), MessageError> {
@@ -42,7 +53,7 @@ pub async fn net_to_channel<S: MessageType, R: MessageType>(
     }
 }
 
-pub async fn channel_to_net<S: MessageType, R: MessageType>(
+async fn channel_to_net<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
     channel: WorldChannel<S, R>,
 ) -> Result<(), MessageError> {
@@ -73,4 +84,153 @@ pub async fn channel_to_net<S: MessageType, R: MessageType>(
     channel.close();
 
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct Client<S, R> {
+    id: u32,
+    addr: SocketAddr,
+    channel: WorldChannel<R, S>,
+    closed: Arc<AtomicBool>,
+}
+
+impl<S: MessageType, R: MessageType> Client<S, R> {
+    fn new(id: u32, addr: SocketAddr, server: WorldChannel<R, S>, closed: Arc<AtomicBool>) -> Self {
+        Self {
+            id,
+            addr,
+            channel: server,
+            closed,
+        }
+    }
+
+    pub fn channel(&self) -> &WorldChannel<R, S> {
+        &self.channel
+    }
+
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+pub async fn start_server<F, S: MessageType, R: MessageType>(
+    on_client_connected: F,
+) -> Result<(), io::Error>
+where
+    F: Fn(Client<S, R>),
+{
+    let bind_addr = "127.0.0.1:11223";
+    let listener = TcpListener::bind(bind_addr).await?;
+
+    let mut incoming = listener.incoming();
+
+    info!("[Networking] Starting to listen: {bind_addr}");
+
+    let mut client_idx = 0;
+    while let Some(stream) = incoming.next().await {
+        let stream = stream?;
+        stream.set_nodelay(true)?;
+
+        let addr = stream.peer_addr()?;
+
+        client_idx += 1;
+        let id = client_idx;
+
+        info!("[Networking] Client {id}({addr}) connected!");
+
+        let WorldChannelPair { client, server } = WorldChannel::<S, R>::new_pair();
+        let closed = Arc::new(AtomicBool::new(false));
+
+        let stream_clone = stream.clone();
+        let client_clone = client.clone();
+        let send_closed = closed.clone();
+        AsyncComputeTaskPool::get_or_init(TaskPool::default)
+            .spawn(async move {
+                if let Err(err) = net_to_channel(stream_clone, client_clone).await {
+                    debug!("[{id}] Failed to receive messages from {addr}: Error: {err}");
+                    send_closed.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            })
+            .detach();
+
+        let send_closed = closed.clone();
+        AsyncComputeTaskPool::get_or_init(TaskPool::default)
+            .spawn(async move {
+                if let Err(err) = channel_to_net(stream, client).await {
+                    debug!("[{id}] Failed to send messages to {addr}: Error: {err}");
+                    send_closed.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            })
+            .detach();
+
+        on_client_connected(Client::new(id, addr, server, closed));
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct Server<S, R> {
+    channel: WorldChannel<S, R>,
+    closed: Arc<AtomicBool>,
+}
+
+impl<S: MessageType, R: MessageType> Server<S, R> {
+    fn new(server: WorldChannel<S, R>, closed: Arc<AtomicBool>) -> Self {
+        Self {
+            channel: server,
+            closed,
+        }
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn channel(&self) -> &WorldChannel<S, R> {
+        &self.channel
+    }
+}
+
+pub async fn connect_to_server<S: MessageType, R: MessageType>() -> Result<Server<S, R>, io::Error>
+{
+    let addr = "127.0.0.1:11223";
+    let stream = TcpStream::connect(addr).await?;
+    stream.set_nodelay(true)?;
+
+    let WorldChannelPair { client, server } = WorldChannel::<S, R>::new_pair();
+
+    let closed = Arc::new(AtomicBool::new(false));
+
+    let stream_clone = stream.clone();
+    let server_clone = server.clone();
+    let send_closed = closed.clone();
+    AsyncComputeTaskPool::get_or_init(TaskPool::default)
+        .spawn(async move {
+            if let Err(err) = net_to_channel(stream_clone, server_clone).await {
+                debug!("Failed to receive messages from server: Error: {err:?}");
+                send_closed.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        })
+        .detach();
+
+    let recv_closed = closed.clone();
+    AsyncComputeTaskPool::get_or_init(TaskPool::default)
+        .spawn(async move {
+            if let Err(err) = channel_to_net(stream, server).await {
+                debug!("Failed to send messages to server: Error: {err:?}");
+                recv_closed.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        })
+        .detach();
+
+    Ok(Server::new(client, closed))
 }

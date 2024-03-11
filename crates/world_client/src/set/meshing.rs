@@ -3,8 +3,9 @@ use bevy::{
     render::{mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology},
 };
 use projekto_core::{chunk, voxel};
+use projekto_messages::ChunkVertex;
 use projekto_proto::RegisterMessageHandler;
-use projekto_server::{bundle::ChunkLocal, proto::server};
+use projekto_server::bundle::ChunkLocal;
 
 use crate::{material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle};
 
@@ -17,13 +18,13 @@ impl Plugin for MeshingPlugin {
 }
 
 fn update_chunk_mesh(
-    In(vertex): In<server::ChunkVertex>,
+    In(vertex): In<ChunkVertex>,
     mut commands: Commands,
     mut map: ResMut<ChunkMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     material: Res<ChunkMaterialHandle>,
 ) {
-    let server::ChunkVertex { chunk, vertex } = vertex;
+    let ChunkVertex { chunk, vertex } = vertex;
 
     let mesh_handler = meshes.add(generate_mesh(&vertex));
 

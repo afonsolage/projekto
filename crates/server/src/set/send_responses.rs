@@ -3,9 +3,9 @@ use bevy::prelude::*;
 use crate::{
     bundle::{ChunkLocal, ChunkVertex},
     net::Clients,
-    proto::server,
     WorldSet,
 };
+use projekto_messages as messages;
 
 pub(crate) struct SendResponsesPlugin;
 
@@ -36,7 +36,7 @@ fn notify_chunk_vertex_updated(
             continue;
         }
         for client in clients.values() {
-            let _ = client.channel().send(server::ChunkVertex {
+            let _ = client.channel().send(messages::ChunkVertex {
                 chunk: *chunk,
                 vertex: vertex.clone(),
             });

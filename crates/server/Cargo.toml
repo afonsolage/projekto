@@ -17,12 +17,15 @@ dev = [
 [dependencies]
 projekto_core.workspace = true
 projekto_proto.workspace = true
-projekto_proto_macros = { path = "../proto/macros"}
+projekto_messages.workspace = true
 
 bevy.workspace = true
 
 thiserror.workspace = true
 serde.workspace = true
+bincode.workspace = true
+lz4_flex.workspace = true
+
 
 # smol
 futures-lite.workspace = true
@@ -30,10 +33,6 @@ async-channel.workspace = true
 async-lock.workspace = true
 async-io.workspace = true
 async-net.workspace = true
-
-# IO
-lz4_flex = "0.11"
-bincode = "1.3"
 
 # genesis
 bracket-noise = "0.8.7"

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
-use crate::proto::client;
+use projekto_messages::LandscapeUpdate;
 use projekto_proto::RegisterMessageHandler;
 
 use super::Landscape;
@@ -15,7 +15,7 @@ impl Plugin for ReceiveRequestsPlugin {
     }
 }
 
-fn handle_landscape_update(In(msg): In<Arc<client::LandscapeUpdate>>, mut commands: Commands) {
+fn handle_landscape_update(In(msg): In<Arc<LandscapeUpdate>>, mut commands: Commands) {
     commands.insert_resource(Landscape {
         center: msg.center,
         radius: msg.radius,

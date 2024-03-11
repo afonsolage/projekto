@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use projekto_server::proto::client;
 
 use crate::{net::ServerConnection, WorldClientSet};
 
@@ -32,12 +31,12 @@ fn update_player_landscape(server: Res<ServerConnection>, landscape: Res<PlayerL
     let PlayerLandscape { center, radius } = *landscape;
     let _ = server
         .channel()
-        .send(client::LandscapeUpdate { center, radius });
+        .send(projekto_messages::LandscapeUpdate { center, radius });
 }
 
 fn send_welcome_message(server: Res<ServerConnection>, landscape: Res<PlayerLandscape>) {
     let PlayerLandscape { center, radius } = *landscape;
     let _ = server
         .channel()
-        .send(client::LandscapeUpdate { center, radius });
+        .send(projekto_messages::LandscapeUpdate { center, radius });
 }

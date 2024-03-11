@@ -8,10 +8,8 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, Task, TaskPool},
 };
 use futures_lite::future::{block_on, poll_once};
-use projekto_proto::MessageType;
-use projekto_server::proto::{client::ClientMessage, server::ServerMessage};
-
-use super::Server;
+use projekto_messages::{ClientMessage, ServerMessage};
+use projekto_proto::{connect_to_server, MessageType, Server};
 
 pub(crate) struct NetPlugin;
 
@@ -21,7 +19,7 @@ impl Plugin for NetPlugin {
             PreUpdate,
             (
                 reconnect_to_server.run_if(resource_exists::<ServerConnection>),
-                connect_to_server.run_if(not(resource_exists::<ServerConnection>)),
+                server_connection.run_if(not(resource_exists::<ServerConnection>)),
                 handle_messages.run_if(resource_exists::<ServerConnection>),
             ),
         );
@@ -60,7 +58,7 @@ impl Default for Meta {
     }
 }
 
-fn connect_to_server(mut commands: Commands, mut meta: Local<Meta>) {
+fn server_connection(mut commands: Commands, mut meta: Local<Meta>) {
     if let Some(ref mut task) = meta.task {
         if let Some(result) = block_on(poll_once(task)) {
             match result {
@@ -77,7 +75,7 @@ fn connect_to_server(mut commands: Commands, mut meta: Local<Meta>) {
         }
     } else if meta.next_try <= Instant::now() {
         let task = AsyncComputeTaskPool::get_or_init(TaskPool::default)
-            .spawn(async move { super::connect_to_server().await });
+            .spawn(async move { connect_to_server().await });
         meta.task = Some(task);
     }
 }

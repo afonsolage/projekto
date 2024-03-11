@@ -6,10 +6,8 @@ use bevy::{
     utils::{synccell::SyncCell, HashMap},
 };
 
-use crate::proto::{client::ClientMessage, server::ServerMessage};
-use projekto_proto::MessageType;
-
-use super::Client;
+use projekto_messages::{ClientMessage, ServerMessage};
+use projekto_proto::{Client, MessageType};
 
 pub(crate) struct NetPlugin;
 
@@ -38,7 +36,7 @@ fn start_network_server(mut commands: Commands) {
     let (sender, receiver) = mpsc::channel();
     AsyncComputeTaskPool::get_or_init(TaskPool::default)
         .spawn(async move {
-            let _ = super::start_server(|client| {
+            let _ = projekto_proto::start_server(|client| {
                 let id = client.id();
                 if let Err(err) = sender.send(client) {
                     error!("Failed to get client {id}. Error: {err}");

@@ -1,0 +1,19 @@
+[package]
+name = "projekto_messages"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+projekto_core.workspace = true
+projekto_proto.workspace = true
+projekto_proto_macros = {path = "../proto/macros" }
+
+bevy.workspace = true
+
+serde.workspace = true
+thiserror.workspace = true
+bincode.workspace = true
+lz4_flex.workspace = true
+
+[lints]
+workspace = true

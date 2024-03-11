@@ -2,20 +2,14 @@ use std::any::Any;
 
 use bevy::{ecs::world::World, log::error};
 
-pub mod channel;
-pub mod net;
+mod channel;
+pub use channel::{WorldChannel, WorldChannelError, WorldChannelPair};
+
+mod net;
+pub use net::{connect_to_server, start_server, Client, Server};
 
 mod ecs;
 pub use ecs::{RegisterMessageHandler, RunMessageHandlers};
-
-pub mod prelude {
-    pub use super::{
-        channel::{WorldChannel, WorldChannelError, WorldChannelPair},
-        net::{channel_to_net, net_to_channel},
-        BoxedMessage, Message, MessageError, MessageSource, MessageType, RegisterMessageHandler,
-        RunMessageHandlers,
-    };
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageError {
