@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashSet};
+use bevy::prelude::*;
 use projekto_core::chunk::Chunk;
 
 use crate::{bundle::ChunkMap, WorldSet};

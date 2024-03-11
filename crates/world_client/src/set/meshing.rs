@@ -3,12 +3,10 @@ use bevy::{
     render::{mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology},
 };
 use projekto_core::{chunk, voxel};
-use projekto_world_server::{
-    bundle::ChunkLocal,
-    proto::{server, RegisterMessageHandler},
-};
+use projekto_proto::RegisterMessageHandler;
+use projekto_server::{bundle::ChunkLocal, proto::server};
 
-use crate::{material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle, PlayerLandscape};
+use crate::{material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle};
 
 pub(crate) struct MeshingPlugin;
 

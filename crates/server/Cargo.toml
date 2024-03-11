@@ -1,5 +1,5 @@
 [package]
-name = "projekto_world_server"
+name = "projekto_server"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
@@ -7,12 +7,17 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = []
+default = ["dev"]
 faces_merging = []
+
+dev = [
+    "bevy/dynamic_linking",
+]
 
 [dependencies]
 projekto_core.workspace = true
-projekto_world_server_macros = { path = "macros"}
+projekto_proto.workspace = true
+projekto_proto_macros = { path = "../proto/macros"}
 
 bevy.workspace = true
 
@@ -20,11 +25,11 @@ thiserror.workspace = true
 serde.workspace = true
 
 # smol
-futures-lite = "2.2"
-async-channel = "2.2"
-async-lock = "3.3"
-async-io = "2.3"
-
+futures-lite.workspace = true
+async-channel.workspace = true
+async-lock.workspace = true
+async-io.workspace = true
+async-net.workspace = true
 
 # IO
 lz4_flex = "0.11"
@@ -35,13 +40,8 @@ bracket-noise = "0.8.7"
 
 [dev-dependencies]
 rand.workspace = true
-bevy = {workspace = true, features = ["multi-threaded"]}
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
 [lints]
 workspace = true
-
-[[example]]
-name = "server"
-path = "examples/server.rs"

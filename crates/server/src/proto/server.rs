@@ -1,7 +1,6 @@
 use projekto_core::{chunk::Chunk, voxel};
-use projekto_world_server_macros::message_source;
-
-use super::MessageSource;
+use projekto_proto::prelude::*;
+use projekto_proto_macros::message_source;
 
 #[message_source(MessageSource::Server)]
 pub enum ServerMessage {

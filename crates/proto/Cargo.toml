@@ -1,9 +1,10 @@
 [package]
-name = "projekto_world_client"
+name = "projekto_proto"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+readme = "README.md"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 default = ["dev"]
 
@@ -11,12 +12,14 @@ dev = [
     "bevy/dynamic_linking",
 ]
 
+
 [dependencies]
-projekto_core.workspace = true
-projekto_proto.workspace = true
-projekto_server.workspace = true
+projekto_proto_macros = { path = "macros"}
 
 bevy.workspace = true
+
+thiserror.workspace = true
+serde.workspace = true
 
 # smol
 futures-lite.workspace = true
@@ -24,6 +27,10 @@ async-channel.workspace = true
 async-lock.workspace = true
 async-io.workspace = true
 async-net.workspace = true
+
+# IO
+lz4_flex = "0.11"
+bincode = "1.3"
 
 [lints]
 workspace = true

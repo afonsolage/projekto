@@ -9,19 +9,36 @@ pub struct WorldChannelPair<S: MessageType, R: MessageType> {
     pub server: WorldChannel<R, S>,
 }
 
-#[derive(Debug, Clone)]
-pub struct WorldChannel<S: MessageType, R: MessageType> {
+#[derive(Debug)]
+pub struct WorldChannel<S, R> {
     sender: Sender<BoxedMessage<S>>,
     receiver: Receiver<BoxedMessage<R>>,
 }
 
+impl<S, R> WorldChannel<S, R> {
+    pub fn is_closed(&self) -> bool {
+        self.sender.is_closed() || self.receiver.is_closed()
+    }
+}
+
+impl<S, R> Clone for WorldChannel<S, R> {
+    fn clone(&self) -> Self {
+        Self {
+            sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum WorldChannelError {
+    #[error("Failed to send message.")]
+    Send(),
     #[error("Failed to receive message: {0}")]
     Recv(#[from] async_channel::RecvError),
 }
 
-impl<S: MessageType + Debug + 'static, R: MessageType + Debug + 'static> WorldChannel<S, R> {
+impl<S: MessageType, R: MessageType> WorldChannel<S, R> {
     pub fn new_pair() -> WorldChannelPair<S, R> {
         let (server_sender, server_receiver) = async_channel::unbounded();
         let (client_sender, client_receiver) = async_channel::unbounded();
@@ -47,11 +64,11 @@ impl<S: MessageType + Debug + 'static, R: MessageType + Debug + 'static> WorldCh
 
     pub fn recv(&self) -> Option<BoxedMessage<R>> {
         self.receiver.try_recv().ok().map(|msg| {
-             bevy::log::trace!(
-                 "[{:?}] Received message: {:?}",
-                 msg.msg_source(),
-                 msg.msg_type()
-             );
+            bevy::log::trace!(
+                "[{:?}] Received message: {:?}",
+                msg.msg_source(),
+                msg.msg_type()
+            );
             msg
         })
     }
@@ -70,17 +87,25 @@ impl<S: MessageType + Debug + 'static, R: MessageType + Debug + 'static> WorldCh
         Ok(self.receiver.recv().await?)
     }
 
-    pub fn send(&self, msg: impl Message<S> + Send) {
-        let boxed = Box::new(msg);
+    pub fn send(&self, msg: impl Message<S>) -> Result<(), WorldChannelError> {
+        let boxed: BoxedMessage<S> = Box::new(msg);
+        self.send_boxed(boxed)
+    }
 
+    pub fn send_boxed(&self, boxed: BoxedMessage<S>) -> Result<(), WorldChannelError> {
         bevy::log::trace!(
-             "[{:?}] Sending message: {:?}",
-             boxed.msg_source(),
-             boxed.msg_type()
-         );
+            "[{:?}] Sending message: {:?}",
+            boxed.msg_source(),
+            boxed.msg_type()
+        );
 
         self.sender
             .try_send(boxed)
-            .expect("Channel to be unbounded and to be always open");
+            .map_err(|_| WorldChannelError::Send())
+    }
+
+    pub fn close(self) {
+        let _ = self.receiver.close();
+        let _ = self.sender.close();
     }
 }

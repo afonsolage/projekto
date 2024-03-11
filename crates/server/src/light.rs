@@ -483,7 +483,7 @@ mod test {
             for z in -1..=1 {
                 for x in -1..=1 {
                     light.set(voxel + Voxel::new(x, y, z), voxel::Light::natural(i));
-                    i += 1
+                    i += 1;
                 }
             }
         }
@@ -508,7 +508,7 @@ mod test {
                         neighbors[i].unwrap(),
                         "Failed at {neighbor} [{i}]"
                     );
-                    i += 1
+                    i += 1;
                 }
             }
         }

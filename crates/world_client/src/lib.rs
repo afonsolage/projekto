@@ -1,16 +1,14 @@
 use bevy::{ecs::query::QueryFilter, prelude::*, utils::HashMap};
 use material::ChunkMaterial;
+use net::ServerConnection;
 use projekto_core::{
     chunk::Chunk,
     voxel::{self},
 };
-use projekto_world_server::{
-    app::RunAsync,
-    bundle::{ChunkLocal, ChunkVertex},
-    proto::WorldClientChannel,
-};
+use projekto_server::bundle::{ChunkLocal, ChunkVertex};
 
 mod material;
+mod net;
 mod set;
 
 pub use set::PlayerLandscape;
@@ -23,34 +21,24 @@ impl Plugin for WorldClientPlugin {
             .register_type::<ChunkMaterial>()
             .configure_sets(PreUpdate, WorldClientSet::ReceiveMessages)
             .configure_sets(Update, WorldClientSet::Meshing)
-            .configure_sets(PostUpdate, WorldClientSet::SendInput)
+            .configure_sets(
+                PostUpdate,
+                WorldClientSet::SendInput.run_if(resource_exists::<ServerConnection>),
+            )
             .add_plugins(MaterialPlugin::<ChunkMaterial>::default())
             .add_plugins((
+                net::NetPlugin,
                 set::ReceiveMessagesPlugin,
                 set::MeshingPlugin,
                 set::SendInputPlugin,
             ))
+            .add_systems(Startup, setup_material)
             .add_systems(PreStartup, load_assets)
-            .add_systems(Startup, (setup_world_server, setup_material))
             .add_systems(
                 Update,
                 (remove_unloaded_chunks.run_if(any_chunk::<Changed<ChunkVertex>>),),
             );
     }
-}
-
-fn setup_world_server(mut commands: Commands) {
-    let mut app = projekto_world_server::app::create();
-
-    let client_channel = app
-        .world
-        .get_resource::<WorldClientChannel>()
-        .expect("Resource must be added by ChannelPlugin")
-        .clone();
-
-    app.run_async();
-
-    commands.insert_resource(client_channel.clone());
 }
 
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]

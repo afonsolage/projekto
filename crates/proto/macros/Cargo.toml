@@ -1,5 +1,5 @@
 [package]
-name = "projekto_world_server_macros"
+name = "projekto_proto_macros"
 version = "0.1.0"
 edition = "2021"
 
