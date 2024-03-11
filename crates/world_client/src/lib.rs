@@ -5,10 +5,7 @@ use projekto_core::{
     chunk::Chunk,
     voxel::{self},
 };
-use projekto_server::{
-    bundle::{ChunkLocal, ChunkVertex},
-    proto::WorldClientChannel,
-};
+use projekto_server::bundle::{ChunkLocal, ChunkVertex};
 
 mod material;
 mod net;
@@ -35,6 +32,7 @@ impl Plugin for WorldClientPlugin {
                 set::MeshingPlugin,
                 set::SendInputPlugin,
             ))
+            .add_systems(Startup, setup_material)
             .add_systems(PreStartup, load_assets)
             .add_systems(
                 Update,

@@ -13,6 +13,7 @@ dev = [
 
 [dependencies]
 projekto_core.workspace = true
+projekto_proto.workspace = true
 projekto_server.workspace = true
 
 bevy.workspace = true

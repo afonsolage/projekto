@@ -8,7 +8,8 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, Task, TaskPool},
 };
 use futures_lite::future::{block_on, poll_once};
-use projekto_server::proto::{client::ClientMessage, server::ServerMessage, MessageType};
+use projekto_proto::MessageType;
+use projekto_server::proto::{client::ClientMessage, server::ServerMessage};
 
 use super::Server;
 
