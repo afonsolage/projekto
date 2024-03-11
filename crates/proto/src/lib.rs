@@ -8,6 +8,15 @@ pub mod net;
 mod ecs;
 pub use ecs::{RegisterMessageHandler, RunMessageHandlers};
 
+pub mod prelude {
+    pub use super::{
+        channel::{WorldChannel, WorldChannelError, WorldChannelPair},
+        net::{channel_to_net, net_to_channel},
+        BoxedMessage, Message, MessageError, MessageSource, MessageType, RegisterMessageHandler,
+        RunMessageHandlers,
+    };
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum MessageError {
     #[error("IO error: {0}")]

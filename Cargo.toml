@@ -12,6 +12,7 @@ default-members = ["crates/client"]
 [workspace.dependencies]
 projekto_core = { path = "crates/core",features = ["auto_load_kinds_descs"]  }
 projekto_camera = { path = "crates/camera" }
+projekto_proto = { path = "crates/proto" }
 projekto_server = { path = "crates/server" }
 projekto_world_client = { path = "crates/world_client" }
 

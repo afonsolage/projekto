@@ -6,7 +6,8 @@ use bevy::{
     utils::{synccell::SyncCell, HashMap},
 };
 
-use crate::proto::{client::ClientMessage, server::ServerMessage, MessageType};
+use crate::proto::{client::ClientMessage, server::ServerMessage};
+use projekto_proto::MessageType;
 
 use super::Client;
 

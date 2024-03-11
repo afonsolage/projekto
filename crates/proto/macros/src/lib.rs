@@ -57,7 +57,7 @@ fn generate_simplified_enum(
                         bincode::serialize_into(buf, &msg)?;
                         Ok(size as u32)
                     },
-                    Err(boxed) => Err(crate::proto::MessageError::Downcasting(boxed.msg_source()))
+                    Err(boxed) => Err(projekto_proto::prelude::MessageError::Downcasting(boxed.msg_source()))
                 }
             }
         }
@@ -82,7 +82,7 @@ fn generate_simplified_enum(
     let run_handlers_match_items = variants.iter().map(|v| {
         let v_name = &v.ident;
         quote! {
-            #name::#v_name => crate::proto::plugin::RunMessageHandlers::run_handlers::<#v_name>(world, boxed),
+            #name::#v_name => projekto_proto::prelude::RunMessageHandlers::run_handlers::<#v_name>(world, boxed),
         }
     });
 
@@ -120,29 +120,29 @@ fn generate_simplified_enum(
             }
         }
 
-        impl crate::proto::MessageType for #name {
+        impl projekto_proto::prelude::MessageType for #name {
             const MAX_MESSAGE_SIZE: usize = Self::max_message_size();
 
             fn source() -> MessageSource {
                 #source
             }
 
-            fn deserialize_boxed(&self, buf: &[u8]) -> Result<crate::proto::BoxedMessage<Self>, crate::proto::MessageError> {
+            fn deserialize_boxed(&self, buf: &[u8]) -> Result<projekto_proto::prelude::BoxedMessage<Self>, projekto_proto::prelude::MessageError> {
                 match self {
                     #(#des_boxed_match_items),*
                 }
             }
 
-            fn serialize_boxed(&self, boxed: crate::proto::BoxedMessage<Self>, buf: &mut [u8]) -> Result<u32, crate::proto::MessageError> {
+            fn serialize_boxed(&self, boxed: projekto_proto::prelude::BoxedMessage<Self>, buf: &mut [u8]) -> Result<u32, projekto_proto::prelude::MessageError> {
                 match self {
                     #(#ser_boxed_match_items),*
                 }
             }
 
-            fn try_from_code(n: u16) -> Result<Self, crate::proto::MessageError> {
+            fn try_from_code(n: u16) -> Result<Self, projekto_proto::prelude::MessageError> {
                 match n {
                     #(#from_code_match_items)*
-                    _ => Err(crate::proto::MessageError::InvalidMessage(Self::name(), n)),
+                    _ => Err(projekto_proto::prelude::MessageError::InvalidMessage(Self::name(), n)),
                 }
             }
 
@@ -156,7 +156,7 @@ fn generate_simplified_enum(
                 stringify!(#name)
             }
 
-            fn run_handlers(&self, boxed: crate::proto::BoxedMessage<Self>, world: &mut bevy::prelude::World) {
+            fn run_handlers(&self, boxed: projekto_proto::prelude::BoxedMessage<Self>, world: &mut bevy::prelude::World) {
                 match self {
                     #(#run_handlers_match_items)*
                 }
@@ -201,7 +201,7 @@ fn generate_impls(
     let impls = variants.iter().map(|v| {
         let name = &v.ident;
         quote! {
-            impl crate::proto::Message<#enum_name> for #name {
+            impl projekto_proto::prelude::Message<#enum_name> for #name {
                 fn msg_type(&self) -> #enum_name {
                     #enum_name::#name
                 }

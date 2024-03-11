@@ -16,7 +16,8 @@ dev = [
 
 [dependencies]
 projekto_core.workspace = true
-projekto_world_server_macros = { path = "macros"}
+projekto_proto.workspace = true
+projekto_proto_macros = { path = "../proto/macros"}
 
 bevy.workspace = true
 

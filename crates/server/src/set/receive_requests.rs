@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
-use crate::proto::{client, RegisterMessageHandler};
+use crate::proto::client;
+use projekto_proto::RegisterMessageHandler;
 
 use super::Landscape;
 
