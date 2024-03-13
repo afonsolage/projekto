@@ -75,12 +75,16 @@ fn new_client_connected(
 }
 
 fn handle_messages(world: &mut World) {
-    world.resource_scope(|world, clients: Mut<Clients>| {
-        for client in clients.values() {
-            while let Some(boxed) = client.channel().recv() {
-                let msg_type = boxed.msg_type();
-                msg_type.run_handlers(boxed, client.id(), world);
-            }
+    let clients = world
+        .resource::<Clients>()
+        .iter()
+        .map(|(id, client)| (*id, client.channel().recv_all()))
+        .collect::<Vec<_>>();
+
+    for (id, messages) in clients {
+        for boxed in messages {
+            let msg_type = boxed.msg_type();
+            msg_type.run_handlers(boxed, id, world);
         }
-    });
+    }
 }
