@@ -12,6 +12,8 @@ bevy.workspace = true
 
 serde.workspace = true
 thiserror.workspace = true
+
+# Needed for projekto_proto_macros
 bincode.workspace = true
 lz4_flex.workspace = true
 

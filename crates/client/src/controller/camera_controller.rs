@@ -4,7 +4,7 @@ use projekto_camera::{
     fly_by::{FlyByCamera, FlyByCameraConfig},
 };
 
-use crate::character_controller::CharacterControllerConfig;
+use crate::controller::character_controller::CharacterControllerConfig;
 
 pub struct CameraControllerPlugin;
 

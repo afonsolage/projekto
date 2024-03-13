@@ -30,9 +30,9 @@ bincode = "1.3"
 # smol
 futures-lite = "2.2"
 async-channel = "2.2"
-async-lock = "3.3"
-async-io = "2.3"
 async-net = "2.0"
+async-io = "2.3"
+async-lock = "3.3"
 
 [dev-dependencies]
 bevy.workspace = true
@@ -46,6 +46,7 @@ undocumented_unsafe_blocks = "warn"
 redundant_else = "warn"
 match_same_arms = "warn"
 semicolon_if_nothing_returned = "warn"
+unused_extern_crates = "warn"
 
 ptr_as_ptr = "warn"
 ptr_cast_constness = "warn"

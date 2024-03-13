@@ -17,10 +17,14 @@ dev = [
 
 
 [dependencies]
-bevy.workspace = true
 projekto_core.workspace = true
 projekto_camera.workspace = true
-projekto_world_client.workspace = true
+projekto_proto.workspace = true
+projekto_messages.workspace = true
+
+bevy.workspace = true
+
+futures-lite.workspace = true
 
 [lints]
 workspace = true
