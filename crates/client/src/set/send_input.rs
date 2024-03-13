@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{net::ServerConnection, WorldClientSet};
+use crate::{net::ServerConnection, ClientSet};
 
 pub(crate) struct SendInputPlugin;
 
@@ -16,7 +16,7 @@ impl Plugin for SendInputPlugin {
                 update_player_landscape.run_if(resource_changed::<PlayerLandscape>),
                 send_welcome_message.run_if(resource_added::<ServerConnection>),
             )
-                .in_set(WorldClientSet::SendInput),
+                .in_set(ClientSet::SendInput),
         );
     }
 }

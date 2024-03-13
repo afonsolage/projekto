@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use projekto_core::chunk::Chunk;
-use projekto_world_client::PlayerLandscape;
+
+use crate::PlayerLandscape;
 
 pub struct CharacterControllerPlugin;
 
