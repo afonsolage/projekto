@@ -46,7 +46,6 @@ undocumented_unsafe_blocks = "warn"
 redundant_else = "warn"
 match_same_arms = "warn"
 semicolon_if_nothing_returned = "warn"
-unused_extern_crates = "warn"
 
 ptr_as_ptr = "warn"
 ptr_cast_constness = "warn"
@@ -55,6 +54,7 @@ ptr_cast_constness = "warn"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
+unused_extern_crates = "warn"
 # missing_docs = "warn"
 
 [lints]

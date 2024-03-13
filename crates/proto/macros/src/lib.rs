@@ -82,7 +82,7 @@ fn generate_simplified_enum(
     let run_handlers_match_items = variants.iter().map(|v| {
         let v_name = &v.ident;
         quote! {
-            #name::#v_name => projekto_proto::RunMessageHandlers::run_handlers::<#v_name>(world, boxed),
+            #name::#v_name => projekto_proto::RunMessageHandlers::run_handlers::<#v_name>(world, client_id, boxed),
         }
     });
 
@@ -156,7 +156,7 @@ fn generate_simplified_enum(
                 stringify!(#name)
             }
 
-            fn run_handlers(&self, boxed: projekto_proto::BoxedMessage<Self>, world: &mut bevy::prelude::World) {
+            fn run_handlers(&self, boxed: projekto_proto::BoxedMessage<Self>, client_id: projekto_proto::ClientId, world: &mut bevy::prelude::World) {
                 match self {
                     #(#run_handlers_match_items)*
                 }
@@ -169,21 +169,35 @@ fn generate_structs(variants: &Punctuated<Variant, Comma>) -> proc_macro2::Token
     let structs = variants.iter().map(|v| {
         let name = &v.ident;
         let fields = v.fields.clone().into_token_stream();
+        let no_copy = v.attrs.iter().any(|attr| attr.path().is_ident("no_copy"));
+
+        let copy_impl = if no_copy {
+            quote! {}
+        } else {
+            quote! {
+                impl std::marker::Copy for #name {}
+            }
+        };
+
         match &v.fields {
             Fields::Named(_) => {
                 quote! {
-                    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+                    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
                     pub struct #name #fields
+
+                    #copy_impl
                 }
             }
             Fields::Unnamed(_) => {
                 quote! {
-                    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+                    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
                     pub struct #name #fields;
+
+                    #copy_impl
                 }
             }
             Fields::Unit => quote! {
-                #[derive(Debug, serde::Serialize, serde::Deserialize)]
+                #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
                 pub struct #name;
             },
         }
