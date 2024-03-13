@@ -5,9 +5,10 @@ use bevy::{
 use projekto_core::{chunk, voxel};
 use projekto_messages::ChunkVertex;
 use projekto_proto::RegisterMessageHandler;
-use projekto_server::bundle::ChunkLocal;
 
-use crate::{material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle};
+use crate::{
+    bundle::ChunkLocal, material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle,
+};
 
 pub(crate) struct MeshingPlugin;
 

@@ -6,6 +6,7 @@ use bevy::{
     utils::HashMap,
     window::PresentMode,
 };
+use bundle::{ChunkLocal, ChunkVertex};
 use controller::{
     camera_controller::CameraControllerPlugin,
     character_controller::{CharacterController, CharacterControllerPlugin},
@@ -22,8 +23,8 @@ use projekto_core::{
     chunk::Chunk,
     voxel::{self},
 };
-use projekto_server::bundle::{ChunkLocal, ChunkVertex};
 
+mod bundle;
 mod controller;
 mod debug;
 mod material;
