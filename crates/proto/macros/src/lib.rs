@@ -82,7 +82,7 @@ fn generate_simplified_enum(
     let run_handlers_match_items = variants.iter().map(|v| {
         let v_name = &v.ident;
         quote! {
-            #name::#v_name => projekto_proto::RunMessageHandlers::run_handlers::<#v_name>(world, boxed),
+            #name::#v_name => projekto_proto::RunMessageHandlers::run_handlers::<#v_name>(world, client_id, boxed),
         }
     });
 
@@ -156,7 +156,7 @@ fn generate_simplified_enum(
                 stringify!(#name)
             }
 
-            fn run_handlers(&self, boxed: projekto_proto::BoxedMessage<Self>, world: &mut bevy::prelude::World) {
+            fn run_handlers(&self, boxed: projekto_proto::BoxedMessage<Self>, client_id: u32, world: &mut bevy::prelude::World) {
                 match self {
                     #(#run_handlers_match_items)*
                 }

@@ -79,7 +79,7 @@ fn handle_messages(world: &mut World) {
         for client in clients.values() {
             while let Some(boxed) = client.channel().recv() {
                 let msg_type = boxed.msg_type();
-                msg_type.run_handlers(boxed, world);
+                msg_type.run_handlers(boxed, client.id(), world);
             }
         }
     });

@@ -13,7 +13,8 @@ impl Plugin for ReceiveRequestsPlugin {
     }
 }
 
-fn handle_landscape_update(In(msg): In<LandscapeUpdate>, mut commands: Commands) {
+fn handle_landscape_update(In((id, msg)): In<(u32, LandscapeUpdate)>, mut commands: Commands) {
+    trace!("[{id}], handle_landscape_update");
     commands.insert_resource(Landscape {
         center: msg.center,
         radius: msg.radius,

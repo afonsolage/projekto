@@ -39,7 +39,7 @@ pub trait MessageType: std::fmt::Debug + Send + Sync + 'static {
     where
         Self: Sized;
     fn code(&self) -> u16;
-    fn run_handlers(&self, boxed: BoxedMessage<Self>, world: &mut World);
+    fn run_handlers(&self, boxed: BoxedMessage<Self>, client_id: u32, world: &mut World);
     fn name() -> &'static str;
 }
 
@@ -86,5 +86,14 @@ impl<T: MessageType> dyn Message<T> {
         } else {
             Err(self)
         }
+    }
+}
+
+impl<M, T: MessageType> Message<T> for (u32, M)
+where
+    M: Message<T>,
+{
+    fn msg_type(&self) -> T {
+        self.1.msg_type()
     }
 }
