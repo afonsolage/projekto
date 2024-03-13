@@ -8,9 +8,12 @@ use bevy::{
     window::PresentMode,
 };
 
+mod controller;
 mod debug;
-use camera_controller::CameraControllerPlugin;
-use character_controller::{CharacterController, CharacterControllerPlugin};
+use controller::{
+    camera_controller::CameraControllerPlugin,
+    character_controller::{CharacterController, CharacterControllerPlugin},
+};
 use debug::DebugPlugin;
 
 use projekto_camera::{
@@ -22,9 +25,6 @@ use projekto_world_client::WorldClientPlugin;
 
 // mod ui;
 // use ui::UiPlugin;
-
-mod camera_controller;
-mod character_controller;
 
 fn main() {
     let mut app = App::new();
