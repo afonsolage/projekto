@@ -7,7 +7,7 @@ use bevy::{
 };
 
 use projekto_messages::{ClientMessage, ServerMessage};
-use projekto_proto::{Client, MessageType};
+use projekto_proto::{Client, ClientId, MessageType};
 
 pub(crate) struct NetPlugin;
 
@@ -27,7 +27,7 @@ impl Plugin for NetPlugin {
 }
 
 #[derive(Resource, Default, Deref, DerefMut)]
-pub struct Clients(HashMap<u32, Client<ClientMessage, ServerMessage>>);
+pub struct Clients(HashMap<ClientId, Client<ClientMessage, ServerMessage>>);
 
 #[derive(Resource, Deref, DerefMut)]
 struct OnClientConnectedReceiver(SyncCell<Receiver<Client<ClientMessage, ServerMessage>>>);

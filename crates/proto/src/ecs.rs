@@ -1,5 +1,7 @@
 use bevy::{ecs::system::SystemId, prelude::*};
 
+use crate::net::ClientId;
+
 use super::{Message, MessageType};
 
 #[derive(Resource, Default, Clone, Debug, Deref, DerefMut)]
@@ -63,18 +65,26 @@ impl<T: MessageType> RegisterMessageHandler<T> for App {
 
 //
 pub trait RunMessageHandlers<T: MessageType> {
-    fn run_handlers<M: Message<T> + Clone>(&mut self, id: u32, msg: Box<dyn Message<T>>);
+    fn run_handlers<M: Message<T> + Clone>(
+        &mut self,
+        client_id: ClientId,
+        msg: Box<dyn Message<T>>,
+    );
 }
 
 impl<T: MessageType> RunMessageHandlers<T> for World {
-    fn run_handlers<M: Message<T> + Clone>(&mut self, client_id: u32, msg: Box<dyn Message<T>>) {
+    fn run_handlers<M: Message<T> + Clone>(
+        &mut self,
+        client_id: ClientId,
+        msg: Box<dyn Message<T>>,
+    ) {
         let src = msg.msg_source();
 
         let (copy_handlers, copy_id_handlers, move_handler, move_id_handler) = (
             self.get_resource::<CopyHandlers<M>>().cloned(),
-            self.get_resource::<CopyHandlers<(u32, M)>>().cloned(),
+            self.get_resource::<CopyHandlers<(ClientId, M)>>().cloned(),
             self.get_resource::<MoveHandler<M>>().cloned(),
-            self.get_resource::<MoveHandler<(u32, M)>>().cloned(),
+            self.get_resource::<MoveHandler<(ClientId, M)>>().cloned(),
         );
 
         if copy_handlers.is_none()

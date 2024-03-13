@@ -86,16 +86,31 @@ async fn channel_to_net<S: MessageType, R: MessageType>(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub struct ClientId(u32);
+
+impl std::fmt::Display for ClientId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Client<S, R> {
-    id: u32,
+    id: ClientId,
     addr: SocketAddr,
     channel: WorldChannel<R, S>,
     closed: Arc<AtomicBool>,
 }
 
 impl<S: MessageType, R: MessageType> Client<S, R> {
-    fn new(id: u32, addr: SocketAddr, server: WorldChannel<R, S>, closed: Arc<AtomicBool>) -> Self {
+    fn new(
+        id: ClientId,
+        addr: SocketAddr,
+        server: WorldChannel<R, S>,
+        closed: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             id,
             addr,
@@ -108,7 +123,7 @@ impl<S: MessageType, R: MessageType> Client<S, R> {
         &self.channel
     }
 
-    pub fn id(&self) -> u32 {
+    pub fn id(&self) -> ClientId {
         self.id
     }
 
@@ -142,7 +157,7 @@ where
         let addr = stream.peer_addr()?;
 
         client_idx += 1;
-        let id = client_idx;
+        let id = ClientId(client_idx);
 
         info!("[Networking] Client {id}({addr}) connected!");
 

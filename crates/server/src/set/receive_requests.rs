@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use projekto_messages::LandscapeUpdate;
-use projekto_proto::RegisterMessageHandler;
+use projekto_proto::{ClientId, RegisterMessageHandler};
 
 use super::Landscape;
 
@@ -13,7 +13,7 @@ impl Plugin for ReceiveRequestsPlugin {
     }
 }
 
-fn handle_landscape_update(In((id, msg)): In<(u32, LandscapeUpdate)>, mut commands: Commands) {
+fn handle_landscape_update(In((id, msg)): In<(ClientId, LandscapeUpdate)>, mut commands: Commands) {
     trace!("[{id}], handle_landscape_update");
     commands.insert_resource(Landscape {
         center: msg.center,

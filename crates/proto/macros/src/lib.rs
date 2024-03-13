@@ -156,7 +156,7 @@ fn generate_simplified_enum(
                 stringify!(#name)
             }
 
-            fn run_handlers(&self, boxed: projekto_proto::BoxedMessage<Self>, client_id: u32, world: &mut bevy::prelude::World) {
+            fn run_handlers(&self, boxed: projekto_proto::BoxedMessage<Self>, client_id: projekto_proto::ClientId, world: &mut bevy::prelude::World) {
                 match self {
                     #(#run_handlers_match_items)*
                 }

@@ -6,7 +6,7 @@ mod channel;
 pub use channel::{WorldChannel, WorldChannelError, WorldChannelPair};
 
 mod net;
-pub use net::{connect_to_server, start_server, Client, Server};
+pub use net::{connect_to_server, start_server, Client, ClientId, Server};
 
 mod ecs;
 pub use ecs::{RegisterMessageHandler, RunMessageHandlers};
@@ -39,7 +39,7 @@ pub trait MessageType: std::fmt::Debug + Send + Sync + 'static {
     where
         Self: Sized;
     fn code(&self) -> u16;
-    fn run_handlers(&self, boxed: BoxedMessage<Self>, client_id: u32, world: &mut World);
+    fn run_handlers(&self, boxed: BoxedMessage<Self>, client_id: net::ClientId, world: &mut World);
     fn name() -> &'static str;
 }
 
@@ -89,7 +89,7 @@ impl<T: MessageType> dyn Message<T> {
     }
 }
 
-impl<M, T: MessageType> Message<T> for (u32, M)
+impl<M, T: MessageType> Message<T> for (net::ClientId, M)
 where
     M: Message<T>,
 {

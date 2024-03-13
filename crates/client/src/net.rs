@@ -9,7 +9,7 @@ use bevy::{
 };
 use futures_lite::future::{block_on, poll_once};
 use projekto_messages::{ClientMessage, ServerMessage};
-use projekto_proto::{connect_to_server, MessageType, Server};
+use projekto_proto::{connect_to_server, ClientId, MessageType, Server};
 
 pub(crate) struct NetPlugin;
 
@@ -84,7 +84,7 @@ fn handle_messages(world: &mut World) {
     world.resource_scope(|world, server: Mut<ServerConnection>| {
         while let Some(boxed) = server.channel().recv() {
             let msg_type = boxed.msg_type();
-            msg_type.run_handlers(boxed, 0, world);
+            msg_type.run_handlers(boxed, ClientId::default(), world);
         }
     });
 }
