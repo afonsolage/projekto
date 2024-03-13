@@ -11,6 +11,7 @@ pub enum ClientMessage {
 
 #[message_source(MessageSource::Server)]
 pub enum ServerMessage {
+    #[no_copy]
     ChunkVertex {
         pub chunk: Chunk,
         pub vertex: Vec<voxel::Vertex>,

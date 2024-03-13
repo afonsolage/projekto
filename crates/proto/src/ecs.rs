@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use bevy::{ecs::system::SystemId, prelude::*};
 
 use super::{Message, MessageType};
@@ -16,7 +14,7 @@ pub trait RegisterMessageHandler<T: MessageType> {
         system: S,
     ) -> &mut Self;
 
-    fn add_message_handler<I: Message<T>, O: 'static, M, S: IntoSystem<Arc<I>, O, M> + 'static>(
+    fn add_message_handler<I: Message<T> + Copy, O: 'static, M, S: IntoSystem<I, O, M> + 'static>(
         &mut self,
         system: S,
     ) -> &mut Self;
@@ -42,7 +40,12 @@ impl<T: MessageType> RegisterMessageHandler<T> for App {
         self
     }
 
-    fn add_message_handler<I: Message<T>, O: 'static, M, S: IntoSystem<Arc<I>, O, M> + 'static>(
+    fn add_message_handler<
+        I: Message<T> + Copy,
+        O: 'static,
+        M,
+        S: IntoSystem<I, O, M> + 'static,
+    >(
         &mut self,
         system: S,
     ) -> &mut Self {
@@ -58,14 +61,14 @@ impl<T: MessageType> RegisterMessageHandler<T> for App {
 
 //
 pub trait RunMessageHandlers<T: MessageType> {
-    fn run_handlers<M: Message<T>>(&mut self, msg: Box<dyn Message<T>>);
+    fn run_handlers<M: Message<T> + Clone>(&mut self, msg: Box<dyn Message<T>>);
 }
 
 impl<T: MessageType> RunMessageHandlers<T> for World {
-    fn run_handlers<M: Message<T>>(&mut self, msg: Box<dyn Message<T>>) {
+    fn run_handlers<M: Message<T> + Clone>(&mut self, msg: Box<dyn Message<T>>) {
         let src = msg.msg_source();
 
-        let found_handlers = self.contains_resource::<MessageHandlers<Arc<M>>>();
+        let found_handlers = self.contains_resource::<MessageHandlers<M>>();
         let found_handler = self.contains_resource::<MessageHandler<M>>();
 
         if !found_handlers && !found_handler {
@@ -77,16 +80,15 @@ impl<T: MessageType> RunMessageHandlers<T> for World {
 
         let msg = if found_handlers {
             // Clone to avoid having to use `resource_scope` due to mutable access bellow
-            let handlers = self.resource::<MessageHandlers<Arc<M>>>().0.clone();
-            let msg = Arc::new(msg);
+            let handlers = self.resource::<MessageHandlers<M>>().0.clone();
 
             for id in handlers {
+                // Only Copy types are allowed to be added on MessageHandlers
                 if let Err(err) = self.run_system_with_input(id, msg.clone()) {
                     error!("Failed to execute handler for message {src:?}. Error: {err}");
                 }
             }
-
-            Arc::into_inner(msg).expect("Only one strong ref to Arc")
+            msg
         } else {
             msg
         };

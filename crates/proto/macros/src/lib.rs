@@ -169,21 +169,35 @@ fn generate_structs(variants: &Punctuated<Variant, Comma>) -> proc_macro2::Token
     let structs = variants.iter().map(|v| {
         let name = &v.ident;
         let fields = v.fields.clone().into_token_stream();
+        let no_copy = v.attrs.iter().any(|attr| attr.path().is_ident("no_copy"));
+
+        let copy_impl = if no_copy {
+            quote! {}
+        } else {
+            quote! {
+                impl std::marker::Copy for #name {}
+            }
+        };
+
         match &v.fields {
             Fields::Named(_) => {
                 quote! {
-                    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+                    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
                     pub struct #name #fields
+
+                    #copy_impl
                 }
             }
             Fields::Unnamed(_) => {
                 quote! {
-                    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+                    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
                     pub struct #name #fields;
+
+                    #copy_impl
                 }
             }
             Fields::Unit => quote! {
-                #[derive(Debug, serde::Serialize, serde::Deserialize)]
+                #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
                 pub struct #name;
             },
         }
