@@ -79,10 +79,21 @@ fn generate_simplified_enum(
         }
     });
 
-    let run_handlers_match_items = variants.iter().map(|v| {
+    let handlers_match_items = variants.iter().map(|v| {
         let v_name = &v.ident;
-        quote! {
-            #name::#v_name => projekto_proto::RunMessageHandlers::run_handlers::<#v_name>(world, client_id, boxed),
+        let no_copy = v.attrs.iter().any(|attr| attr.path().is_ident("no_copy"));
+        if no_copy { 
+            quote!{
+                #name::#v_name => {
+                    projekto_proto::RunMessageHandlers::run_handler::<#v_name>(world, client_id, boxed);
+                },
+            }
+        } else { 
+            quote! {
+                #name::#v_name => {
+                    projekto_proto::RunMessageHandlers::run_handlers::<#v_name>(world, client_id, boxed);
+                },
+            } 
         }
     });
 
@@ -158,7 +169,7 @@ fn generate_simplified_enum(
 
             fn run_handlers(&self, boxed: projekto_proto::BoxedMessage<Self>, client_id: projekto_proto::ClientId, world: &mut bevy::prelude::World) {
                 match self {
-                    #(#run_handlers_match_items)*
+                    #(#handlers_match_items)*
                 }
             }
         }
@@ -172,7 +183,9 @@ fn generate_structs(variants: &Punctuated<Variant, Comma>) -> proc_macro2::Token
         let no_copy = v.attrs.iter().any(|attr| attr.path().is_ident("no_copy"));
 
         let copy_impl = if no_copy {
-            quote! {}
+            quote! {
+                impl projekto_proto::NoCopy for #name {}
+            }
         } else {
             quote! {
                 impl std::marker::Copy for #name {}
@@ -196,10 +209,15 @@ fn generate_structs(variants: &Punctuated<Variant, Comma>) -> proc_macro2::Token
                     #copy_impl
                 }
             }
-            Fields::Unit => quote! {
-                #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
-                pub struct #name;
-            },
+            Fields::Unit => {
+                if no_copy {
+                    panic!("Unit variants are always Copy. Remove no_copy.");
+                }
+                quote! {
+                    #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+                    pub struct #name;
+                }
+            }
         }
     });
 

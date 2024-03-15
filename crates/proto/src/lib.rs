@@ -9,7 +9,7 @@ mod net;
 pub use net::{connect_to_server, start_server, Client, ClientId, Server};
 
 mod ecs;
-pub use ecs::{RegisterMessageHandler, RunMessageHandlers};
+pub use ecs::{NoCopy, RegisterMessageHandler, RunMessageHandlers};
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageError {
@@ -86,14 +86,5 @@ impl<T: MessageType> dyn Message<T> {
         } else {
             Err(self)
         }
-    }
-}
-
-impl<M, T: MessageType> Message<T> for (net::ClientId, M)
-where
-    M: Message<T>,
-{
-    fn msg_type(&self) -> T {
-        self.1.msg_type()
     }
 }
