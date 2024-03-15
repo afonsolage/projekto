@@ -3,7 +3,7 @@ use std::any::Any;
 use bevy::{ecs::world::World, log::error};
 
 mod channel;
-pub use channel::{WorldChannel, WorldChannelError, WorldChannelPair};
+pub use channel::{Channel, ChannelError, ChannelPair};
 
 mod net;
 pub use net::{connect_to_server, start_server, Client, ClientId, Server};
@@ -20,7 +20,7 @@ pub enum MessageError {
     #[error("Failed to downcast message: {0:?}")]
     Downcasting(MessageSource),
     #[error("{0}")]
-    Channel(#[from] channel::WorldChannelError),
+    Channel(#[from] channel::ChannelError),
     #[error("Failed to parse {0}. Invalid message code {1}.")]
     InvalidMessage(&'static str, u16),
 }

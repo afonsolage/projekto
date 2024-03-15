@@ -54,8 +54,8 @@ impl Plugin for ClientPlugin {
                 FrameTimeDiagnosticsPlugin,
             ))
             .add_plugins((
-                DebugPlugin,
                 CameraPlugin,
+                DebugPlugin,
                 CameraControllerPlugin,
                 CharacterControllerPlugin,
             ))

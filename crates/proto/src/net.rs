@@ -12,7 +12,7 @@ use bevy::{
 use futures_lite::{AsyncReadExt, AsyncWriteExt, StreamExt};
 
 use crate::{
-    channel::{WorldChannel, WorldChannelPair},
+    channel::{Channel, ChannelPair},
     MessageError, MessageType,
 };
 
@@ -20,7 +20,7 @@ const CACHE_BUFFER_SIZE: usize = 1024 * 1024 * 32; // 32 MB
 
 async fn net_to_channel<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
-    channel: WorldChannel<S, R>,
+    channel: Channel<S, R>,
 ) -> Result<(), MessageError> {
     let mut cache_buffer = vec![0; CACHE_BUFFER_SIZE];
 
@@ -55,11 +55,11 @@ async fn net_to_channel<S: MessageType, R: MessageType>(
 
 async fn channel_to_net<S: MessageType, R: MessageType>(
     mut stream: TcpStream,
-    channel: WorldChannel<S, R>,
+    channel: Channel<S, R>,
 ) -> Result<(), MessageError> {
     let mut cache_buffer = vec![0; CACHE_BUFFER_SIZE];
 
-    while let Ok(boxed) = channel.wait().await {
+    while let Ok(boxed) = channel.recv().await {
         let msg_type = boxed.msg_type();
         let msg_type_bytes = msg_type.code().to_be_bytes();
 
@@ -100,17 +100,12 @@ impl std::fmt::Display for ClientId {
 pub struct Client<S, R> {
     id: ClientId,
     addr: SocketAddr,
-    channel: WorldChannel<R, S>,
+    channel: Channel<R, S>,
     closed: Arc<AtomicBool>,
 }
 
 impl<S: MessageType, R: MessageType> Client<S, R> {
-    fn new(
-        id: ClientId,
-        addr: SocketAddr,
-        server: WorldChannel<R, S>,
-        closed: Arc<AtomicBool>,
-    ) -> Self {
+    fn new(id: ClientId, addr: SocketAddr, server: Channel<R, S>, closed: Arc<AtomicBool>) -> Self {
         Self {
             id,
             addr,
@@ -119,7 +114,7 @@ impl<S: MessageType, R: MessageType> Client<S, R> {
         }
     }
 
-    pub fn channel(&self) -> &WorldChannel<R, S> {
+    pub fn channel(&self) -> &Channel<R, S> {
         &self.channel
     }
 
@@ -161,7 +156,7 @@ where
 
         info!("[Networking] Client {id}({addr}) connected!");
 
-        let WorldChannelPair { client, server } = WorldChannel::<S, R>::new_pair();
+        let ChannelPair { client, server } = Channel::<S, R>::new_pair();
         let closed = Arc::new(AtomicBool::new(false));
 
         let stream_clone = stream.clone();
@@ -194,12 +189,12 @@ where
 
 #[derive(Debug, Clone)]
 pub struct Server<S, R> {
-    channel: WorldChannel<S, R>,
+    channel: Channel<S, R>,
     closed: Arc<AtomicBool>,
 }
 
 impl<S: MessageType, R: MessageType> Server<S, R> {
-    fn new(server: WorldChannel<S, R>, closed: Arc<AtomicBool>) -> Self {
+    fn new(server: Channel<S, R>, closed: Arc<AtomicBool>) -> Self {
         Self {
             channel: server,
             closed,
@@ -210,7 +205,7 @@ impl<S: MessageType, R: MessageType> Server<S, R> {
         self.closed.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn channel(&self) -> &WorldChannel<S, R> {
+    pub fn channel(&self) -> &Channel<S, R> {
         &self.channel
     }
 }
@@ -221,7 +216,7 @@ pub async fn connect_to_server<S: MessageType, R: MessageType>() -> Result<Serve
     let stream = TcpStream::connect(addr).await?;
     stream.set_nodelay(true)?;
 
-    let WorldChannelPair { client, server } = WorldChannel::<S, R>::new_pair();
+    let ChannelPair { client, server } = Channel::<S, R>::new_pair();
 
     let closed = Arc::new(AtomicBool::new(false));
 

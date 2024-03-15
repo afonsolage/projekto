@@ -78,7 +78,7 @@ fn handle_messages(world: &mut World) {
     let clients = world
         .resource::<Clients>()
         .iter()
-        .map(|(id, client)| (*id, client.channel().recv_all()))
+        .map(|(id, client)| (*id, client.channel().try_recv_all()))
         .collect::<Vec<_>>();
 
     for (id, messages) in clients {

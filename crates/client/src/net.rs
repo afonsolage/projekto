@@ -82,7 +82,7 @@ fn server_connection(mut commands: Commands, mut meta: Local<Meta>) {
 
 fn handle_messages(world: &mut World) {
     world.resource_scope(|world, server: Mut<ServerConnection>| {
-        while let Some(boxed) = server.channel().recv() {
+        while let Some(boxed) = server.channel().try_recv() {
             let msg_type = boxed.msg_type();
             msg_type.run_handlers(boxed, ClientId::default(), world);
         }
