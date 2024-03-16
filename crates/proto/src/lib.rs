@@ -26,21 +26,20 @@ pub enum MessageError {
 }
 
 pub trait MessageType: std::fmt::Debug + Send + Sync + 'static {
-    const MAX_MESSAGE_SIZE: usize;
-
+    fn name() -> &'static str;
     fn source() -> MessageSource;
+    fn code(&self) -> u16;
+    fn try_from_code(n: u16) -> Result<Self, MessageError>
+    where
+        Self: Sized;
     fn deserialize_boxed(&self, buf: &[u8]) -> Result<BoxedMessage<Self>, MessageError>;
     fn serialize_boxed(
         &self,
         boxed: BoxedMessage<Self>,
         buf: &mut [u8],
     ) -> Result<u32, MessageError>;
-    fn try_from_code(n: u16) -> Result<Self, MessageError>
-    where
-        Self: Sized;
-    fn code(&self) -> u16;
     fn run_handlers(&self, boxed: BoxedMessage<Self>, client_id: net::ClientId, world: &mut World);
-    fn name() -> &'static str;
+    fn is_unit_type(&self) -> bool;
 }
 
 #[derive(Debug, Hash, Eq, PartialEq)]

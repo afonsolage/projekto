@@ -32,23 +32,29 @@ async fn net_to_channel<S: MessageType, R: MessageType>(
         stream.read_exact(&mut msg_code).await?;
         let msg_type = S::try_from_code(u16::from_be_bytes(msg_code))?;
 
-        // Then check if the message len is also valid.
-        stream.read_exact(&mut msg_len).await?;
-        let msg_len = u32::from_be_bytes(msg_len) as usize;
+        let boxed = if msg_type.is_unit_type() {
+            // Unit type doesn't have content
+            msg_type.deserialize_boxed(&[])?
+        } else {
+            // Then check if the message len is also valid.
+            stream.read_exact(&mut msg_len).await?;
+            let msg_len = u32::from_be_bytes(msg_len) as usize;
 
-        if msg_len == 0 {
-            return Err(MessageError::Io(std::io::ErrorKind::BrokenPipe.into()));
-        }
+            if msg_len == 0 {
+                return Err(MessageError::Io(std::io::ErrorKind::BrokenPipe.into()));
+            }
 
-        if msg_len >= cache_buffer.len() {
-            return Err(MessageError::Io(std::io::ErrorKind::InvalidData.into()));
-        }
+            if msg_len >= cache_buffer.len() {
+                return Err(MessageError::Io(std::io::ErrorKind::InvalidData.into()));
+            }
 
-        // Get a mutable slice which fits the incomming message.
-        let buffer = &mut cache_buffer[..msg_len];
-        stream.read_exact(buffer).await?;
+            // Get a mutable slice which fits the incomming message.
+            let buffer = &mut cache_buffer[..msg_len];
+            stream.read_exact(buffer).await?;
 
-        let boxed = msg_type.deserialize_boxed(buffer)?;
+            msg_type.deserialize_boxed(buffer)?
+        };
+
         channel.send_boxed(boxed)?;
     }
 }
@@ -63,19 +69,25 @@ async fn channel_to_net<S: MessageType, R: MessageType>(
         let msg_type = boxed.msg_type();
         let msg_type_bytes = msg_type.code().to_be_bytes();
 
-        let msg_size_offset = msg_type_bytes.len();
-        let msg_offset = msg_size_offset + std::mem::size_of::<u32>();
+        let packet_buffer = if msg_type.is_unit_type() {
+            // Unit type doesn't have content. Send only msg type
+            &msg_type_bytes
+        } else {
+            let msg_size_offset = msg_type_bytes.len();
+            let msg_offset = msg_size_offset + std::mem::size_of::<u32>();
 
-        // First serialize at right offset (6 bytes - 2 + 4)
-        let msg_size = msg_type.serialize_boxed(boxed, &mut cache_buffer[msg_offset..])?;
-        let msg_size_bytes = msg_size.to_be_bytes();
+            // First serialize at right offset (6 bytes - 2 + 4)
+            let msg_size = msg_type.serialize_boxed(boxed, &mut cache_buffer[msg_offset..])?;
+            let msg_size_bytes = msg_size.to_be_bytes();
 
-        // Then prepend msg type (2 bytes) and msg size (4 bytes)
-        cache_buffer[0..msg_size_offset].copy_from_slice(&msg_type_bytes);
-        cache_buffer[msg_size_offset..msg_offset].copy_from_slice(&msg_size_bytes);
+            // Then prepend msg type (2 bytes) and msg size (4 bytes)
+            cache_buffer[0..msg_size_offset].copy_from_slice(&msg_type_bytes);
+            cache_buffer[msg_size_offset..msg_offset].copy_from_slice(&msg_size_bytes);
 
-        // The final packet to be send is type + size + the serialized message size.
-        let packet_buffer = &cache_buffer[..msg_offset + msg_size as usize];
+            // The final packet to be send is type + size + the serialized message size.
+            &cache_buffer[..msg_offset + msg_size as usize]
+        };
+
         stream.write_all(packet_buffer).await?;
         stream.flush().await?;
     }
@@ -281,7 +293,9 @@ mod tests {
     use futures_lite::future::block_on;
     use projekto_proto_macros::message_source;
 
-    use crate::{self as projekto_proto, connect_to_server, start_server, Client, MessageSource};
+    use crate::{
+        self as projekto_proto, connect_to_server, start_server, Client, Message, MessageSource,
+    };
 
     #[message_source(MessageSource::Client)]
     enum TestMsg {
@@ -304,14 +318,19 @@ mod tests {
                 connected_clients.lock().unwrap().push(client);
             })
             .await;
-            println!("Finished!");
         });
+
+        // Wait server open socket
+        std::thread::sleep(std::time::Duration::from_millis(10));
 
         let client_task = AsyncComputeTaskPool::get_or_init(TaskPool::default)
             .spawn(async move { connect_to_server::<TestMsg, TestMsg>(bind_addr).await });
 
         let result = block_on(client_task);
         assert!(result.is_ok(), "Should be able to connect to server");
+
+        // Wait packet be sent
+        std::thread::sleep(std::time::Duration::from_millis(10));
 
         assert_eq!(
             clients.lock().unwrap().len(),
@@ -327,34 +346,82 @@ mod tests {
         assert!(client.is_closed(), "Client channel must be closed");
     }
 
-    #[test]
-    fn client_send_msg() {
-        let bind_addr = "127.0.0.1:11226";
+    fn test_client_send_msg<M: Message<TestMsg>>(msg: M, port: u32) -> M {
+        let bind_addr = format!("127.0.0.1:{port}");
         let clients = Arc::new(Mutex::new(vec![]));
         let connected_clients = clients.clone();
+
+        let server_bind_addr = bind_addr.clone();
         let server_task = AsyncComputeTaskPool::get_or_init(TaskPool::default).spawn(async move {
-            let _ = start_server(bind_addr, |client: Client<TestMsg, TestMsg>| {
+            let _ = start_server(server_bind_addr, |client: Client<TestMsg, TestMsg>| {
                 connected_clients.lock().unwrap().push(client);
             })
             .await;
         });
+
+        // Wait server open socket
+        std::thread::sleep(std::time::Duration::from_millis(10));
 
         let client_task = AsyncComputeTaskPool::get_or_init(TaskPool::default)
             .spawn(async move { connect_to_server::<TestMsg, TestMsg>(bind_addr).await });
 
         let server_conn = block_on(client_task).expect("Should be connected to server");
 
-        server_conn.channel().send(A).unwrap();
+        server_conn.channel().send(msg).unwrap();
 
-        let client = clients.lock().unwrap()[0].clone();
+        let mut attempts = 10;
+        let boxed = loop {
+            let Some(client) = clients.lock().unwrap().first().cloned() else {
+                continue;
+            };
 
-        let boxed = client
-            .channel()
-            .try_recv()
-            .expect("Should receive A message");
+            if let Some(boxed) = client.channel().try_recv() {
+                break boxed;
+            }
 
-        assert_eq!(boxed.msg_type(), TestMsg::A);
+            assert!(
+                !client.is_closed(),
+                "client should not be closed. This means a possible error on channel"
+            );
+
+            // Avoid spin lock
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            attempts -= 1;
+            if attempts <= 0 {
+                panic!("Timeout while waiting from message");
+            }
+        };
 
         block_on(async move { server_task.cancel().await });
+        match boxed.downcast() {
+            Ok(msg) => msg,
+            Err(err) => panic!("{err:?}"),
+        }
+    }
+
+    #[test]
+    fn client_send_unit_msg() {
+        let res = test_client_send_msg(A, 11227);
+        assert_eq!(res, A);
+    }
+
+    #[test]
+    fn client_send_unnamed_msg() {
+        let res = test_client_send_msg(B(42), 11228);
+        assert_eq!(res.0, 42);
+    }
+
+    #[test]
+    fn client_send_named_msg() {
+        let res = test_client_send_msg(
+            C {
+                v: vec![10, 11, 12],
+                s: true,
+            },
+            11229,
+        );
+        assert_eq!(res.v, vec![10, 11, 12]);
+        assert!(res.s);
     }
 }

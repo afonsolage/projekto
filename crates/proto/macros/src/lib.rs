@@ -82,26 +82,26 @@ fn generate_simplified_enum(
     let handlers_match_items = variants.iter().map(|v| {
         let v_name = &v.ident;
         let no_copy = v.attrs.iter().any(|attr| attr.path().is_ident("no_copy"));
-        if no_copy { 
+        if no_copy {
             quote!{
                 #name::#v_name => {
                     projekto_proto::RunMessageHandlers::run_handler::<#v_name>(world, client_id, boxed);
                 },
             }
-        } else { 
+        } else {
             quote! {
                 #name::#v_name => {
                     projekto_proto::RunMessageHandlers::run_handlers::<#v_name>(world, client_id, boxed);
                 },
-            } 
+            }
         }
     });
 
-    let var_cnt = variants.len();
-    let size_array_items = variants.iter().map(|v| {
+    let is_unit_type = variants.iter().map(|v| {
         let v_name = &v.ident;
+        let is_unit_type = matches!(v.fields, Fields::Unit);
         quote! {
-            std::mem::size_of::<#v_name>(),
+            #name::#v_name => #is_unit_type,
         }
     });
 
@@ -112,28 +112,7 @@ fn generate_simplified_enum(
             #(#variant_names),*
         }
 
-        impl #name {
-            const fn max_message_size() -> usize {
-                const SIZES: [usize; #var_cnt] = [
-                    #(#size_array_items)*
-                ];
-
-                let mut i = 0;
-                let mut max = 0;
-                while i < SIZES.len() {
-                    if SIZES[i] > max {
-                        max = SIZES[i];
-                    }
-                    i += 1;
-                }
-
-                max
-            }
-        }
-
         impl projekto_proto::MessageType for #name {
-            const MAX_MESSAGE_SIZE: usize = Self::max_message_size();
-
             fn source() -> MessageSource {
                 #source
             }
@@ -170,6 +149,12 @@ fn generate_simplified_enum(
             fn run_handlers(&self, boxed: projekto_proto::BoxedMessage<Self>, client_id: projekto_proto::ClientId, world: &mut bevy::prelude::World) {
                 match self {
                     #(#handlers_match_items)*
+                }
+            }
+
+            fn is_unit_type(&self) -> bool {
+                match self {
+                    #(#is_unit_type)*
                 }
             }
         }
@@ -214,7 +199,7 @@ fn generate_structs(variants: &Punctuated<Variant, Comma>) -> proc_macro2::Token
                     panic!("Unit variants are always Copy. Remove no_copy.");
                 }
                 quote! {
-                    #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+                    #[derive(Debug, Copy, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
                     pub struct #name;
                 }
             }
