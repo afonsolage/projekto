@@ -75,7 +75,7 @@ fn server_connection(mut commands: Commands, mut meta: Local<Meta>) {
         }
     } else if meta.next_try <= Instant::now() {
         let task = AsyncComputeTaskPool::get_or_init(TaskPool::default)
-            .spawn(async move { connect_to_server().await });
+            .spawn(async move { connect_to_server("127.0.0.1:11223").await });
         meta.task = Some(task);
     }
 }

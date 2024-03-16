@@ -19,14 +19,18 @@ impl<S, R> Channel<S, R> {
     pub fn is_closed(&self) -> bool {
         self.sender.is_closed() || self.receiver.is_closed()
     }
-}
 
-impl<S, R> Clone for Channel<S, R> {
-    fn clone(&self) -> Self {
-        Self {
-            sender: self.sender.clone(),
-            receiver: self.receiver.clone(),
-        }
+    pub fn close(&self) {
+        let _ = self.receiver.close();
+        let _ = self.sender.close();
+    }
+
+    pub fn len(&self) -> usize {
+        self.receiver.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.receiver.is_empty()
     }
 }
 
@@ -52,14 +56,6 @@ impl<S: MessageType, R: MessageType> Channel<S, R> {
                 receiver: server_receiver,
             },
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.receiver.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.receiver.is_empty()
     }
 
     pub fn try_recv(&self) -> Option<BoxedMessage<R>> {
@@ -90,10 +86,14 @@ impl<S: MessageType, R: MessageType> Channel<S, R> {
             .try_send(boxed)
             .map_err(|_| ChannelError::Send())
     }
+}
 
-    pub fn close(self) {
-        let _ = self.receiver.close();
-        let _ = self.sender.close();
+impl<S, R> Clone for Channel<S, R> {
+    fn clone(&self) -> Self {
+        Self {
+            sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
+        }
     }
 }
 

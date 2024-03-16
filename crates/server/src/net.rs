@@ -36,7 +36,7 @@ fn start_network_server(mut commands: Commands) {
     let (sender, receiver) = mpsc::channel();
     AsyncComputeTaskPool::get_or_init(TaskPool::default)
         .spawn(async move {
-            let _ = projekto_proto::start_server(|client| {
+            let _ = projekto_proto::start_server("127.0.0.1:11223", |client| {
                 let id = client.id();
                 if let Err(err) = sender.send(client) {
                     error!("Failed to get client {id}. Error: {err}");

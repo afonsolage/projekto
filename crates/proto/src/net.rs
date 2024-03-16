@@ -4,7 +4,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
-use async_net::{SocketAddr, TcpListener, TcpStream};
+use async_net::{AsyncToSocketAddrs, SocketAddr, TcpListener, TcpStream};
 use bevy::{
     log::{debug, info},
     tasks::{AsyncComputeTaskPool, TaskPool},
@@ -134,22 +134,39 @@ impl<S: MessageType, R: MessageType> Client<S, R> {
     }
 
     pub fn is_closed(&self) -> bool {
-        self.closed.load(std::sync::atomic::Ordering::Relaxed)
+        self.closed.load(std::sync::atomic::Ordering::Relaxed) || self.channel().is_closed()
+    }
+}
+
+struct CloseOnDrop<S, R>(Channel<S, R>, Channel<R, S>);
+impl<S, R> CloseOnDrop<S, R> {
+    fn is_closed(&self) -> bool {
+        self.0.is_closed() || self.1.is_closed()
+    }
+}
+
+impl<S, R> Drop for CloseOnDrop<S, R> {
+    fn drop(&mut self) {
+        self.0.close();
+        self.1.close();
     }
 }
 
 pub async fn start_server<F, S: MessageType, R: MessageType>(
+    addr: impl AsyncToSocketAddrs,
     on_client_connected: F,
 ) -> Result<(), io::Error>
 where
     F: Fn(Client<S, R>),
 {
-    let bind_addr = "127.0.0.1:11223";
-    let listener = TcpListener::bind(bind_addr).await?;
+    let listener = TcpListener::bind(addr).await?;
 
     let mut incoming = listener.incoming();
 
+    let bind_addr = listener.local_addr()?;
     info!("[Networking] Starting to listen: {bind_addr}");
+
+    let mut channel_guards = vec![];
 
     let mut client_idx = 0;
     while let Some(stream) = incoming.next().await {
@@ -168,27 +185,31 @@ where
 
         let stream_clone = stream.clone();
         let client_clone = client.clone();
-        let send_closed = closed.clone();
+        let recv_closed = closed.clone();
         AsyncComputeTaskPool::get_or_init(TaskPool::default)
             .spawn(async move {
                 if let Err(err) = net_to_channel(stream_clone, client_clone).await {
                     debug!("[{id}] Failed to receive messages from {addr}: Error: {err}");
-                    send_closed.store(true, std::sync::atomic::Ordering::Relaxed);
+                    recv_closed.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             })
             .detach();
 
         let send_closed = closed.clone();
+        let client_clone = client.clone();
         AsyncComputeTaskPool::get_or_init(TaskPool::default)
             .spawn(async move {
-                if let Err(err) = channel_to_net(stream, client).await {
+                if let Err(err) = channel_to_net(stream, client_clone).await {
                     debug!("[{id}] Failed to send messages to {addr}: Error: {err}");
                     send_closed.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             })
             .detach();
 
-        on_client_connected(Client::new(id, addr, server, closed));
+        on_client_connected(Client::new(id, addr, server.clone(), closed));
+
+        channel_guards.push(CloseOnDrop(client, server));
+        channel_guards.retain(|t| !t.is_closed());
     }
 
     Ok(())
@@ -217,9 +238,9 @@ impl<S: MessageType, R: MessageType> Server<S, R> {
     }
 }
 
-pub async fn connect_to_server<S: MessageType, R: MessageType>() -> Result<Server<S, R>, io::Error>
-{
-    let addr = "127.0.0.1:11223";
+pub async fn connect_to_server<S: MessageType, R: MessageType>(
+    addr: impl AsyncToSocketAddrs,
+) -> Result<Server<S, R>, io::Error> {
     let stream = TcpStream::connect(addr).await?;
     stream.set_nodelay(true)?;
 
@@ -250,4 +271,90 @@ pub async fn connect_to_server<S: MessageType, R: MessageType>() -> Result<Serve
         .detach();
 
     Ok(Server::new(client, closed))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use bevy::tasks::{AsyncComputeTaskPool, TaskPool};
+    use futures_lite::future::block_on;
+    use projekto_proto_macros::message_source;
+
+    use crate::{self as projekto_proto, connect_to_server, start_server, Client, MessageSource};
+
+    #[message_source(MessageSource::Client)]
+    enum TestMsg {
+        A,
+        B(u32),
+        #[no_copy]
+        C {
+            v: Vec<u8>,
+            s: bool,
+        },
+    }
+
+    #[test]
+    fn connection() {
+        let bind_addr = "127.0.0.1:11225";
+        let clients = Arc::new(Mutex::new(vec![]));
+        let connected_clients = clients.clone();
+        let server_task = AsyncComputeTaskPool::get_or_init(TaskPool::default).spawn(async move {
+            let _ = start_server(bind_addr, |client: Client<TestMsg, TestMsg>| {
+                connected_clients.lock().unwrap().push(client);
+            })
+            .await;
+            println!("Finished!");
+        });
+
+        let client_task = AsyncComputeTaskPool::get_or_init(TaskPool::default)
+            .spawn(async move { connect_to_server::<TestMsg, TestMsg>(bind_addr).await });
+
+        let result = block_on(client_task);
+        assert!(result.is_ok(), "Should be able to connect to server");
+
+        assert_eq!(
+            clients.lock().unwrap().len(),
+            1,
+            "One client should be connected"
+        );
+
+        let client = clients.lock().unwrap()[0].clone();
+        assert!(!client.is_closed(), "Client channel must be open");
+
+        block_on(async move { server_task.cancel().await });
+
+        assert!(client.is_closed(), "Client channel must be closed");
+    }
+
+    #[test]
+    fn client_send_msg() {
+        let bind_addr = "127.0.0.1:11226";
+        let clients = Arc::new(Mutex::new(vec![]));
+        let connected_clients = clients.clone();
+        let server_task = AsyncComputeTaskPool::get_or_init(TaskPool::default).spawn(async move {
+            let _ = start_server(bind_addr, |client: Client<TestMsg, TestMsg>| {
+                connected_clients.lock().unwrap().push(client);
+            })
+            .await;
+        });
+
+        let client_task = AsyncComputeTaskPool::get_or_init(TaskPool::default)
+            .spawn(async move { connect_to_server::<TestMsg, TestMsg>(bind_addr).await });
+
+        let server_conn = block_on(client_task).expect("Should be connected to server");
+
+        server_conn.channel().send(A).unwrap();
+
+        let client = clients.lock().unwrap()[0].clone();
+
+        let boxed = client
+            .channel()
+            .try_recv()
+            .expect("Should receive A message");
+
+        assert_eq!(boxed.msg_type(), TestMsg::A);
+
+        block_on(async move { server_task.cancel().await });
+    }
 }
