@@ -96,6 +96,13 @@ impl std::fmt::Display for ClientId {
     }
 }
 
+#[cfg(test)]
+impl From<u32> for ClientId {
+    fn from(value: u32) -> Self {
+        ClientId(value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Client<S, R> {
     id: ClientId,

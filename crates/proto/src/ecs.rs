@@ -170,7 +170,8 @@ mod tests {
     use projekto_proto_macros::message_source;
 
     use crate::{
-        self as projekto_proto, ecs::MoveHandler, ClientId, MessageSource, RegisterMessageHandler,
+        self as projekto_proto, ecs::MoveHandler, BoxedMessage, ClientId, MessageSource,
+        RegisterMessageHandler, RunMessageHandlers,
     };
 
     use super::CopyHandlers;
@@ -265,5 +266,87 @@ mod tests {
         app.set_message_handler(|_: In<(ClientId, B)>| todo!());
 
         // Assert
+    }
+
+    #[test]
+    fn run_handlers() {
+        // Arrange
+        let mut app = App::new();
+        let mut atomics = vec![];
+        for i in 0..10 {
+            let run = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let sys_run = run.clone();
+            if i % 2 == 0 {
+                app.add_message_handler(move |In(_): In<A>| {
+                    sys_run.store(true, std::sync::atomic::Ordering::Relaxed);
+                });
+            } else {
+                app.add_message_handler(move |In((id, _)): In<(ClientId, A)>| {
+                    sys_run.store(id == 42.into(), std::sync::atomic::Ordering::Relaxed);
+                });
+            }
+            atomics.push(run);
+        }
+        let boxed: BoxedMessage<TestMsg> = Box::new(A);
+
+        // Act
+        app.world.run_handlers::<A>(42.into(), boxed);
+
+        // Assert
+        assert!(
+            atomics
+                .into_iter()
+                .all(|ran| ran.load(std::sync::atomic::Ordering::Relaxed)),
+            "All handlers system must run and should match id"
+        );
+    }
+
+    #[test]
+    fn run_handler() {
+        // Arrange
+        let mut app = App::new();
+
+        let run = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let sys_run = run.clone();
+        app.set_message_handler(move |In(B(n)): In<B>| {
+            sys_run.store(n == 11, std::sync::atomic::Ordering::Relaxed);
+        });
+
+        let boxed: BoxedMessage<TestMsg> = Box::new(B(11));
+
+        // Act
+        app.world.run_handler::<B>(42.into(), boxed);
+
+        // Assert
+        assert!(
+            run.load(std::sync::atomic::Ordering::Relaxed),
+            "Handler system must run and should match given value"
+        );
+    }
+
+    #[test]
+    fn run_handler_id() {
+        // Arrange
+        let mut app = App::new();
+
+        let run = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let sys_run = run.clone();
+        app.set_message_handler(move |In((id, B(n))): In<(ClientId, B)>| {
+            sys_run.store(
+                id == 42.into() && n == 11,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        });
+
+        let boxed: BoxedMessage<TestMsg> = Box::new(B(11));
+
+        // Act
+        app.world.run_handler::<B>(42.into(), boxed);
+
+        // Assert
+        assert!(
+            run.load(std::sync::atomic::Ordering::Relaxed),
+            "Handler system must run and should match given value and id"
+        );
     }
 }
