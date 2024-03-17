@@ -43,7 +43,7 @@ impl Plugin for WorldServerPlugin {
                 NetPlugin,
                 set::LandscapePlugin,
                 set::ChunkManagementPlugin,
-                set::ChunkInitializationPlugin,
+                // set::ChunkInitializationPlugin,
                 set::PropagationPlugin,
                 set::MeshingPlugin,
                 set::SendResponsesPlugin,

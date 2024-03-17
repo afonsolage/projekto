@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use crate::{
     app::AsyncRunnnerPlugin,
     asset::{ChunkAsset, ChunkAssetGenRequest},
-    bundle::{ChunkKind, ChunkMap},
+    bundle::{ChunkKind, ChunkLight, ChunkMap},
 };
 
 mod genesis;
@@ -17,7 +17,7 @@ struct ChunkRequest(ChunkAssetGenRequest);
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct ChunkAssetGenReceiver(pub Receiver<ChunkAssetGenRequest>);
 
-const TICK_EVERY_MILLIS: u64 = 1500;
+const TICK_EVERY_MILLIS: u64 = 150;
 
 pub(crate) fn create(receiver: Receiver<ChunkAssetGenRequest>) -> App {
     let mut app = App::new();
@@ -31,11 +31,25 @@ pub(crate) fn create(receiver: Receiver<ChunkAssetGenRequest>) -> App {
     app.insert_resource(ChunkAssetGenReceiver(receiver));
     app.init_resource::<ChunkMap>();
 
+    app.configure_sets(Update, GenSet::Structure.before(GenSet::Light));
+
     app.add_systems(First, collect_requests);
-    app.add_systems(Update, generate_structure);
+    app.add_systems(
+        Update,
+        (
+            generate_structure.in_set(GenSet::Structure),
+            init_light.in_set(GenSet::Light),
+        ),
+    );
     app.add_systems(Last, dispatch_requests);
 
     app
+}
+
+#[derive(SystemSet, Debug, Clone, Eq, PartialEq, Hash)]
+enum GenSet {
+    Structure,
+    Light,
 }
 
 fn collect_requests(
@@ -48,10 +62,14 @@ fn collect_requests(
         return;
     }
 
-    while let Ok(msg) = receiver.try_recv() {
+    if let Ok(msg) = receiver.try_recv() {
         let chunk = msg.chunk;
         let entity = commands
-            .spawn((ChunkRequest(msg), ChunkKind::default()))
+            .spawn((
+                ChunkRequest(msg),
+                ChunkKind::default(),
+                ChunkLight::default(),
+            ))
             .id();
 
         let existing = chunk_map.insert(chunk, entity);
@@ -76,6 +94,20 @@ fn generate_structure(mut q: Query<(&mut ChunkKind, &ChunkRequest)>) {
     trace!("[generate_structure] {count} chunks structures generated.");
 }
 
+fn init_light(mut q: Query<(&mut ChunkLight, &ChunkKind, &ChunkRequest)>) {
+    if q.is_empty() {
+        return;
+    }
+
+    let mut count = 0;
+    for (mut chunk_light, chunk_kind, req) in q.iter_mut() {
+        count += 1;
+        genesis::init_light(req.chunk, chunk_kind, &mut chunk_light);
+    }
+
+    trace!("[init_light] {count} chunks light initialized.");
+}
+
 fn dispatch_requests(world: &mut World) {
     let entities = world
         .query_filtered::<Entity, With<ChunkRequest>>()
@@ -83,13 +115,14 @@ fn dispatch_requests(world: &mut World) {
         .collect::<Vec<_>>();
 
     entities.into_iter().for_each(|entity| {
-        let (ChunkRequest(req), ChunkKind(kind)) = world
+        let (ChunkRequest(req), ChunkKind(kind), ChunkLight(light)) = world
             .entity_mut(entity)
-            .take::<(ChunkRequest, ChunkKind)>()
+            .take::<(ChunkRequest, ChunkKind, ChunkLight)>()
             .expect("All components to exists");
 
         let asset = ChunkAsset {
             chunk: req.chunk,
+            light,
             kind,
             ..Default::default()
         };
