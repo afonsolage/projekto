@@ -7,14 +7,29 @@ use projekto_messages::ChunkVertex;
 use projekto_proto::RegisterMessageHandler;
 
 use crate::{
-    bundle::ChunkLocal, material::ChunkMaterial, ChunkBundle, ChunkMap, ChunkMaterialHandle,
+    bundle::ChunkLocal, material::ChunkMaterial, net::ServerDisconnected, ChunkBundle, ChunkMap,
+    ChunkMaterialHandle,
 };
 
 pub(crate) struct MeshingPlugin;
 
 impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
-        app.set_message_handler(update_chunk_mesh);
+        app.set_message_handler(update_chunk_mesh).add_systems(
+            Update,
+            despawn_chunks_on_server_disconnect.run_if(on_event::<ServerDisconnected>()),
+        );
+    }
+}
+
+fn despawn_chunks_on_server_disconnect(
+    mut map: ResMut<ChunkMap>,
+    mut reader: EventReader<ServerDisconnected>,
+    mut commands: Commands,
+) {
+    reader.clear();
+    for (_, entity) in map.drain() {
+        commands.entity(entity).despawn();
     }
 }
 
