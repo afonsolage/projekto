@@ -20,7 +20,7 @@ use projekto_core::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{app::RunAsync, gen};
+use crate::gen;
 
 pub(crate) struct ChunkAssetPlugin;
 
@@ -48,7 +48,7 @@ pub fn setup_chunk_asset_loader(app: &mut App) {
 
     trace!("Chunk asset source was added.");
 
-    gen::create(receiver).run_async();
+    gen::start(receiver);
 }
 
 #[derive(Debug, Clone)]

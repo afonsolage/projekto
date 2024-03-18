@@ -1,10 +1,9 @@
 use std::time::Duration;
 
 use async_channel::Receiver;
-use bevy::prelude::*;
+use bevy::{app::ScheduleRunnerPlugin, ecs::schedule::ExecutorKind, prelude::*};
 
 use crate::{
-    app::AsyncRunnnerPlugin,
     asset::{ChunkAsset, ChunkAssetGenRequest},
     bundle::{ChunkKind, ChunkLight, ChunkMap},
 };
@@ -17,33 +16,51 @@ struct ChunkRequest(ChunkAssetGenRequest);
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct ChunkAssetGenReceiver(pub Receiver<ChunkAssetGenRequest>);
 
-const TICK_EVERY_MILLIS: u64 = 150;
+const TICK_EVERY_MILLIS: u64 = 1000;
 
-pub(crate) fn create(receiver: Receiver<ChunkAssetGenRequest>) -> App {
+pub(crate) fn start(receiver: Receiver<ChunkAssetGenRequest>) {
+    // Force schedules to be single threaded, to avoid using thread pool.
+    let (mut first_schedule, mut update_schedule, mut last_schedule) = (
+        Schedule::new(First),
+        Schedule::new(Update),
+        Schedule::new(Last),
+    );
+
+    first_schedule.set_executor_kind(ExecutorKind::SingleThreaded);
+    update_schedule.set_executor_kind(ExecutorKind::SingleThreaded);
+    last_schedule.set_executor_kind(ExecutorKind::SingleThreaded);
+
     let mut app = App::new();
 
     app.add_plugins((
         AssetPlugin::default(),
-        MinimalPlugins,
-        AsyncRunnnerPlugin::new("WorldGen", Duration::from_millis(TICK_EVERY_MILLIS)),
-    ));
-
-    app.insert_resource(ChunkAssetGenReceiver(receiver));
-    app.init_resource::<ChunkMap>();
-
-    app.configure_sets(Update, GenSet::Structure.before(GenSet::Light));
-
-    app.add_systems(First, collect_requests);
-    app.add_systems(
+        MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(
+            TICK_EVERY_MILLIS,
+        ))),
+    ))
+    .insert_resource(ChunkAssetGenReceiver(receiver))
+    .init_resource::<ChunkMap>()
+    .add_schedule(first_schedule)
+    .add_schedule(update_schedule)
+    .add_schedule(last_schedule)
+    .configure_sets(Update, GenSet::Structure.before(GenSet::Light))
+    .add_systems(First, collect_requests)
+    .add_systems(
         Update,
         (
             generate_structure.in_set(GenSet::Structure),
             init_light.in_set(GenSet::Light),
         ),
-    );
-    app.add_systems(Last, dispatch_requests);
+    )
+    .add_systems(Last, dispatch_requests);
 
-    app
+    let _ = std::thread::Builder::new()
+        .name("WorldGen".into())
+        .spawn(move || {
+            trace!("Starting world gen app");
+            app.run();
+            trace!("Stopping world gen app");
+        });
 }
 
 #[derive(SystemSet, Debug, Clone, Eq, PartialEq, Hash)]
@@ -62,7 +79,7 @@ fn collect_requests(
         return;
     }
 
-    if let Ok(msg) = receiver.try_recv() {
+    while let Ok(msg) = receiver.try_recv() {
         let chunk = msg.chunk;
         let entity = commands
             .spawn((
