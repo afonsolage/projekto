@@ -8,7 +8,10 @@ use crate::{
     bundle::{ChunkKind, ChunkLight, ChunkMap},
 };
 
+use self::noise::Noise;
+
 mod genesis;
+pub(crate) mod noise;
 
 #[derive(Component, Debug, Deref, DerefMut)]
 struct ChunkRequest(ChunkAssetGenRequest);
@@ -97,7 +100,7 @@ fn collect_requests(
     trace!("[collect_request] {count} chunks requests received.");
 }
 
-fn generate_structure(mut q: Query<(&mut ChunkKind, &ChunkRequest)>) {
+fn generate_structure(mut q: Query<(&mut ChunkKind, &ChunkRequest)>, noise: Local<Noise>) {
     if q.is_empty() {
         return;
     }
@@ -105,7 +108,7 @@ fn generate_structure(mut q: Query<(&mut ChunkKind, &ChunkRequest)>) {
     let mut count = 0;
     for (mut kind, req) in q.iter_mut() {
         count += 1;
-        genesis::generate_chunk(req.chunk, &mut kind);
+        genesis::generate_chunk(&noise, req.chunk, &mut kind);
     }
 
     trace!("[generate_structure] {count} chunks structures generated.");
