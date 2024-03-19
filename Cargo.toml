@@ -66,9 +66,6 @@ workspace = true
 [profile.dev.package."*"]
 opt-level = 3
 
-[profile.dev]
-panic = 'abort'
-
 [[example]]
 name = "orbit_cam"
 path = "examples/orbit_cam.rs"
