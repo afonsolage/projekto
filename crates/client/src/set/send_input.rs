@@ -7,7 +7,7 @@ pub(crate) struct SendInputPlugin;
 impl Plugin for SendInputPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PlayerLandscape {
-            radius: 4,
+            radius: 32,
             ..Default::default()
         })
         .add_systems(

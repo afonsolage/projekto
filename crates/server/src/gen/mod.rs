@@ -140,6 +140,8 @@ fn dispatch_requests(world: &mut World) {
             .take::<(ChunkRequest, ChunkKind, ChunkLight)>()
             .expect("All components to exists");
 
+        world.despawn(entity);
+
         let asset = ChunkAsset {
             chunk: req.chunk,
             light,

@@ -10,7 +10,7 @@ mod meshing;
 
 mod asset;
 
-pub use asset::setup_chunk_asset_loader;
+pub use asset::{setup_chunk_asset_loader, ChunkAsset};
 
 mod net;
 

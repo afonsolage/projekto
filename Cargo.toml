@@ -37,6 +37,9 @@ async-lock = "3.3"
 [dev-dependencies]
 bevy.workspace = true
 projekto_camera.workspace = true
+projekto_core.workspace = true
+projekto_proto.workspace = true
+projekto_server.workspace = true
 
 [workspace.lints.clippy]
 type_complexity = "allow"
@@ -63,6 +66,9 @@ workspace = true
 [profile.dev.package."*"]
 opt-level = 3
 
+[profile.dev]
+panic = 'abort'
+
 [[example]]
 name = "orbit_cam"
 path = "examples/orbit_cam.rs"
@@ -70,3 +76,4 @@ path = "examples/orbit_cam.rs"
 [[example]]
 name = "swap_cam"
 path = "examples/swap_cam.rs"
+

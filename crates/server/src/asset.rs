@@ -81,7 +81,7 @@ impl ChunkAssetGenRequest {
 }
 
 #[derive(Asset, Default, Debug, TypePath, Serialize, Deserialize)]
-pub(crate) struct ChunkAsset {
+pub struct ChunkAsset {
     pub chunk: Chunk,
     pub kind: ChunkStorage<voxel::Kind>,
     pub light: ChunkStorage<voxel::Light>,
