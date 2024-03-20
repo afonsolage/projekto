@@ -1,7 +1,7 @@
 use bevy::{math::vec2, prelude::*};
 use bracket_noise::prelude::*;
 
-pub(crate) struct Noise {
+pub struct Noise {
     continentalness: FastNoise,
     curve: Vec<Vec2>,
 }
@@ -14,8 +14,8 @@ impl Noise {
         continentalness.set_frequency(0.03);
         continentalness.set_fractal_type(FractalType::FBM);
         continentalness.set_fractal_octaves(3);
-        continentalness.set_fractal_gain(0.9);
-        continentalness.set_fractal_lacunarity(0.10);
+        continentalness.set_fractal_gain(1.0);
+        continentalness.set_fractal_lacunarity(1.0);
 
         let curve = vec![
             vec2(-1.0, 50.0),
@@ -57,8 +57,7 @@ impl Noise {
 
     pub fn stone(&self, x: f32, z: f32) -> i32 {
         let n = self.continentalness.get_noise(x, z);
-        let add = self.lerp(n);
-        100 + add
+        self.lerp(n)
     }
 }
 

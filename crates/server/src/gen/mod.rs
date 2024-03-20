@@ -11,7 +11,7 @@ use crate::{
 use self::noise::Noise;
 
 mod genesis;
-pub(crate) mod noise;
+pub mod noise;
 
 #[derive(Component, Debug, Deref, DerefMut)]
 struct ChunkRequest(ChunkAssetGenRequest);
