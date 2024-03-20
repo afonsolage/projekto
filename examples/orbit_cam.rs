@@ -87,27 +87,27 @@ fn calc_input_vector(input: &Res<ButtonInput<KeyCode>>) -> Vec3 {
     let mut res = Vec3::ZERO;
 
     if input.pressed(KeyCode::KeyW) {
-        res.z += 1.0
+        res.z += 1.0;
     }
 
     if input.pressed(KeyCode::KeyS) {
-        res.z -= 1.0
+        res.z -= 1.0;
     }
 
     if input.pressed(KeyCode::KeyD) {
-        res.x += 1.0
+        res.x += 1.0;
     }
 
     if input.pressed(KeyCode::KeyA) {
-        res.x -= 1.0
+        res.x -= 1.0;
     }
 
     if input.pressed(KeyCode::Space) {
-        res.y += 1.0
+        res.y += 1.0;
     }
 
     if input.pressed(KeyCode::ControlLeft) {
-        res.y -= 1.0
+        res.y -= 1.0;
     }
 
     res
