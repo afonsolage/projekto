@@ -15,7 +15,7 @@ impl Noise {
         continentalness.set_fractal_type(FractalType::FBM);
         continentalness.set_fractal_octaves(3);
         continentalness.set_fractal_gain(0.9);
-        continentalness.set_fractal_lacunarity(0.5);
+        continentalness.set_fractal_lacunarity(0.10);
 
         let curve = vec![
             vec2(-1.0, 50.0),
