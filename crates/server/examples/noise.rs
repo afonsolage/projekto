@@ -14,6 +14,7 @@ use bevy_inspector_egui::{
     InspectorOptions,
 };
 use bracket_noise::prelude::{FastNoise, FractalType};
+use noise::{Fbm, MultiFractal, Perlin};
 
 fn main() {
     App::new()
@@ -49,6 +50,7 @@ struct NoiseSettings {
     fractal_octaves: i32,
     fractal_gain: f32,
     fractal_lacunarity: f32,
+    curve: Vec<(f32, u16)>,
 }
 
 #[derive(Resource, Reflect, InspectorOptions, Deref, DerefMut)]
@@ -67,6 +69,7 @@ impl Default for Noises {
                 fractal_octaves: 2,
                 fractal_gain: 0.3,
                 fractal_lacunarity: 0.9,
+                curve: vec![(-1.0, 50), (0.3, 100), (0.4, 150), (1.0, 150)],
             },
         );
 
@@ -75,7 +78,7 @@ impl Default for Noises {
 }
 
 #[derive(Component, Debug, Default)]
-struct NoiseImage;
+struct NoiseOceanLandImage;
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
@@ -106,14 +109,14 @@ fn setup(mut commands: Commands) {
                     background_color: Color::WHITE.into(),
                     ..Default::default()
                 },
-                NoiseImage,
+                NoiseOceanLandImage,
             ));
         });
 }
 
 fn update_noise(
     mut commands: Commands,
-    q: Query<Entity, With<NoiseImage>>,
+    q: Query<Entity, With<NoiseOceanLandImage>>,
     mut images: ResMut<Assets<Image>>,
     settings: Res<Noises>,
 ) {

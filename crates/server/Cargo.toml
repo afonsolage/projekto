@@ -34,6 +34,7 @@ async-lock.workspace = true
 
 # genesis
 bracket-noise = "0.8.7"
+noise = "0.8"
 
 [dev-dependencies]
 rand.workspace = true
@@ -49,9 +50,9 @@ workspace = true
 name = "main"
 path = "bin/main.rs"
 
-[[bin]]
+[[example]]
 name = "noise"
-path = "bin/noise.rs"
+path = "examples/noise.rs"
 
 [[example]]
 name = "server_bench"

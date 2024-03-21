@@ -13,7 +13,7 @@ pub fn generate_chunk(noise: &Noise, chunk: Chunk, chunk_kind: &mut ChunkStorage
 
     for x in 0..chunk::X_AXIS_SIZE {
         for z in 0..chunk::Z_AXIS_SIZE {
-            let end = noise.stone(world.x + x as f32, world.z + z as f32);
+            let end = noise.get_height(world.x + x as f32, world.z + z as f32);
             for y in 0..end {
                 chunk_kind.set((x as i32, y, z as i32).into(), Kind::id(3));
             }
