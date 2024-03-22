@@ -1,4 +1,6 @@
 use bevy::{
+    ecs::system::EntityCommands,
+    input::mouse::MouseMotion,
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
@@ -14,7 +16,7 @@ use bevy_inspector_egui::{
     InspectorOptions,
 };
 use bracket_noise::prelude::{FastNoise, FractalType};
-use noise::{Fbm, MultiFractal, Perlin};
+use noise::NoiseFn;
 
 fn main() {
     App::new()
@@ -51,6 +53,7 @@ struct NoiseSettings {
     fractal_gain: f32,
     fractal_lacunarity: f32,
     curve: Vec<(f32, u16)>,
+    noise: Handle<Image>,
 }
 
 #[derive(Resource, Reflect, InspectorOptions, Deref, DerefMut)]
@@ -64,12 +67,13 @@ impl Default for Noises {
             NoiseType::Continentalness,
             NoiseSettings {
                 seed: 42,
-                size: UVec2::new(4096, 4096),
-                frequency: 20.0,
-                fractal_octaves: 2,
-                fractal_gain: 0.3,
-                fractal_lacunarity: 0.9,
+                size: UVec2::new(512, 512),
+                frequency: 1.0,
+                fractal_octaves: 14,
+                fractal_gain: 0.5,
+                fractal_lacunarity: 2.2089,
                 curve: vec![(-1.0, 50), (0.3, 100), (0.4, 150), (1.0, 150)],
+                noise: Handle::default(),
             },
         );
 
@@ -80,38 +84,135 @@ impl Default for Noises {
 #[derive(Component, Debug, Default)]
 struct NoiseOceanLandImage;
 
+#[derive(Component, Debug, Default)]
+struct ContentNode;
+
+fn test_noise() -> impl noise::NoiseFn<f64, 3> {
+    use noise::*;
+
+    let mut v: Vec<Box<dyn NoiseFn<f64, 3>>> = vec![];
+
+    let a = Fbm::<Perlin>::new(42);
+    v.push(Box::new(a.clone()));
+
+    let b = Curve::new(a)
+        .add_control_point(-2.0, -1.625)
+        .add_control_point(-1.0, -1.625)
+        .add_control_point(0.0, -1.625)
+        .add_control_point(1.0, -1.625);
+
+    v.push(Box::new(b.clone()));
+
+    let c = Fbm::<Perlin>::new(42);
+    v.push(Box::new(c.clone()));
+
+    let d = Min::new(c, b);
+    v.push(Box::new(d.clone()));
+
+    d
+}
+
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
 
+    let c = test_noise();
+    let n = c.get([0.0, 0.0, 0.0]);
+
     commands
-        .spawn(NodeBundle {
-            style: Style {
-                width: Val::Px(400.0),
-                height: Val::Px(400.0),
-                position_type: PositionType::Absolute,
-                left: Val::Px(10.0),
-                top: Val::Px(10.0),
-                border: UiRect::all(Val::Px(2.0)),
-                ..default()
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    ..Default::default()
+                },
+                ..Default::default()
             },
-            border_color: Color::GRAY.into(),
-            background_color: Color::BLACK.into(),
-            ..default()
-        })
+            Name::new("Root"),
+        ))
         .with_children(|parent| {
-            parent.spawn((
+            let mut entity_cmds = parent.spawn((
                 NodeBundle {
                     style: Style {
+                        width: Val::Auto,
+                        height: Val::Auto,
+                        border: UiRect::all(Val::Px(2.0)),
+                        margin: UiRect::all(Val::Px(5.0)),
+                        ..default()
+                    },
+                    border_color: Color::GRAY.into(),
+                    background_color: Color::BLACK.into(),
+                    ..default()
+                },
+                Name::new("Border"),
+            ));
+
+            add_noise_ui_node(&mut entity_cmds);
+        });
+}
+
+fn add_noise_ui_node(entity_cmds: &mut EntityCommands) {
+    entity_cmds.with_children(|parent| {
+        parent
+            .spawn((
+                NodeBundle {
+                    style: Style {
+                        display: Display::Grid,
+                        grid_template_columns: vec![
+                            GridTrack::flex(1.0),
+                            GridTrack::px(5.0),
+                            GridTrack::min_content(),
+                        ],
                         width: Val::Percent(100.0),
                         height: Val::Percent(100.0),
                         ..Default::default()
                     },
-                    background_color: Color::WHITE.into(),
+                    background_color: Color::DARK_GRAY.into(),
                     ..Default::default()
                 },
-                NoiseOceanLandImage,
-            ));
-        });
+                Name::new("Content"),
+                ContentNode,
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    NodeBundle {
+                        style: Style {
+                            width: Val::Auto,
+                            height: Val::Auto,
+                            ..Default::default()
+                        },
+                        background_color: Color::DARK_GREEN.into(),
+                        ..Default::default()
+                    },
+                    Name::new("Noise Settings"),
+                ));
+                parent.spawn((
+                    NodeBundle {
+                        style: Style {
+                            height: Val::Auto,
+                            ..Default::default()
+                        },
+                        background_color: Color::GRAY.into(),
+                        ..Default::default()
+                    },
+                    Name::new("Noise Spacer"),
+                ));
+                parent.spawn((
+                    NodeBundle {
+                        style: Style {
+                            width: Val::Px(300.0),
+                            height: Val::Px(300.0),
+                            ..Default::default()
+                        },
+                        background_color: Color::WHITE.into(),
+                        ..Default::default()
+                    },
+                    Name::new("Noise Settings"),
+                    NoiseOceanLandImage,
+                ));
+            });
+    });
 }
 
 fn update_noise(
@@ -171,9 +272,9 @@ fn update_noise(
 
     info!("Noise ({min}, {max})");
 
-    commands
-        .entity(entity)
-        .insert(UiImage::new(images.add(create_image(512, 512, buffer))));
+    let handle = images.add(create_image(512, 512, buffer));
+
+    commands.entity(entity).insert(UiImage::new(handle));
 }
 
 fn create_image(width: u32, height: u32, buffer: Vec<u8>) -> Image {

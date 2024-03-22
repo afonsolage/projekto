@@ -34,7 +34,7 @@ async-lock.workspace = true
 
 # genesis
 bracket-noise = "0.8.7"
-noise = "0.8"
+noise = {git = "https://github.com/Razaekel/noise-rs.git"}
 
 [dev-dependencies]
 rand.workspace = true
