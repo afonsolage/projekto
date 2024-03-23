@@ -1,6 +1,5 @@
 use bevy::{
     ecs::system::EntityCommands,
-    input::mouse::MouseMotion,
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,

@@ -8,7 +8,7 @@ use crate::{
     bundle::{ChunkKind, ChunkLight, ChunkMap},
 };
 
-use self::noise::Noise;
+use self::noise::NoiseStack;
 
 mod genesis;
 pub mod noise;
@@ -51,7 +51,7 @@ pub(crate) fn start(receiver: Receiver<ChunkAssetGenRequest>) {
     .add_systems(
         Update,
         (
-            generate_structure.in_set(GenSet::Structure),
+            // generate_structure.in_set(GenSet::Structure),
             init_light.in_set(GenSet::Light),
         ),
     )
@@ -100,19 +100,19 @@ fn collect_requests(
     trace!("[collect_request] {count} chunks requests received.");
 }
 
-fn generate_structure(mut q: Query<(&mut ChunkKind, &ChunkRequest)>, noise: Local<Noise>) {
-    if q.is_empty() {
-        return;
-    }
-
-    let mut count = 0;
-    for (mut kind, req) in q.iter_mut() {
-        count += 1;
-        genesis::generate_chunk(&noise, req.chunk, &mut kind);
-    }
-
-    trace!("[generate_structure] {count} chunks structures generated.");
-}
+// fn generate_structure(mut q: Query<(&mut ChunkKind, &ChunkRequest)>, noise: Local<NoiseStack>) {
+//     if q.is_empty() {
+//         return;
+//     }
+//
+//     let mut count = 0;
+//     for (mut kind, req) in q.iter_mut() {
+//         count += 1;
+//         genesis::generate_chunk(&noise, req.chunk, &mut kind);
+//     }
+//
+//     trace!("[generate_structure] {count} chunks structures generated.");
+// }
 
 fn init_light(mut q: Query<(&mut ChunkLight, &ChunkKind, &ChunkRequest)>) {
     if q.is_empty() {
