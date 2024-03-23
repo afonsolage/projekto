@@ -15,7 +15,7 @@ use bevy_inspector_egui::{
     InspectorOptions,
 };
 use bracket_noise::prelude::{FastNoise, FractalType};
-use noise::NoiseFn;
+use projekto_server::gen::noise::create_terrain_stack;
 
 fn main() {
     App::new()
@@ -80,42 +80,8 @@ impl Default for Noises {
     }
 }
 
-#[derive(Component, Debug, Default)]
-struct NoiseOceanLandImage;
-
-#[derive(Component, Debug, Default)]
-struct ContentNode;
-
-fn test_noise() -> impl noise::NoiseFn<f64, 3> {
-    use noise::*;
-
-    let mut v: Vec<Box<dyn NoiseFn<f64, 3>>> = vec![];
-
-    let a = Fbm::<Perlin>::new(42);
-    v.push(Box::new(a.clone()));
-
-    let b = Curve::new(a)
-        .add_control_point(-2.0, -1.625)
-        .add_control_point(-1.0, -1.625)
-        .add_control_point(0.0, -1.625)
-        .add_control_point(1.0, -1.625);
-
-    v.push(Box::new(b.clone()));
-
-    let c = Fbm::<Perlin>::new(42);
-    v.push(Box::new(c.clone()));
-
-    let d = Min::new(c, b);
-    v.push(Box::new(d.clone()));
-
-    d
-}
-
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
-
-    let c = test_noise();
-    let n = c.get([0.0, 0.0, 0.0]);
 
     commands
         .spawn((
@@ -149,6 +115,8 @@ fn setup(mut commands: Commands) {
 
             add_noise_ui_node(&mut entity_cmds);
         });
+
+    let stack = create_terrain_stack();
 }
 
 fn add_noise_ui_node(entity_cmds: &mut EntityCommands) {
@@ -171,7 +139,6 @@ fn add_noise_ui_node(entity_cmds: &mut EntityCommands) {
                     ..Default::default()
                 },
                 Name::new("Content"),
-                ContentNode,
             ))
             .with_children(|parent| {
                 parent.spawn((
@@ -208,15 +175,17 @@ fn add_noise_ui_node(entity_cmds: &mut EntityCommands) {
                         ..Default::default()
                     },
                     Name::new("Noise Settings"),
-                    NoiseOceanLandImage,
                 ));
             });
     });
 }
 
+#[derive(Component, Default, Debug)]
+struct Nothing;
+
 fn update_noise(
     mut commands: Commands,
-    q: Query<Entity, With<NoiseOceanLandImage>>,
+    q: Query<Entity, With<Nothing>>,
     mut images: ResMut<Assets<Image>>,
     settings: Res<Noises>,
 ) {

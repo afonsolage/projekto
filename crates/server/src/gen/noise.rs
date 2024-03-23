@@ -3,16 +3,6 @@ use noise::{Cache, Clamp, Curve, Fbm, Min, MultiFractal, NoiseFn, Perlin, ScaleB
 
 type BoxedNoiseFn = Box<dyn NoiseFn<f64, 3>>;
 
-#[repr(transparent)]
-struct NoiseFnRef<'a>(&'a BoxedNoiseFn);
-
-impl<'a> NoiseFn<f64, 3> for NoiseFnRef<'a> {
-    #[inline]
-    fn get(&self, point: [f64; 3]) -> f64 {
-        self.0.get(point)
-    }
-}
-
 #[derive(Debug, Clone, Reflect)]
 pub enum NoiseFnSpec {
     Fbm {
@@ -107,17 +97,56 @@ impl NoiseFnSpec {
     }
 }
 
-fn _create_terrain_stack() -> NoiseStack {
-    let base = NoiseFnSpec::Fbm {
+pub struct NoiseStack {
+    seed: u32,
+    map: HashMap<String, NoiseFnSpec>,
+    noise_name: String,
+    noise_fn: BoxedNoiseFn,
+}
+
+impl NoiseStack {
+    fn new(name: &str, seed: u32, spec_map: HashMap<String, NoiseFnSpec>) -> Self {
+        let noise_fn = spec_map.get(name).unwrap().instanciate(&spec_map);
+        Self {
+            seed,
+            map: spec_map,
+            noise_name: name.to_string(),
+            noise_fn,
+        }
+    }
+
+    fn build_dep_tree<'a, 'b: 'a>(&'a self, name: &'b str) -> Vec<&'a str> {
+        let spec = self.map.get(name).unwrap();
+        let dependencies = spec.dependencies();
+
+        std::iter::once(name)
+            .chain(
+                dependencies
+                    .into_iter()
+                    .flat_map(|name| self.build_dep_tree(name)),
+            )
+            .collect::<Vec<&str>>()
+    }
+
+    pub fn get(&self, x: f64, z: f64) -> f64 {
+        self.noise_fn.get([x, 0.0, z])
+    }
+}
+
+pub fn create_terrain_stack() -> NoiseStack {
+    let mut map = HashMap::new();
+
+    let continent = NoiseFnSpec::Fbm {
         seed: 42,
         frequency: 1.0,
         octaves: 14,
         lacunarity: 2.2089,
         persistence: 0.5,
     };
+    map.insert("continent".to_string(), continent);
 
     let curve = NoiseFnSpec::Curve {
-        source: "base".to_string(),
+        source: "continent".to_string(),
         control_points: vec![
             (-2.0000, -1.625),
             (-1.0000, -1.375),
@@ -131,29 +160,38 @@ fn _create_terrain_stack() -> NoiseStack {
             (2.0000, 0.500),
         ],
     };
-
-    let mut map = HashMap::new();
-    map.insert("base".to_string(), base);
     map.insert("curve".to_string(), curve);
 
-    let curve = map.get("curve").unwrap().instanciate(&map);
-    todo!()
-}
+    let carver = NoiseFnSpec::Fbm {
+        seed: 42,
+        frequency: 4.3437,
+        octaves: 11,
+        lacunarity: 2.2089,
+        persistence: 0.5,
+    };
+    map.insert("carver".to_string(), carver);
 
-pub struct NoiseStack {
-    seed: u32,
-    map: HashMap<String, BoxedNoiseFn>,
-    // noise_fn: BoxedNoiseFn,
-}
+    let scaled_carver = NoiseFnSpec::ScaleBias {
+        source: "carver".to_string(),
+        scale: 0.375,
+        bias: 0.625,
+    };
+    map.insert("scaled_carver".to_string(), scaled_carver);
 
-impl NoiseStack {
-    pub(crate) fn get_height(&self, _x: f32, _z: f32) -> i32 {
-        todo!()
-    }
-}
+    let carved_continent = NoiseFnSpec::Min {
+        source_1: "scaled_carver".to_string(),
+        source_2: "curve".to_string(),
+    };
+    map.insert("carved_continent".to_string(), carved_continent);
 
-impl Default for NoiseStack {
-    fn default() -> Self {
-        todo!()
-    }
+    let clamp = NoiseFnSpec::Clamp {
+        source: "carved_continent".to_string(),
+        bounds: (-1.0, 1.0),
+    };
+    map.insert("clamp".to_string(), clamp);
+
+    let stack = NoiseStack::new("clamp", 42, map);
+    let dependency_tree = stack.build_dep_tree("clamp");
+    dbg!(dependency_tree);
+    stack
 }

@@ -17,7 +17,8 @@ pub fn generate_chunk(
 
     for x in 0..chunk::X_AXIS_SIZE {
         for z in 0..chunk::Z_AXIS_SIZE {
-            let end = noise.get_height(world.x + x as f32, world.z + z as f32);
+            let end =
+                (noise.get(world.x as f64 + x as f64, world.z as f64 + z as f64) * 100.0) as i32;
             for y in 0..end {
                 chunk_kind.set((x as i32, y, z as i32).into(), Kind::id(3));
             }
