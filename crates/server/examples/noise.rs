@@ -193,15 +193,35 @@ fn add_noise_ui_node(parent: Entity, i: usize, name: impl ToString, commands: &m
 }
 
 fn zoom_root_node(
-    mut q: Query<&mut Transform, With<ContentNode>>,
     mut mouse_motion: EventReader<MouseWheel>,
+    mut q_content: Query<(&mut Transform, &mut Style), With<ContentNode>>,
+    // mut windows: Query<&mut Window>,
 ) {
-    let Ok(ref mut transform) = q.get_single_mut() else {
+    let Ok((ref mut transform, ref mut style)) = q_content.get_single_mut() else {
         return;
     };
 
+    // let window = windows.single_mut();
+
+    // let Some(pos) = window.cursor_position() else {
+    //     return;
+    // };
+
+    let Val::Px(current_left) = style.left else {
+        unreachable!()
+    };
+
+    let Val::Px(current_top) = style.top else {
+        unreachable!()
+    };
+    let pos = Vec2::new(-current_left, -current_top);
+
     for MouseWheel { y, .. } in mouse_motion.read() {
-        transform.scale += y * 0.1;
+        let scaled = transform.scale + y * 0.1;
+        transform.scale = scaled.clamp(Vec3::splat(0.001), Vec3::splat(100.0));
+        info!("{y}");
+
+        // move_left_top(style, pos.x * y * 0.1, pos.y * y * 0.1);
     }
 }
 
@@ -218,19 +238,23 @@ fn move_content_node(
         for &MouseMotion { delta } in mouse_motion.read() {
             let left = delta.x * -1.0;
             let top = delta.y * -1.0;
-
-            let Val::Px(current_left) = style.left else {
-                unreachable!()
-            };
-
-            let Val::Px(current_top) = style.top else {
-                unreachable!()
-            };
-
-            style.left = Val::Px(current_left - left);
-            style.top = Val::Px(current_top - top);
+            move_left_top(style, left, top);
         }
     }
+}
+
+fn move_left_top(style: &mut Style, left: f32, top: f32) {
+    info!("Moving {left}, {top}");
+    let Val::Px(current_left) = style.left else {
+        unreachable!()
+    };
+
+    let Val::Px(current_top) = style.top else {
+        unreachable!()
+    };
+
+    style.left = Val::Px(current_left - left);
+    style.top = Val::Px(current_top - top);
 }
 
 fn update_noise_images(
