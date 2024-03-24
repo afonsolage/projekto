@@ -16,7 +16,7 @@ use bevy_inspector_egui::{
     quick::{ResourceInspectorPlugin, WorldInspectorPlugin},
     InspectorOptions,
 };
-use noise::NoiseFn;
+use noise::{utils::NoiseMapBuilder, NoiseFn};
 use projekto_server::gen::noise::{NoiseFnSpec, NoiseStack};
 
 fn main() {
@@ -237,7 +237,6 @@ fn move_panel_node(
 }
 
 fn move_left_top(style: &mut Style, left: f32, top: f32) {
-    info!("Moving {left}, {top}");
     let Val::Px(current_left) = style.left else {
         unreachable!()
     };
@@ -395,20 +394,31 @@ fn update_noise_images(
 
     for (entity, NoiseImage(name)) in &q {
         let started = std::time::Instant::now();
+
         let noise = settings.build(name);
 
         // 512w, 512h, 1 byte per color, 4 color channel (RGBA)
         let mut buffer = vec![0; 4 * 512 * 512];
+        let mut min = u8::MAX;
+        let mut max = 0;
 
         for w in 0..512 {
             for h in 0..512 {
                 let i = ((w * 512 + h) * 4) as usize;
                 let b = &mut buffer[i..i + 4];
+                let x = w as f64 / 512.0;
+                let y = h as f64 / 512.0;
 
-                let noise = noise.get([w as f64, 0.0, h as f64]) as f32;
+                let noise = noise.get([x, y, 0.0]) as f32;
                 let height = (((noise + 1.0) / 2.0) * 255.0) as u8;
 
-                b.copy_from_slice(&[height, height, height, height]);
+                if height > max {
+                    max = height;
+                } else if height < min {
+                    min = height;
+                }
+
+                b.copy_from_slice(&[height, height, height, 255u8]);
             }
         }
 
