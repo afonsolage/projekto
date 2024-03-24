@@ -71,6 +71,10 @@ impl NoiseStack {
             .collect::<Vec<&str>>()
     }
 
+    pub fn get_spec(&self, name: &str) -> Option<&NoiseFnSpec> {
+        self.spec_map.get(name)
+    }
+
     pub fn build(&self, name: &str) -> BoxedNoiseFn {
         let spec = self.spec_map.get(name).unwrap();
 

@@ -65,6 +65,7 @@ workspace = true
 
 [profile.dev.package."*"]
 opt-level = 3
+debug = 0
 
 [[example]]
 name = "orbit_cam"

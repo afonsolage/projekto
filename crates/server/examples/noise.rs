@@ -1,6 +1,7 @@
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
+    reflect::{ReflectRef, VariantField},
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{
@@ -32,6 +33,7 @@ fn main() {
             (
                 bevy::window::close_on_esc,
                 update_noise_images.run_if(resource_changed::<NoiseStackRes>),
+                update_noise_specs.run_if(resource_changed::<NoiseStackRes>),
                 move_panel_node.run_if(on_event::<MouseMotion>()),
                 zoom_root_node.run_if(on_event::<MouseWheel>()),
             ),
@@ -47,7 +49,7 @@ struct NoiseStackRes(NoiseStack);
 struct NoiseImage(String);
 
 #[derive(Component, Debug, Default, Reflect)]
-struct NoiseConfig(String);
+struct NoiseSpec(String);
 
 #[derive(Component, Debug, Default)]
 struct PanelNode;
@@ -132,7 +134,6 @@ fn add_noise_ui_node(parent: Entity, i: usize, name: impl ToString, commands: &m
                     ..Default::default()
                 },
                 Name::new(format!("Noise {name}").to_string()),
-                NoiseConfig(name.to_string()),
             ))
             .with_children(|parent| {
                 parent.spawn((
@@ -145,7 +146,8 @@ fn add_noise_ui_node(parent: Entity, i: usize, name: impl ToString, commands: &m
                         background_color: Color::DARK_GREEN.into(),
                         ..Default::default()
                     },
-                    Name::new("Noise Settings"),
+                    Name::new("Noise Spec"),
+                    NoiseSpec(name.to_string()),
                 ));
 
                 parent.spawn((
@@ -231,6 +233,141 @@ fn move_left_top(style: &mut Style, left: f32, top: f32) {
     style.top = Val::Px(current_top - top);
 }
 
+fn update_noise_specs(
+    mut commands: Commands,
+    q: Query<(Entity, &NoiseSpec), With<NoiseSpec>>,
+    settings: Res<NoiseStackRes>,
+) {
+    for (entity, NoiseSpec(name)) in &q {
+        commands.entity(entity).despawn_descendants();
+
+        let spec = settings.get_spec(name).unwrap();
+
+        create_spec_node(&mut commands, entity, name, spec);
+    }
+}
+
+fn create_spec_node(commands: &mut Commands, parent: Entity, name: &str, spec: &NoiseFnSpec) {
+    let panel = commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    width: Val::Percent(100.0),
+                    display: Display::Grid,
+                    grid_template_columns: vec![GridTrack::auto()],
+                    grid_template_rows: vec![GridTrack::min_content()],
+                    margin: UiRect::all(Val::Px(3.0)),
+                    align_self: AlignSelf::Start,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Name::new("Noise Spec Panel"),
+        ))
+        .with_children(|parent| {
+            parent.spawn(TextBundle {
+                style: Style {
+                    width: Val::Percent(100.0),
+                    ..Default::default()
+                },
+                text: Text::from_section(
+                    name,
+                    TextStyle {
+                        font_size: 20.0,
+                        color: Color::WHITE,
+                        ..Default::default()
+                    },
+                ),
+                ..Default::default()
+            });
+
+            parent.spawn((
+                NodeBundle {
+                    style: Style {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(2.0),
+                        ..Default::default()
+                    },
+                    background_color: Color::GRAY.into(),
+                    ..Default::default()
+                },
+                Name::new("Spacer"),
+            ));
+        })
+        .id();
+
+    for item in create_spec_items(commands, spec) {
+        commands.entity(panel).add_child(item);
+    }
+
+    commands.entity(parent).add_child(panel);
+}
+
+fn create_spec_items(commands: &mut Commands, spec: &NoiseFnSpec) -> Vec<Entity> {
+    let ReflectRef::Enum(spec_ref) = spec.reflect_ref() else {
+        unreachable!();
+    };
+
+    let type_item = commands
+        .spawn(TextBundle {
+            style: Style {
+                display: Display::Grid,
+                width: Val::Percent(100.0),
+                ..Default::default()
+            },
+            text: Text::from_section(
+                format!("type: {}", spec_ref.variant_name()),
+                TextStyle {
+                    ..Default::default()
+                },
+            ),
+            ..Default::default()
+        })
+        .id();
+
+    std::iter::once(type_item)
+        .chain(
+            spec_ref
+                .iter_fields()
+                .map(|field| create_spec_item_field(commands, field)),
+        )
+        .collect()
+}
+
+fn create_spec_item_field(commands: &mut Commands, field: VariantField) -> Entity {
+    let name = field.name().unwrap();
+
+    let mut sections = match field.value().reflect_ref() {
+        ReflectRef::List(list) => list
+            .iter()
+            .map(|value| TextSection::new(format!("\n\t{:?}", value), TextStyle::default()))
+            .collect(),
+        _ => {
+            vec![TextSection::new(
+                format!("{:?}", field.value()),
+                TextStyle::default(),
+            )]
+        }
+    };
+
+    sections.insert(
+        0,
+        TextSection::new(format!("{name}: "), TextStyle::default()),
+    );
+
+    commands
+        .spawn(TextBundle {
+            style: Style {
+                display: Display::Grid,
+                width: Val::Percent(100.0),
+                ..Default::default()
+            },
+            text: Text::from_sections(sections),
+            ..Default::default()
+        })
+        .id()
+}
+
 fn update_noise_images(
     mut commands: Commands,
     q: Query<(Entity, &NoiseImage), With<NoiseImage>>,
@@ -240,14 +377,12 @@ fn update_noise_images(
     info!("Updating noise images!");
 
     for (entity, NoiseImage(name)) in &q {
-        info!("Building noise {name}");
+        let started = std::time::Instant::now();
         let noise = settings.build(name);
-        info!("Built!");
 
         // 512w, 512h, 1 byte per color, 4 color channel (RGBA)
         let mut buffer = vec![0; 4 * 512 * 512];
 
-        info!("Rendering!");
         for w in 0..512 {
             for h in 0..512 {
                 let i = ((w * 512 + h) * 4) as usize;
@@ -259,11 +394,12 @@ fn update_noise_images(
                 b.copy_from_slice(&[height, height, height, height]);
             }
         }
-        info!("Rendered!");
 
         let handle = images.add(create_image(512, 512, buffer));
 
         commands.entity(entity).insert(UiImage::new(handle));
+        let diff = std::time::Instant::now() - started;
+        info!("{name} took {}ms", diff.as_millis());
     }
 
     info!("Updated!");
