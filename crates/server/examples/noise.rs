@@ -6,6 +6,7 @@ use bevy::{
         render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
+        texture::ImageSampler,
     },
     utils::HashMap,
 };
@@ -277,6 +278,7 @@ fn create_image(width: u32, height: u32, buffer: Vec<u8>) -> Image {
             view_formats: &[],
             usage: TextureUsages::TEXTURE_BINDING,
         },
+        sampler: ImageSampler::nearest(),
         asset_usage: RenderAssetUsages::RENDER_WORLD,
         ..Default::default()
     }
