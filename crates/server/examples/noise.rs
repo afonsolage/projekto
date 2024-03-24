@@ -1,4 +1,5 @@
 use bevy::{
+    input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
@@ -30,6 +31,8 @@ fn main() {
             (
                 bevy::window::close_on_esc,
                 update_noise_images.run_if(resource_changed::<NoiseStackRes>),
+                move_content_node,
+                zoom_root_node,
             ),
         )
         .run();
@@ -44,6 +47,12 @@ struct NoiseImage(String);
 
 #[derive(Component, Debug, Default, Reflect)]
 struct NoiseConfig(String);
+
+#[derive(Component, Debug, Default)]
+struct ContentNode;
+
+#[derive(Component, Debug, Default)]
+struct RootNode;
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
@@ -60,12 +69,14 @@ fn setup(mut commands: Commands) {
                     ],
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
+                    left: Val::Px(0.0),
+                    top: Val::Px(0.0),
                     ..Default::default()
                 },
-                background_color: Color::DARK_GRAY.into(),
                 ..Default::default()
             },
             Name::new("Content"),
+            ContentNode,
         ))
         .id();
 
@@ -81,6 +92,7 @@ fn setup(mut commands: Commands) {
                 ..Default::default()
             },
             Name::new("Root"),
+            RootNode,
         ))
         .with_children(|parent| {
             parent.spawn((
@@ -105,70 +117,120 @@ fn setup(mut commands: Commands) {
     let mut dependencies = stack.build_dep_tree("main");
     dependencies.reverse();
 
-    for dep in dependencies {
-        add_noise_ui_node(content, dep, &mut commands);
+    for (i, dep) in dependencies.into_iter().enumerate() {
+        add_noise_ui_node(content, i, dep, &mut commands);
     }
 
     commands.insert_resource(NoiseStackRes(stack));
 }
 
-fn add_noise_ui_node(parent: Entity, name: impl ToString, commands: &mut Commands) {
+fn add_noise_ui_node(parent: Entity, i: usize, name: impl ToString, commands: &mut Commands) {
+    let name = name.to_string();
     commands.entity(parent).with_children(|parent| {
-        parent.spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Auto,
-                    height: Val::Auto,
-                    ..Default::default()
-                },
-                background_color: Color::DARK_GREEN.into(),
-                ..Default::default()
-            },
-            Name::new("Noise Settings"),
-            NoiseConfig(name.to_string()),
-        ));
-
-        parent.spawn((
-            NodeBundle {
-                style: Style {
-                    height: Val::Auto,
-                    ..Default::default()
-                },
-                background_color: Color::GRAY.into(),
-                ..Default::default()
-            },
-            Name::new("Noise Spacer"),
-        ));
-
-        parent.spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Px(256.0),
-                    height: Val::Px(256.0),
-                    ..Default::default()
-                },
-                background_color: Color::WHITE.into(),
-                ..Default::default()
-            },
-            Name::new("Noise Image"),
-            NoiseImage(name.to_string()),
-        ));
-
-        for _ in 0..3 {
-            parent.spawn((
+        parent
+            .spawn((
                 NodeBundle {
                     style: Style {
-                        height: Val::Px(2.0),
+                        position_type: PositionType::Absolute,
                         width: Val::Auto,
+                        height: Val::Auto,
+                        left: Val::Px(300.0 * i as f32),
+                        top: Val::Px(300.0 * i as f32),
+                        display: Display::Grid,
+                        grid_template_columns: vec![
+                            GridTrack::flex(1.0),
+                            GridTrack::px(5.0),
+                            GridTrack::min_content(),
+                        ],
                         ..Default::default()
                     },
-                    background_color: Color::GRAY.into(),
                     ..Default::default()
                 },
-                Name::new("Noise Div"),
-            ));
-        }
+                Name::new(format!("Noise {name}").to_string()),
+                NoiseConfig(name.to_string()),
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    NodeBundle {
+                        style: Style {
+                            width: Val::Px(200.0),
+                            height: Val::Auto,
+                            ..Default::default()
+                        },
+                        background_color: Color::DARK_GREEN.into(),
+                        ..Default::default()
+                    },
+                    Name::new("Noise Settings"),
+                ));
+
+                parent.spawn((
+                    NodeBundle {
+                        style: Style {
+                            height: Val::Auto,
+                            ..Default::default()
+                        },
+                        background_color: Color::GRAY.into(),
+                        ..Default::default()
+                    },
+                    Name::new("Noise Spacer"),
+                ));
+
+                parent.spawn((
+                    NodeBundle {
+                        style: Style {
+                            width: Val::Px(256.0),
+                            height: Val::Px(256.0),
+                            ..Default::default()
+                        },
+                        background_color: Color::WHITE.into(),
+                        ..Default::default()
+                    },
+                    Name::new("Noise Image"),
+                    NoiseImage(name.to_string()),
+                ));
+            });
     });
+}
+
+fn zoom_root_node(
+    mut q: Query<&mut Transform, With<ContentNode>>,
+    mut mouse_motion: EventReader<MouseWheel>,
+) {
+    let Ok(ref mut transform) = q.get_single_mut() else {
+        return;
+    };
+
+    for MouseWheel { y, .. } in mouse_motion.read() {
+        transform.scale += y * 0.1;
+    }
+}
+
+fn move_content_node(
+    mut q: Query<&mut Style, With<ContentNode>>,
+    input: Res<ButtonInput<MouseButton>>,
+    mut mouse_motion: EventReader<MouseMotion>,
+) {
+    let Ok(ref mut style) = q.get_single_mut() else {
+        return;
+    };
+
+    if input.pressed(MouseButton::Middle) {
+        for &MouseMotion { delta } in mouse_motion.read() {
+            let left = delta.x * -1.0;
+            let top = delta.y * -1.0;
+
+            let Val::Px(current_left) = style.left else {
+                unreachable!()
+            };
+
+            let Val::Px(current_top) = style.top else {
+                unreachable!()
+            };
+
+            style.left = Val::Px(current_left - left);
+            style.top = Val::Px(current_top - top);
+        }
+    }
 }
 
 fn update_noise_images(
