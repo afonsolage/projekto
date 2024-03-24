@@ -31,8 +31,8 @@ fn main() {
             (
                 bevy::window::close_on_esc,
                 update_noise_images.run_if(resource_changed::<NoiseStackRes>),
-                move_content_node,
-                zoom_root_node,
+                move_panel_node.run_if(on_event::<MouseMotion>()),
+                zoom_root_node.run_if(on_event::<MouseWheel>()),
             ),
         )
         .run();
@@ -49,7 +49,7 @@ struct NoiseImage(String);
 struct NoiseConfig(String);
 
 #[derive(Component, Debug, Default)]
-struct ContentNode;
+struct PanelNode;
 
 #[derive(Component, Debug, Default)]
 struct RootNode;
@@ -71,12 +71,13 @@ fn setup(mut commands: Commands) {
                     height: Val::Percent(100.0),
                     left: Val::Px(0.0),
                     top: Val::Px(0.0),
+                    position_type: PositionType::Absolute,
                     ..Default::default()
                 },
                 ..Default::default()
             },
-            Name::new("Content"),
-            ContentNode,
+            Name::new("Panel"),
+            PanelNode,
         ))
         .id();
 
@@ -94,23 +95,6 @@ fn setup(mut commands: Commands) {
             Name::new("Root"),
             RootNode,
         ))
-        .with_children(|parent| {
-            parent.spawn((
-                NodeBundle {
-                    style: Style {
-                        width: Val::Auto,
-                        height: Val::Auto,
-                        border: UiRect::all(Val::Px(2.0)),
-                        margin: UiRect::all(Val::Px(5.0)),
-                        ..default()
-                    },
-                    border_color: Color::GRAY.into(),
-                    background_color: Color::BLACK.into(),
-                    ..default()
-                },
-                Name::new("Border"),
-            ));
-        })
         .add_child(content);
 
     let stack = create_terrain_stack();
@@ -193,40 +177,21 @@ fn add_noise_ui_node(parent: Entity, i: usize, name: impl ToString, commands: &m
 }
 
 fn zoom_root_node(
-    mut mouse_motion: EventReader<MouseWheel>,
-    mut q_content: Query<(&mut Transform, &mut Style), With<ContentNode>>,
-    // mut windows: Query<&mut Window>,
+    mut mouse_wheel: EventReader<MouseWheel>,
+    mut q: Query<&mut Transform, With<RootNode>>,
 ) {
-    let Ok((ref mut transform, ref mut style)) = q_content.get_single_mut() else {
+    let Ok(ref mut transform) = q.get_single_mut() else {
         return;
     };
 
-    // let window = windows.single_mut();
-
-    // let Some(pos) = window.cursor_position() else {
-    //     return;
-    // };
-
-    let Val::Px(current_left) = style.left else {
-        unreachable!()
-    };
-
-    let Val::Px(current_top) = style.top else {
-        unreachable!()
-    };
-    let pos = Vec2::new(-current_left, -current_top);
-
-    for MouseWheel { y, .. } in mouse_motion.read() {
+    for MouseWheel { y, .. } in mouse_wheel.read() {
         let scaled = transform.scale + y * 0.1;
         transform.scale = scaled.clamp(Vec3::splat(0.001), Vec3::splat(100.0));
-        info!("{y}");
-
-        // move_left_top(style, pos.x * y * 0.1, pos.y * y * 0.1);
     }
 }
 
-fn move_content_node(
-    mut q: Query<&mut Style, With<ContentNode>>,
+fn move_panel_node(
+    mut q: Query<&mut Style, With<PanelNode>>,
     input: Res<ButtonInput<MouseButton>>,
     mut mouse_motion: EventReader<MouseMotion>,
 ) {
