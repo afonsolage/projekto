@@ -32,7 +32,7 @@ pub enum NoiseFnSpec {
 }
 
 impl NoiseFnSpec {
-    fn dependencies(&self) -> Vec<&str> {
+    pub fn dependencies(&self) -> Vec<&str> {
         match self {
             // No Sources
             NoiseFnSpec::Fbm { .. } => vec![],

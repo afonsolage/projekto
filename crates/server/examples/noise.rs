@@ -101,17 +101,22 @@ fn setup(mut commands: Commands) {
         .add_child(content);
 
     let stack = create_terrain_stack();
-    let mut dependencies = stack.build_dep_tree("main");
-    dependencies.reverse();
-
-    for (i, dep) in dependencies.into_iter().enumerate() {
-        add_noise_ui_node(content, i, dep, &mut commands);
-    }
+    add_noise_ui_dependency_tree(content, 0.0, 0.0, "main", &stack, &mut commands);
 
     commands.insert_resource(NoiseStackRes(stack));
 }
 
-fn add_noise_ui_node(parent: Entity, i: usize, name: impl ToString, commands: &mut Commands) {
+fn add_noise_ui_dependency_tree(
+    parent: Entity,
+    x: f32,
+    y: f32,
+    name: impl ToString,
+    stack: &NoiseStack,
+    commands: &mut Commands,
+) {
+    let card_width = 512.0;
+    let card_height = 300.0;
+
     let name = name.to_string();
     commands.entity(parent).with_children(|parent| {
         parent
@@ -121,8 +126,8 @@ fn add_noise_ui_node(parent: Entity, i: usize, name: impl ToString, commands: &m
                         position_type: PositionType::Absolute,
                         width: Val::Auto,
                         height: Val::Auto,
-                        left: Val::Px(300.0 * i as f32),
-                        top: Val::Px(300.0 * i as f32),
+                        left: Val::Px(card_width * x),
+                        top: Val::Px(card_height * y),
                         display: Display::Grid,
                         grid_template_columns: vec![
                             GridTrack::flex(1.0),
@@ -143,7 +148,7 @@ fn add_noise_ui_node(parent: Entity, i: usize, name: impl ToString, commands: &m
                             height: Val::Auto,
                             ..Default::default()
                         },
-                        background_color: Color::DARK_GREEN.into(),
+                        background_color: Color::BLACK.into(),
                         ..Default::default()
                     },
                     Name::new("Noise Spec"),
@@ -177,6 +182,18 @@ fn add_noise_ui_node(parent: Entity, i: usize, name: impl ToString, commands: &m
                 ));
             });
     });
+
+    let dependencies = stack.get_spec(&name).unwrap().dependencies();
+    let dep_count = dependencies.len() as f32;
+
+    for (i, dependency) in dependencies.into_iter().enumerate() {
+        let x = if dep_count > 1.0 {
+            x + i as f32 - (dep_count / 4.0)
+        } else {
+            x + i as f32
+        };
+        add_noise_ui_dependency_tree(parent, x, y + 1.0, dependency, stack, commands);
+    }
 }
 
 fn zoom_root_node(
