@@ -187,12 +187,13 @@ fn zoom_root_node(
 
     for MouseWheel { y, .. } in mouse_wheel.read() {
         let scaled = transform.scale + y * 0.1;
-        transform.scale = scaled.clamp(Vec3::splat(0.001), Vec3::splat(100.0));
+        transform.scale = scaled.clamp(Vec3::splat(0.1), Vec3::splat(10.0));
     }
 }
 
 fn move_panel_node(
     mut q: Query<&mut Style, With<PanelNode>>,
+    mut q_root: Query<&Transform, With<RootNode>>,
     input: Res<ButtonInput<MouseButton>>,
     mut mouse_motion: EventReader<MouseMotion>,
 ) {
@@ -200,10 +201,17 @@ fn move_panel_node(
         return;
     };
 
+    let Ok(root_transform) = q_root.get_single_mut() else {
+        return;
+    };
+
     if input.pressed(MouseButton::Middle) {
         for &MouseMotion { delta } in mouse_motion.read() {
-            let left = delta.x * -1.0;
-            let top = delta.y * -1.0;
+            let scale_factor = 1.0 / root_transform.scale.x;
+
+            let left = -delta.x * scale_factor;
+            let top = -delta.y * scale_factor;
+
             move_left_top(style, left, top);
         }
     }
