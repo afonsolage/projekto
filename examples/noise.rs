@@ -9,6 +9,8 @@ use bevy::{
         },
         texture::ImageSampler,
     },
+    tasks::{block_on, poll_once, AsyncComputeTaskPool, Task},
+    utils::HashMap,
 };
 use noise::NoiseFn;
 use projekto_server::gen::noise::{NoiseFnSpec, NoiseStack, NoiseStackLoader};
@@ -406,48 +408,59 @@ fn update_noise_images(
     mut images: ResMut<Assets<Image>>,
     handle: Res<NoiseStackHandle>,
     assets: Res<Assets<NoiseStack>>,
+    mut running_tasks: Local<HashMap<Entity, Task<Vec<u8>>>>,
 ) {
+    for (entity, task) in running_tasks.iter_mut() {
+        if let Some(buffer) = block_on(poll_once(task)) {
+            let handle = images.add(create_image(512, 512, buffer));
+
+            commands
+                .entity(*entity)
+                .insert((UiImage::new(handle), BackgroundColor(Color::WHITE)));
+        }
+    }
+
+    running_tasks.retain(|_, task| !task.is_finished());
+
     let Some(stack) = assets.get(&handle.0) else {
         return;
     };
 
     for (entity, NoiseImage(name)) in &q {
-        let started = std::time::Instant::now();
+        info!("Loading noise {name}");
 
         let noise = stack.build(name);
 
-        // 512w, 512h, 1 byte per color, 4 color channel (RGBA)
-        let mut buffer = vec![0; 4 * 512 * 512];
-        let mut min = u8::MAX;
-        let mut max = 0;
+        let task = AsyncComputeTaskPool::get().spawn(async move {
+            // 512w, 512h, 1 byte per color, 4 color channel (RGBA)
+            let mut buffer = vec![0; 4 * 512 * 512];
+            let mut min = u8::MAX;
+            let mut max = 0;
 
-        for w in 0..512 {
-            for h in 0..512 {
-                let i = ((w * 512 + h) * 4) as usize;
-                let b = &mut buffer[i..i + 4];
-                let x = w as f64 / 512.0;
-                let y = h as f64 / 512.0;
+            for w in 0..512 {
+                for h in 0..512 {
+                    let i = ((w * 512 + h) * 4) as usize;
+                    let b = &mut buffer[i..i + 4];
+                    let x = w as f64 / 512.0;
+                    let y = h as f64 / 512.0;
 
-                let noise = noise.get([x, y, 0.0]) as f32;
-                let height = (((noise + 1.0) / 2.0) * 255.0) as u8;
+                    let noise = noise.get([x, y, 0.0]) as f32;
+                    let height = (((noise + 1.0) / 2.0) * 255.0) as u8;
 
-                if height > max {
-                    max = height;
-                } else if height < min {
-                    min = height;
+                    if height > max {
+                        max = height;
+                    } else if height < min {
+                        min = height;
+                    }
+
+                    b.copy_from_slice(&[height, height, height, u8::MAX]);
                 }
-
-                b.copy_from_slice(&[height, height, height, u8::MAX]);
             }
-        }
 
-        let handle = images.add(create_image(512, 512, buffer));
+            buffer
+        });
 
-        commands
-            .entity(entity)
-            .insert((UiImage::new(handle), BackgroundColor(Color::WHITE)));
-        let diff = std::time::Instant::now() - started;
-        info!("{name} took {}ms", diff.as_millis());
+        running_tasks.insert(entity, task);
     }
 }
 
