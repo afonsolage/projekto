@@ -1,6 +1,6 @@
 (
     spec_map: {
-        "continent": Fbm( 
+        "base_continent": Fbm( 
             seed: 42,
             frequency: 1.0,
             octaves: 14,
@@ -9,7 +9,7 @@
         ),
 
         "curve": Curve (
-            source: "continent",
+            source: "base_continent",
             control_points: [
                 (-2.0000, -1.625),
                 (-1.0000, -1.375),
@@ -43,9 +43,41 @@
             source_2: "curve",
         ),
 
-        "main": Clamp (
+        "continent": Clamp (
             source: "carved_continent",
             bounds: (-1.0, 1.0),
+        ),
+
+        "coarse_turbulence": Turbulence (
+            source: "continent",
+            seed: 42,
+            frequency: 15.25,
+            power: 0.008791209,
+            roughness: 13,
+        ),
+
+        "intermediate_turbulence": Turbulence (
+            source: "coarse_turbulence",
+            seed: 43,
+            frequency: 47.25,
+            power: 0.002305476,
+            roughness: 12,
+        ),
+
+        "warped_base_continent": Turbulence (
+            source: "intermediate_turbulence",
+            seed: 44,
+            frequency: 95.25,
+            power: 0.000980633,
+            roughness: 11,
+        ),
+
+        "main": Select (
+            source_1: "continent",
+            source_2: "warped_base_continent",
+            control: "continent",
+            bounds: (-0.0375, 1000.0375),
+            falloff: 0.0625,
         ),
     }
 )

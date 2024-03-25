@@ -6,7 +6,10 @@ use bevy::{
     utils::HashMap,
 };
 use futures_lite::AsyncReadExt;
-use noise::{Clamp, Curve, Fbm, Min, MultiFractal, NoiseFn, Perlin, ScaleBias};
+use noise::{
+    Clamp, Curve, Fbm, Min, MultiFractal, NoiseFn, Perlin, RidgedMulti, ScaleBias, Seedable,
+    Select, Terrace, Turbulence,
+};
 use serde::de::DeserializeSeed;
 
 pub type BoxedNoiseFn = Box<dyn NoiseFn<f64, 3> + Send>;
@@ -37,21 +40,54 @@ pub enum NoiseFnSpec {
         source: String,
         bounds: (f64, f64),
     },
+    Turbulence {
+        source: String,
+        seed: u32,
+        frequency: f64,
+        power: f64,
+        roughness: usize,
+    },
+    Select {
+        source_1: String,
+        source_2: String,
+        control: String,
+        bounds: (f64, f64),
+        falloff: f64,
+    },
+    Terrace {
+        source: String,
+        control_ponts: Vec<f64>,
+    },
+    RidgedMulti {
+        seed: u32,
+        frequency: f64,
+        lacunarity: f64,
+        octaves: usize,
+    },
 }
 
 impl NoiseFnSpec {
     pub fn dependencies(&self) -> Vec<&str> {
         match self {
             // No Sources
-            NoiseFnSpec::Fbm { .. } => vec![],
+            NoiseFnSpec::Fbm { .. } | NoiseFnSpec::RidgedMulti { .. } => vec![],
             // Single Sources
             NoiseFnSpec::Curve { source, .. }
             | NoiseFnSpec::ScaleBias { source, .. }
+            | NoiseFnSpec::Turbulence { source, .. }
+            | NoiseFnSpec::Terrace { source, .. }
             | NoiseFnSpec::Clamp { source, .. } => {
                 vec![source]
             }
             // Two sources
             NoiseFnSpec::Min { source_1, source_2 } => vec![source_1, source_2],
+            // Three sources
+            NoiseFnSpec::Select {
+                source_1,
+                source_2,
+                control: source_3,
+                ..
+            } => vec![source_1, source_2, source_3],
         }
     }
 }
@@ -87,6 +123,7 @@ impl NoiseStack {
         let mut registry = TypeRegistry::new();
         registry.register::<(f64, f64)>();
         registry.register::<Vec<(f64, f64)>>();
+        registry.register::<Vec<f64>>();
         registry.register::<NoiseFnSpec>();
         registry.register::<HashMap<String, NoiseFnSpec>>();
         registry.register::<Self>();
@@ -179,6 +216,60 @@ impl NoiseStack {
             NoiseFnSpec::Clamp { source, bounds } => {
                 let source = self.build(source);
                 Box::new(Clamp::new(source).set_bounds(bounds.0, bounds.1))
+            }
+            NoiseFnSpec::Turbulence {
+                source,
+                seed,
+                frequency,
+                power,
+                roughness,
+            } => {
+                let source = self.build(source);
+                let turbulence = Turbulence::<_, Perlin>::new(source)
+                    .set_seed(*seed)
+                    .set_frequency(*frequency)
+                    .set_power(*power)
+                    .set_roughness(*roughness);
+                Box::new(turbulence)
+            }
+            NoiseFnSpec::Select {
+                source_1,
+                source_2,
+                control,
+                bounds,
+                falloff,
+            } => {
+                let source_1 = self.build(source_1);
+                let source_2 = self.build(source_2);
+                let control = self.build(control);
+                let select = Select::new(source_1, source_2, control)
+                    .set_bounds(bounds.0, bounds.1)
+                    .set_falloff(*falloff);
+                Box::new(select)
+            }
+            NoiseFnSpec::Terrace {
+                source,
+                control_ponts,
+            } => {
+                let source = self.build(source);
+                let terrace = control_ponts
+                    .iter()
+                    .copied()
+                    .fold(Terrace::new(source), |t, p| t.add_control_point(p));
+
+                Box::new(terrace)
+            }
+            NoiseFnSpec::RidgedMulti {
+                seed,
+                frequency,
+                lacunarity,
+                octaves,
+            } => {
+                let ridged_multi = RidgedMulti::<Perlin>::new(*seed)
+                    .set_frequency(*frequency)
+                    .set_lacunarity(*lacunarity)
+                    .set_octaves(*octaves);
+                Box::new(ridged_multi)
             }
         }
     }
