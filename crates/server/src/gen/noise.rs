@@ -1,5 +1,11 @@
-use bevy::{reflect::Reflect, utils::HashMap};
+use bevy::{
+    reflect::{
+        serde::TypedReflectDeserializer, FromReflect, GetTypeRegistration, Reflect, TypeRegistry,
+    },
+    utils::HashMap,
+};
 use noise::{Clamp, Curve, Fbm, Min, MultiFractal, NoiseFn, Perlin, ScaleBias};
+use serde::de::DeserializeSeed;
 
 pub type BoxedNoiseFn = Box<dyn NoiseFn<f64, 3> + Send>;
 
@@ -48,12 +54,58 @@ impl NoiseFnSpec {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum NoiseStackError {
+    #[error("Failed to load noise stack: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Failed to load noise stack: {0}")]
+    RonDeserialize(#[from] ron::error::SpannedError),
+    #[error("Failed to load noise stack: {0}")]
+    Deserialize(#[from] ron::error::Error),
+    #[error("Failed to load noise stack: Reflect error")]
+    Reflect,
+    #[error("Failed to load noise stack: No spec was found")]
+    SpecEmpty,
+    #[error("Failed to load noise stack: No main spec was found")]
+    SpecNoMain,
+}
+
 #[derive(Debug, Default, Reflect, Clone)]
 pub struct NoiseStack {
     spec_map: HashMap<String, NoiseFnSpec>,
 }
 
 impl NoiseStack {
+    pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self, NoiseStackError> {
+        let mut registry = TypeRegistry::new();
+        registry.register::<(f64, f64)>();
+        registry.register::<Vec<(f64, f64)>>();
+        registry.register::<NoiseFnSpec>();
+        registry.register::<HashMap<String, NoiseFnSpec>>();
+        registry.register::<Self>();
+
+        let registration = <Self as GetTypeRegistration>::get_type_registration();
+
+        let content = std::fs::read_to_string(path)?;
+        let mut deserializer = ron::de::Deserializer::from_str(&content)?;
+        let reflect_deserializer = TypedReflectDeserializer::new(&registration, &registry);
+        let deserialized = reflect_deserializer.deserialize(&mut deserializer)?;
+
+        let Some(stack) = <Self as FromReflect>::from_reflect(&*deserialized) else {
+            return Err(NoiseStackError::Reflect);
+        };
+
+        if stack.spec_map.is_empty() {
+            return Err(NoiseStackError::SpecEmpty);
+        }
+
+        if !stack.spec_map.contains_key("main") {
+            return Err(NoiseStackError::SpecNoMain);
+        }
+
+        Ok(stack)
+    }
+
     pub fn new(spec_map: HashMap<String, NoiseFnSpec>) -> Self {
         Self { spec_map }
     }
@@ -128,5 +180,16 @@ impl NoiseStack {
 
     pub fn main(&self) -> BoxedNoiseFn {
         self.build("main")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load() {
+        let path = format!("{}/noises/world_surface.ron", env!("ASSETS_PATH"));
+        NoiseStack::load(path).unwrap();
     }
 }

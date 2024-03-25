@@ -8,9 +8,9 @@ readme = "README.md"
 [dependencies]
 bevy.workspace = true
 serde.workspace = true
+ron.workspace = true
 
 once_cell = "1.19"
-ron = "0.8"
 
 [dev-dependencies]
 rand.workspace = true

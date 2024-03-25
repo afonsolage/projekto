@@ -23,10 +23,6 @@ const X_MASK: usize = (X_AXIS_SIZE - 1) << X_SHIFT;
 const Z_MASK: usize = (Z_AXIS_SIZE - 1) << Z_SHIFT;
 const Y_MASK: usize = Y_AXIS_SIZE - 1;
 
-#[cfg(feature = "mem_alloc")]
-pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
-    once_cell::sync::Lazy::new(std::sync::atomic::AtomicUsize::default);
-
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Chunk(IVec2);
 

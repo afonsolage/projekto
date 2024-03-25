@@ -26,6 +26,7 @@ thiserror.workspace = true
 serde.workspace = true
 bincode.workspace = true
 lz4_flex.workspace = true
+ron.workspace = true
 
 futures-lite.workspace = true
 async-io.workspace = true

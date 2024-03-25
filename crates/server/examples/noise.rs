@@ -16,7 +16,7 @@ use bevy_inspector_egui::{
     quick::{ResourceInspectorPlugin, WorldInspectorPlugin},
     InspectorOptions,
 };
-use noise::{utils::NoiseMapBuilder, NoiseFn};
+use noise::NoiseFn;
 use projekto_server::gen::noise::{NoiseFnSpec, NoiseStack};
 
 fn main() {
