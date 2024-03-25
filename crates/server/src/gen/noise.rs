@@ -1,9 +1,11 @@
 use bevy::{
+    asset::{Asset, AssetLoader},
     reflect::{
         serde::TypedReflectDeserializer, FromReflect, GetTypeRegistration, Reflect, TypeRegistry,
     },
     utils::HashMap,
 };
+use futures_lite::AsyncReadExt;
 use noise::{Clamp, Curve, Fbm, Min, MultiFractal, NoiseFn, Perlin, ScaleBias};
 use serde::de::DeserializeSeed;
 
@@ -70,13 +72,18 @@ pub enum NoiseStackError {
     SpecNoMain,
 }
 
-#[derive(Debug, Default, Reflect, Clone)]
+#[derive(Asset, Debug, Default, Reflect, Clone)]
 pub struct NoiseStack {
     spec_map: HashMap<String, NoiseFnSpec>,
 }
 
 impl NoiseStack {
     pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self, NoiseStackError> {
+        let content = std::fs::read(path)?;
+        Self::from_bytes(&content)
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, NoiseStackError> {
         let mut registry = TypeRegistry::new();
         registry.register::<(f64, f64)>();
         registry.register::<Vec<(f64, f64)>>();
@@ -85,9 +92,7 @@ impl NoiseStack {
         registry.register::<Self>();
 
         let registration = <Self as GetTypeRegistration>::get_type_registration();
-
-        let content = std::fs::read_to_string(path)?;
-        let mut deserializer = ron::de::Deserializer::from_str(&content)?;
+        let mut deserializer = ron::de::Deserializer::from_bytes(bytes)?;
         let reflect_deserializer = TypedReflectDeserializer::new(&registration, &registry);
         let deserialized = reflect_deserializer.deserialize(&mut deserializer)?;
 
@@ -180,6 +185,34 @@ impl NoiseStack {
 
     pub fn main(&self) -> BoxedNoiseFn {
         self.build("main")
+    }
+}
+
+#[derive(Default)]
+pub struct NoiseStackLoader;
+
+impl AssetLoader for NoiseStackLoader {
+    type Asset = NoiseStack;
+
+    type Settings = ();
+
+    type Error = NoiseStackError;
+
+    fn load<'a>(
+        &'a self,
+        reader: &'a mut bevy::asset::io::Reader,
+        _settings: &'a Self::Settings,
+        _load_context: &'a mut bevy::asset::LoadContext,
+    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+        Box::pin(async move {
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            NoiseStack::from_bytes(&bytes)
+        })
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["ron"]
     }
 }
 

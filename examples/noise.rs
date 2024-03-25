@@ -9,30 +9,21 @@ use bevy::{
         },
         texture::ImageSampler,
     },
-    utils::HashMap,
-};
-use bevy_inspector_egui::{
-    inspector_options::ReflectInspectorOptions,
-    quick::{ResourceInspectorPlugin, WorldInspectorPlugin},
-    InspectorOptions,
 };
 use noise::NoiseFn;
-use projekto_server::gen::noise::{NoiseFnSpec, NoiseStack};
+use projekto_server::gen::noise::{NoiseFnSpec, NoiseStack, NoiseStackLoader};
 
 fn main() {
     App::new()
-        .init_resource::<NoiseStackRes>()
         .add_plugins(DefaultPlugins)
-        .add_plugins((
-            WorldInspectorPlugin::new(),
-            ResourceInspectorPlugin::<NoiseStackRes>::default(),
-        ))
+        .init_asset::<NoiseStack>()
+        .init_asset_loader::<NoiseStackLoader>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
                 bevy::window::close_on_esc,
-                update_noise_tree.run_if(resource_changed::<NoiseStackRes>),
+                update_noise_tree,
                 update_noise_images,
                 update_noise_specs,
                 move_panel_node.run_if(on_event::<MouseMotion>()),
@@ -42,9 +33,8 @@ fn main() {
         .run();
 }
 
-#[derive(Resource, Debug, Default, Reflect, InspectorOptions, Deref, DerefMut)]
-#[reflect(Resource, InspectorOptions)]
-struct NoiseStackRes(NoiseStack);
+#[derive(Resource, Debug, Default)]
+struct NoiseStackHandle(Handle<NoiseStack>);
 
 #[derive(Component, Debug, Default, Reflect)]
 struct NoiseImage(String);
@@ -58,7 +48,7 @@ struct PanelNode;
 #[derive(Component, Debug, Default)]
 struct RootNode;
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2dBundle::default());
     commands
         .spawn((
@@ -98,24 +88,33 @@ fn setup(mut commands: Commands) {
             ));
         });
 
-    let path = format!("{}/noises/world_surface.ron", env!("ASSETS_PATH"));
-    let stack = NoiseStack::load(path).unwrap();
-
-    commands.insert_resource(NoiseStackRes(stack));
+    let stack = asset_server.load("noises/world_surface.ron");
+    commands.insert_resource(NoiseStackHandle(stack));
 }
 
 fn update_noise_tree(
     mut commands: Commands,
     q_panel: Query<Entity, With<PanelNode>>,
-    stack: Res<NoiseStackRes>,
+    mut events: EventReader<AssetEvent<NoiseStack>>,
+    assets: Res<Assets<NoiseStack>>,
 ) {
     let Ok(panel) = q_panel.get_single() else {
         return;
     };
 
-    commands.entity(panel).despawn_descendants();
+    for evt in events.read() {
+        match evt {
+            AssetEvent::Added { id } | AssetEvent::Modified { id } => {
+                commands.entity(panel).despawn_descendants();
+                let Some(stack) = assets.get(*id) else {
+                    continue;
+                };
 
-    spawn_noise_ui_dependency_tree(panel, 0.0, 0.0, "main", &stack.0, &mut commands);
+                spawn_noise_ui_dependency_tree(panel, 0.0, 0.0, "main", stack, &mut commands);
+            }
+            _ => continue,
+        }
+    }
 }
 
 fn spawn_noise_ui_dependency_tree(
@@ -186,7 +185,7 @@ fn spawn_noise_ui_dependency_tree(
                             height: Val::Px(256.0),
                             ..Default::default()
                         },
-                        background_color: Color::WHITE.into(),
+                        background_color: Color::DARK_GRAY.into(),
                         ..Default::default()
                     },
                     Name::new("Noise Image"),
@@ -264,12 +263,17 @@ fn move_left_top(style: &mut Style, left: f32, top: f32) {
 fn update_noise_specs(
     mut commands: Commands,
     q: Query<(Entity, &NoiseSpec), Added<NoiseSpec>>,
-    settings: Res<NoiseStackRes>,
+    handle: Res<NoiseStackHandle>,
+    assets: Res<Assets<NoiseStack>>,
 ) {
+    let Some(stack) = assets.get(&handle.0) else {
+        return;
+    };
+
     for (entity, NoiseSpec(name)) in &q {
         commands.entity(entity).despawn_descendants();
 
-        let spec = settings.get_spec(name).unwrap();
+        let spec = stack.get_spec(name).unwrap();
 
         create_spec_node(&mut commands, entity, name, spec);
     }
@@ -400,12 +404,17 @@ fn update_noise_images(
     mut commands: Commands,
     q: Query<(Entity, &NoiseImage), Added<NoiseImage>>,
     mut images: ResMut<Assets<Image>>,
-    settings: Res<NoiseStackRes>,
+    handle: Res<NoiseStackHandle>,
+    assets: Res<Assets<NoiseStack>>,
 ) {
+    let Some(stack) = assets.get(&handle.0) else {
+        return;
+    };
+
     for (entity, NoiseImage(name)) in &q {
         let started = std::time::Instant::now();
 
-        let noise = settings.build(name);
+        let noise = stack.build(name);
 
         // 512w, 512h, 1 byte per color, 4 color channel (RGBA)
         let mut buffer = vec![0; 4 * 512 * 512];
@@ -428,13 +437,15 @@ fn update_noise_images(
                     min = height;
                 }
 
-                b.copy_from_slice(&[height, height, height, 255u8]);
+                b.copy_from_slice(&[height, height, height, u8::MAX]);
             }
         }
 
         let handle = images.add(create_image(512, 512, buffer));
 
-        commands.entity(entity).insert(UiImage::new(handle));
+        commands
+            .entity(entity)
+            .insert((UiImage::new(handle), BackgroundColor(Color::WHITE)));
         let diff = std::time::Instant::now() - started;
         info!("{name} took {}ms", diff.as_millis());
     }

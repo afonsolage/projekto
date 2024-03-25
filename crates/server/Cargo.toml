@@ -13,6 +13,7 @@ faces_merging = []
 
 dev = [
     "bevy/dynamic_linking",
+    "bevy/file_watcher",
 ]
 
 [dependencies]
@@ -34,14 +35,13 @@ async-channel.workspace = true
 async-lock.workspace = true
 
 # genesis
-noise = "0.9"
+noise.workspace = true
 
 [dev-dependencies]
 rand.workspace = true
 tracing = "0.1"
 tracing-subscriber = "0.3"
 peak_alloc = "0.2"
-bevy-inspector-egui = "0.23"
 
 [lints]
 workspace = true
@@ -49,11 +49,3 @@ workspace = true
 [[bin]]
 name = "main"
 path = "bin/main.rs"
-
-[[example]]
-name = "noise"
-path = "examples/noise.rs"
-
-[[example]]
-name = "server_bench"
-path = "examples/server_bench.rs"

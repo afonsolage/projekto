@@ -7,7 +7,6 @@ edition = "2021"
 
 [workspace]
 members = ["crates/*"]
-default-members = ["crates/client"]
 
 [workspace.dependencies]
 projekto_core = { path = "crates/core",features = ["auto_load_kinds_descs"]  }
@@ -23,6 +22,9 @@ rand = "0.8"
 thiserror = "1.0"
 serde = "1.0"
 ron = "0.8"
+
+# gen
+noise = "0.9"
 
 # IO
 lz4_flex = "0.11"
@@ -41,6 +43,8 @@ projekto_camera.workspace = true
 projekto_core.workspace = true
 projekto_proto.workspace = true
 projekto_server.workspace = true
+
+noise.workspace = true
 
 [workspace.lints.clippy]
 type_complexity = "allow"
@@ -76,3 +80,10 @@ path = "examples/orbit_cam.rs"
 name = "swap_cam"
 path = "examples/swap_cam.rs"
 
+[[example]]
+name = "noise"
+path = "examples/noise.rs"
+
+[[example]]
+name = "server_bench"
+path = "examples/server_bench.rs"
