@@ -112,7 +112,7 @@ fn update_noise_tree(
                     continue;
                 };
 
-                spawn_noise_ui_dependency_tree(panel, 0.0, 0.0, "main", stack, &mut commands);
+                spawn_noise_ui_dependency_tree(panel, 0.0, 0.0, 0.0, "main", stack, &mut commands);
             }
             _ => continue,
         }
@@ -121,6 +121,7 @@ fn update_noise_tree(
 
 fn spawn_noise_ui_dependency_tree(
     parent: Entity,
+    offset: f32,
     x: f32,
     y: f32,
     name: impl ToString,
@@ -139,7 +140,7 @@ fn spawn_noise_ui_dependency_tree(
                         position_type: PositionType::Absolute,
                         width: Val::Auto,
                         height: Val::Auto,
-                        left: Val::Px(card_width * x),
+                        left: Val::Px(card_width * (x + offset)),
                         top: Val::Px(card_height * y),
                         display: Display::Grid,
                         grid_template_columns: vec![
@@ -199,13 +200,17 @@ fn spawn_noise_ui_dependency_tree(
     let dependencies = stack.get_spec(&name).unwrap().dependencies();
     let dep_count = dependencies.len() as f32;
 
+    // TODO: Compute offset
+    let offset = 0.0;
+
     for (i, dependency) in dependencies.into_iter().enumerate() {
         let x = if dep_count > 1.0 {
-            x + i as f32 - (dep_count / 4.0)
+            x + i as f32 - (dep_count / 2.0 - 0.5)
         } else {
             x + i as f32
         };
-        spawn_noise_ui_dependency_tree(parent, x, y + 1.0, dependency, stack, commands);
+
+        spawn_noise_ui_dependency_tree(parent, offset, x, y + 1.0, dependency, stack, commands);
     }
 }
 
