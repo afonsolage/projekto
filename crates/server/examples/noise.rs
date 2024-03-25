@@ -32,8 +32,9 @@ fn main() {
             Update,
             (
                 bevy::window::close_on_esc,
-                update_noise_images.run_if(resource_changed::<NoiseStackRes>),
-                update_noise_specs.run_if(resource_changed::<NoiseStackRes>),
+                update_noise_tree.run_if(resource_changed::<NoiseStackRes>),
+                update_noise_images,
+                update_noise_specs,
                 move_panel_node.run_if(on_event::<MouseMotion>()),
                 zoom_root_node.run_if(on_event::<MouseWheel>()),
             ),
@@ -59,31 +60,6 @@ struct RootNode;
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
-
-    let content = commands
-        .spawn((
-            NodeBundle {
-                style: Style {
-                    display: Display::Grid,
-                    grid_template_columns: vec![
-                        GridTrack::flex(1.0),
-                        GridTrack::px(5.0),
-                        GridTrack::min_content(),
-                    ],
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    left: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    position_type: PositionType::Absolute,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            Name::new("Panel"),
-            PanelNode,
-        ))
-        .id();
-
     commands
         .spawn((
             NodeBundle {
@@ -98,15 +74,51 @@ fn setup(mut commands: Commands) {
             Name::new("Root"),
             RootNode,
         ))
-        .add_child(content);
+        .with_children(|parent| {
+            parent.spawn((
+                NodeBundle {
+                    style: Style {
+                        display: Display::Grid,
+                        grid_template_columns: vec![
+                            GridTrack::flex(1.0),
+                            GridTrack::px(5.0),
+                            GridTrack::min_content(),
+                        ],
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        left: Val::Px(0.0),
+                        top: Val::Px(0.0),
+                        position_type: PositionType::Absolute,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                Name::new("Panel"),
+                PanelNode,
+            ));
+        });
 
-    let stack = create_terrain_stack();
-    add_noise_ui_dependency_tree(content, 0.0, 0.0, "main", &stack, &mut commands);
+    let path = format!("{}/noises/world_surface.ron", env!("ASSETS_PATH"));
+    let stack = NoiseStack::load(path).unwrap();
 
     commands.insert_resource(NoiseStackRes(stack));
 }
 
-fn add_noise_ui_dependency_tree(
+fn update_noise_tree(
+    mut commands: Commands,
+    q_panel: Query<Entity, With<PanelNode>>,
+    stack: Res<NoiseStackRes>,
+) {
+    let Ok(panel) = q_panel.get_single() else {
+        return;
+    };
+
+    commands.entity(panel).despawn_descendants();
+
+    spawn_noise_ui_dependency_tree(panel, 0.0, 0.0, "main", &stack.0, &mut commands);
+}
+
+fn spawn_noise_ui_dependency_tree(
     parent: Entity,
     x: f32,
     y: f32,
@@ -192,7 +204,7 @@ fn add_noise_ui_dependency_tree(
         } else {
             x + i as f32
         };
-        add_noise_ui_dependency_tree(parent, x, y + 1.0, dependency, stack, commands);
+        spawn_noise_ui_dependency_tree(parent, x, y + 1.0, dependency, stack, commands);
     }
 }
 
@@ -251,7 +263,7 @@ fn move_left_top(style: &mut Style, left: f32, top: f32) {
 
 fn update_noise_specs(
     mut commands: Commands,
-    q: Query<(Entity, &NoiseSpec), With<NoiseSpec>>,
+    q: Query<(Entity, &NoiseSpec), Added<NoiseSpec>>,
     settings: Res<NoiseStackRes>,
 ) {
     for (entity, NoiseSpec(name)) in &q {
@@ -386,12 +398,10 @@ fn create_spec_item_field(commands: &mut Commands, field: VariantField) -> Entit
 
 fn update_noise_images(
     mut commands: Commands,
-    q: Query<(Entity, &NoiseImage), With<NoiseImage>>,
+    q: Query<(Entity, &NoiseImage), Added<NoiseImage>>,
     mut images: ResMut<Assets<Image>>,
     settings: Res<NoiseStackRes>,
 ) {
-    info!("Updating noise images!");
-
     for (entity, NoiseImage(name)) in &q {
         let started = std::time::Instant::now();
 
@@ -428,8 +438,6 @@ fn update_noise_images(
         let diff = std::time::Instant::now() - started;
         info!("{name} took {}ms", diff.as_millis());
     }
-
-    info!("Updated!");
 }
 
 fn create_image(width: u32, height: u32, buffer: Vec<u8>) -> Image {
@@ -453,65 +461,4 @@ fn create_image(width: u32, height: u32, buffer: Vec<u8>) -> Image {
         asset_usage: RenderAssetUsages::RENDER_WORLD,
         ..Default::default()
     }
-}
-
-pub fn create_terrain_stack() -> NoiseStack {
-    // TODO: Move this to a ron file
-    let mut map = HashMap::new();
-
-    let continent = NoiseFnSpec::Fbm {
-        seed: 42,
-        frequency: 1.0,
-        octaves: 14,
-        lacunarity: 2.2089,
-        persistence: 0.5,
-    };
-    map.insert("continent".to_string(), continent);
-
-    let curve = NoiseFnSpec::Curve {
-        source: "continent".to_string(),
-        control_points: vec![
-            (-2.0000, -1.625),
-            (-1.0000, -1.375),
-            (0.0000, -0.375),
-            (0.0625, 0.125),
-            (0.1250, 0.250),
-            (0.2500, 1.000),
-            (0.5000, 0.250),
-            (0.7500, 0.250),
-            (1.0000, 0.500),
-            (2.0000, 0.500),
-        ],
-    };
-    map.insert("curve".to_string(), curve);
-
-    let carver = NoiseFnSpec::Fbm {
-        seed: 42,
-        frequency: 4.3437,
-        octaves: 11,
-        lacunarity: 2.2089,
-        persistence: 0.5,
-    };
-    map.insert("carver".to_string(), carver);
-
-    let scaled_carver = NoiseFnSpec::ScaleBias {
-        source: "carver".to_string(),
-        scale: 0.375,
-        bias: 0.625,
-    };
-    map.insert("scaled_carver".to_string(), scaled_carver);
-
-    let carved_continent = NoiseFnSpec::Min {
-        source_1: "scaled_carver".to_string(),
-        source_2: "curve".to_string(),
-    };
-    map.insert("carved_continent".to_string(), carved_continent);
-
-    let clamp = NoiseFnSpec::Clamp {
-        source: "carved_continent".to_string(),
-        bounds: (-1.0, 1.0),
-    };
-    map.insert("main".to_string(), clamp);
-
-    NoiseStack::new(map)
 }
