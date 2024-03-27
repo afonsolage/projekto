@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
@@ -131,6 +133,8 @@ fn spawn_noise_ui_dependency_tree(
     let card_width = 512.0;
     let card_height = 300.0;
 
+    let tree = Tree::new(stack, "main");
+
     let name = name.to_string();
     commands.entity(parent).with_children(|parent| {
         parent
@@ -200,18 +204,29 @@ fn spawn_noise_ui_dependency_tree(
     let dependencies = stack.get_spec(&name).unwrap().dependencies();
     let dep_count = dependencies.len() as f32;
 
-    // TODO: Compute offset
-    let offset = 0.0;
-
-    for (i, dependency) in dependencies.into_iter().enumerate() {
-        let x = if dep_count > 1.0 {
-            x + i as f32 - (dep_count / 2.0 - 0.5)
-        } else {
-            x + i as f32
-        };
-
-        spawn_noise_ui_dependency_tree(parent, offset, x, y + 1.0, dependency, stack, commands);
-    }
+    // // TODO: Compute offset
+    // let mut offset = -compute_node_width(stack, &name) / 2.0;
+    //
+    // for (i, dependency) in dependencies.into_iter().enumerate() {
+    //     // let x = if dep_count > 1.0 {
+    //     //     x + i as f32 - (dep_count / 2.0 - 0.5)
+    //     // } else {
+    //     //     x + i as f32
+    //     // };
+    //
+    //     spawn_noise_ui_dependency_tree(
+    //         parent,
+    //         offset,
+    //         x + offset,
+    //         y + 1.0,
+    //         dependency,
+    //         stack,
+    //         commands,
+    //     );
+    //
+    //     let dep_width = compute_node_width(stack, dependency);
+    //     offset += dep_width;
+    // }
 }
 
 fn zoom_root_node(
@@ -489,5 +504,66 @@ fn create_image(width: u32, height: u32, buffer: Vec<u8>) -> Image {
         sampler: ImageSampler::nearest(),
         asset_usage: RenderAssetUsages::RENDER_WORLD,
         ..Default::default()
+    }
+}
+
+#[derive(Debug, Default)]
+struct Tree<'n>(HashMap<&'n str, TreeNode<'n>>);
+
+#[derive(Default, Debug, Clone)]
+struct TreeNode<'n> {
+    pub name: &'n str,
+    pub x: f32,
+    pub y: f32,
+    pub children: Vec<&'n str>,
+    pub parent: Option<&'n str>,
+    x_offset: f32,
+}
+
+impl<'n> Tree<'n> {
+    pub fn new(stack: &'n NoiseStack, root: &'n str) -> Tree<'n> {
+        let mut tree = Tree::default();
+        tree.add_spec_node(stack, root, None, 0);
+
+        tree.compute_layout();
+
+        tree
+    }
+
+    fn compute_layout(&mut self) {
+        self.compute_local_x();
+    }
+
+    fn compute_local_x(&mut self) {}
+
+    fn add_spec_node(
+        &mut self,
+        stack: &'n NoiseStack,
+        name: &'n str,
+        parent: Option<&'n str>,
+        depth: u32,
+    ) {
+        let spec = stack.get_spec(name).unwrap();
+
+        let children = spec
+            .dependencies()
+            .into_iter()
+            .map(|dep| {
+                self.add_spec_node(stack, dep, Some(dep), depth + 1);
+                dep
+            })
+            .collect();
+
+        let node = TreeNode {
+            name,
+            parent,
+            y: depth as f32,
+            children,
+            ..Default::default()
+        };
+
+        if let Some(name) = self.0.insert(name, node) {
+            // Derrota
+        }
     }
 }
