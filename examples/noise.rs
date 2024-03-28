@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc};
-
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
@@ -114,119 +112,84 @@ fn update_noise_tree(
                     continue;
                 };
 
-                spawn_noise_ui_dependency_tree(panel, 0.0, 0.0, 0.0, "main", stack, &mut commands);
+                let tree = Tree::new(stack, "main");
+                spawn_noise_ui_dependency_tree(panel, &tree, &mut commands);
             }
             _ => continue,
         }
     }
 }
 
-fn spawn_noise_ui_dependency_tree(
-    parent: Entity,
-    offset: f32,
-    x: f32,
-    y: f32,
-    name: impl ToString,
-    stack: &NoiseStack,
-    commands: &mut Commands,
-) {
+fn spawn_noise_ui_dependency_tree(parent: Entity, tree: &Tree, commands: &mut Commands) {
     let card_width = 512.0;
     let card_height = 300.0;
 
-    let tree = Tree::new(stack, "main");
-
-    let name = name.to_string();
-    commands.entity(parent).with_children(|parent| {
-        parent
-            .spawn((
-                NodeBundle {
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        width: Val::Auto,
-                        height: Val::Auto,
-                        left: Val::Px(card_width * (x + offset)),
-                        top: Val::Px(card_height * y),
-                        display: Display::Grid,
-                        grid_template_columns: vec![
-                            GridTrack::flex(1.0),
-                            GridTrack::px(5.0),
-                            GridTrack::min_content(),
-                        ],
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                Name::new(format!("Noise {name}").to_string()),
-            ))
-            .with_children(|parent| {
-                parent.spawn((
+    for node in &tree.nodes {
+        commands.entity(parent).with_children(|parent| {
+            parent
+                .spawn((
                     NodeBundle {
                         style: Style {
-                            width: Val::Px(200.0),
+                            position_type: PositionType::Absolute,
+                            width: Val::Auto,
                             height: Val::Auto,
+                            left: Val::Px(card_width * node.x),
+                            top: Val::Px(card_height * node.y),
+                            display: Display::Grid,
+                            grid_template_columns: vec![
+                                GridTrack::flex(1.0),
+                                GridTrack::px(5.0),
+                                GridTrack::min_content(),
+                            ],
                             ..Default::default()
                         },
-                        background_color: Color::BLACK.into(),
                         ..Default::default()
                     },
-                    Name::new("Noise Spec"),
-                    NoiseSpec(name.to_string()),
-                ));
-
-                parent.spawn((
-                    NodeBundle {
-                        style: Style {
-                            height: Val::Auto,
+                    Name::new(format!("Noise {}", node.name).to_string()),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        NodeBundle {
+                            style: Style {
+                                width: Val::Px(200.0),
+                                height: Val::Auto,
+                                ..Default::default()
+                            },
+                            background_color: Color::BLACK.into(),
                             ..Default::default()
                         },
-                        background_color: Color::GRAY.into(),
-                        ..Default::default()
-                    },
-                    Name::new("Noise Spacer"),
-                ));
+                        Name::new("Noise Spec"),
+                        NoiseSpec(node.name.to_string()),
+                    ));
 
-                parent.spawn((
-                    NodeBundle {
-                        style: Style {
-                            width: Val::Px(256.0),
-                            height: Val::Px(256.0),
+                    parent.spawn((
+                        NodeBundle {
+                            style: Style {
+                                height: Val::Auto,
+                                ..Default::default()
+                            },
+                            background_color: Color::GRAY.into(),
                             ..Default::default()
                         },
-                        background_color: Color::DARK_GRAY.into(),
-                        ..Default::default()
-                    },
-                    Name::new("Noise Image"),
-                    NoiseImage(name.to_string()),
-                ));
-            });
-    });
+                        Name::new("Noise Spacer"),
+                    ));
 
-    let dependencies = stack.get_spec(&name).unwrap().dependencies();
-    let dep_count = dependencies.len() as f32;
-
-    // // TODO: Compute offset
-    // let mut offset = -compute_node_width(stack, &name) / 2.0;
-    //
-    // for (i, dependency) in dependencies.into_iter().enumerate() {
-    //     // let x = if dep_count > 1.0 {
-    //     //     x + i as f32 - (dep_count / 2.0 - 0.5)
-    //     // } else {
-    //     //     x + i as f32
-    //     // };
-    //
-    //     spawn_noise_ui_dependency_tree(
-    //         parent,
-    //         offset,
-    //         x + offset,
-    //         y + 1.0,
-    //         dependency,
-    //         stack,
-    //         commands,
-    //     );
-    //
-    //     let dep_width = compute_node_width(stack, dependency);
-    //     offset += dep_width;
-    // }
+                    parent.spawn((
+                        NodeBundle {
+                            style: Style {
+                                width: Val::Px(256.0),
+                                height: Val::Px(256.0),
+                                ..Default::default()
+                            },
+                            background_color: Color::DARK_GRAY.into(),
+                            ..Default::default()
+                        },
+                        Name::new("Noise Image"),
+                        NoiseImage(node.name.to_string()),
+                    ));
+                });
+        });
+    }
 }
 
 fn zoom_root_node(
@@ -447,8 +410,6 @@ fn update_noise_images(
     };
 
     for (entity, NoiseImage(name)) in &q {
-        info!("Loading noise {name}");
-
         let noise = stack.build(name);
 
         let task = AsyncComputeTaskPool::get().spawn(async move {
@@ -508,22 +469,31 @@ fn create_image(width: u32, height: u32, buffer: Vec<u8>) -> Image {
 }
 
 #[derive(Debug, Default)]
-struct Tree<'n>(HashMap<&'n str, TreeNode<'n>>);
+struct Tree<'n> {
+    nodes: Vec<TreeNode<'n>>,
+}
 
 #[derive(Default, Debug, Clone)]
 struct TreeNode<'n> {
     pub name: &'n str,
     pub x: f32,
     pub y: f32,
-    pub children: Vec<&'n str>,
-    pub parent: Option<&'n str>,
+    pub children: Vec<usize>,
+    pub parent: Option<usize>,
     x_offset: f32,
+}
+
+#[derive(Copy, Clone)]
+enum ContourDir {
+    Left,
+    Right,
 }
 
 impl<'n> Tree<'n> {
     pub fn new(stack: &'n NoiseStack, root: &'n str) -> Tree<'n> {
         let mut tree = Tree::default();
-        tree.add_spec_node(stack, root, None, 0);
+
+        tree.add_spec_node(stack, root, None, 0.0, 0.0);
 
         tree.compute_layout();
 
@@ -531,39 +501,212 @@ impl<'n> Tree<'n> {
     }
 
     fn compute_layout(&mut self) {
-        self.compute_local_x();
+        if self.nodes.is_empty() {
+            return;
+        }
+
+        let root_id = self.nodes.len() - 1;
+        self.compute_initial_x(root_id);
+        self.compute_apply_x_offset(0.0, root_id);
     }
 
-    fn compute_local_x(&mut self) {}
+    fn fix_overlapping(&mut self, id: usize) {
+        let Some(siblings) = self.nodes[id]
+            .parent
+            .map(|parent| self.nodes[parent].children.to_vec())
+        else {
+            return;
+        };
+
+        let mut left_contour = HashMap::new();
+        self.get_contour(ContourDir::Left, id, 0.0, &mut left_contour);
+
+        let next_depth = self.nodes[id].y as usize + 1;
+        let mut shift_value = 0.0;
+
+        for sibling in siblings {
+            if sibling == id {
+                break;
+            }
+
+            let mut right_contour = HashMap::new();
+            self.get_contour(ContourDir::Right, sibling, 0.0, &mut right_contour);
+
+            let max_depth = usize::min(
+                *left_contour.keys().max().unwrap(),
+                *right_contour.keys().max().unwrap(),
+            );
+
+            for depth in next_depth..max_depth {
+                let distance =
+                    left_contour.get(&depth).unwrap() - right_contour.get(&depth).unwrap();
+
+                if distance + shift_value < 1.0 {
+                    shift_value = 1.0 - distance;
+                }
+            }
+
+            if shift_value > 0.0 {
+                self.nodes[id].x += shift_value;
+                self.nodes[id].x_offset += shift_value;
+
+                // TODO: Center node between siblings
+
+                shift_value = 0.0;
+            }
+        }
+    }
+
+    fn get_contour(
+        &self,
+        dir: ContourDir,
+        id: usize,
+        parent_offset: f32,
+        depth_map: &mut HashMap<usize, f32>,
+    ) {
+        let TreeNode {
+            y,
+            x,
+            x_offset,
+            children,
+            ..
+        } = &self.nodes[id];
+
+        let depth = *y as usize;
+        let contour = *x + parent_offset;
+
+        if let Some(existing) = depth_map.get(&depth) {
+            let new_contour = match dir {
+                ContourDir::Left => f32::min(*existing, contour),
+                ContourDir::Right => f32::max(*existing, contour),
+            };
+            depth_map.insert(depth, new_contour);
+        } else {
+            depth_map.insert(depth, contour);
+        }
+
+        for &child in children {
+            self.get_contour(dir, child, parent_offset + *x_offset, depth_map);
+        }
+    }
+
+    fn get_left_sibling(&self, id: usize) -> Option<&TreeNode> {
+        let siblings = self.nodes[id].parent.map(|p| &self.nodes[p].children)?;
+
+        if siblings[0] == id {
+            return None;
+        }
+
+        let index = siblings
+            .iter()
+            .position(|sib| *sib == id)
+            .expect("id must exists on parent children");
+
+        assert!(index > 0);
+
+        Some(&self.nodes[siblings[index - 1]])
+    }
+
+    fn compute_initial_x(&mut self, id: usize) {
+        let children = self.nodes[id].children.clone();
+
+        for child in &children {
+            self.compute_initial_x(*child);
+        }
+
+        let left_sibling_offset = self.get_left_sibling(id).map(|n| n.x + 1.0);
+
+        match children.len() {
+            0 => {
+                if let Some(offset) = left_sibling_offset {
+                    self.nodes[id].x = offset;
+                } else {
+                    self.nodes[id].x = 0.0;
+                }
+            }
+            1 => {
+                if let Some(offset) = left_sibling_offset {
+                    self.nodes[id].x = offset;
+                    self.nodes[id].x_offset = self.nodes[id].x - self.nodes[children[0]].x;
+                } else {
+                    self.nodes[id].x = self.nodes[children[0]].x;
+                }
+            }
+            _ => {
+                let left_most = self.nodes[*children.first().unwrap()].x;
+                let right_most = self.nodes[*children.last().unwrap()].x;
+                let mid = (left_most + right_most) / 2.0;
+
+                if let Some(offset) = left_sibling_offset {
+                    self.nodes[id].x = offset;
+                    self.nodes[id].x_offset = self.nodes[id].x - mid;
+                } else {
+                    self.nodes[id].x = mid;
+                }
+            }
+        }
+
+        if !children.is_empty() && left_sibling_offset.is_some() {
+            self.fix_overlapping(id);
+        }
+    }
+
+    fn add_x_on_all_children(&mut self, id: usize, x: f32) {
+        let children = self.nodes[id].children.clone();
+
+        for child in children {
+            self.add_x_on_all_children(child, x);
+        }
+
+        self.nodes[id].x += x;
+    }
+
+    fn compute_apply_x_offset(&mut self, offset: f32, id: usize) {
+        if offset > 0.0 {
+            info!("Updating offset to {offset}");
+        }
+        self.nodes[id].x += offset;
+        let children = self.nodes[id].children.clone();
+
+        for child in children {
+            self.compute_apply_x_offset(offset + self.nodes[id].x_offset, child);
+        }
+    }
 
     fn add_spec_node(
         &mut self,
         stack: &'n NoiseStack,
         name: &'n str,
-        parent: Option<&'n str>,
-        depth: u32,
-    ) {
+        parent: Option<usize>,
+        x: f32,
+        y: f32,
+    ) -> usize {
         let spec = stack.get_spec(name).unwrap();
-
-        let children = spec
-            .dependencies()
-            .into_iter()
-            .map(|dep| {
-                self.add_spec_node(stack, dep, Some(dep), depth + 1);
-                dep
-            })
-            .collect();
 
         let node = TreeNode {
             name,
             parent,
-            y: depth as f32,
-            children,
+            x,
+            y,
             ..Default::default()
         };
 
-        if let Some(name) = self.0.insert(name, node) {
-            // Derrota
+        let children = spec
+            .dependencies()
+            .into_iter()
+            .enumerate()
+            .map(|(x, dep)| self.add_spec_node(stack, dep, None, x as f32, y + 1.0))
+            .collect::<Vec<_>>();
+
+        let id = self.nodes.len();
+        self.nodes.push(node);
+
+        for child in children.iter() {
+            self.nodes[*child].parent = Some(id);
         }
+
+        self.nodes[id].children = children;
+
+        id
     }
 }
