@@ -137,7 +137,7 @@ fn spawn_noise_ui_dependency_tree(parent: Entity, tree: &Tree, commands: &mut Co
                             top: Val::Px(card_height * node.y),
                             display: Display::Grid,
                             grid_template_columns: vec![
-                                GridTrack::flex(1.0),
+                                GridTrack::min_content(),
                                 GridTrack::px(5.0),
                                 GridTrack::min_content(),
                             ],
@@ -189,14 +189,15 @@ fn spawn_noise_ui_dependency_tree(parent: Entity, tree: &Tree, commands: &mut Co
                     ));
                 });
 
+            // TODO: Figureout why we need this 26 offset to center the connection
             let origin = Vec2::new(
-                node.x * card_width + card_width / 2.0,
+                node.x * card_width + card_width / 2.0 - 26.0,
                 node.y * card_height + card_height / 2.0,
             );
 
             for child in &node.children {
                 let dest = Vec2::new(
-                    tree.nodes[*child].x * card_width + card_width / 2.0,
+                    tree.nodes[*child].x * card_width + card_width / 2.0 - 26.0,
                     tree.nodes[*child].y * card_height + card_height / 2.0,
                 );
                 spawn_connection(parent, origin, dest);
@@ -216,7 +217,7 @@ fn spawn_connection(parent: &mut ChildBuilder, origin: Vec2, dest: Vec2) {
                 height: Val::Px(height),
                 ..Default::default()
             },
-            // z_index: ZIndex::Global(-10),
+            z_index: ZIndex::Global(-10),
             background_color: Color::LIME_GREEN.into(),
             ..Default::default()
         });
@@ -228,7 +229,8 @@ fn spawn_connection(parent: &mut ChildBuilder, origin: Vec2, dest: Vec2) {
 
         let left = f32::min(origin.x, dest.x);
         let width = (origin.x - dest.x).abs();
-        spawn_line(parent, left, origin.y, width, 5.0);
+        spawn_line(parent, left - 0.5, origin.y, width, 5.0);
+
         spawn_line(parent, dest.x - 0.5, origin.y, 5.0, height);
     } else {
         spawn_line(parent, origin.x - 0.5, origin.y, 5.0, height);
