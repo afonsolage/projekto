@@ -651,20 +651,7 @@ impl<'n> Tree<'n> {
         }
     }
 
-    fn add_x_on_all_children(&mut self, id: usize, x: f32) {
-        let children = self.nodes[id].children.clone();
-
-        for child in children {
-            self.add_x_on_all_children(child, x);
-        }
-
-        self.nodes[id].x += x;
-    }
-
     fn compute_apply_x_offset(&mut self, offset: f32, id: usize) {
-        if offset > 0.0 {
-            info!("Updating offset to {offset}");
-        }
         self.nodes[id].x += offset;
         let children = self.nodes[id].children.clone();
 

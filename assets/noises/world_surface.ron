@@ -65,7 +65,7 @@
         ),
 
         "warped_base_continent": Turbulence (
-            source: "carved_continent",
+            source: "intermediate_turbulence",
             seed: 44,
             frequency: 95.25,
             power: 0.000980633,
