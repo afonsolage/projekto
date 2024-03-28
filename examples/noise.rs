@@ -188,7 +188,50 @@ fn spawn_noise_ui_dependency_tree(parent: Entity, tree: &Tree, commands: &mut Co
                         NoiseImage(node.name.to_string()),
                     ));
                 });
+
+            let origin = Vec2::new(
+                node.x * card_width + card_width / 2.0,
+                node.y * card_height + card_height / 2.0,
+            );
+
+            for child in &node.children {
+                let dest = Vec2::new(
+                    tree.nodes[*child].x * card_width + card_width / 2.0,
+                    tree.nodes[*child].y * card_height + card_height / 2.0,
+                );
+                spawn_connection(parent, origin, dest);
+            }
         });
+    }
+}
+
+fn spawn_connection(parent: &mut ChildBuilder, origin: Vec2, dest: Vec2) {
+    fn spawn_line(parent: &mut ChildBuilder, left: f32, top: f32, width: f32, height: f32) {
+        parent.spawn(NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                left: Val::Px(left),
+                top: Val::Px(top),
+                width: Val::Px(width),
+                height: Val::Px(height),
+                ..Default::default()
+            },
+            // z_index: ZIndex::Global(-10),
+            background_color: Color::LIME_GREEN.into(),
+            ..Default::default()
+        });
+    }
+
+    let height = dest.y - origin.y;
+    if (origin.x - dest.x).abs() >= f32::EPSILON {
+        // Draw two connections
+
+        let left = f32::min(origin.x, dest.x);
+        let width = (origin.x - dest.x).abs();
+        spawn_line(parent, left, origin.y, width, 5.0);
+        spawn_line(parent, dest.x - 0.5, origin.y, 5.0, height);
+    } else {
+        spawn_line(parent, origin.x - 0.5, origin.y, 5.0, height);
     }
 }
 
