@@ -217,7 +217,7 @@ fn spawn_connection(parent: &mut ChildBuilder, origin: Vec2, dest: Vec2) {
                 height: Val::Px(height),
                 ..Default::default()
             },
-            z_index: ZIndex::Global(-10),
+            // z_index: ZIndex::Global(-10),
             background_color: Color::LIME_GREEN.into(),
             ..Default::default()
         });
@@ -540,6 +540,7 @@ impl<'n> Tree<'n> {
 
         tree.add_spec_node(stack, root, None, 0.0, 0.0);
 
+        tree.sort_post_order(root);
         tree.compute_layout();
 
         tree
@@ -555,51 +556,131 @@ impl<'n> Tree<'n> {
         self.compute_apply_x_offset(0.0, root_id);
     }
 
-    fn fix_overlapping(&mut self, id: usize) {
-        let Some(siblings) = self.nodes[id]
-            .parent
-            .map(|parent| self.nodes[parent].children.to_vec())
-        else {
-            return;
-        };
+    fn compute_initial_x(&mut self, id: usize) {
+        let children = self.nodes[id].children.clone();
 
-        let mut left_contour = HashMap::new();
-        self.get_contour(ContourDir::Left, id, 0.0, &mut left_contour);
+        for child in &children {
+            self.compute_initial_x(*child);
+        }
 
-        let next_depth = self.nodes[id].y as usize + 1;
-        let mut shift_value = 0.0;
+        let left_sibling_offset = self.get_left_sibling(id).map(|n| n.x + 1.0);
 
-        for sibling in siblings {
-            if sibling == id {
-                break;
-            }
-
-            let mut right_contour = HashMap::new();
-            self.get_contour(ContourDir::Right, sibling, 0.0, &mut right_contour);
-
-            let max_depth = usize::min(
-                *left_contour.keys().max().unwrap(),
-                *right_contour.keys().max().unwrap(),
-            );
-
-            for depth in next_depth..max_depth {
-                let distance =
-                    left_contour.get(&depth).unwrap() - right_contour.get(&depth).unwrap();
-
-                if distance + shift_value < 1.0 {
-                    shift_value = 1.0 - distance;
+        match children.len() {
+            0 => {
+                if let Some(offset) = left_sibling_offset {
+                    self.nodes[id].x = offset;
+                } else {
+                    self.nodes[id].x = 0.0;
                 }
             }
+            1 => {
+                if let Some(offset) = left_sibling_offset {
+                    self.nodes[id].x = offset;
+                    self.nodes[id].x_offset = self.nodes[id].x - self.nodes[children[0]].x;
+                } else {
+                    self.nodes[id].x = self.nodes[children[0]].x;
+                }
+            }
+            _ => {
+                let left_most = self.nodes[*children.first().unwrap()].x;
+                let right_most = self.nodes[*children.last().unwrap()].x;
+                let mid = (left_most + right_most) / 2.0;
 
-            if shift_value > 0.0 {
-                self.nodes[id].x += shift_value;
-                self.nodes[id].x_offset += shift_value;
-
-                // TODO: Center node between siblings
-
-                shift_value = 0.0;
+                if let Some(offset) = left_sibling_offset {
+                    self.nodes[id].x = offset;
+                    self.nodes[id].x_offset = self.nodes[id].x - mid;
+                } else {
+                    self.nodes[id].x = mid;
+                }
             }
         }
+
+        if !children.is_empty() && left_sibling_offset.is_some() {
+            self.fix_overlapping(id);
+        }
+    }
+
+    fn fix_overlapping(&mut self, id: usize) {
+        let left_siblings = self.nodes[id]
+            .parent
+            .map(|parent| {
+                self.nodes[parent]
+                    .children
+                    .iter()
+                    .take_while(|&&c| c != id)
+                    .copied()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+
+        assert!(!left_siblings.is_empty());
+
+        let mut node_left_contour = HashMap::new();
+        self.get_contour(ContourDir::Left, id, 0.0, &mut node_left_contour);
+
+        let node_depth = self.nodes[id].y as usize;
+
+        for sibling in left_siblings {
+            assert_ne!(sibling, id);
+
+            let mut sibling_right_contour = HashMap::new();
+            self.get_contour(ContourDir::Right, sibling, 0.0, &mut sibling_right_contour);
+
+            let max_contour_depth = usize::min(
+                *node_left_contour.keys().max().unwrap(),
+                *sibling_right_contour.keys().max().unwrap(),
+            );
+
+            let shift_distance = (node_depth + 1..=max_contour_depth).fold(0.0, |acc, depth| {
+                let left = node_left_contour.get(&depth).unwrap();
+                let right = sibling_right_contour.get(&depth).unwrap();
+                let distance = left - right;
+
+                if distance + acc < 1.0 {
+                    1.0 - distance
+                } else {
+                    acc
+                }
+            });
+
+            if shift_distance > 0.0 {
+                self.nodes[id].x += shift_distance;
+                self.nodes[id].x_offset += shift_distance;
+
+                self.center_nodes_between(id, sibling);
+            }
+        }
+    }
+
+    fn center_nodes_between(&mut self, left: usize, right: usize) {
+        assert_ne!(left, right);
+        assert_eq!(self.nodes[left].parent, self.nodes[right].parent);
+
+        let siblings = self.nodes[self.nodes[left].parent.unwrap()]
+            .children
+            .clone();
+        let left_idx = siblings.iter().position(|c| *c == left).unwrap();
+        let right_idx = siblings.iter().position(|c| *c == left).unwrap();
+
+        let nodes_between = right_idx - left_idx;
+
+        if nodes_between <= 1 {
+            return;
+        }
+
+        let step_distance = (self.nodes[left].x - self.nodes[right].x) / nodes_between as f32;
+
+        for (i, mid_node_idx) in (left_idx + 1..right_idx).enumerate() {
+            let mid_node = siblings[mid_node_idx];
+
+            let target_x = self.nodes[right].x + (step_distance * i as f32);
+            let offset = target_x - self.nodes[mid_node].x;
+
+            self.nodes[mid_node].x += offset;
+            self.nodes[mid_node].x_offset += offset;
+        }
+
+        self.fix_overlapping(left);
     }
 
     fn get_contour(
@@ -652,50 +733,6 @@ impl<'n> Tree<'n> {
         Some(&self.nodes[siblings[index - 1]])
     }
 
-    fn compute_initial_x(&mut self, id: usize) {
-        let children = self.nodes[id].children.clone();
-
-        for child in &children {
-            self.compute_initial_x(*child);
-        }
-
-        let left_sibling_offset = self.get_left_sibling(id).map(|n| n.x + 1.0);
-
-        match children.len() {
-            0 => {
-                if let Some(offset) = left_sibling_offset {
-                    self.nodes[id].x = offset;
-                } else {
-                    self.nodes[id].x = 0.0;
-                }
-            }
-            1 => {
-                if let Some(offset) = left_sibling_offset {
-                    self.nodes[id].x = offset;
-                    self.nodes[id].x_offset = self.nodes[id].x - self.nodes[children[0]].x;
-                } else {
-                    self.nodes[id].x = self.nodes[children[0]].x;
-                }
-            }
-            _ => {
-                let left_most = self.nodes[*children.first().unwrap()].x;
-                let right_most = self.nodes[*children.last().unwrap()].x;
-                let mid = (left_most + right_most) / 2.0;
-
-                if let Some(offset) = left_sibling_offset {
-                    self.nodes[id].x = offset;
-                    self.nodes[id].x_offset = self.nodes[id].x - mid;
-                } else {
-                    self.nodes[id].x = mid;
-                }
-            }
-        }
-
-        if !children.is_empty() && left_sibling_offset.is_some() {
-            self.fix_overlapping(id);
-        }
-    }
-
     fn compute_apply_x_offset(&mut self, offset: f32, id: usize) {
         self.nodes[id].x += offset;
         let children = self.nodes[id].children.clone();
@@ -703,6 +740,64 @@ impl<'n> Tree<'n> {
         for child in children {
             self.compute_apply_x_offset(offset + self.nodes[id].x_offset, child);
         }
+    }
+
+    #[cfg(test)]
+    fn add_node(&mut self, parent: Option<&'n str>, name: &'n str) {
+        let parent = parent.and_then(|p| self.nodes.iter().position(|n| n.name == p));
+
+        self.nodes.push(TreeNode {
+            name,
+            parent,
+            ..Default::default()
+        });
+
+        if let Some(parent) = parent {
+            let child = self.nodes.len() - 1;
+            self.nodes[parent].children.push(child);
+        }
+    }
+
+    fn sort_post_order(&mut self, root: &'n str) {
+        fn add_post_order(tree: &Tree, id: usize, nodes: &mut Vec<usize>) {
+            for child in &tree.nodes[id].children {
+                add_post_order(tree, *child, nodes);
+            }
+
+            nodes.push(id);
+        }
+
+        fn update_children(tree: &mut Tree, id: usize, ordered_nodes: &[usize]) {
+            for child in tree.nodes[id].children.clone() {
+                update_children(tree, child, ordered_nodes);
+                tree.nodes[child].parent = ordered_nodes.iter().position(|new_id| id == *new_id);
+            }
+
+            tree.nodes[id].children.iter_mut().for_each(|child| {
+                *child = ordered_nodes
+                    .iter()
+                    .position(|new_id| *new_id == *child)
+                    .unwrap();
+            });
+        }
+
+        let root = self
+            .nodes
+            .iter()
+            .position(|n| n.name == root)
+            .expect("root should exists");
+
+        let mut nodes = vec![];
+        add_post_order(self, root, &mut nodes);
+        let mut ordered_nodes = Vec::with_capacity(nodes.len());
+
+        update_children(self, root, &nodes);
+
+        for id in nodes {
+            ordered_nodes.push(std::mem::take(&mut self.nodes[id]));
+        }
+
+        self.nodes = ordered_nodes;
     }
 
     fn add_spec_node(
@@ -740,5 +835,66 @@ impl<'n> Tree<'n> {
         self.nodes[id].children = children;
 
         id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_tree<'a>() -> Tree<'a> {
+        let mut tree = Tree::default();
+
+        tree.add_node(None, "O");
+
+        tree.add_node(Some("O"), "E");
+        tree.add_node(Some("O"), "F");
+        tree.add_node(Some("O"), "N");
+
+        tree.add_node(Some("E"), "A");
+        tree.add_node(Some("E"), "D");
+
+        tree.add_node(Some("D"), "B");
+        tree.add_node(Some("D"), "C");
+
+        tree.add_node(Some("N"), "G");
+        tree.add_node(Some("N"), "M");
+
+        tree.add_node(Some("M"), "H");
+        tree.add_node(Some("M"), "I");
+        tree.add_node(Some("M"), "J");
+        tree.add_node(Some("M"), "K");
+        tree.add_node(Some("M"), "L");
+
+        tree.sort_post_order("O");
+
+        tree
+    }
+
+    #[test]
+    fn sort_post_order() {
+        let mut tree = create_test_tree();
+
+        let expected = [
+            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O",
+        ];
+
+        for (id, name) in expected.into_iter().enumerate() {
+            assert_eq!(tree.nodes[id].name, name);
+        }
+    }
+
+    #[test]
+    fn compute_initial_x() {
+        let mut tree = create_test_tree();
+
+        tree.compute_layout();
+        // while (tree.fix_overlapping(tree.nodes.len() - 1)) {}
+
+        for &TreeNode { name, x, .. } in &tree.nodes {
+            println!("{name} = {x}");
+        }
+
+        assert!(false);
     }
 }
