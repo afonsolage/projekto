@@ -470,7 +470,7 @@ fn update_noise_images(
                     let x = w as f64 / 512.0;
                     let y = h as f64 / 512.0;
 
-                    let noise = noise.get([x, y, 0.0]) as f32;
+                    let noise = noise.get([x * 0.001, y * 0.001, 0.0]) as f32;
                     let height = (((noise + 1.0) / 2.0) * 255.0) as u8;
 
                     if height > max {
