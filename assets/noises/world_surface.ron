@@ -1,5 +1,5 @@
 (
-    spec_map: {
+    specs: {
         "base_continent": Fbm( 
             seed: 42,
             frequency: 1.0,
@@ -48,6 +48,8 @@
             bounds: (-1.0, 1.0),
         ),
 
+        // TODO: Add cache on continent
+
         "coarse_turbulence": Turbulence (
             source: "continent",
             seed: 42,
@@ -72,12 +74,175 @@
             roughness: 11,
         ),
 
-        "main": Select (
+        "continent_def": Select (
             source_1: "continent",
             source_2: "warped_base_continent",
             control: "continent",
             bounds: (-0.0375, 1000.0375),
             falloff: 0.0625,
         ),
+
+        // TODO: Add cache on continent_def
+
+        "warped_continent": Turbulence (
+            source: "continent_def",
+            seed: 45,
+            frequency: 18.125,
+            power: 0.048558422,
+            roughness: 3,
+        ),
+
+        "roughness_shift": Terrace (
+            source: "warped_continent",
+            control_points: [
+                -1.0,
+                -0.375,
+                1.0,
+            ],
+        ),
+
+        // TODO: Add cache on roughness_shift
+
+        "mountain_ridge": RidgedMulti (
+            seed: 42,
+            frequency: 1723.0,
+            lacunarity: 2.142578125,
+            octaves: 4,
+        ),
+
+        "scaled_mountain_ridge": ScaleBias(
+            source: "mountain_ridge",
+            scale: 0.5,
+            bias: 0.375,
+        ),
+
+        "river_valley": RidgedMulti (
+            seed: 42,
+            frequency: 367.0,
+            lacunarity: 2.142578125,
+            octaves: 1,
+        ),
+
+        "scaled_river_valley": ScaleBias(
+            source: "river_valley",
+            scale: -2.0,
+            bias: -0.5,
+        ),
+
+        "low_flat": Constant(-1.0),
+
+        "montains_and_valleys": Blend(
+            source_1: "low_flat",
+            source_2: "scaled_mountain_ridge",
+            control: "scaled_river_valley",
+        ),
+
+        "coarse_turbulence_m_n_v": Turbulence(
+            source: "montains_and_valleys",
+            seed: 42,
+            frequency: 1337.0,
+            power: 0.000148588,
+            roughness: 4,
+        ),
+
+        "warped_mountains_and_valleys": Turbulence (
+            seed: 42,
+            source: "coarse_turbulence_m_n_v",
+            frequency: 21221.0,
+            power: 0.000008322,
+            roughness: 6,
+        ),
+
+        // TODO: Add cache on warped_mountains_and_valleys
+
+        "mountain_basis_0": RidgedMulti (
+            seed: 42,
+            frequency: 2371.0,
+            lacunarity: 2.142578125,
+            octaves: 3,
+        ),
+
+        "mountain_basis_1": RidgedMulti (
+            seed: 43,
+            frequency: 2341.0,
+            lacunarity: 2.142578125,
+            octaves: 3,
+        ),
+
+        "high_mountains": Max (
+            source_1: "mountain_basis_0",
+            source_2: "mountain_basis_1",
+        ),
+
+        "warped_high_mountains": Turbulence (
+            source: "high_mountains",
+            seed: 42,
+            frequency: 31511.0,
+            power: 0.000005544,
+            roughness: 4,
+        ),
+
+        // TODO: Add cache on warped_high_mountains
+
+        "lowland_basis_0": RidgedMulti (
+            seed: 42,
+            frequency: 1381.0,
+            lacunarity: 2.142578125,
+            octaves: 8,
+        ),
+
+        "lowland_basis_1": RidgedMulti (
+            seed: 43,
+            frequency: 1427.0,
+            lacunarity: 2.142578125,
+            octaves: 8,
+        ),
+
+        "low_mountainous_terrain": Multiply (
+            source_1: "lowland_basis_0",
+            source_2: "lowland_basis_1",
+        ),
+
+        // TODO: Add cache on low_mountainous_terrain
+
+        "scaled_low_mountainous_terrain": ScaleBias (
+            source: "low_mountainous_terrain",
+            scale: 0.03125,
+            bias: -0.96875,
+        ),
+
+        "scaled_high_mountainous_terrain": ScaleBias (
+            source: "warped_high_mountains",
+            scale: 0.25,
+            bias: 0.25,
+        ),
+
+        "added_high_mountainous_terrain": Add (
+            source_1: "scaled_high_mountainous_terrain",
+            source_2: "warped_mountains_and_valleys",
+        ),
+
+        "combined_mountainous_terrain": Select (
+            source_1: "scaled_low_mountainous_terrain",
+            source_2: "added_high_mountainous_terrain",
+            control: "warped_mountains_and_valleys",
+            bounds: (-0.5, 999.5),
+            falloff: 0.5,
+        ),
+
+        "scaled_mountainous_terrain": ScaleBias (
+            source: "combined_mountainous_terrain",
+            scale: 0.8,
+            bias: 0.0,
+        ),
+
+        "main": Exponent (
+            source: "scaled_mountainous_terrain",
+            exponent: 1.375,
+        ),
+
+        // TODO: Add cache on glaciated_mountainous_terrain
+
+        // "main": Constant(0.0),
     }
 )

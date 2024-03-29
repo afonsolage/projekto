@@ -7,8 +7,8 @@ use bevy::{
 };
 use futures_lite::AsyncReadExt;
 use noise::{
-    Clamp, Curve, Fbm, Min, MultiFractal, NoiseFn, Perlin, RidgedMulti, ScaleBias, Seedable,
-    Select, Terrace, Turbulence,
+    Add, Blend, Clamp, Constant, Curve, Exponent, Fbm, Max, Min, MultiFractal, Multiply, NoiseFn,
+    Perlin, RidgedMulti, ScaleBias, Seedable, Select, Terrace, Turbulence,
 };
 use serde::de::DeserializeSeed;
 
@@ -36,6 +36,18 @@ pub enum NoiseFnSpec {
         source_1: String,
         source_2: String,
     },
+    Max {
+        source_1: String,
+        source_2: String,
+    },
+    Multiply {
+        source_1: String,
+        source_2: String,
+    },
+    Add {
+        source_1: String,
+        source_2: String,
+    },
     Clamp {
         source: String,
         bounds: (f64, f64),
@@ -56,7 +68,7 @@ pub enum NoiseFnSpec {
     },
     Terrace {
         source: String,
-        control_ponts: Vec<f64>,
+        control_points: Vec<f64>,
     },
     RidgedMulti {
         seed: u32,
@@ -64,29 +76,52 @@ pub enum NoiseFnSpec {
         lacunarity: f64,
         octaves: usize,
     },
+    Constant(f64),
+    Blend {
+        source_1: String,
+        source_2: String,
+        control: String,
+    },
+    Exponent {
+        source: String,
+        exponent: f64,
+    },
 }
 
 impl NoiseFnSpec {
     pub fn dependencies(&self) -> Vec<&str> {
         match self {
             // No Sources
-            NoiseFnSpec::Fbm { .. } | NoiseFnSpec::RidgedMulti { .. } => vec![],
+            NoiseFnSpec::Fbm { .. }
+            | NoiseFnSpec::RidgedMulti { .. }
+            | NoiseFnSpec::Constant(..) => vec![],
             // Single Sources
             NoiseFnSpec::Curve { source, .. }
             | NoiseFnSpec::ScaleBias { source, .. }
             | NoiseFnSpec::Turbulence { source, .. }
             | NoiseFnSpec::Terrace { source, .. }
+            | NoiseFnSpec::Exponent { source, .. }
             | NoiseFnSpec::Clamp { source, .. } => {
                 vec![source]
             }
             // Two sources
-            NoiseFnSpec::Min { source_1, source_2 } => vec![source_1, source_2],
+            NoiseFnSpec::Min { source_1, source_2 }
+            | NoiseFnSpec::Max { source_1, source_2 }
+            | NoiseFnSpec::Add { source_1, source_2 }
+            | NoiseFnSpec::Multiply { source_1, source_2 } => {
+                vec![source_1, source_2]
+            }
             // Three sources
             NoiseFnSpec::Select {
                 source_1,
                 source_2,
                 control: source_3,
                 ..
+            }
+            | NoiseFnSpec::Blend {
+                source_1,
+                source_2,
+                control: source_3,
             } => vec![source_1, source_2, source_3],
         }
     }
@@ -106,11 +141,13 @@ pub enum NoiseStackError {
     SpecEmpty,
     #[error("Failed to load noise stack: No main spec was found")]
     SpecNoMain,
+    #[error("Failed to load noise stack: Missing dependencies on spec.")]
+    MissingDepSpec,
 }
 
 #[derive(Asset, Debug, Default, Reflect, Clone)]
 pub struct NoiseStack {
-    spec_map: HashMap<String, NoiseFnSpec>,
+    specs: HashMap<String, NoiseFnSpec>,
 }
 
 impl NoiseStack {
@@ -137,23 +174,51 @@ impl NoiseStack {
             return Err(NoiseStackError::Reflect);
         };
 
-        if stack.spec_map.is_empty() {
+        if stack.specs.is_empty() {
             return Err(NoiseStackError::SpecEmpty);
         }
 
-        if !stack.spec_map.contains_key("main") {
+        if !stack.specs.contains_key("main") {
             return Err(NoiseStackError::SpecNoMain);
         }
 
-        Ok(stack)
+        match stack.validate_tree() {
+            Ok(ok) => {
+                bevy::log::debug!("Stack tree loaded!");
+                Ok(ok)
+            }
+            Err(err) => Err(err),
+        }
     }
 
-    pub fn new(spec_map: HashMap<String, NoiseFnSpec>) -> Self {
-        Self { spec_map }
+    pub fn new(specs: HashMap<String, NoiseFnSpec>) -> Self {
+        Self { specs }
+    }
+
+    fn validate_tree(self) -> Result<Self, NoiseStackError> {
+        if self.specs.get("main").is_none() {
+            return Err(NoiseStackError::SpecNoMain);
+        }
+
+        let mut invalid = false;
+        for (name, spec) in &self.specs {
+            for dep in spec.dependencies() {
+                if self.specs.get(dep).is_none() {
+                    bevy::log::warn!("Dependency {dep} not found on spec {name}");
+                    invalid = true;
+                }
+            }
+        }
+
+        if invalid {
+            Err(NoiseStackError::MissingDepSpec)
+        } else {
+            Ok(self)
+        }
     }
 
     pub fn build_dep_tree<'a, 'b: 'a>(&'a self, name: &'b str) -> Vec<&'a str> {
-        let spec = self.spec_map.get(name).unwrap();
+        let spec = self.specs.get(name).unwrap();
         let dependencies = spec.dependencies();
 
         std::iter::once(name)
@@ -166,11 +231,11 @@ impl NoiseStack {
     }
 
     pub fn get_spec(&self, name: &str) -> Option<&NoiseFnSpec> {
-        self.spec_map.get(name)
+        self.specs.get(name)
     }
 
     pub fn build(&self, name: &str) -> BoxedNoiseFn {
-        let spec = self.spec_map.get(name).unwrap();
+        let spec = self.specs.get(name).unwrap();
 
         match spec {
             NoiseFnSpec::Fbm {
@@ -213,9 +278,28 @@ impl NoiseStack {
                 let source_2 = self.build(source_2);
                 Box::new(Min::new(source_1, source_2))
             }
+            NoiseFnSpec::Max { source_1, source_2 } => {
+                let source_1 = self.build(source_1);
+                let source_2 = self.build(source_2);
+                Box::new(Max::new(source_1, source_2))
+            }
+            NoiseFnSpec::Multiply { source_1, source_2 } => {
+                let source_1 = self.build(source_1);
+                let source_2 = self.build(source_2);
+                Box::new(Multiply::new(source_1, source_2))
+            }
+            NoiseFnSpec::Add { source_1, source_2 } => {
+                let source_1 = self.build(source_1);
+                let source_2 = self.build(source_2);
+                Box::new(Add::new(source_1, source_2))
+            }
             NoiseFnSpec::Clamp { source, bounds } => {
                 let source = self.build(source);
                 Box::new(Clamp::new(source).set_bounds(bounds.0, bounds.1))
+            }
+            NoiseFnSpec::Exponent { source, exponent } => {
+                let source = self.build(source);
+                Box::new(Exponent::new(source).set_exponent(*exponent))
             }
             NoiseFnSpec::Turbulence {
                 source,
@@ -249,7 +333,7 @@ impl NoiseStack {
             }
             NoiseFnSpec::Terrace {
                 source,
-                control_ponts,
+                control_points: control_ponts,
             } => {
                 let source = self.build(source);
                 let terrace = control_ponts
@@ -270,6 +354,18 @@ impl NoiseStack {
                     .set_lacunarity(*lacunarity)
                     .set_octaves(*octaves);
                 Box::new(ridged_multi)
+            }
+            NoiseFnSpec::Constant(value) => Box::new(Constant::new(*value)),
+            NoiseFnSpec::Blend {
+                source_1,
+                source_2,
+                control,
+            } => {
+                let source_1 = self.build(source_1);
+                let source_2 = self.build(source_2);
+                let control = self.build(control);
+                let blend = Blend::new(source_1, source_2, control);
+                Box::new(blend)
             }
         }
     }

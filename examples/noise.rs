@@ -397,7 +397,7 @@ fn create_spec_items(commands: &mut Commands, spec: &NoiseFnSpec) -> Vec<Entity>
 }
 
 fn create_spec_item_field(commands: &mut Commands, field: VariantField) -> Entity {
-    let name = field.name().unwrap();
+    let name = field.name().unwrap_or("value");
 
     let mut sections = match field.value().reflect_ref() {
         ReflectRef::List(list) => list
