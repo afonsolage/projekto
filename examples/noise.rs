@@ -553,7 +553,7 @@ impl<'n> Tree<'n> {
 
         let root_id = self.nodes.len() - 1;
         self.compute_initial_x(root_id);
-        self.compute_apply_x_offset(0.0, root_id);
+        self.compute_final_x(0.0, root_id);
     }
 
     fn compute_initial_x(&mut self, id: usize) {
@@ -563,22 +563,24 @@ impl<'n> Tree<'n> {
             self.compute_initial_x(*child);
         }
 
-        let left_sibling_offset = self.get_left_sibling(id).map(|n| n.x + 1.0);
+        let distance = 1.0;
+        let left_sibling_x = self.get_left_sibling(id).map(|n| n.x);
 
         match children.len() {
             0 => {
-                if let Some(offset) = left_sibling_offset {
-                    self.nodes[id].x = offset;
+                if let Some(x) = left_sibling_x {
+                    self.nodes[id].x = x + distance;
                 } else {
                     self.nodes[id].x = 0.0;
                 }
             }
             1 => {
-                if let Some(offset) = left_sibling_offset {
-                    self.nodes[id].x = offset;
-                    self.nodes[id].x_offset = self.nodes[id].x - self.nodes[children[0]].x;
+                let single_child = *children.first().unwrap();
+                if let Some(x) = left_sibling_x {
+                    self.nodes[id].x = x + distance;
+                    self.nodes[id].x_offset = self.nodes[id].x - self.nodes[single_child].x;
                 } else {
-                    self.nodes[id].x = self.nodes[children[0]].x;
+                    self.nodes[id].x = self.nodes[single_child].x;
                 }
             }
             _ => {
@@ -586,7 +588,7 @@ impl<'n> Tree<'n> {
                 let right_most = self.nodes[*children.last().unwrap()].x;
                 let mid = (left_most + right_most) / 2.0;
 
-                if let Some(offset) = left_sibling_offset {
+                if let Some(offset) = left_sibling_x {
                     self.nodes[id].x = offset;
                     self.nodes[id].x_offset = self.nodes[id].x - mid;
                 } else {
@@ -595,7 +597,7 @@ impl<'n> Tree<'n> {
             }
         }
 
-        if !children.is_empty() && left_sibling_offset.is_some() {
+        if !children.is_empty() && left_sibling_x.is_some() {
             self.fix_overlapping(id);
         }
     }
@@ -618,7 +620,7 @@ impl<'n> Tree<'n> {
         let mut node_left_contour = HashMap::new();
         self.get_contour(ContourDir::Left, id, 0.0, &mut node_left_contour);
 
-        let node_depth = self.nodes[id].y as usize;
+        let first_depth = self.nodes[id].y as usize + 1;
 
         for sibling in left_siblings {
             assert_ne!(sibling, id);
@@ -631,9 +633,18 @@ impl<'n> Tree<'n> {
                 *sibling_right_contour.keys().max().unwrap(),
             );
 
-            let shift_distance = (node_depth + 1..=max_contour_depth).fold(0.0, |acc, depth| {
-                let left = node_left_contour.get(&depth).unwrap();
-                let right = sibling_right_contour.get(&depth).unwrap();
+            let shift_distance = (first_depth..=max_contour_depth).fold(0.0, |acc, depth| {
+                let left = *node_left_contour.get(&depth).unwrap();
+                let right = if depth < max_contour_depth {
+                    // Avoid overlapping with connector (|- or -|)
+                    let next_depth = depth + 1;
+                    f32::max(
+                        *sibling_right_contour.get(&depth).unwrap(),
+                        *sibling_right_contour.get(&next_depth).unwrap(),
+                    )
+                } else {
+                    *sibling_right_contour.get(&depth).unwrap()
+                };
                 let distance = left - right;
 
                 if distance + acc < 1.0 {
@@ -647,7 +658,7 @@ impl<'n> Tree<'n> {
                 self.nodes[id].x += shift_distance;
                 self.nodes[id].x_offset += shift_distance;
 
-                self.center_nodes_between(id, sibling);
+                self.center_nodes_between(sibling, id);
             }
         }
     }
@@ -711,8 +722,9 @@ impl<'n> Tree<'n> {
             depth_map.insert(depth, contour);
         }
 
+        let depth_offset = parent_offset + *x_offset;
         for &child in children {
-            self.get_contour(dir, child, parent_offset + *x_offset, depth_map);
+            self.get_contour(dir, child, depth_offset, depth_map);
         }
     }
 
@@ -733,12 +745,15 @@ impl<'n> Tree<'n> {
         Some(&self.nodes[siblings[index - 1]])
     }
 
-    fn compute_apply_x_offset(&mut self, offset: f32, id: usize) {
+    fn compute_final_x(&mut self, offset: f32, id: usize) {
         self.nodes[id].x += offset;
-        let children = self.nodes[id].children.clone();
 
+        let offset = offset + self.nodes[id].x_offset;
+        self.nodes[id].x_offset = 0.0;
+
+        let children = self.nodes[id].children.clone();
         for child in children {
-            self.compute_apply_x_offset(offset + self.nodes[id].x_offset, child);
+            self.compute_final_x(offset + self.nodes[id].x_offset, child);
         }
     }
 
