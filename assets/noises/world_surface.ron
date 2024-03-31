@@ -236,13 +236,42 @@
             bias: 0.0,
         ),
 
-        "main": Exponent (
+        "glaciaed_mountainous_terrain": Exponent (
             source: "scaled_mountainous_terrain",
             exponent: 1.375,
         ),
 
         // TODO: Add cache on glaciated_mountainous_terrain
 
-        //"main": Constant(0.0),
+        "hills": Billow (
+            seed: 42,
+            frequency: 1663.0,
+            persistence: 0.5,
+            lacunarity: 2.162109375,
+            octaves: 6,
+        ),
+
+        "scaled_hills": ScaleBias (
+            source: "hills",
+            scale: 0.5,
+            bias: 0.5,
+        ),
+
+        "river_valley": RidgedMulti (
+            seed: 42,
+            frequency: 367.5,
+            lacunarity: 2.162109375,
+            octaves: 1,
+        ),
+
+        "scaled_river_valley": ScaleBias (
+            source: "river_valley",
+            scale: -2.0,
+            bias: -1.0,
+        ),
+
+        "low_flat": Constant(-1.0),
+
+        "main": Constant(0.0),
     }
 )

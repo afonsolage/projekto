@@ -7,8 +7,8 @@ use bevy::{
 };
 use futures_lite::AsyncReadExt;
 use noise::{
-    Add, Blend, Clamp, Constant, Curve, Exponent, Fbm, Max, Min, MultiFractal, Multiply, NoiseFn,
-    Perlin, RidgedMulti, ScaleBias, Seedable, Select, Terrace, Turbulence,
+    Add, Billow, Blend, Clamp, Constant, Curve, Exponent, Fbm, Max, Min, MultiFractal, Multiply,
+    NoiseFn, Perlin, RidgedMulti, ScaleBias, Seedable, Select, Terrace, Turbulence,
 };
 use serde::de::DeserializeSeed;
 
@@ -17,6 +17,13 @@ pub type BoxedNoiseFn = Box<dyn NoiseFn<f64, 3> + Send>;
 #[derive(Debug, Clone, Reflect)]
 pub enum NoiseFnSpec {
     Fbm {
+        seed: u32,
+        frequency: f64,
+        octaves: usize,
+        lacunarity: f64,
+        persistence: f64,
+    },
+    Billow {
         seed: u32,
         frequency: f64,
         octaves: usize,
@@ -94,6 +101,7 @@ impl NoiseFnSpec {
             // No Sources
             NoiseFnSpec::Fbm { .. }
             | NoiseFnSpec::RidgedMulti { .. }
+            | NoiseFnSpec::Billow { .. }
             | NoiseFnSpec::Constant(..) => vec![],
             // Single Sources
             NoiseFnSpec::Curve { source, .. }
@@ -251,6 +259,20 @@ impl NoiseStack {
                     .set_lacunarity(*lacunarity)
                     .set_persistence(*persistence);
                 Box::new(fbm)
+            }
+            NoiseFnSpec::Billow {
+                seed,
+                frequency,
+                octaves,
+                lacunarity,
+                persistence,
+            } => {
+                let billow = Billow::<Perlin>::new(*seed)
+                    .set_frequency(*frequency)
+                    .set_octaves(*octaves)
+                    .set_lacunarity(*lacunarity)
+                    .set_persistence(*persistence);
+                Box::new(billow)
             }
             NoiseFnSpec::Curve {
                 source,
