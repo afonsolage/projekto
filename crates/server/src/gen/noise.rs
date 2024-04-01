@@ -151,6 +151,62 @@ pub enum NoiseStackError {
     SpecNoMain,
     #[error("Failed to load noise stack: Missing dependencies on spec.")]
     MissingDepSpec,
+    #[error("Multiple keys detected: {0}")]
+    MultipleSpecKeys(String),
+}
+
+#[derive(Default, Reflect, Clone)]
+struct RawNoiseStack {
+    specs: Vec<(String, NoiseFnSpec)>,
+}
+
+impl RawNoiseStack {
+    fn parse_tree(self) -> Result<NoiseStack, NoiseStackError> {
+        if self.specs.is_empty() {
+            return Err(NoiseStackError::SpecEmpty);
+        }
+
+        if !self.specs.iter().any(|(name, _)| name == "main") {
+            return Err(NoiseStackError::SpecNoMain);
+        }
+
+        if let Some((name, _)) = self
+            .specs
+            .iter()
+            .fold(HashMap::new(), |mut map, (name, _)| {
+                *map.entry(name).or_insert(0usize) += 1;
+
+                if *map.get(name).unwrap() > 1 {
+                    bevy::log::warn!("Duplicated spec name: {name}");
+                }
+
+                map
+            })
+            .into_iter()
+            .find(|(_, v)| *v > 1)
+        {
+            return Err(NoiseStackError::MultipleSpecKeys(name.to_string()));
+        }
+
+        let mut invalid = false;
+        for (name, spec) in &self.specs {
+            for dep in spec.dependencies() {
+                if !self.specs.iter().any(|(name, _)| name == dep) {
+                    bevy::log::warn!("Dependency {dep} not found on spec {name}");
+                    invalid = true;
+                }
+            }
+        }
+
+        if invalid {
+            Err(NoiseStackError::MissingDepSpec)
+        } else {
+            bevy::log::debug!("Noise tree loaded.");
+            Ok(NoiseStack {
+                specs: self.specs.into_iter().collect(),
+            })
+        }
+    }
 }
 
 #[derive(Asset, Debug, Default, Reflect, Clone)]
@@ -170,59 +226,24 @@ impl NoiseStack {
         registry.register::<Vec<(f64, f64)>>();
         registry.register::<Vec<f64>>();
         registry.register::<NoiseFnSpec>();
-        registry.register::<HashMap<String, NoiseFnSpec>>();
-        registry.register::<Self>();
+        registry.register::<RawNoiseStack>();
+        registry.register::<(String, NoiseFnSpec)>();
+        registry.register::<Vec<(String, NoiseFnSpec)>>();
 
-        let registration = <Self as GetTypeRegistration>::get_type_registration();
+        let registration = <RawNoiseStack as GetTypeRegistration>::get_type_registration();
         let mut deserializer = ron::de::Deserializer::from_bytes(bytes)?;
         let reflect_deserializer = TypedReflectDeserializer::new(&registration, &registry);
         let deserialized = reflect_deserializer.deserialize(&mut deserializer)?;
 
-        let Some(stack) = <Self as FromReflect>::from_reflect(&*deserialized) else {
+        let Some(raw_stack) = <RawNoiseStack as FromReflect>::from_reflect(&*deserialized) else {
             return Err(NoiseStackError::Reflect);
         };
 
-        if stack.specs.is_empty() {
-            return Err(NoiseStackError::SpecEmpty);
-        }
-
-        if !stack.specs.contains_key("main") {
-            return Err(NoiseStackError::SpecNoMain);
-        }
-
-        match stack.validate_tree() {
-            Ok(ok) => {
-                bevy::log::debug!("Stack tree loaded!");
-                Ok(ok)
-            }
-            Err(err) => Err(err),
-        }
+        raw_stack.parse_tree()
     }
 
     pub fn new(specs: HashMap<String, NoiseFnSpec>) -> Self {
         Self { specs }
-    }
-
-    fn validate_tree(self) -> Result<Self, NoiseStackError> {
-        if self.specs.get("main").is_none() {
-            return Err(NoiseStackError::SpecNoMain);
-        }
-
-        let mut invalid = false;
-        for (name, spec) in &self.specs {
-            for dep in spec.dependencies() {
-                if self.specs.get(dep).is_none() {
-                    bevy::log::warn!("Dependency {dep} not found on spec {name}");
-                    invalid = true;
-                }
-            }
-        }
-
-        if invalid {
-            Err(NoiseStackError::MissingDepSpec)
-        } else {
-            Ok(self)
-        }
     }
 
     pub fn build_dep_tree<'a, 'b: 'a>(&'a self, name: &'b str) -> Vec<&'a str> {
