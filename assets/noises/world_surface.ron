@@ -354,7 +354,7 @@
         ),
 
         ( 
-            "scaled_hills",
+            "hills_scaled",
             ScaleBias (
                 source: "hills",
                 scale: 0.5,
@@ -373,7 +373,7 @@
         ),
 
         ( 
-            "scaled_hills_river_valley",
+            "hills_river_valley_scaled",
             ScaleBias (
                 source: "hills_river_valley",
                 scale: -2.0,
@@ -382,11 +382,61 @@
         ),
 
         ( 
-            "low_flat_1",
+            "hills_low_flat",
             Constant(-1.0),
         ),
 
-        ( 
+        (
+            "hills_mountains_n_valleys",
+            Blend (
+                source_1: "hills_low_flat",
+                source_2: "hills_river_valley_scaled",
+                control: "hills_scaled",
+            ),
+        ),
+
+        (
+            "hills_mountains_n_valleys_scaled",
+            ScaleBias (
+                source: "hills_mountains_n_valleys",
+                scale: 0.75,
+                bias: -0.25,
+            ),
+        ),
+
+        (
+            "hills_increased_slope",
+            Exponent (
+                source: "hills_mountains_n_valleys_scaled",
+                exponent: 1.375,
+            ),
+        ),
+
+        (
+            "hills_coarse_turbulence",
+            Turbulence (
+                source: "hills_increased_slope",
+                seed: 42,
+                frequency: 1531.0,
+                power: 0.000059098,
+                roughness: 4,
+            ),
+        ),
+
+        (
+            "hills_warped",
+            Turbulence (
+                source: "hills_coarse_turbulence",
+                seed: 43,
+                frequency: 21617.0,
+                power: 0.000008509,
+                roughness: 6,
+            )
+        ),
+
+        // TODO: Add cache on hills_warped
+
+        (
             "main",
             Constant(0.0),
         ),

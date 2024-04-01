@@ -217,7 +217,7 @@ fn spawn_connection(parent: &mut ChildBuilder, origin: Vec2, dest: Vec2) {
                 height: Val::Px(height),
                 ..Default::default()
             },
-            // z_index: ZIndex::Global(-10),
+            z_index: ZIndex::Global(-10),
             background_color: Color::LIME_GREEN.into(),
             ..Default::default()
         });
