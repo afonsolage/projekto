@@ -16,7 +16,7 @@ use serde::de::DeserializeSeed;
 
 pub type BoxedNoiseFn = Box<dyn NoiseFn<f64, 3> + Send>;
 
-#[derive(Debug, Clone, Default, Reflect)]
+#[derive(Debug, Copy, Clone, Default, Reflect)]
 pub enum WorleySpecReturnType {
     #[default]
     Value,
@@ -236,7 +236,7 @@ impl RawNoiseStack {
 #[derive(Clone)]
 pub struct StaticWorley {
     pub frequency: f64,
-    pub return_type: ReturnType,
+    pub return_type: worley::ReturnType,
     pub distance_fn: fn(&[f64], &[f64]) -> f64,
     seed: u32,
     perm_table: PermutationTable,
@@ -246,10 +246,28 @@ impl StaticWorley {
     pub fn new(seed: u32) -> Self {
         StaticWorley {
             frequency: 1.0,
-            return_type: ReturnType::Value,
+            return_type: worley::ReturnType::Value,
             distance_fn: distance_functions::euclidean,
             seed,
             perm_table: PermutationTable::new(seed),
+        }
+    }
+
+    pub fn set_frequency(self, frequency: f64) -> Self {
+        Self { frequency, ..self }
+    }
+
+    pub fn set_return_type(self, return_type: worley::ReturnType) -> Self {
+        Self {
+            return_type,
+            ..self
+        }
+    }
+
+    pub fn set_distance_fn(self, distance_fn: fn(&[f64], &[f64]) -> f64) -> Self {
+        Self {
+            distance_fn,
+            ..self
         }
     }
 }
@@ -337,10 +355,9 @@ impl NoiseStack {
                 frequency,
                 return_type,
             } => {
-                // let worley = Worley::new(*seed)
-                //     .set_frequency(*frequency)
-                //     .set_return_type(*return_type.into());
-                let worley = StaticWorley::new(*seed);
+                let worley = StaticWorley::new(*seed)
+                    .set_frequency(*frequency)
+                    .set_return_type((*return_type).into());
                 Box::new(worley)
             }
             NoiseFnSpec::Billow {
