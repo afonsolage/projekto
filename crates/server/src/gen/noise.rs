@@ -7,12 +7,30 @@ use bevy::{
 };
 use futures_lite::AsyncReadExt;
 use noise::{
+    core::worley::{self, distance_functions, ReturnType},
+    permutationtable::PermutationTable,
     Add, Billow, Blend, Clamp, Constant, Curve, Exponent, Fbm, Max, Min, MultiFractal, Multiply,
-    NoiseFn, Perlin, RidgedMulti, ScaleBias, Seedable, Select, Terrace, Turbulence,
+    NoiseFn, Perlin, RidgedMulti, ScaleBias, Seedable, Select, Terrace, Turbulence, Worley,
 };
 use serde::de::DeserializeSeed;
 
 pub type BoxedNoiseFn = Box<dyn NoiseFn<f64, 3> + Send>;
+
+#[derive(Debug, Clone, Default, Reflect)]
+pub enum WorleySpecReturnType {
+    #[default]
+    Value,
+    Distance,
+}
+
+impl From<WorleySpecReturnType> for worley::ReturnType {
+    fn from(value: WorleySpecReturnType) -> Self {
+        match value {
+            WorleySpecReturnType::Value => worley::ReturnType::Value,
+            WorleySpecReturnType::Distance => worley::ReturnType::Distance,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Reflect)]
 pub enum NoiseFnSpec {
@@ -29,6 +47,11 @@ pub enum NoiseFnSpec {
         octaves: usize,
         lacunarity: f64,
         persistence: f64,
+    },
+    Worley {
+        seed: u32,
+        frequency: f64,
+        return_type: WorleySpecReturnType,
     },
     Curve {
         source: String,
@@ -101,6 +124,7 @@ impl NoiseFnSpec {
             // No Sources
             NoiseFnSpec::Fbm { .. }
             | NoiseFnSpec::RidgedMulti { .. }
+            | NoiseFnSpec::Worley { .. }
             | NoiseFnSpec::Billow { .. }
             | NoiseFnSpec::Constant(..) => vec![],
             // Single Sources
@@ -209,6 +233,33 @@ impl RawNoiseStack {
     }
 }
 
+#[derive(Clone)]
+pub struct StaticWorley {
+    pub frequency: f64,
+    pub return_type: ReturnType,
+    pub distance_fn: fn(&[f64], &[f64]) -> f64,
+    seed: u32,
+    perm_table: PermutationTable,
+}
+
+impl StaticWorley {
+    pub fn new(seed: u32) -> Self {
+        StaticWorley {
+            frequency: 1.0,
+            return_type: ReturnType::Value,
+            distance_fn: distance_functions::euclidean,
+            seed,
+            perm_table: PermutationTable::new(seed),
+        }
+    }
+}
+
+impl NoiseFn<f64, 3> for StaticWorley {
+    fn get(&self, point: [f64; 3]) -> f64 {
+        todo!()
+    }
+}
+
 #[derive(Asset, Debug, Default, Reflect, Clone)]
 pub struct NoiseStack {
     specs: HashMap<String, NoiseFnSpec>,
@@ -280,6 +331,17 @@ impl NoiseStack {
                     .set_lacunarity(*lacunarity)
                     .set_persistence(*persistence);
                 Box::new(fbm)
+            }
+            NoiseFnSpec::Worley {
+                seed,
+                frequency,
+                return_type,
+            } => {
+                // let worley = Worley::new(*seed)
+                //     .set_frequency(*frequency)
+                //     .set_return_type(*return_type.into());
+                let worley = StaticWorley::new(*seed);
+                Box::new(worley)
             }
             NoiseFnSpec::Billow {
                 seed,

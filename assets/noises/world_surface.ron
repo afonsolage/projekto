@@ -342,6 +342,7 @@
 
         // TODO: Add cache on glaciated_mountainous_terrain
 
+        // Function group: hilly terrain
         ( 
             "hills",
             Billow (
@@ -436,8 +437,116 @@
 
         // TODO: Add cache on hills_warped
 
+        // Function group: plains terrain
         (
-            "main",
+            "plains_basis_0",
+            Billow (
+                seed: 42,
+                frequency: 1097.5,
+                persistence: 0.5,
+                lacunarity: 2.314453125,
+                octaves: 8,
+            ),
+        ),
+
+        (
+            "plains_basis_0_positive",
+            ScaleBias (
+                source: "plains_basis_0",
+                scale: 0.5,
+                bias: 0.5,
+            ),
+        ),
+
+        (
+            "plains_basis_1",
+            Billow (
+                seed: 43,
+                frequency: 1097.5,
+                persistence: 0.5,
+                lacunarity: 2.314453125,
+                octaves: 8,
+            ),
+        ),
+
+        (
+            "plains_basis_1_positive",
+            ScaleBias (
+                source: "plains_basis_1",
+                scale: 0.5,
+                bias: 0.5,
+            ),
+        ),
+
+        (
+            "plains_combined_basis",
+            Multiply (
+                source_1: "plains_basis_0_positive",
+                source_2: "plains_basis_1_positive",
+            ),
+        ),
+
+        (
+            "plains_rescaled",
+            ScaleBias (
+                source: "plains_combined_basis",
+                scale: 2.0,
+                bias: -1.0,
+            ),
+        ),
+
+        // TODO: Cache plains_rescaled
+
+        // Function group: badlands terrain
+        (
+            "badlands_sand_dunes",
+            RidgedMulti (
+                seed: 42,
+                frequency: 6163.5,
+                lacunarity: 2.212890625,
+                octaves: 1,
+            ),
+        ),
+
+        (
+            "badlands_sand_dunes_scaled",
+            ScaleBias (
+                source: "badlands_sand_dunes",
+                scale: 0.875,
+                bias: 0.0,
+            ),
+        ),
+
+        (
+            "badlands_dune_details",
+            Worley (
+                seed: 42,
+                frequency: 16183.25,
+                return_type: Distance,
+            ),
+        ),
+
+        (
+            "badlands_dune_details_scaled",
+            ScaleBias (
+                source: "badlands_dune_details",
+                scale: 0.25,
+                bias: 0.25,
+            ),
+        ),
+
+        (
+            "badlands_dunes_with_detail",
+            Add (
+                source_1: "badlands_sand_dunes_scaled",
+                source_2: "badlands_dune_details_scaled",
+            ),
+        ),
+
+        // TODO: Add cache on badlands_dunes_with_detail
+
+        (
+            "bad-lands_dunes_with_detail",
             Constant(0.0),
         ),
     ]
