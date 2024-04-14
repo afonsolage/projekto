@@ -272,9 +272,32 @@ impl StaticWorley {
     }
 }
 
+impl Seedable for StaticWorley {
+    fn set_seed(self, seed: u32) -> Self {
+        if self.seed == seed {
+            self
+        } else {
+            Self {
+                seed,
+                perm_table: PermutationTable::new(seed),
+                ..self
+            }
+        }
+    }
+
+    fn seed(&self) -> u32 {
+        self.seed
+    }
+}
+
 impl NoiseFn<f64, 3> for StaticWorley {
     fn get(&self, point: [f64; 3]) -> f64 {
-        todo!()
+        worley::worley_3d(
+            &self.perm_table,
+            self.distance_fn,
+            self.return_type,
+            noise::Vector3::from(point) * self.frequency,
+        )
     }
 }
 
@@ -294,6 +317,7 @@ impl NoiseStack {
         registry.register::<(f64, f64)>();
         registry.register::<Vec<(f64, f64)>>();
         registry.register::<Vec<f64>>();
+        registry.register::<WorleySpecReturnType>();
         registry.register::<NoiseFnSpec>();
         registry.register::<RawNoiseStack>();
         registry.register::<(String, NoiseFnSpec)>();

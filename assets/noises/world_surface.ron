@@ -536,7 +536,7 @@
         ),
 
         (
-            "badlands_dunes_with_detail",
+            "main",
             Add (
                 source_1: "badlands_sand_dunes_scaled",
                 source_2: "badlands_dune_details_scaled",
