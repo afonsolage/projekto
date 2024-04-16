@@ -536,7 +536,7 @@
         ),
 
         (
-            "main",
+            "badlands_dunes_with_detail",
             Add (
                 source_1: "badlands_sand_dunes_scaled",
                 source_2: "badlands_dune_details_scaled",
@@ -545,8 +545,95 @@
 
         // TODO: Add cache on badlands_dunes_with_detail
 
+        // Function group: badlands cliffs
+
         (
-            "bad-lands_dunes_with_detail",
+            "badlands_cliff_basis",
+            Fbm (
+                seed: 42,
+                frequency: 839.0,
+                persistence: 0.5,
+                lacunarity: 2.212890625,
+                octaves: 6,
+            ),
+        ),
+
+        (
+            "badlands_cliff_shaping",
+            Curve (
+                source: "badlands_cliff_basis",
+                control_points: [
+                    (-2.0, -2.0),
+                    (-1.0, -1.0),
+                    (0.0, -0.75),
+                    (0.5, -0.25),
+                    (0.625, 0.875),
+                    (0.750, 1.0),
+                    (2.0, 1.25),
+                ],
+            ),
+        ),
+
+        (
+            "badlands_cliff_clamped",
+            Clamp (
+                source: "badlands_cliff_shaping",
+                bounds: (-999.125, 0.875),
+            ),
+        ),
+
+        (
+            "badlands_cliff_terraced",
+            Terrace (
+                source: "badlands_cliff_clamped",
+                control_points: [
+                    -1.0,
+                    -0.875,
+                    -0.750,
+                    -0.5,
+                    0.0,
+                    1.0,
+                ],
+            ),
+        ),
+
+        (
+            "badlands_cliff_coarsed",
+            Turbulence (
+                source: "badlands_cliff_terraced",
+                seed: 42,
+                frequency: 36107.0,
+                power: 0.000004727,
+                roughness: 3,
+            ),
+        ),
+
+        // TODO: Add cache on badlands_cliff_coarsed
+
+        // Function Group: badlands terrain
+
+        (
+            "badlands_terrain_sand_dunes",
+            ScaleBias (
+                source: "badlands_dunes_with_detail",
+                scale: 0.25,
+                bias: -0.75,
+            ),
+        ),
+
+        (
+            //"badlands_terrain_dunes_cliffs",
+            "main",
+            Max (
+                source_1: "badlands_terrain_sand_dunes",
+                source_2: "badlands_cliff_coarsed",
+            ),
+        ),
+
+        // TODO: Add cache on badlands_terrain_dunes_cliffs
+
+        (
+            "mainsa",
             Constant(0.0),
         ),
     ]
