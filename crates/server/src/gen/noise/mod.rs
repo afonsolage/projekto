@@ -7,12 +7,15 @@ use bevy::{
 };
 use futures_lite::AsyncReadExt;
 use noise::{
-    core::worley::{self, distance_functions, ReturnType},
-    permutationtable::PermutationTable,
-    Add, Billow, Blend, Clamp, Constant, Curve, Exponent, Fbm, Max, Min, MultiFractal, Multiply,
-    NoiseFn, Perlin, RidgedMulti, ScaleBias, Seedable, Select, Terrace, Turbulence, Worley,
+    core::worley, Add, Billow, Blend, Clamp, Constant, Curve, Exponent, Fbm, Max, Min,
+    MultiFractal, Multiply, NoiseFn, Perlin, RidgedMulti, ScaleBias, Seedable, Select, Terrace,
+    Turbulence,
 };
 use serde::de::DeserializeSeed;
+
+use self::send_worley::SendWorley;
+
+mod send_worley;
 
 pub type BoxedNoiseFn = Box<dyn NoiseFn<f64, 3> + Send>;
 
@@ -233,74 +236,6 @@ impl RawNoiseStack {
     }
 }
 
-#[derive(Clone)]
-pub struct StaticWorley {
-    pub frequency: f64,
-    pub return_type: worley::ReturnType,
-    pub distance_fn: fn(&[f64], &[f64]) -> f64,
-    seed: u32,
-    perm_table: PermutationTable,
-}
-
-impl StaticWorley {
-    pub fn new(seed: u32) -> Self {
-        StaticWorley {
-            frequency: 1.0,
-            return_type: worley::ReturnType::Value,
-            distance_fn: distance_functions::euclidean,
-            seed,
-            perm_table: PermutationTable::new(seed),
-        }
-    }
-
-    pub fn set_frequency(self, frequency: f64) -> Self {
-        Self { frequency, ..self }
-    }
-
-    pub fn set_return_type(self, return_type: worley::ReturnType) -> Self {
-        Self {
-            return_type,
-            ..self
-        }
-    }
-
-    pub fn set_distance_fn(self, distance_fn: fn(&[f64], &[f64]) -> f64) -> Self {
-        Self {
-            distance_fn,
-            ..self
-        }
-    }
-}
-
-impl Seedable for StaticWorley {
-    fn set_seed(self, seed: u32) -> Self {
-        if self.seed == seed {
-            self
-        } else {
-            Self {
-                seed,
-                perm_table: PermutationTable::new(seed),
-                ..self
-            }
-        }
-    }
-
-    fn seed(&self) -> u32 {
-        self.seed
-    }
-}
-
-impl NoiseFn<f64, 3> for StaticWorley {
-    fn get(&self, point: [f64; 3]) -> f64 {
-        worley::worley_3d(
-            &self.perm_table,
-            self.distance_fn,
-            self.return_type,
-            noise::Vector3::from(point) * self.frequency,
-        )
-    }
-}
-
 #[derive(Asset, Debug, Default, Reflect, Clone)]
 pub struct NoiseStack {
     specs: HashMap<String, NoiseFnSpec>,
@@ -379,7 +314,7 @@ impl NoiseStack {
                 frequency,
                 return_type,
             } => {
-                let worley = StaticWorley::new(*seed)
+                let worley = SendWorley::new(*seed)
                     .set_frequency(*frequency)
                     .set_return_type((*return_type).into());
                 Box::new(worley)
