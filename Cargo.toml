@@ -17,7 +17,7 @@ projekto_messages = { path = "crates/messages" }
 projekto_server = { path = "crates/server" }
 projekto_world_client = { path = "crates/world_client" }
 
-bevy = "0.13"
+bevy = "0.14"
 
 rand = "0.8"
 thiserror = "1.0"
@@ -64,6 +64,7 @@ unused_extern_crates = "warn"
 workspace = true
 
 [profile.dev.package."*"]
+hint-mostly-unused = true
 opt-level = 3
 
 [[example]]

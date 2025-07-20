@@ -52,15 +52,16 @@ impl<T: MessageType, M: Message<T>> RegisterMessageHandler<T, M> for App {
     where
         M: NoCopy,
     {
-        let id = self.world.register_system(system);
+        let world = self.world_mut();
+        let id = world.register_system(system);
 
-        if self.world.contains_resource::<MoveHandler<M>>()
-            || self.world.contains_resource::<MoveHandler<(ClientId, M)>>()
+        if world.contains_resource::<MoveHandler<M>>()
+            || world.contains_resource::<MoveHandler<(ClientId, M)>>()
         {
             panic!("Already exists a message handler. Duplicated handler id: {id:?}");
         }
 
-        self.world.insert_resource(MoveHandler(id));
+        world.insert_resource(MoveHandler(id));
 
         self
     }
@@ -73,9 +74,10 @@ impl<T: MessageType, M: Message<T>> RegisterMessageHandler<T, M> for App {
         &mut self,
         system: S,
     ) -> &mut Self {
-        let id = self.world.register_system(system);
+        let world = self.world_mut();
+        let id = world.register_system(system);
 
-        self.world
+        world
             .get_resource_or_insert_with(|| CopyHandlers(Vec::new()))
             .push(id);
 
