@@ -161,7 +161,6 @@ impl<T: MessageType> RunMessageHandlers<T> for World {
             }
         } else {
             warn!("No handlers found for message {msg:?}. Skipping it");
-            return;
         }
     }
 }
@@ -200,14 +199,14 @@ mod tests {
 
         // Assert
         let handlers = app
-            .world
+            .world()
             .get_resource::<CopyHandlers<A>>()
             .expect("Should add a CopyHandlers");
 
         assert_eq!(handlers.len(), 10, "10 handlers should be added");
 
         let handlers = app
-            .world
+            .world()
             .get_resource::<CopyHandlers<(ClientId, A)>>()
             .expect("Should add a CopyHandlers");
 
@@ -224,7 +223,7 @@ mod tests {
 
         // Assert
         let _ = app
-            .world
+            .world()
             .get_resource::<MoveHandler<B>>()
             .expect("Should add a MoveHandler");
     }
@@ -239,7 +238,7 @@ mod tests {
 
         // Assert
         let _ = app
-            .world
+            .world()
             .get_resource::<MoveHandler<(ClientId, B)>>()
             .expect("Should add a MoveHandler");
     }
@@ -292,7 +291,7 @@ mod tests {
         let boxed: BoxedMessage<TestMsg> = Box::new(A);
 
         // Act
-        app.world.run_handlers::<A>(42.into(), boxed);
+        app.world_mut().run_handlers::<A>(42.into(), boxed);
 
         // Assert
         assert!(
@@ -317,7 +316,7 @@ mod tests {
         let boxed: BoxedMessage<TestMsg> = Box::new(B(11));
 
         // Act
-        app.world.run_handler::<B>(42.into(), boxed);
+        app.world_mut().run_handler::<B>(42.into(), boxed);
 
         // Assert
         assert!(
@@ -343,7 +342,7 @@ mod tests {
         let boxed: BoxedMessage<TestMsg> = Box::new(B(11));
 
         // Act
-        app.world.run_handler::<B>(42.into(), boxed);
+        app.world_mut().run_handler::<B>(42.into(), boxed);
 
         // Assert
         assert!(

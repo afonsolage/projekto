@@ -95,8 +95,8 @@ mod tests {
         app.update();
 
         // assert
-        let load_events = app.world.get_resource::<Events<ChunkLoad>>().unwrap();
-        let unload_events = app.world.get_resource::<Events<ChunkUnload>>().unwrap();
+        let load_events = app.world().get_resource::<Events<ChunkLoad>>().unwrap();
+        let unload_events = app.world().get_resource::<Events<ChunkUnload>>().unwrap();
 
         assert!(load_events.is_empty(), "No entity should be loaded");
         assert!(unload_events.is_empty(), "No entity should be unloaded");
@@ -113,7 +113,7 @@ mod tests {
             .add_event::<ChunkUnload>()
             .add_plugins(super::LandscapePlugin);
 
-        app.world.insert_resource(Landscape {
+        app.world_mut().insert_resource(Landscape {
             radius: 1,
             ..Default::default()
         });
@@ -122,8 +122,8 @@ mod tests {
         app.update();
 
         // assert
-        let load_events = app.world.get_resource::<Events<ChunkLoad>>().unwrap();
-        let unload_events = app.world.get_resource::<Events<ChunkUnload>>().unwrap();
+        let load_events = app.world().get_resource::<Events<ChunkLoad>>().unwrap();
+        let unload_events = app.world().get_resource::<Events<ChunkUnload>>().unwrap();
 
         assert_eq!(load_events.len(), 9, "9 Chunks events should be load");
         assert!(unload_events.is_empty(), "No unload events should be sent");
@@ -140,7 +140,7 @@ mod tests {
             .add_event::<ChunkUnload>()
             .add_plugins(super::LandscapePlugin);
 
-        app.world.insert_resource(Landscape {
+        app.world_mut().insert_resource(Landscape {
             radius: 0,
             ..Default::default()
         });
@@ -149,8 +149,8 @@ mod tests {
         app.update();
 
         // assert
-        let load_events = app.world.get_resource::<Events<ChunkLoad>>().unwrap();
-        let unload_events = app.world.get_resource::<Events<ChunkUnload>>().unwrap();
+        let load_events = app.world().get_resource::<Events<ChunkLoad>>().unwrap();
+        let unload_events = app.world().get_resource::<Events<ChunkUnload>>().unwrap();
 
         assert_eq!(load_events.len(), 1, "1 Chunk event should be load");
         assert!(unload_events.is_empty(), "No unload events should be sent");

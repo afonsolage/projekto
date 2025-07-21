@@ -47,7 +47,7 @@ pub struct KeyBindings {
     /// Orbit right key binding, defaults to [`KeyCode::Right`].
     pub right: KeyCode,
 
-    /// RotaOrbitte up key binding, defaults to [`KeyCode::Up`].
+    /// Orbit up key binding, defaults to [`KeyCode::Up`].
     pub up: KeyCode,
 
     /// Orbit down key binding, defaults to [`KeyCode::Down`].
@@ -169,7 +169,6 @@ pub fn is_active(config: Res<OrbitCameraConfig>) -> bool {
 ///
 /// This does nothing if the [`Transform`] of an [`Entity`] with [`OrbitCameraTarget`] is not
 /// [`Changed`].
-
 #[allow(clippy::type_complexity)]
 fn target_moved(
     config: Res<OrbitCameraConfig>,

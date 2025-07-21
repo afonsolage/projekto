@@ -114,7 +114,7 @@ fn setup_environment(
                 radius: 0.25,
                 half_length: 0.75,
             }),
-            material: materials.add(Color::rgb(0.3, 0.3, 0.3)),
+            material: materials.add(Color::srgb(0.3, 0.3, 0.3)),
             ..Default::default()
         })
         .insert(OrbitCameraTarget)
@@ -123,21 +123,21 @@ fn setup_environment(
     // X axis
     commands.spawn(PbrBundle {
         mesh: meshes.add(Cuboid::new(3.0, 0.1, 0.1)),
-        material: materials.add(Color::rgb(1.0, 0.3, 0.3)),
+        material: materials.add(Color::srgb(1.0, 0.3, 0.3)),
         ..Default::default()
     });
 
     // Y axis
     commands.spawn(PbrBundle {
         mesh: meshes.add(Cuboid::new(0.1, 3.0, 0.1)),
-        material: materials.add(Color::rgb(0.3, 1.0, 0.3)),
+        material: materials.add(Color::srgb(0.3, 1.0, 0.3)),
         ..Default::default()
     });
 
     // Z axis
     commands.spawn(PbrBundle {
         mesh: meshes.add(Cuboid::new(0.1, 0.1, 3.0)),
-        material: materials.add(Color::rgb(0.3, 0.3, 1.0)),
+        material: materials.add(Color::srgb(0.3, 0.3, 1.0)),
         ..Default::default()
     });
 

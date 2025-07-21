@@ -43,7 +43,10 @@ impl RunAsync for App {
 
         let name = async_plugin.0.clone();
         let tick_interval = async_plugin.1;
-        self.set_runner(move |app| AsyncRunnnerPlugin::run(app, name, tick_interval));
+        self.set_runner(move |app| {
+                AsyncRunnnerPlugin::run(app, name, tick_interval);
+                AppExit::Success
+        });
         self.run();
     }
 }
@@ -62,6 +65,7 @@ impl AsyncRunnnerPlugin {
     }
 
     fn run(mut app: App, name: String, tick_interval: Duration) {
+        let app = app.main_mut();
         AsyncComputeTaskPool::get_or_init(Default::default)
             .spawn(async move {
                 trace!("[{name}] starting runner.");
@@ -95,7 +99,7 @@ impl AsyncRunnnerPlugin {
     }
 
     fn tick(
-        app: &mut App,
+        app: &mut SubApp,
         interval: Duration,
         reader: &mut ManualEventReader<AppExit>,
     ) -> TickResult {
@@ -103,7 +107,7 @@ impl AsyncRunnnerPlugin {
 
         app.update();
 
-        if let Some(app_exit_events) = app.world.get_resource_mut::<Events<AppExit>>() {
+        if let Some(app_exit_events) = app.world_mut().get_resource_mut::<Events<AppExit>>() {
             if reader.read(&app_exit_events).last().is_some() {
                 return TickResult::Exit;
             }

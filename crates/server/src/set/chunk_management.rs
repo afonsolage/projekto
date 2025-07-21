@@ -90,7 +90,7 @@ fn chunks_spawn(
                 false
             }
             bevy::asset::LoadState::Loaded => true,
-            bevy::asset::LoadState::Failed => false,
+            bevy::asset::LoadState::Failed(_) => false,
         };
 
         if loaded {

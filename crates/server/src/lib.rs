@@ -4,7 +4,7 @@ use asset::ChunkAssetPlugin;
 use bevy::{prelude::*, time::common_conditions::on_timer};
 use net::NetPlugin;
 
-pub mod app;
+// pub mod app;
 mod light;
 mod meshing;
 

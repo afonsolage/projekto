@@ -5,13 +5,11 @@ use async_lock::OnceCell;
 use bevy::{
     asset::{
         io::{
-            AssetReader, AssetReaderError, AssetSource, AssetSourceBuilder, AssetSourceBuilders,
-            AssetWriter, PathStream, Reader, VecReader,
+            AssetReader, AssetReaderError, AssetSource, AssetSourceBuilder, AssetSourceBuilders, ErasedAssetReader, ErasedAssetWriter, PathStream, Reader, VecReader
         },
         AssetLoader, AsyncReadExt, LoadContext,
     },
     prelude::*,
-    utils::BoxedFuture,
 };
 use projekto_core::{
     chunk::{Chunk, ChunkStorage},
@@ -38,7 +36,7 @@ pub fn setup_chunk_asset_loader(app: &mut App) {
 
     let (sender, receiver) = async_channel::unbounded();
 
-    app.world
+    app.world_mut()
         .get_resource_or_insert_with::<AssetSourceBuilders>(Default::default)
         .insert(
             "chunk",
@@ -108,30 +106,28 @@ impl AssetLoader for ChunkAssetLoader {
 
     type Error = ChunkAssetLoaderError;
 
-    fn load<'a>(
+    async fn load<'a>(
         &'a self,
-        reader: &'a mut Reader,
+        reader: &'a mut Reader<'_>,
         _settings: &'a Self::Settings,
-        _load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+        _load_context: &'a mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
         // TODO: Get the exact size from .meta file
-        Box::pin(async move {
-            let mut bytes = vec![];
-            reader.read_to_end(&mut bytes).await?;
+        let mut bytes = vec![];
+        reader.read_to_end(&mut bytes).await?;
 
-            let asset = bincode::deserialize::<ChunkAsset>(&bytes)?;
+        let asset = bincode::deserialize::<ChunkAsset>(&bytes)?;
 
-            trace!("[AssetLoader] Loaded asset: {asset:?}");
+        trace!("[AssetLoader] Loaded asset: {asset:?}");
 
-            Ok(asset)
-        })
+        Ok(asset)
     }
 }
 
 struct ChunkAssetReader {
     sender: Sender<ChunkAssetGenRequest>,
-    reader: Box<dyn AssetReader>,
-    _writer: Box<dyn AssetWriter>,
+    reader: Box<dyn ErasedAssetReader>,
+    _writer: Box<dyn ErasedAssetWriter>,
 }
 
 impl ChunkAssetReader {
@@ -165,38 +161,36 @@ impl ChunkAssetReader {
 }
 
 impl AssetReader for ChunkAssetReader {
-    fn read<'a>(
+    async fn read<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
-        Box::pin(async move {
-            trace!("Loading chunk at {path:?}");
-            let result = self.reader.read(path).await;
-            match result {
-                Err(AssetReaderError::NotFound(_)) => self.generate(path).await,
-                _ => result,
-            }
-        })
+    ) -> Result<Box<Reader<'a>>, AssetReaderError> {
+        trace!("Loading chunk at {path:?}");
+        let result = self.reader.read(path).await;
+        match result {
+            Err(AssetReaderError::NotFound(_)) => self.generate(path).await,
+            _ => result,
+        }
     }
 
-    fn read_meta<'a>(
+    async fn read_meta<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
-        Box::pin(async move { Err(AssetReaderError::NotFound(path.into())) })
+    ) -> Result<Box<Reader<'a>>, AssetReaderError> {
+        Err(AssetReaderError::NotFound(path.into()))
     }
 
-    fn read_directory<'a>(
+    async fn read_directory<'a>(
         &'a self,
         _path: &'a std::path::Path,
-    ) -> BoxedFuture<'a, Result<Box<PathStream>, AssetReaderError>> {
+    ) -> Result<Box<PathStream>, AssetReaderError> {
         todo!("Implement this as regions or make each X coordinates a directory?");
     }
 
-    fn is_directory<'a>(
+    async fn is_directory<'a>(
         &'a self,
         _path: &'a std::path::Path,
-    ) -> BoxedFuture<'a, Result<bool, AssetReaderError>> {
+    ) -> Result<bool, AssetReaderError> {
         todo!()
     }
 }

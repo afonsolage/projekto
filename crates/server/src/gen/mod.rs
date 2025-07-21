@@ -33,7 +33,7 @@ pub(crate) fn start(receiver: Receiver<ChunkAssetGenRequest>) {
     update_schedule.set_executor_kind(ExecutorKind::SingleThreaded);
     last_schedule.set_executor_kind(ExecutorKind::SingleThreaded);
 
-    let mut app = App::new();
+    let mut app = SubApp::new();
 
     app.add_plugins((
         AssetPlugin::default(),
@@ -61,7 +61,7 @@ pub(crate) fn start(receiver: Receiver<ChunkAssetGenRequest>) {
         .name("WorldGen".into())
         .spawn(move || {
             trace!("Starting world gen app");
-            app.run();
+            app.run_default_schedule();
             trace!("Stopping world gen app");
         });
 }

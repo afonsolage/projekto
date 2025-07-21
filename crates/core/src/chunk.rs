@@ -23,10 +23,6 @@ const X_MASK: usize = (X_AXIS_SIZE - 1) << X_SHIFT;
 const Z_MASK: usize = (Z_AXIS_SIZE - 1) << Z_SHIFT;
 const Y_MASK: usize = Y_AXIS_SIZE - 1;
 
-#[cfg(feature = "mem_alloc")]
-pub static ALLOC_COUNT: once_cell::sync::Lazy<std::sync::atomic::AtomicUsize> =
-    once_cell::sync::Lazy::new(std::sync::atomic::AtomicUsize::default);
-
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Chunk(IVec2);
 
@@ -216,9 +212,6 @@ impl<T: ChunkStorageType> std::fmt::Debug for ChunkStorage<T> {
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
     fn new(buffer: Vec<T>) -> Self {
-        #[cfg(feature = "mem_alloc")]
-        ALLOC_COUNT.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-
         Self(buffer)
     }
 
@@ -265,13 +258,6 @@ impl<T: ChunkStorageType> std::ops::IndexMut<usize> for ChunkStorage<T> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         debug_assert!(index < BUFFER_SIZE);
         &mut self.0[index]
-    }
-}
-
-#[cfg(feature = "mem_alloc")]
-impl<T: ChunkStorageType> Drop for ChunkStorage<T> {
-    fn drop(&mut self) {
-        ALLOC_COUNT.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
     }
 }
 

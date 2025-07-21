@@ -38,6 +38,6 @@ fn setup(mut commands: Commands) {
 
 fn check_if_finished(q: Query<(Entity, &Handle<ChunkAsset>)>, mut exit: EventWriter<AppExit>) {
     if q.is_empty() {
-        exit.send(AppExit);
+        exit.send(AppExit::Success);
     }
 }
