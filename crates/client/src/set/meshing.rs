@@ -57,7 +57,7 @@ fn update_chunk_mesh(
                     ..Default::default()
                 },
             })
-            .insert(Name::new(format!("Client Chunk {}", chunk)))
+            .insert(Name::new(format!("Client Chunk {chunk}")))
             .id();
         map.insert(chunk, entity);
     }

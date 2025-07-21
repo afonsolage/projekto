@@ -4,7 +4,7 @@ use bevy::{
     pbr::MaterialPipeline,
     render::{
         mesh::MeshVertexAttribute,
-        render_resource::{AsBindGroup, Face, ShaderRef, ShaderType, VertexFormat},
+        render_resource::{AsBindGroup, Face, ShaderRef, VertexFormat},
     },
 };
 
@@ -26,12 +26,12 @@ impl From<&ChunkMaterial> for bool {
     }
 }
 
-#[derive(ShaderType)]
-struct ChunkMaterialUniform {
-    tile_texture_size: f32,
-    clip_map_origin: Vec2,
-    clip_height: f32,
-}
+// #[derive(ShaderType)]
+// struct ChunkMaterialUniform {
+//     tile_texture_size: f32,
+//     clip_map_origin: Vec2,
+//     clip_height: f32,
+// }
 
 impl ChunkMaterial {
     pub const ATTRIBUTE_TILE_COORD_START: MeshVertexAttribute =
@@ -57,10 +57,10 @@ impl Material for ChunkMaterial {
     fn specialize(
         _pipeline: &MaterialPipeline<Self>,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        layout: &bevy::render::mesh::MeshVertexBufferLayout,
+        layout: &bevy::render::mesh::MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
-        let vertex_layout = layout.get_layout(&[
+        let vertex_layout = layout.0.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
             Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
             Mesh::ATTRIBUTE_UV_0.at_shader_location(2),

@@ -7,9 +7,6 @@ impl Plugin for DebugPlugin {
         app.add_systems(Startup, setup_hold_est_to_exit)
             // .add_system(slow_down_fps)
             .add_systems(Update, hold_esc_to_exit);
-
-        #[cfg(feature = "perf_counter")]
-        app.add_plugins(perf::PerfCounterPlugin);
     }
 }
 
@@ -33,7 +30,7 @@ fn hold_esc_to_exit(
 
         if esc_holding.0 >= ESC_HOLD_TIMEOUT {
             info!("Exiting app due to ESC holding...");
-            exit_writer.send(AppExit);
+            exit_writer.send(AppExit::Success);
         }
     } else {
         esc_holding.0 = 0.0;

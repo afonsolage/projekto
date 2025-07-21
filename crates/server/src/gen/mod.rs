@@ -21,7 +21,7 @@ pub(crate) struct ChunkAssetGenReceiver(pub Receiver<ChunkAssetGenRequest>);
 
 const TICK_EVERY_MILLIS: u64 = 1000;
 
-pub(crate) fn start(receiver: Receiver<ChunkAssetGenRequest>) {
+fn create_app(receiver: Receiver<ChunkAssetGenRequest>) -> App {
     // Force schedules to be single threaded, to avoid using thread pool.
     let (mut first_schedule, mut update_schedule, mut last_schedule) = (
         Schedule::new(First),
@@ -33,7 +33,7 @@ pub(crate) fn start(receiver: Receiver<ChunkAssetGenRequest>) {
     update_schedule.set_executor_kind(ExecutorKind::SingleThreaded);
     last_schedule.set_executor_kind(ExecutorKind::SingleThreaded);
 
-    let mut app = SubApp::new();
+    let mut app = App::new();
 
     app.add_plugins((
         AssetPlugin::default(),
@@ -57,11 +57,16 @@ pub(crate) fn start(receiver: Receiver<ChunkAssetGenRequest>) {
     )
     .add_systems(Last, dispatch_requests);
 
+    app
+}
+
+pub(crate) fn start(receiver: Receiver<ChunkAssetGenRequest>) {
     let _ = std::thread::Builder::new()
         .name("WorldGen".into())
         .spawn(move || {
             trace!("Starting world gen app");
-            app.run_default_schedule();
+            let mut app = create_app(receiver);
+            app.run();
             trace!("Stopping world gen app");
         });
 }
