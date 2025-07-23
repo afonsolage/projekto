@@ -1,4 +1,4 @@
-#import bevy_pbr::mesh_functions::{get_model_matrix, mesh_position_local_to_clip}
+#import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -35,7 +35,7 @@ fn vertex(
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    out.clip_position = mesh_position_local_to_clip(get_model_matrix(vertex.instance_index), vec4<f32>(vertex.position, 1.0));
+    out.clip_position = mesh_position_local_to_clip(get_world_from_local(vertex.instance_index), vec4<f32>(vertex.position, 1.0));
     out.light_intensity = vertex.light;
     out.uv = vertex.uv;
     out.tile_coord_start = vertex.tile_coord_start;

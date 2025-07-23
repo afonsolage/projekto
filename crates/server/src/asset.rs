@@ -127,7 +127,7 @@ impl AssetLoader for ChunkAssetLoader {
 struct ChunkAssetReader {
     sender: Sender<ChunkAssetGenRequest>,
     reader: Box<dyn ErasedAssetReader>,
-    _writer: Box<dyn ErasedAssetWriter>,
+    writer: Box<dyn ErasedAssetWriter>,
 }
 
 impl ChunkAssetReader {
@@ -136,7 +136,7 @@ impl ChunkAssetReader {
         Self {
             sender,
             reader: AssetSource::get_default_reader("chunks".to_string())(),
-            _writer: AssetSource::get_default_writer("chunks".to_string())(create_root).unwrap(),
+            writer: AssetSource::get_default_writer("chunks".to_string())(create_root).unwrap(),
         }
     }
 
@@ -147,12 +147,13 @@ impl ChunkAssetReader {
         trace!("Chunk asset {path:?} not found local. Requesting to generate it.");
 
         let request = ChunkAssetGenRequest::new(path);
+        // TODO: Add conversion from TrySendErrror to AssetReaderError
         self.sender.try_send(request.clone()).unwrap();
 
         if let Ok(bytes) = request.get_result().await {
-            // if let Err(err) = self.writer.write_bytes(path, &bytes).await {
-            //     error!("Failed to save chunk {path:?} to disk: {err}");
-            // }
+            if let Err(err) = self.writer.write_bytes(path, &bytes).await {
+                error!("Failed to save chunk {path:?} to disk: {err}");
+            }
             Ok(Box::new(VecReader::new(bytes)))
         } else {
             Err(AssetReaderError::NotFound(path.to_path_buf()))
