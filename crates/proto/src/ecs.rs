@@ -5,13 +5,13 @@ use crate::net::ClientId;
 use super::{Message, MessageType};
 
 #[derive(Resource, Default, Clone, Debug, Deref, DerefMut)]
-pub(crate) struct CopyHandlers<I: Copy>(Vec<SystemId<I, ()>>);
+    pub(crate) struct CopyHandlers<I: Copy + 'static>(Vec<SystemId<In<I>, ()>>);
 
 pub trait NoCopy {}
 impl<M> NoCopy for (ClientId, M) where M: NoCopy {}
 
 #[derive(Resource, Debug, Clone, Copy, Deref, DerefMut)]
-pub(crate) struct MoveHandler<I: NoCopy>(SystemId<I, ()>);
+pub(crate) struct MoveHandler<I: NoCopy + 'static>(SystemId<In<I>, ()>);
 
 pub trait MessageHandlerInput<T, M> {}
 
@@ -22,7 +22,7 @@ pub trait RegisterMessageHandler<T: MessageType, M: Message<T>> {
     fn set_message_handler<
         I: MessageHandlerInput<T, M> + NoCopy + 'static,
         Marker,
-        S: IntoSystem<I, (), Marker> + 'static,
+        S: IntoSystem<In<I>, (), Marker> + 'static,
     >(
         &mut self,
         system: S,
@@ -33,7 +33,7 @@ pub trait RegisterMessageHandler<T: MessageType, M: Message<T>> {
     fn add_message_handler<
         I: MessageHandlerInput<T, M> + Copy + 'static,
         Marker,
-        S: IntoSystem<I, (), Marker> + 'static,
+        S: IntoSystem<In<I>, (), Marker> + 'static,
     >(
         &mut self,
         system: S,
@@ -44,7 +44,7 @@ impl<T: MessageType, M: Message<T>> RegisterMessageHandler<T, M> for App {
     fn set_message_handler<
         I: MessageHandlerInput<T, M> + NoCopy + 'static,
         Marker,
-        S: IntoSystem<I, (), Marker> + 'static,
+        S: IntoSystem<In<I>, (), Marker> + 'static,
     >(
         &mut self,
         system: S,
@@ -69,7 +69,7 @@ impl<T: MessageType, M: Message<T>> RegisterMessageHandler<T, M> for App {
     fn add_message_handler<
         I: MessageHandlerInput<T, M> + Copy + 'static,
         Marker,
-        S: IntoSystem<I, (), Marker> + 'static,
+        S: IntoSystem<In<I>, (), Marker> + 'static,
     >(
         &mut self,
         system: S,
