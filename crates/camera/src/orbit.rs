@@ -264,21 +264,21 @@ fn move_camera_keycode(
     let mut delta = Vec3::ZERO;
 
     if input.pressed(config.key_bindings.right) {
-        delta.x = -config.key_rotate_speed * time.delta_seconds();
+        delta.x = -config.key_rotate_speed * time.delta_secs();
     } else if input.pressed(config.key_bindings.left) {
-        delta.x = config.key_rotate_speed * time.delta_seconds();
+        delta.x = config.key_rotate_speed * time.delta_secs();
     }
 
     if input.pressed(config.key_bindings.up) {
-        delta.y = config.key_rotate_speed * time.delta_seconds();
+        delta.y = config.key_rotate_speed * time.delta_secs();
     } else if input.pressed(config.key_bindings.down) {
-        delta.y = -config.key_rotate_speed * time.delta_seconds();
+        delta.y = -config.key_rotate_speed * time.delta_secs();
     }
 
     if input.pressed(config.key_bindings.zoom_in) {
-        delta.z = -config.key_zoom_speed * time.delta_seconds();
+        delta.z = -config.key_zoom_speed * time.delta_secs();
     } else if input.pressed(config.key_bindings.zoom_out) {
-        delta.z = config.key_zoom_speed * time.delta_seconds();
+        delta.z = config.key_zoom_speed * time.delta_secs();
     }
 
     if delta != Vec3::ZERO {
@@ -302,13 +302,13 @@ fn move_camera_mouse(
 
     if input.pressed(MouseButton::Right) {
         for evt in mouse_move.read() {
-            delta.x += evt.delta.x * time.delta_seconds() * config.mouse_rotate_speed;
-            delta.y += evt.delta.y * time.delta_seconds() * config.mouse_rotate_speed;
+            delta.x += evt.delta.x * time.delta_secs() * config.mouse_rotate_speed;
+            delta.y += evt.delta.y * time.delta_secs() * config.mouse_rotate_speed;
         }
     }
 
     for evt in mouse_wheel.read() {
-        delta.z -= evt.y * time.delta_seconds() * config.mouse_zoom_speed;
+        delta.z -= evt.y * time.delta_secs() * config.mouse_zoom_speed;
     }
 
     if delta != Vec3::ZERO {

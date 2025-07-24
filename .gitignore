@@ -22,3 +22,4 @@ Cargo.lock
 cache/
 tracy/
 world/
+chunks/

@@ -69,7 +69,7 @@ fn rotate_camera(
             return;
         }
 
-        delta *= config.rotate_speed * time.delta_seconds();
+        delta *= config.rotate_speed * time.delta_secs();
 
         let (pitch, yaw, _) = transform.rotation.to_euler(EulerRot::YXZ);
         let mut rotation = Vec2::new(pitch, yaw) - delta;

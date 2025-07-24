@@ -125,7 +125,7 @@ fn move_camera(
 
             let move_vector = forward_vector + right_vector + up_vector;
 
-            transform.translation += speed * time.delta_seconds() * move_vector;
+            transform.translation += speed * time.delta_secs() * move_vector;
         }
     }
 }
@@ -148,7 +148,7 @@ fn rotate_camera(
             return;
         }
 
-        delta *= config.rotate_speed * time.delta_seconds();
+        delta *= config.rotate_speed * time.delta_secs();
 
         let (pitch, yaw, _) = transform.rotation.to_euler(EulerRot::YXZ);
         let mut rotation = Vec2::new(pitch, yaw) - delta;
