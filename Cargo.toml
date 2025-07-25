@@ -19,7 +19,7 @@ projekto_world_client = { path = "crates/world_client" }
 
 bevy = "0.16"
 
-rand = "0.8"
+rand = "0.9"
 thiserror = "1.0"
 serde = "1.0"
 
@@ -74,4 +74,3 @@ path = "examples/orbit_cam.rs"
 [[example]]
 name = "swap_cam"
 path = "examples/swap_cam.rs"
-
