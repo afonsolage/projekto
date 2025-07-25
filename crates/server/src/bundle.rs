@@ -3,8 +3,8 @@ use bevy::{
         query::{QueryData, QueryFilter, QueryItem},
         system::SystemParam,
     },
+    platform::collections::HashMap,
     prelude::*,
-    utils::HashMap,
 };
 use projekto_core::{
     chunk::{Chunk, ChunkStorage},

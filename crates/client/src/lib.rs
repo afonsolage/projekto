@@ -1,9 +1,9 @@
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     ecs::query::QueryFilter,
+    platform::collections::HashMap,
     prelude::*,
     render::view::RenderLayers,
-    utils::HashMap,
     window::PresentMode,
 };
 use bundle::{ChunkLocal, ChunkVertex};
@@ -50,7 +50,7 @@ impl Plugin for ClientPlugin {
                     })
                     .set(ImagePlugin::default_nearest()),
                 LogDiagnosticsPlugin::default(),
-                FrameTimeDiagnosticsPlugin,
+                FrameTimeDiagnosticsPlugin::default(),
             ))
             .add_plugins((
                 CameraPlugin,

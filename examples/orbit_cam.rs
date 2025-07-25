@@ -22,7 +22,7 @@ fn move_target(
         return;
     }
 
-    if let Ok(mut transform) = q.get_single_mut() {
+    if let Ok(mut transform) = q.single_mut() {
         transform.translation += input_vec * time.delta_secs() * 5.0;
     }
 }

@@ -67,27 +67,28 @@ struct CameraConfig<'w, 's> {
 }
 
 impl<'w, 's> CameraConfig<'w, 's> {
-    fn set_cam(&mut self, active_camera: ActiveCamera) {
+    fn set_cam(&mut self, active_camera: ActiveCamera) -> Result {
         trace!("Toggling cameras");
 
         self.first_person.active = false;
         self.flyby.active = false;
         self.character_controller.active = false;
-        self.q.p0().single_mut().is_active = false;
-        self.q.p1().single_mut().is_active = false;
+        self.q.p0().single_mut()?.is_active = false;
+        self.q.p1().single_mut()?.is_active = false;
 
         *self.active_cam = active_camera;
         match *self.active_cam {
             ActiveCamera::FlyBy => {
                 self.flyby.active = true;
-                self.q.p0().single_mut().is_active = true;
+                self.q.p0().single_mut()?.is_active = true;
             }
             ActiveCamera::FirstPerson => {
                 self.character_controller.active = true;
                 self.first_person.active = true;
-                self.q.p1().single_mut().is_active = true;
+                self.q.p1().single_mut()?.is_active = true;
             }
         }
+        Ok(())
     }
 
     fn set_active(&mut self, active: bool) {
@@ -101,11 +102,13 @@ impl<'w, 's> CameraConfig<'w, 's> {
     }
 }
 
-fn switch_camera(key_btn: Res<ButtonInput<KeyCode>>, mut config: CameraConfig) {
+fn switch_camera(key_btn: Res<ButtonInput<KeyCode>>, mut config: CameraConfig) -> Result {
     if key_btn.just_pressed(KeyCode::KeyI) {
-        config.set_cam(ActiveCamera::FlyBy);
+        config.set_cam(ActiveCamera::FlyBy)
     } else if key_btn.just_pressed(KeyCode::KeyP) {
-        config.set_cam(ActiveCamera::FirstPerson);
+        config.set_cam(ActiveCamera::FirstPerson)
+    } else {
+        Ok(())
     }
 }
 
@@ -115,7 +118,7 @@ fn grab_mouse(
     key_btn: Res<ButtonInput<KeyCode>>,
     mut config: CameraConfig,
 ) {
-    let Ok(mut window) = primary_window.get_single_mut() else {
+    let Ok(mut window) = primary_window.single_mut() else {
         return;
     };
 

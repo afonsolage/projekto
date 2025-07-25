@@ -307,7 +307,7 @@ pub fn propagate(
 
 #[cfg(test)]
 mod test {
-    use bevy::utils::HashMap;
+    use bevy::platform::collections::HashMap;
 
     use super::*;
 

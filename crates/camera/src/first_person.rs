@@ -59,7 +59,7 @@ fn rotate_camera(
     config: Res<FirstPersonCameraConfig>,
     mut q: Query<&mut Transform, With<FirstPersonTarget>>,
 ) {
-    if let Ok(mut transform) = q.get_single_mut() {
+    if let Ok(mut transform) = q.single_mut() {
         let mut delta = Vec2::ZERO;
         for ev in motion_evt.read() {
             delta += ev.delta;

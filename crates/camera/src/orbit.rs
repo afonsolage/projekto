@@ -182,7 +182,7 @@ fn target_moved(
     >,
     mut q: Query<&mut Transform, With<OrbitCamera>>,
 ) {
-    let target = match target.get_single() {
+    let target = match target.single() {
         Ok(t) => t,
         Err(QuerySingleError::NoEntities(_)) => {
             return;
@@ -192,7 +192,7 @@ fn target_moved(
         }
     };
 
-    if let Ok(mut camera_transform) = q.get_single_mut() {
+    if let Ok(mut camera_transform) = q.single_mut() {
         look_and_move_around(&mut camera_transform, target.translation, &config);
     }
 }
@@ -211,7 +211,7 @@ fn settings_changed(
         return;
     }
 
-    let target = match target.get_single() {
+    let target = match target.single() {
         Ok(t) => t,
         Err(QuerySingleError::NoEntities(_)) => {
             return;
@@ -221,7 +221,7 @@ fn settings_changed(
         }
     };
 
-    if let Ok(mut camera_transform) = q.get_single_mut() {
+    if let Ok(mut camera_transform) = q.single_mut() {
         look_and_move_around(&mut camera_transform, target.translation, &config);
     }
 }

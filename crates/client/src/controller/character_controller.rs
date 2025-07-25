@@ -69,7 +69,7 @@ fn move_character(
         return;
     }
 
-    let Ok(mut transform) = q.get_single_mut() else {
+    let Ok(mut transform) = q.single_mut() else {
         return;
     };
 
@@ -116,7 +116,7 @@ fn update_character_position(
     mut landscape: ResMut<PlayerLandscape>,
     q: Query<&Transform, (With<CharacterController>, Changed<Transform>)>,
 ) {
-    let Ok(transform) = q.get_single() else {
+    let Ok(transform) = q.single() else {
         return;
     };
 

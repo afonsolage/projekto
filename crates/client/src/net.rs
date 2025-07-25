@@ -46,7 +46,7 @@ fn reconnect_to_server(
     if !connection.is_active() {
         info!("Server connected is broken. Reconnecting...");
         commands.remove_resource::<ServerConnection>();
-        writer.send(ServerDisconnected);
+        writer.write(ServerDisconnected);
     }
 }
 

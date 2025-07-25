@@ -58,7 +58,7 @@ fn update_landscape(
         .keys()
         .filter(|&c| !new_landscape_chunks.contains(c))
         .for_each(|&c| {
-            unload_writer.send(ChunkUnload(c));
+            unload_writer.write(ChunkUnload(c));
             unloaded += 1;
         });
 
@@ -67,7 +67,7 @@ fn update_landscape(
         .into_iter()
         .filter(|c| !chunk_map.contains_key(c))
         .for_each(|c| {
-            load_writer.send(ChunkLoad(c));
+            load_writer.write(ChunkLoad(c));
             loaded += 1;
         });
 

@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{platform::collections::HashMap, prelude::*};
 use projekto_core::{
     chunk::Chunk,
     voxel::{self, Voxel},
@@ -73,7 +73,7 @@ fn propagate_light(
                      }| {
                         let neighbor = chunk.neighbor(side.dir());
                         map.entry((neighbor, ty))
-                            .or_insert(vec![])
+                            .or_default()
                             .push((voxel, intensity));
                     },
                 );
@@ -87,7 +87,7 @@ fn propagate_light(
     propagate_to_neighbors
         .into_iter()
         .for_each(|((chunk, ty), values)| {
-            writer.send(LightUpdate { chunk, ty, values });
+            writer.write(LightUpdate { chunk, ty, values });
         });
 
     trace!("[propagate_light] {count} chunks light propagated. {events} propagation events sent.");

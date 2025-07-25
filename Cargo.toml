@@ -17,7 +17,7 @@ projekto_messages = { path = "crates/messages" }
 projekto_server = { path = "crates/server" }
 projekto_world_client = { path = "crates/world_client" }
 
-bevy = "0.15"
+bevy = "0.16"
 
 rand = "0.8"
 thiserror = "1.0"

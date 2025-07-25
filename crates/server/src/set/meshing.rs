@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashSet};
+use bevy::{platform::collections::HashSet, prelude::*};
 use projekto_core::{chunk, voxel};
 
 use crate::{light, meshing, WorldSet};

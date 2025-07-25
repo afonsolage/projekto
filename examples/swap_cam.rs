@@ -29,8 +29,7 @@ struct CameraConfig<'w, 's> {
     flyby: ResMut<'w, FlyByCameraConfig>,
     cam_type: ResMut<'w, CurrentCameraType>,
 
-    #[system_param(ignore)]
-    _pd: PhantomData<&'s ()>,
+    _marker: PhantomData<&'s ()>,
 }
 
 impl<'w, 's> CameraConfig<'w, 's> {
@@ -80,7 +79,7 @@ fn grab_mouse(
     //     }
     // }
 
-    if let Ok(mut window) = primary_window.get_single_mut() {
+    if let Ok(mut window) = primary_window.single_mut() {
         if window.cursor_options.visible && mouse_btn.just_pressed(MouseButton::Left) {
             window.cursor_options.visible = false;
             window.cursor_options.grab_mode = bevy::window::CursorGrabMode::Locked;

@@ -5,7 +5,7 @@ use crate::net::ClientId;
 use super::{Message, MessageType};
 
 #[derive(Resource, Default, Clone, Debug, Deref, DerefMut)]
-    pub(crate) struct CopyHandlers<I: Copy + 'static>(Vec<SystemId<In<I>, ()>>);
+pub(crate) struct CopyHandlers<I: Copy + 'static>(Vec<SystemId<In<I>, ()>>);
 
 pub trait NoCopy {}
 impl<M> NoCopy for (ClientId, M) where M: NoCopy {}
@@ -120,7 +120,7 @@ impl<T: MessageType> RunMessageHandlers<T> for World {
         if let Some(CopyHandlers(system_ids)) = copy_handlers {
             for system_id in system_ids {
                 // Only Copy types are allowed to be added on MessageHandlers
-                if let Err(err) = self.run_system_with_input(system_id, msg) {
+                if let Err(err) = self.run_system_with(system_id, msg) {
                     error!("Failed to execute handler for message {src:?}. Error: {err}");
                 }
             }
@@ -129,7 +129,7 @@ impl<T: MessageType> RunMessageHandlers<T> for World {
         if let Some(CopyHandlers(system_ids)) = copy_id_handlers {
             for system_id in system_ids {
                 // Only Copy types are allowed to be added on MessageHandlers
-                if let Err(err) = self.run_system_with_input(system_id, (client_id, msg)) {
+                if let Err(err) = self.run_system_with(system_id, (client_id, msg)) {
                     error!(
                         "Failed to execute handler for message {src:?}({client_id}). Error: {err}"
                     );
@@ -150,13 +150,13 @@ impl<T: MessageType> RunMessageHandlers<T> for World {
             .expect("To be able to downcast message {src:?}.");
 
         if let Some(&MoveHandler(system_id)) = self.get_resource::<MoveHandler<M>>() {
-            if let Err(err) = self.run_system_with_input(system_id, msg) {
+            if let Err(err) = self.run_system_with(system_id, msg) {
                 error!("Failed to execute handler for message {src:?}. Error: {err}");
             }
         } else if let Some(&MoveHandler(system_id)) =
             self.get_resource::<MoveHandler<(ClientId, M)>>()
         {
-            if let Err(err) = self.run_system_with_input(system_id, (client_id, msg)) {
+            if let Err(err) = self.run_system_with(system_id, (client_id, msg)) {
                 error!("Failed to execute handler for message {src:?}({client_id}). Error: {err}");
             }
         } else {

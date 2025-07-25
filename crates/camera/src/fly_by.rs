@@ -109,7 +109,7 @@ fn move_camera(
     config: Res<FlyByCameraConfig>,
     mut q: Query<&mut Transform, With<FlyByCamera>>,
 ) {
-    if let Ok(mut transform) = q.get_single_mut() {
+    if let Ok(mut transform) = q.single_mut() {
         let input_vector = calc_input_vector(&input, &config.bindings);
 
         let speed = if input.pressed(config.bindings.boost) {
@@ -138,7 +138,7 @@ fn rotate_camera(
     config: Res<FlyByCameraConfig>,
     mut q: Query<&mut Transform, With<FlyByCamera>>,
 ) {
-    if let Ok(mut transform) = q.get_single_mut() {
+    if let Ok(mut transform) = q.single_mut() {
         let mut delta = Vec2::ZERO;
         for ev in motion_evt.read() {
             delta += ev.delta;

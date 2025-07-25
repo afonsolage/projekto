@@ -1,9 +1,10 @@
 use std::sync::mpsc::{self, Receiver};
 
 use bevy::{
+    platform::collections::HashMap,
     prelude::*,
     tasks::{AsyncComputeTaskPool, TaskPool},
-    utils::{synccell::SyncCell, HashMap},
+    utils::synccell::SyncCell,
 };
 
 use projekto_messages::{ClientMessage, ServerMessage};

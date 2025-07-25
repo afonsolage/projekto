@@ -30,7 +30,7 @@ fn hold_esc_to_exit(
 
         if esc_holding.0 >= ESC_HOLD_TIMEOUT {
             info!("Exiting app due to ESC holding...");
-            exit_writer.send(AppExit::Success);
+            exit_writer.write(AppExit::Success);
         }
     } else {
         esc_holding.0 = 0.0;
