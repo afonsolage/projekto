@@ -79,7 +79,7 @@ fn move_character(
 
     let move_vector = forward_vector + right_vector + up_vector;
 
-    transform.translation += config.move_speed * time.delta_seconds() * move_vector;
+    transform.translation += config.move_speed * time.delta_secs() * move_vector;
 }
 
 fn calc_input_vector(input: &Res<ButtonInput<KeyCode>>) -> Vec3 {

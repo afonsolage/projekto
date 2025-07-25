@@ -17,7 +17,7 @@ impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
         app.set_message_handler(update_chunk_mesh).add_systems(
             Update,
-            despawn_chunks_on_server_disconnect.run_if(on_event::<ServerDisconnected>()),
+            despawn_chunks_on_server_disconnect.run_if(on_event::<ServerDisconnected>),
         );
     }
 }
@@ -42,7 +42,7 @@ fn update_chunk_mesh(
 ) {
     let ChunkVertex { chunk, vertex } = vertex;
 
-    let mesh_handler = meshes.add(generate_mesh(&vertex));
+    let mesh_handler = Mesh3d(meshes.add(generate_mesh(&vertex)));
 
     if let Some(&entity) = map.get(&chunk) {
         commands.entity(entity).insert(mesh_handler);
@@ -50,12 +50,9 @@ fn update_chunk_mesh(
         let entity = commands
             .spawn(ChunkBundle {
                 chunk: ChunkLocal(chunk),
-                mesh: MaterialMeshBundle {
-                    mesh: mesh_handler,
-                    transform: Transform::from_translation(chunk::to_world(chunk)),
-                    material: material.0.clone(),
-                    ..Default::default()
-                },
+                mesh: mesh_handler,
+                material: MeshMaterial3d(material.0.clone()),
+                transform: Transform::from_translation(chunk::to_world(chunk)),
             })
             .insert(Name::new(format!("Client Chunk {chunk}")))
             .id();

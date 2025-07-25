@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use projekto_core::chunk::Chunk;
 
 use crate::{
-    asset::ChunkAsset,
+    asset::{ChunkAsset, ChunkAssetHandle},
     bundle::{
         ChunkBundle, ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal,
         ChunkMap, ChunkVertex,
@@ -21,8 +21,8 @@ impl Plugin for ChunkManagementPlugin {
             .add_systems(
                 Update,
                 (
-                    chunks_unload.run_if(on_event::<ChunkUnload>()),
-                    chunks_load.run_if(on_event::<ChunkLoad>()),
+                    chunks_unload.run_if(on_event::<ChunkUnload>),
+                    chunks_load.run_if(on_event::<ChunkLoad>),
                     chunks_spawn.run_if(any_chunk_to_spawn),
                 )
                     .chain()
@@ -65,11 +65,11 @@ fn chunks_load(
 ) {
     for &ChunkLoad(chunk) in reader.read() {
         let handle = asset_server.load::<ChunkAsset>(chunk.path());
-        commands.spawn(handle);
+        commands.spawn(ChunkAssetHandle(handle));
     }
 }
 
-fn any_chunk_to_spawn(q: Query<(Entity, &Handle<ChunkAsset>), Without<ChunkLocal>>) -> bool {
+fn any_chunk_to_spawn(q: Query<(Entity, &ChunkAssetHandle), Without<ChunkLocal>>) -> bool {
     !q.is_empty()
 }
 
@@ -78,11 +78,11 @@ fn chunks_spawn(
     mut chunk_map: ResMut<ChunkMap>,
     asset_server: Res<AssetServer>,
     mut assets: ResMut<Assets<ChunkAsset>>,
-    q: Query<(Entity, &Handle<ChunkAsset>), Without<ChunkLocal>>,
+    q: Query<(Entity, &ChunkAssetHandle), Without<ChunkLocal>>,
 ) {
     let mut count = 0;
     for (entity, handle) in &q {
-        let loaded = match asset_server.load_state(handle) {
+        let loaded = match asset_server.load_state(&handle.0) {
             bevy::asset::LoadState::Loading => continue,
             bevy::asset::LoadState::NotLoaded => {
                 let path = handle.path().expect("All chunk assets must have a path");
@@ -101,7 +101,7 @@ fn chunks_spawn(
                 occlusion,
                 soft_light,
                 vertex,
-            } = assets.remove(handle).expect("Chunk asset exists");
+            } = assets.remove(&handle.0).expect("Chunk asset exists");
 
             let entity = commands
                 .spawn((

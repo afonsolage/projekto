@@ -16,7 +16,7 @@ impl Plugin for PropagationPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LightUpdate>().add_systems(
             Update,
-            (propagate_light.run_if(on_event::<LightUpdate>()),).in_set(WorldSet::Propagation),
+            (propagate_light.run_if(on_event::<LightUpdate>),).in_set(WorldSet::Propagation),
         );
     }
 }

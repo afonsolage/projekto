@@ -81,13 +81,13 @@ fn grab_mouse(
     // }
 
     if let Ok(mut window) = primary_window.get_single_mut() {
-        if window.cursor.visible && mouse_btn.just_pressed(MouseButton::Left) {
-            window.cursor.visible = false;
-            window.cursor.grab_mode = bevy::window::CursorGrabMode::Locked;
+        if window.cursor_options.visible && mouse_btn.just_pressed(MouseButton::Left) {
+            window.cursor_options.visible = false;
+            window.cursor_options.grab_mode = bevy::window::CursorGrabMode::Locked;
             config.set_active(true);
-        } else if !window.cursor.visible && key_btn.just_pressed(KeyCode::Escape) {
-            window.cursor.visible = true;
-            window.cursor.grab_mode = bevy::window::CursorGrabMode::None;
+        } else if !window.cursor_options.visible && key_btn.just_pressed(KeyCode::Escape) {
+            window.cursor_options.visible = true;
+            window.cursor_options.grab_mode = bevy::window::CursorGrabMode::None;
             config.set_active(false);
         }
     }
@@ -100,7 +100,7 @@ fn setup_environment(
 ) {
     // camera
     commands
-        .spawn(Camera3dBundle { ..default() })
+        .spawn(Camera3d::default())
         .insert(OrbitCamera)
         .insert(FlyByCamera)
         // .insert(Transform::from_xyz(5.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y))
@@ -108,41 +108,34 @@ fn setup_environment(
 
     // target
     commands
-        .spawn(PbrBundle {
-            transform: Transform::from_xyz(3.0, 5.0, 3.0),
-            mesh: meshes.add(Capsule3d {
+        .spawn((
+            Transform::from_xyz(3.0, 5.0, 3.0),
+            Mesh3d(meshes.add(Capsule3d {
                 radius: 0.25,
                 half_length: 0.75,
-            }),
-            material: materials.add(Color::srgb(0.3, 0.3, 0.3)),
-            ..Default::default()
-        })
+            })),
+            MeshMaterial3d(materials.add(Color::srgb(0.3, 0.3, 0.3))),
+        ))
         .insert(OrbitCameraTarget)
         .insert(Name::new("Target"));
 
     // X axis
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(3.0, 0.1, 0.1)),
-        material: materials.add(Color::srgb(1.0, 0.3, 0.3)),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(3.0, 0.1, 0.1))),
+        MeshMaterial3d(materials.add(Color::srgb(1.0, 0.3, 0.3))),
+    ));
 
     // Y axis
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(0.1, 3.0, 0.1)),
-        material: materials.add(Color::srgb(0.3, 1.0, 0.3)),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.1, 3.0, 0.1))),
+        MeshMaterial3d(materials.add(Color::srgb(0.3, 1.0, 0.3))),
+    ));
 
     // Z axis
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(0.1, 0.1, 3.0)),
-        material: materials.add(Color::srgb(0.3, 0.3, 1.0)),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.1, 0.1, 3.0))),
+        MeshMaterial3d(materials.add(Color::srgb(0.3, 0.3, 1.0))),
+    ));
 
-    commands.spawn(PointLightBundle {
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
-        ..Default::default()
-    });
+    commands.spawn((PointLight::default(), Transform::from_xyz(4.0, 8.0, 4.0)));
 }

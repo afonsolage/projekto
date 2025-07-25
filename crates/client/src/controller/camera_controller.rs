@@ -119,13 +119,13 @@ fn grab_mouse(
         return;
     };
 
-    if window.cursor.visible && mouse_btn.just_pressed(MouseButton::Left) {
-        window.cursor.visible = false;
-        window.cursor.grab_mode = bevy::window::CursorGrabMode::Locked;
+    if window.cursor_options.visible && mouse_btn.just_pressed(MouseButton::Left) {
+        window.cursor_options.visible = false;
+        window.cursor_options.grab_mode = bevy::window::CursorGrabMode::Locked;
         config.set_active(true);
-    } else if !window.cursor.visible && key_btn.just_pressed(KeyCode::Escape) {
-        window.cursor.visible = true;
-        window.cursor.grab_mode = bevy::window::CursorGrabMode::None;
+    } else if !window.cursor_options.visible && key_btn.just_pressed(KeyCode::Escape) {
+        window.cursor_options.visible = true;
+        window.cursor_options.grab_mode = bevy::window::CursorGrabMode::None;
         config.set_active(false);
     }
 }

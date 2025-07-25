@@ -5,9 +5,10 @@ use async_lock::OnceCell;
 use bevy::{
     asset::{
         io::{
-            AssetReader, AssetReaderError, AssetSource, AssetSourceBuilder, AssetSourceBuilders, ErasedAssetReader, ErasedAssetWriter, PathStream, Reader, VecReader
+            AssetReader, AssetReaderError, AssetSource, AssetSourceBuilder, AssetSourceBuilders,
+            ErasedAssetReader, ErasedAssetWriter, PathStream, Reader, VecReader,
         },
-        AssetLoader, AsyncReadExt, LoadContext,
+        AssetLoader, LoadContext,
     },
     prelude::*,
 };
@@ -88,6 +89,9 @@ pub struct ChunkAsset {
     pub vertex: Vec<voxel::Vertex>,
 }
 
+#[derive(Component, Default, Debug, Deref, DerefMut)]
+pub struct ChunkAssetHandle(pub Handle<ChunkAsset>);
+
 #[derive(Default)]
 struct ChunkAssetLoader;
 
@@ -106,11 +110,11 @@ impl AssetLoader for ChunkAssetLoader {
 
     type Error = ChunkAssetLoaderError;
 
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        _load_context: &'a mut LoadContext<'_>,
+    async fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        _load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
         // TODO: Get the exact size from .meta file
         let mut bytes = vec![];
@@ -143,7 +147,7 @@ impl ChunkAssetReader {
     async fn generate<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> Result<Box<Reader<'a>>, AssetReaderError> {
+    ) -> Result<Box<dyn Reader>, AssetReaderError> {
         trace!("Chunk asset {path:?} not found local. Requesting to generate it.");
 
         let request = ChunkAssetGenRequest::new(path);
@@ -165,7 +169,7 @@ impl AssetReader for ChunkAssetReader {
     async fn read<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> Result<Box<Reader<'a>>, AssetReaderError> {
+    ) -> Result<impl Reader + 'a, AssetReaderError> {
         trace!("Loading chunk at {path:?}");
         let result = self.reader.read(path).await;
         match result {
@@ -177,7 +181,7 @@ impl AssetReader for ChunkAssetReader {
     async fn read_meta<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> Result<Box<Reader<'a>>, AssetReaderError> {
+    ) -> Result<Box<dyn Reader>, AssetReaderError> {
         Err(AssetReaderError::NotFound(path.into()))
     }
 

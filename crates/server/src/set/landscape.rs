@@ -11,7 +11,7 @@ impl Plugin for LandscapePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (update_landscape.run_if(resource_changed_or_removed::<Landscape>()),)
+            (update_landscape.run_if(resource_changed_or_removed::<Landscape>),)
                 .in_set(WorldSet::LandscapeUpdate),
         );
     }

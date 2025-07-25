@@ -23,7 +23,7 @@ fn move_target(
     }
 
     if let Ok(mut transform) = q.get_single_mut() {
-        transform.translation += input_vec * time.delta_seconds() * 5.0;
+        transform.translation += input_vec * time.delta_secs() * 5.0;
     }
 }
 
@@ -35,50 +35,43 @@ fn setup_environment(
 ) {
     // camera
     commands
-        .spawn(Camera3dBundle { ..default() })
+        .spawn(Camera3d::default())
         .insert(OrbitCamera)
         // .insert(Transform::from_xyz(5.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y))
         ;
 
     // target
     commands
-        .spawn(PbrBundle {
-            transform: Transform::from_xyz(3.0, 5.0, 3.0),
-            mesh: meshes.add(Capsule3d {
+        .spawn((
+            Transform::from_xyz(3.0, 5.0, 3.0),
+            Mesh3d(meshes.add(Capsule3d {
                 radius: 0.25,
                 half_length: 0.75,
-            }),
-            material: materials.add(Color::srgb(0.3, 0.3, 0.3)),
-            ..Default::default()
-        })
+            })),
+            MeshMaterial3d(materials.add(Color::srgb(0.3, 0.3, 0.3))),
+        ))
         .insert(OrbitCameraTarget)
         .insert(Name::new("Target"));
 
     // X axis
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(3.0, 0.1, 0.1)),
-        material: materials.add(Color::srgb(1.0, 0.3, 0.3)),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(3.0, 0.1, 0.1))),
+        MeshMaterial3d(materials.add(Color::srgb(1.0, 0.3, 0.3))),
+    ));
 
     // Y axis
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(0.1, 3.0, 0.1)),
-        material: materials.add(Color::srgb(0.3, 1.0, 0.3)),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.1, 3.0, 0.1))),
+        MeshMaterial3d(materials.add(Color::srgb(0.3, 1.0, 0.3))),
+    ));
 
     // Z axis
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(0.1, 0.1, 3.0)),
-        material: materials.add(Color::srgb(0.3, 0.3, 1.0)),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.1, 0.1, 3.0))),
+        MeshMaterial3d(materials.add(Color::srgb(0.3, 0.3, 1.0))),
+    ));
 
-    commands.spawn(PointLightBundle {
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
-        ..Default::default()
-    });
+    commands.spawn((PointLight::default(), Transform::from_xyz(4.0, 8.0, 4.0)));
 
     config.active = true;
 }

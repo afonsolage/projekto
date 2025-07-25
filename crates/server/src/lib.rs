@@ -10,7 +10,7 @@ mod meshing;
 
 mod asset;
 
-pub use asset::{setup_chunk_asset_loader, ChunkAsset};
+pub use asset::{setup_chunk_asset_loader, ChunkAsset, ChunkAssetHandle};
 
 mod net;
 
@@ -41,13 +41,13 @@ impl Plugin for WorldServerPlugin {
             .add_plugins((
                 ChunkAssetPlugin,
                 NetPlugin,
+                set::ReceiveRequestsPlugin,
                 set::LandscapePlugin,
                 set::ChunkManagementPlugin,
                 // set::ChunkInitializationPlugin,
                 set::PropagationPlugin,
                 set::MeshingPlugin,
                 set::SendResponsesPlugin,
-                set::ReceiveRequestsPlugin,
             ));
     }
 }

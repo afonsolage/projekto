@@ -39,7 +39,6 @@ impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         app
             // This may cause problems later on. Ideally this setup should be done per image
-            .insert_resource(Msaa::Sample4)
             .add_plugins((
                 DefaultPlugins
                     .set(WindowPlugin {
@@ -93,11 +92,8 @@ fn setup_mockup_scene(
 ) {
     // camera
     commands.spawn((
-        Camera3dBundle {
-            transform: Transform::from_xyz(128.0, 256.0, 128.0)
-                .looking_at(Vec3::new(0.0, 128.0, 0.0), Vec3::Y),
-            ..Default::default()
-        },
+        Camera3d::default(),
+        Transform::from_xyz(128.0, 256.0, 128.0).looking_at(Vec3::new(0.0, 128.0, 0.0), Vec3::Y),
         RenderLayers::from_layers(&[0, 1]),
         FlyByCamera,
         Name::new("FlyByCamera"),
@@ -106,15 +102,12 @@ fn setup_mockup_scene(
     // character
     commands
         .spawn((
-            PbrBundle {
-                transform: Transform::from_xyz(2.0, 20.0, 7.0),
-                mesh: meshes.add(Capsule3d {
-                    radius: 0.25,
-                    half_length: 0.75,
-                }),
-                material: materials.add(Color::srgb(0.3, 0.3, 0.3)),
-                ..Default::default()
-            },
+            Transform::from_xyz(2.0, 20.0, 7.0),
+            Mesh3d(meshes.add(Capsule3d {
+                radius: 0.25,
+                half_length: 0.75,
+            })),
+            MeshMaterial3d(materials.add(Color::srgb(0.3, 0.3, 0.3))),
             Name::new("Character"),
             CharacterController,
             FirstPersonTarget,
@@ -122,19 +115,14 @@ fn setup_mockup_scene(
         .with_children(|p| {
             // Front indicator
             p.spawn((
-                PbrBundle {
-                    mesh: meshes.add(Cuboid::new(0.05, 0.05, -0.5)),
-                    material: materials.add(Color::srgb(1.0, 1.0, 1.0)),
-                    ..Default::default()
-                },
+                Mesh3d(meshes.add(Cuboid::new(0.05, 0.05, -0.5))),
+                MeshMaterial3d(materials.add(Color::srgb(1.0, 1.0, 1.0))),
                 RenderLayers::from_layers(&[1]),
             ));
             p.spawn((
-                Camera3dBundle {
-                    camera: Camera {
-                        is_active: false,
-                        ..Default::default()
-                    },
+                Camera3d::default(),
+                Camera {
+                    is_active: false,
                     ..Default::default()
                 },
                 Name::new("FirstPersonCamera"),
@@ -143,30 +131,24 @@ fn setup_mockup_scene(
         });
 
     // X axis
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(3.0, 0.1, 0.1)),
-        material: materials.add(Color::srgb(1.0, 0.3, 0.3)),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(3.0, 0.1, 0.1))),
+        MeshMaterial3d(materials.add(Color::srgb(1.0, 0.3, 0.3))),
+    ));
 
     // Y axis
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(0.1, 3.0, 0.1)),
-        material: materials.add(Color::srgb(0.3, 1.0, 0.3)),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.1, 3.0, 0.1))),
+        MeshMaterial3d(materials.add(Color::srgb(0.3, 1.0, 0.3))),
+    ));
 
     // Z axis
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(0.1, 0.1, 3.0)),
-        material: materials.add(Color::srgb(0.3, 0.3, 1.0)),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.1, 0.1, 3.0))),
+        MeshMaterial3d(materials.add(Color::srgb(0.3, 0.3, 1.0))),
+    ));
 
-    commands.spawn(PointLightBundle {
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
-        ..Default::default()
-    });
+    commands.spawn((PointLight::default(), Transform::from_xyz(4.0, 8.0, 4.0)));
 }
 
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -187,7 +169,9 @@ pub struct ChunkMaterialHandle(pub Handle<ChunkMaterial>);
 #[derive(Bundle, Default)]
 struct ChunkBundle {
     chunk: ChunkLocal,
-    mesh: MaterialMeshBundle<ChunkMaterial>,
+    material: MeshMaterial3d<ChunkMaterial>,
+    mesh: Mesh3d,
+    transform: Transform,
 }
 
 fn any_chunk<T: QueryFilter>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {

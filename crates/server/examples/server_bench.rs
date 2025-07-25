@@ -5,7 +5,7 @@ use bevy::{
     log::LogPlugin,
     prelude::*,
 };
-use projekto_server::{set::Landscape, ChunkAsset, WorldServerPlugin};
+use projekto_server::{set::Landscape, ChunkAssetHandle, WorldServerPlugin};
 
 const TICK_EVERY_MILLIS: u64 = 50;
 
@@ -36,7 +36,7 @@ fn setup(mut commands: Commands) {
     });
 }
 
-fn check_if_finished(q: Query<(Entity, &Handle<ChunkAsset>)>, mut exit: EventWriter<AppExit>) {
+fn check_if_finished(q: Query<(Entity, &ChunkAssetHandle)>, mut exit: EventWriter<AppExit>) {
     if q.is_empty() {
         exit.send(AppExit::Success);
     }
