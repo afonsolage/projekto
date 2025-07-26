@@ -5,6 +5,8 @@ use crate::{
 use bevy::math::{IVec2, IVec3, Vec3};
 use serde::{Deserialize, Serialize};
 
+pub mod rle;
+
 pub const X_AXIS_SIZE: usize = 16;
 pub const Y_AXIS_SIZE: usize = 256;
 pub const Z_AXIS_SIZE: usize = 16;
