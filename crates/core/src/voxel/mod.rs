@@ -291,13 +291,13 @@ mod tests {
     fn light() {
         let mut light = Light::default();
 
-        let intensity = rand::thread_rng().gen_range(0..=15);
+        let intensity = rand::rng().random_range(0..=15);
 
         light.set(LightTy::Artificial, intensity);
 
         assert_eq!(intensity, light.get(LightTy::Artificial));
 
-        let intensity = rand::thread_rng().gen_range(0..=15);
+        let intensity = rand::rng().random_range(0..=15);
         light.set(LightTy::Natural, intensity);
 
         assert_eq!(intensity, light.get(LightTy::Natural));

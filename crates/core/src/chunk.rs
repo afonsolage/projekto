@@ -540,9 +540,9 @@ mod tests {
     fn set_get() {
         let mut chunk = ChunkStorage::<u8>::default();
 
-        let mut rnd = rand::thread_rng();
+        let mut rnd = rand::rng();
         for v in super::voxels() {
-            let k = rnd.gen::<u8>();
+            let k = rnd.random::<u8>();
             chunk.set(v, k);
             assert_eq!(k, chunk.get(v));
         }
