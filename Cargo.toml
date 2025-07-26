@@ -20,7 +20,7 @@ projekto_world_client = { path = "crates/world_client" }
 bevy = "0.16"
 
 rand = "0.9"
-thiserror = "1.0"
+thiserror = "2.0"
 serde = "1.0"
 
 # IO
