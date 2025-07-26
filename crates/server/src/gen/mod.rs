@@ -159,7 +159,7 @@ fn dispatch_requests(world: &mut World) {
             req.chunk
         );
 
-        if let Ok(bytes) = bincode::serialize(&asset) {
+        if let Ok(bytes) = bincode::serde::encode_to_vec(&asset, bincode::config::standard()) {
             trace!(
                 "[dispatch_requests] Chunk {} serialized. Size: {} bytes",
                 req.chunk,

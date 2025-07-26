@@ -67,8 +67,8 @@ impl ChunkCache {
             return None;
         };
 
-        match bincode::deserialize(&decompressed) {
-            Ok(cache) => Some(cache),
+        match bincode::serde::decode_from_slice(&decompressed, bincode::config::standard()) {
+            Ok((cache, _)) => Some(cache),
             Err(error) => {
                 error!("Failed to deserialize chunk {chunk:?}. Error: {error}");
                 None
@@ -91,7 +91,7 @@ impl ChunkCache {
             return false;
         };
 
-        let result = bincode::serialize(&self);
+        let result = bincode::serde::encode_to_vec(&self, bincode::config::standard());
         let Ok(bytes) = result else {
             let error = result.expect_err("Is an error");
             let chunk = self.chunk;

@@ -98,7 +98,7 @@ struct ChunkAssetLoader;
 #[derive(Debug, Error)]
 enum ChunkAssetLoaderError {
     #[error("Failed to deserialize chunk. Error: {0}")]
-    Deserialize(#[from] bincode::Error),
+    Deserialize(#[from] bincode::error::DecodeError),
     #[error("Could not load chunk. Error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -120,7 +120,7 @@ impl AssetLoader for ChunkAssetLoader {
         let mut bytes = vec![];
         reader.read_to_end(&mut bytes).await?;
 
-        let asset = bincode::deserialize::<ChunkAsset>(&bytes)?;
+        let (asset, _) = bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;
 
         trace!("[AssetLoader] Loaded asset: {asset:?}");
 
@@ -208,11 +208,12 @@ mod tests {
     fn asset_serde() {
         let asset = ChunkAsset::default();
 
-        let bytes = bincode::serialize(&asset).unwrap();
+        let bytes = bincode::serde::encode_to_vec(&asset, bincode::config::standard()).unwrap();
 
         assert!(!bytes.is_empty());
 
-        let serde_asset: ChunkAsset = bincode::deserialize(&bytes).unwrap();
+        let (serde_asset, _): (ChunkAsset, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard()).unwrap();
 
         assert_eq!(asset.chunk, serde_asset.chunk);
         assert_eq!(asset.kind, serde_asset.kind);

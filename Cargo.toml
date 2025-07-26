@@ -25,7 +25,8 @@ serde = "1.0"
 
 # IO
 lz4_flex = "0.11"
-bincode = "1.3"
+# bincode 2 changed a lot, don't know if it's worth the upgrade
+bincode = { version = "2.0", features = ["serde"] }
 
 # smol
 futures-lite = "2.2"

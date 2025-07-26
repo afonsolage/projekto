@@ -11,12 +11,17 @@ pub use net::{connect_to_server, start_server, Client, ClientId, Server};
 mod ecs;
 pub use ecs::{NoCopy, RegisterMessageHandler, RunMessageHandlers};
 
+mod enc_dec;
+pub use enc_dec::{decode, encode};
+
 #[derive(thiserror::Error, Debug)]
 pub enum MessageError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Failed to serialize. Error: {0}")]
-    Bincode(#[from] Box<bincode::ErrorKind>),
+    #[error("Failed to encode. Error: {0}")]
+    Encode(#[from] bincode::error::EncodeError),
+    #[error("Failed to decode. Error: {0}")]
+    Decode(#[from] bincode::error::DecodeError),
     #[error("Failed to downcast message: {0:?}")]
     Downcasting(MessageSource),
     #[error("{0}")]

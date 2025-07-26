@@ -42,7 +42,7 @@ fn generate_simplified_enum(
         let v_name = &v.ident;
         quote! {
             #name::#v_name => {
-                let msg = bincode::deserialize::<#v_name>(buf)?;
+                let msg = projekto_proto::decode::<#v_name>(buf)?;
                 Ok(Box::new(msg))
             }
         }
@@ -52,11 +52,7 @@ fn generate_simplified_enum(
         quote! {
             #name::#v_name => {
                 match boxed.downcast::<#v_name>() {
-                    Ok(msg) => {
-                        let size = bincode::serialized_size(&msg)?;
-                        bincode::serialize_into(buf, &msg)?;
-                        Ok(size as u32)
-                    },
+                    Ok(msg) => projekto_proto::encode(buf, &msg),
                     Err(boxed) => Err(projekto_proto::MessageError::Downcasting(boxed.msg_source()))
                 }
             }
