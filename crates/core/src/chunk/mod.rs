@@ -190,25 +190,25 @@ impl ChunkStorageType for voxel::FacesOcclusion {}
 impl ChunkStorageType for voxel::FacesSoftLight {}
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
-enum DefaultValue<T> {
-    Default(T),
-    Unique(Vec<T>),
+enum StorageValue<T> {
+    Single(T),
+    Multiple(Vec<T>),
 }
 
-impl<T: ChunkStorageType> DefaultValue<T> {
-    fn as_unique(&mut self) {
+impl<T: ChunkStorageType> StorageValue<T> {
+    fn as_multiple(&mut self) {
         match self {
-            DefaultValue::Default(t) => {
+            StorageValue::Single(t) => {
                 let t = *t;
-                let _ = std::mem::replace(self, DefaultValue::Unique(vec![t; BUFFER_SIZE]));
+                let _ = std::mem::replace(self, StorageValue::Multiple(vec![t; BUFFER_SIZE]));
             }
-            DefaultValue::Unique(_) => (),
+            StorageValue::Multiple(_) => (),
         }
     }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct ChunkStorage<T>(DefaultValue<T>);
+pub struct ChunkStorage<T>(StorageValue<T>);
 
 impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
     fn eq(&self, other: &Self) -> bool {
@@ -219,8 +219,8 @@ impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
 impl<T: ChunkStorageType> std::fmt::Debug for ChunkStorage<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let len = match &self.0 {
-            DefaultValue::Default(_) => 0,
-            DefaultValue::Unique(buf) => buf.len(),
+            StorageValue::Single(_) => 0,
+            StorageValue::Multiple(buf) => buf.len(),
         };
         write!(f, "ChunkStorage(len: {len})")
     }
@@ -228,31 +228,31 @@ impl<T: ChunkStorageType> std::fmt::Debug for ChunkStorage<T> {
 
 impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
     fn default() -> Self {
-        Self(DefaultValue::Default(T::default()))
+        Self(StorageValue::Single(T::default()))
     }
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
     pub fn get(&self, voxel: Voxel) -> T {
         match &self.0 {
-            DefaultValue::Unique(b) => b[to_index(voxel)],
-            DefaultValue::Default(t) => *t,
+            StorageValue::Multiple(b) => b[to_index(voxel)],
+            StorageValue::Single(t) => *t,
         }
     }
 
     pub fn set(&mut self, voxel: Voxel, value: T) {
         match &mut self.0 {
-            DefaultValue::Default(v) if *v != value => {
-                self.0.as_unique();
+            StorageValue::Single(v) if *v != value => {
+                self.0.as_multiple();
                 self.set(voxel, value);
             }
-            DefaultValue::Unique(items) => items[to_index(voxel)] = value,
+            StorageValue::Multiple(items) => items[to_index(voxel)] = value,
             _ => (),
         }
     }
 
     pub fn is_default(&self) -> bool {
-        matches!(self.0, DefaultValue::Default(_))
+        matches!(self.0, StorageValue::Single(_))
     }
 
     pub fn all<F>(&self, mut f: F) -> bool
@@ -260,8 +260,8 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         F: FnMut(&T) -> bool,
     {
         match &self.0 {
-            DefaultValue::Unique(buf) => buf.iter().all(f),
-            DefaultValue::Default(t) => f(t),
+            StorageValue::Multiple(buf) => buf.iter().all(f),
+            StorageValue::Single(t) => f(t),
         }
     }
 }
@@ -271,8 +271,8 @@ impl<T: ChunkStorageType> std::ops::Index<usize> for ChunkStorage<T> {
     fn index(&self, index: usize) -> &Self::Output {
         debug_assert!(index < BUFFER_SIZE);
         match &self.0 {
-            DefaultValue::Unique(buf) => &buf[index],
-            DefaultValue::Default(t) => t,
+            StorageValue::Multiple(buf) => &buf[index],
+            StorageValue::Single(t) => t,
         }
     }
 }
@@ -282,14 +282,14 @@ impl<T: ChunkStorageType> std::ops::IndexMut<usize> for ChunkStorage<T> {
         debug_assert!(index < BUFFER_SIZE);
 
         // Had to do this to avoid the borrow checker yelling at me
-        if matches!(self.0, DefaultValue::Unique(_)) {
-            if let DefaultValue::Unique(items) = &mut self.0 {
+        if matches!(self.0, StorageValue::Multiple(_)) {
+            if let StorageValue::Multiple(items) = &mut self.0 {
                 &mut items[index]
             } else {
                 unreachable!()
             }
         } else {
-            self.0.as_unique();
+            self.0.as_multiple();
             self.index_mut(index)
         }
     }
