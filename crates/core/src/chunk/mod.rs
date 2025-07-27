@@ -191,14 +191,26 @@ impl ChunkStorageType for voxel::Light {}
 impl ChunkStorageType for voxel::FacesOcclusion {}
 impl ChunkStorageType for voxel::FacesSoftLight {}
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ChunkStorage<T>(Vec<T>);
+#[derive(Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
+enum DefaultValue<T> {
+    Default(T),
+    Unique(Vec<T>),
+}
 
-impl<T: ChunkStorageType> Default for ChunkStorage<T> {
-    fn default() -> Self {
-        Self::new(vec![T::default(); BUFFER_SIZE])
+impl<T: ChunkStorageType> DefaultValue<T> {
+    fn as_unique(&mut self) {
+        match self {
+            DefaultValue::Default(t) => {
+                let t = *t;
+                let _ = std::mem::replace(self, DefaultValue::Unique(vec![t; BUFFER_SIZE]));
+            }
+            DefaultValue::Unique(_) => (),
+        }
     }
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ChunkStorage<T>(DefaultValue<T>);
 
 impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
     fn eq(&self, other: &Self) -> bool {
@@ -208,58 +220,80 @@ impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
 
 impl<T: ChunkStorageType> std::fmt::Debug for ChunkStorage<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ChunkStorage(len: {})", self.0.len())
+        let len = match &self.0 {
+            DefaultValue::Default(_) => 0,
+            DefaultValue::Unique(buf) => buf.len(),
+        };
+        write!(f, "ChunkStorage(len: {len})")
+    }
+}
+
+impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
+    fn default() -> Self {
+        Self(DefaultValue::Default(T::default()))
     }
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
-    fn new(buffer: Vec<T>) -> Self {
-        Self(buffer)
-    }
-
     pub fn get(&self, voxel: Voxel) -> T {
-        self.0[to_index(voxel)]
+        match &self.0 {
+            DefaultValue::Unique(b) => b[to_index(voxel)],
+            DefaultValue::Default(t) => *t,
+        }
     }
 
     pub fn set(&mut self, voxel: Voxel, value: T) {
-        self.0[to_index(voxel)] = value;
+        match &mut self.0 {
+            DefaultValue::Default(v) if *v != value => {
+                self.0.as_unique();
+                self.set(voxel, value);
+            }
+            DefaultValue::Unique(items) => items[to_index(voxel)] = value,
+            _ => (),
+        }
     }
 
-    // pub fn fill(&mut self, value: T) {
-    //     self.0.fill(value);
-    // }
-
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.0.iter()
+    pub fn is_default(&self) -> bool {
+        matches!(self.0, DefaultValue::Default(_))
     }
 
-    // pub fn is_default(&self) -> bool {
-    //     // TODO: Add a clever way to check if ChunkStorage wasn't initialized;
-    //     self.is_all(T::default())
-    // }
-
-    // pub fn is_all(&self, value: T) -> bool {
-    //     self.iter().all(|t| *t == value)
-    // }
-
-    // pub fn copy_from(&mut self, other: &Self) {
-    //     self.0.copy_from_slice(&other.0);
-    // }
+    pub fn all<F>(&self, mut f: F) -> bool
+    where
+        F: FnMut(&T) -> bool,
+    {
+        match &self.0 {
+            DefaultValue::Unique(buf) => buf.iter().all(f),
+            DefaultValue::Default(t) => f(t),
+        }
+    }
 }
-
 impl<T: ChunkStorageType> std::ops::Index<usize> for ChunkStorage<T> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
         debug_assert!(index < BUFFER_SIZE);
-        &self.0[index]
+        match &self.0 {
+            DefaultValue::Unique(buf) => &buf[index],
+            DefaultValue::Default(t) => t,
+        }
     }
 }
 
 impl<T: ChunkStorageType> std::ops::IndexMut<usize> for ChunkStorage<T> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         debug_assert!(index < BUFFER_SIZE);
-        &mut self.0[index]
+
+        // Had to do this to avoid the borrow checker yelling at me
+        if matches!(self.0, DefaultValue::Unique(_)) {
+            if let DefaultValue::Unique(items) = &mut self.0 {
+                &mut items[index]
+            } else {
+                unreachable!()
+            }
+        } else {
+            self.0.as_unique();
+            self.index_mut(index)
+        }
     }
 }
 
