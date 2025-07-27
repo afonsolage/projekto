@@ -216,7 +216,7 @@ pub type ChunkFacesOcclusion = ChunkStorage<FacesOcclusion>;
 
 impl ChunkFacesOcclusion {
     pub fn is_fully_occluded(&self) -> bool {
-        self.iter().all(FacesOcclusion::is_fully_occluded)
+        self.all(FacesOcclusion::is_fully_occluded)
     }
 }
 

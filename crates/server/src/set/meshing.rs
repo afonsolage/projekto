@@ -59,7 +59,7 @@ fn faces_occlusion(
             let kind = q_kinds.get_chunk(chunk).expect("Entity exists");
             meshing::faces_occlusion(kind, &mut faces_occlusion, &neighborhood);
 
-            if faces_occlusion.iter().all(|occ| occ.is_fully_occluded()) {
+            if faces_occlusion.all(|occ| occ.is_fully_occluded()) {
                 fully_occluded += 1;
             }
             count += 1;
@@ -128,7 +128,7 @@ fn generate_vertices(
     q_changed_chunks
         .iter()
         .for_each(|(entity, kind, faces_occlusion, faces_soft_light)| {
-            if faces_occlusion.iter().all(|occ| occ.is_fully_occluded()) {
+            if faces_occlusion.all(|occ| occ.is_fully_occluded()) {
                 return;
             }
 

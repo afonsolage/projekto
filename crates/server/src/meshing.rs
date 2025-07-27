@@ -190,7 +190,7 @@ mod test {
         super::faces_occlusion(&kind, &mut faces_occlusion, &neighborhood);
 
         assert!(
-            faces_occlusion.iter().all(|occ| occ.is_fully_occluded()),
+            faces_occlusion.all(|occ| occ.is_fully_occluded()),
             "Should be fully occluded in an empty chunk"
         );
     }
