@@ -26,6 +26,13 @@ The new design will try to is best to use Bevy ECS and separate client and world
 
 TODO: The README will be updated later on.
 
+# AI Usage
+
+The code on this project is mainly written by hand (or keyboard) without the direct use of AI, although AI can be used to review architecture concepts, 
+knowledge checking or to generate documentation (like ARCHITECTURE.md). Whenever I'm using AI for generate something I'll state about it.
+
+I don't know if not using AI for coding is a good or a bad thing, but since this is a hobby project and I like programming, doing so would kill my enjoyment,
+so while I'm totally against the use of IA for programming, I'll avoid using AI for generating code on this project.
 
 # License
 [MIT](https://choosealicense.com/licenses/mit/)
