@@ -24,7 +24,7 @@ The new design will try to is best to use Bevy ECS and separate client and world
 - **Server** - The server binary which runs the world simulation and process most of the voxel world;
 - **Client** - The game client which handles input and render the game itself;
 
-TODO: The README will be updated later on.
+If you need a detailed view, check [ARCHITECTURE](architecture.md)
 
 # AI Usage
 
