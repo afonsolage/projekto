@@ -15,26 +15,26 @@ The client is responsible for rendering the world and handling user input. It co
 
 The following plugins are used to organize the client's systems:
 
-- **[`CameraControllerPlugin`](./crates/client/src/controller/camera_controller.rs)**: Manages camera switching and mouse grabbing.
-  - [`switch_camera`](./crates/client/src/controller/camera_controller.rs): Switches between `FlyBy` and `FirstPerson` cameras.
-  - [`grab_mouse`](./crates/client/src/controller/camera_controller.rs): Grabs or releases the mouse cursor.
-- **[`CharacterControllerPlugin`](./crates/client/src/controller/character_controller.rs)**: Manages character movement and position updates.
-  - [`move_character`](./crates/client/src/controller/character_controller.rs): Moves the character based on keyboard input.
-  - [`update_character_position`](./crates/client/src/controller/character_controller.rs): Updates the character's position in the world.
-- **[`DebugPlugin`](./crates/client/src/debug/mod.rs)**: Adds debugging functionalities.
-  - [`setup_hold_est_to_exit`](./crates/client/src/debug/mod.rs): Initializes the `EscHolding` resource.
-  - [`hold_esc_to_exit`](./crates/client/src/debug/mod.rs): Exits the application when the `Esc` key is held down.
-- **[`NetPlugin`](./crates/client/src/net.rs)**: Handles the connection to the server and incoming messages.
-  - [`reconnect_to_server`](./crates/client/src/net.rs): Tries to reconnect to the server if the connection is lost.
-  - [`server_connection`](./crates/client/src/net.rs): Establishes the initial connection to the server.
-  - [`handle_messages`](./crates/client/src/net.rs): Processes incoming messages from the server.
-- **[`MeshingPlugin`](./crates/client/src/set/meshing.rs)**: Generates the chunk meshes.
-  - [`update_chunk_mesh`](./crates/client/src/set/meshing.rs): Updates the mesh of a chunk when new vertex data is received.
-  - [`despawn_chunks_on_server_disconnect`](./crates/client/src/set/meshing.rs): Despawns all chunks when the server disconnects.
-- **[`ReceiveMessagesPlugin`](./crates/client/src/set/receive_messages.rs)**: This plugin is currently empty.
-- **[`SendInputPlugin`](./crates/client/src/set/send_input.rs)**: Sends player input to the server.
-  - [`update_player_landscape`](./crates/client/src/set/send_input.rs): Sends a `LandscapeUpdate` message to the server when the player's landscape changes.
-  - [`send_welcome_message`](./crates/client/src/set/send_input.rs): Sends a `LandscapeUpdate` message to the server when the client connects.
+- **[`CameraControllerPlugin`](./crates/client/src/controller/camera_controller.rs#L9)**: Manages camera switching and mouse grabbing.
+  - [`switch_camera`](./crates/client/src/controller/camera_controller.rs#L105): Switches between `FlyBy` and `FirstPerson` cameras.
+  - [`grab_mouse`](./crates/client/src/controller/camera_controller.rs#L115): Grabs or releases the mouse cursor.
+- **[`CharacterControllerPlugin`](./crates/client/src/controller/character_controller.rs#L6)**: Manages character movement and position updates.
+  - [`move_character`](./crates/client/src/controller/character_controller.rs#L60): Moves the character based on keyboard input.
+  - [`update_character_position`](./crates/client/src/controller/character_controller.rs#L115): Updates the character's position in the world.
+- **[`DebugPlugin`](./crates/client/src/debug/mod.rs#L3)**: Adds debugging functionalities.
+  - [`setup_hold_est_to_exit`](./crates/client/src/debug/mod.rs#L18): Initializes the `EscHolding` resource.
+  - [`hold_esc_to_exit`](./crates/client/src/debug/mod.rs#L22): Exits the application when the `Esc` key is held down.
+- **[`NetPlugin`](./crates/client/src/net.rs#L14)**: Handles the connection to the server and incoming messages.
+  - [`reconnect_to_server`](./crates/client/src/net.rs#L41): Tries to reconnect to the server if the connection is lost.
+  - [`server_connection`](./crates/client/src/net.rs#L69): Establishes the initial connection to the server.
+  - [`handle_messages`](./crates/client/src/net.rs#L91): Processes incoming messages from the server.
+- **[`MeshingPlugin`](./crates/client/src/set/meshing.rs#L14)**: Generates the chunk meshes.
+  - [`update_chunk_mesh`](./crates/client/src/set/meshing.rs#L36): Updates the mesh of a chunk when new vertex data is received.
+  - [`despawn_chunks_on_server_disconnect`](./crates/client/src/set/meshing.rs#L25): Despawns all chunks when the server disconnects.
+- **[`ReceiveMessagesPlugin`](./crates/client/src/set/receive_messages.rs#L3)**: This plugin is currently empty.
+- **[`SendInputPlugin`](./crates/client/src/set/send_input.rs#L5)**: Sends player input to the server.
+  - [`update_player_landscape`](./crates/client/src/set/send_input.rs#L30): Sends a `LandscapeUpdate` message to the server when the player's landscape changes.
+  - [`send_welcome_message`](./crates/client/src/set/send_input.rs#L37): Sends a `LandscapeUpdate` message to the server when the client connects.
 
 ### System Sets (ClientSet)
 
@@ -62,28 +62,28 @@ The server is responsible for managing the game world, including world generatio
 
 The following plugins are used to organize the server's systems:
 
-- **[`ChunkAssetPlugin`](./crates/server/src/asset.rs)**: Manages the loading and generation of chunk assets.
-- **[`NetPlugin`](./crates/server/src/net.rs)**: Handles client connections and messages.
-  - [`start_network_server`](./crates/server/src/net.rs): Starts the network server.
-  - [`new_client_connected`](./crates/server/src/net.rs): Handles new client connections.
-  - [`remove_disconnected_clients`](./crates/server/src/net.rs): Removes disconnected clients.
-  - [`handle_messages`](./crates/server/src/net.rs): Processes incoming messages from clients.
-- **[`ReceiveRequestsPlugin`](./crates/server/src/set/receive_requests.rs)**: Handles requests from clients.
-  - [`handle_landscape_update`](./crates/server/src/set/receive_requests.rs): Handles the `LandscapeUpdate` message from clients.
-- **[`LandscapePlugin`](./crates/server/src/set/landscape.rs)**: Manages the game world's landscape.
-  - [`update_landscape`](./crates/server/src/set/landscape.rs): Updates the landscape based on the `Landscape` resource.
-- **[`ChunkManagementPlugin`](./crates/server/src/set/chunk_management.rs)**: Manages the loading, unloading, and spawning of chunks.
-  - [`chunks_unload`](./crates/server/src/set/chunk_management.rs): Unloads chunks that are no longer needed.
-  - [`chunks_load`](./crates/server/src/set/chunk_management.rs): Loads new chunks.
-  - [`chunks_spawn`](./crates/server/src/set/chunk_management.rs): Spawns new chunks.
-- **[`PropagationPlugin`](./crates/server/src/set/propagation.rs)**: Propagates light through the world.
-  - [`propagate_light`](./crates/server/src/set/propagation.rs): Propagates light based on `LightUpdate` events.
-- **[`MeshingPlugin`](./crates/server/src/set/meshing.rs)**: Generates the chunk meshes.
-  - [`faces_occlusion`](./crates/server/src/set/meshing.rs): Calculates the occlusion of chunk faces.
-  - [`faces_light_softening`](./crates/server/src/set/meshing.rs): Softens the light on chunk faces.
-  - [`generate_vertices`](./crates/server/src/set/meshing.rs): Generates the vertices for the chunk meshes.
-- **[`SendResponsesPlugin`](./crates/server/src/set/send_responses.rs)**: Sends responses to clients.
-  - [`notify_chunk_vertex_updated`](./crates/server/src/set/send_responses.rs): Notifies clients when a chunk's vertices have been updated.
+- **[`ChunkAssetPlugin`](./crates/server/src/asset.rs#L24)**: Manages the loading and generation of chunk assets.
+- **[`NetPlugin`](./crates/server/src/net.rs#L13)**: Handles client connections and messages.
+  - [`start_network_server`](./crates/server/src/net.rs#L36): Starts the network server.
+  - [`new_client_connected`](./crates/server/src/net.rs#L66): Handles new client connections.
+  - [`remove_disconnected_clients`](./crates/server/src/net.rs#L53): Removes disconnected clients.
+  - [`handle_messages`](./crates/server/src/net.rs#L78): Processes incoming messages from clients.
+- **[`ReceiveRequestsPlugin`](./crates/server/src/set/receive_requests.rs#L13)**: Handles requests from clients.
+  - [`handle_landscape_update`](./crates/server/src/set/receive_requests.rs#L21): Handles the `LandscapeUpdate` message from clients.
+- **[`LandscapePlugin`](./crates/server/src/set/landscape.rs#L8)**: Manages the game world's landscape.
+  - [`update_landscape`](./crates/server/src/set/landscape.rs#L26): Updates the landscape based on the `Landscape` resource.
+- **[`ChunkManagementPlugin`](./crates/server/src/set/chunk_management.rs#L13)**: Manages the loading, unloading, and spawning of chunks.
+  - [`chunks_unload`](./crates/server/src/set/chunk_management.rs#L43): Unloads chunks that are no longer needed.
+  - [`chunks_load`](./crates/server/src/set/chunk_management.rs#L61): Loads new chunks.
+  - [`chunks_spawn`](./crates/server/src/set/chunk_management.rs#L76): Spawns new chunks.
+- **[`PropagationPlugin`](./crates/server/src/set/propagation.rs#L13)**: Propagates light through the world.
+  - [`propagate_light`](./crates/server/src/set/propagation.rs#L31): Propagates light based on `LightUpdate` events.
+- **[`MeshingPlugin`](./crates/server/src/set/meshing.rs#L11)**: Generates the chunk meshes.
+  - [`faces_occlusion`](./crates/server/src/set/meshing.rs#L30): Calculates the occlusion of chunk faces.
+  - [`faces_light_softening`](./crates/server/src/set/meshing.rs#L73): Softens the light on chunk faces.
+  - [`generate_vertices`](./crates/server/src/set/meshing.rs#L114): Generates the vertices for the chunk meshes.
+- **[`SendResponsesPlugin`](./crates/server/src/set/send_responses.rs#L10)**: Sends responses to clients.
+  - [`notify_chunk_vertex_updated`](./crates/server/src/set/send_responses.rs#L21): Notifies clients when a chunk's vertices have been updated.
 
 ### System Sets (WorldSet)
 
