@@ -10,6 +10,8 @@ This is a general overview of the aspects of the game. Some of these aspects may
 The project is currently in heavy redesign. The old project which has an async focus can be found [here](https://github.com/afonsolage/projekto/tree/async_io).
 The new design will try to is best to use Bevy ECS and separate client and world voxel.
 
+Check [TODO](TODO.md) to see what I'm currently working on.
+
 ## Terminology ###
 - **Voxel** - A volume pixel, represents a point or a cube in a 3D Space. Usually it is used as an index/lookup in an [Array of Struct](https://en.wikipedia.org/wiki/AoS_and_SoA#Array_of_structures)
 - **Chunk** - A chunk of voxels, which has a size of 16x256x16. By itself contains no data, but is used as an index/lookup in an [Array of Struct](https://en.wikipedia.org/wiki/AoS_and_SoA#Array_of_structures)
