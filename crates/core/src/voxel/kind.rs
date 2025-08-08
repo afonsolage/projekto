@@ -150,7 +150,7 @@ impl KindsDescs {
 /// Kind id reference.
 /// This function uses [`KindsDescs`] to determine how this kind should behave.
 /// May panic if current kind id doesn't exists on [`KindsDescs`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
+#[derive(Hash, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Kind(u16);
 
 impl From<u16> for Kind {

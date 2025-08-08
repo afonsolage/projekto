@@ -94,6 +94,12 @@ fn chunks_spawn(
         };
 
         if loaded {
+            let maybe_asset = assets.remove(&handle.0);
+
+            if maybe_asset.is_none() {
+                panic!("Wat?")
+            }
+
             let ChunkAsset {
                 chunk,
                 kind,
@@ -101,7 +107,7 @@ fn chunks_spawn(
                 occlusion,
                 soft_light,
                 vertex,
-            } = assets.remove(&handle.0).expect("Chunk asset exists");
+            } = maybe_asset.expect("Chunk asset exists");
 
             let entity = commands
                 .spawn((
