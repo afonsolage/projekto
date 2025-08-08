@@ -25,4 +25,4 @@ world/
 chunks/
 
 heaptrack.*
-rust-ice*
+rustc-ice*

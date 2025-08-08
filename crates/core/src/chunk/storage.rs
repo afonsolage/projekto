@@ -1,10 +1,71 @@
+#![allow(unused)]
+use crate::{
+    chunk::{
+        self, BUFFER_SIZE, Chunk,
+        sub_chunk::{self, ChunkPack},
+    },
+    voxel::{self, Voxel},
+};
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    chunk::{self, Chunk, BUFFER_SIZE},
-    voxel::{self, Voxel},
-};
+const SUB_CHUNKS_X: usize = super::X_AXIS_SIZE / super::sub_chunk::X_AXIS_SIZE;
+const SUB_CHUNKS_Y: usize = super::Y_AXIS_SIZE / super::sub_chunk::Y_AXIS_SIZE;
+const SUB_CHUNKS_Z: usize = super::Z_AXIS_SIZE / super::sub_chunk::Z_AXIS_SIZE;
+
+const SUB_CHUNKS_BUFFER_SIZE: usize = SUB_CHUNKS_X * SUB_CHUNKS_Y * SUB_CHUNKS_Z;
+
+const X_SHIFT: usize = (SUB_CHUNKS_Z.ilog2() + Z_SHIFT as u32) as usize;
+const Z_SHIFT: usize = SUB_CHUNKS_Y.ilog2() as usize;
+const Y_SHIFT: usize = 0;
+
+const X_MASK: usize = (SUB_CHUNKS_X - 1) << X_SHIFT;
+const Z_MASK: usize = (SUB_CHUNKS_Z - 1) << Z_SHIFT;
+const Y_MASK: usize = SUB_CHUNKS_Y - 1;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct SubChunkStorage<T>(Vec<ChunkPack<T>>);
+
+impl<T> SubChunkStorage<T> {
+    #[inline]
+    fn to_index(voxel: Voxel) -> usize {
+        (voxel.x as usize & X_MASK) >> X_SHIFT
+            | (voxel.z as usize & Z_MASK) >> Z_SHIFT
+            | (voxel.y as usize & Y_MASK) >> Y_SHIFT
+    }
+}
+
+impl<T> SubChunkStorage<T>
+where
+    T: Default + Copy,
+{
+    fn new() -> Self {
+        SubChunkStorage(vec![ChunkPack::default(); SUB_CHUNKS_BUFFER_SIZE])
+    }
+}
+
+impl<T> Default for SubChunkStorage<T>
+where
+    T: Default + Copy,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> std::ops::Index<Voxel> for SubChunkStorage<T> {
+    type Output = ChunkPack<T>;
+
+    fn index(&self, voxel: Voxel) -> &Self::Output {
+        &self.0[Self::to_index(voxel)]
+    }
+}
+
+impl<T> std::ops::IndexMut<Voxel> for SubChunkStorage<T> {
+    fn index_mut(&mut self, voxel: Voxel) -> &mut Self::Output {
+        &mut self.0[Self::to_index(voxel)]
+    }
+}
 
 pub trait ChunkStorageType:
     Clone + Copy + core::fmt::Debug + Default + PartialEq + Eq + PartialOrd + std::hash::Hash
@@ -12,31 +73,14 @@ pub trait ChunkStorageType:
 }
 
 impl ChunkStorageType for u8 {}
+impl ChunkStorageType for u16 {}
 impl ChunkStorageType for voxel::Kind {}
 impl ChunkStorageType for voxel::Light {}
 impl ChunkStorageType for voxel::FacesOcclusion {}
 impl ChunkStorageType for voxel::FacesSoftLight {}
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
-enum StorageValue<T> {
-    Single(T),
-    Dense(Vec<T>),
-}
-
-impl<T: ChunkStorageType> StorageValue<T> {
-    fn as_multiple(&mut self) {
-        match self {
-            StorageValue::Single(t) => {
-                let t = *t;
-                let _ = std::mem::replace(self, StorageValue::Dense(vec![t; BUFFER_SIZE]));
-            }
-            StorageValue::Dense(_) => (),
-        }
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ChunkStorage<T>(StorageValue<T>);
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChunkStorage<T>(SubChunkStorage<T>);
 
 impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
     fn eq(&self, other: &Self) -> bool {
@@ -44,82 +88,45 @@ impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
     }
 }
 
-impl<T: ChunkStorageType> std::fmt::Debug for ChunkStorage<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let len = match &self.0 {
-            StorageValue::Single(_) => 0,
-            StorageValue::Dense(buf) => buf.len(),
-        };
-        write!(f, "ChunkStorage(len: {len})")
-    }
-}
-
 impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
     fn default() -> Self {
-        Self(StorageValue::Single(T::default()))
+        Self(Default::default())
     }
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
     pub fn get(&self, voxel: Voxel) -> T {
-        match &self.0 {
-            StorageValue::Dense(b) => b[chunk::to_index(voxel)],
-            StorageValue::Single(t) => *t,
-        }
+        let voxel = voxel
+            % IVec3::new(
+                sub_chunk::X_AXIS_SIZE as i32,
+                sub_chunk::Y_AXIS_SIZE as i32,
+                sub_chunk::Z_AXIS_SIZE as i32,
+            );
+        self.0[voxel].get(voxel)
     }
 
     pub fn set(&mut self, voxel: Voxel, value: T) {
-        match &mut self.0 {
-            StorageValue::Single(v) if *v != value => {
-                self.0.as_multiple();
-                self.set(voxel, value);
-            }
-            StorageValue::Dense(items) => items[chunk::to_index(voxel)] = value,
-            _ => (),
-        }
+        let voxel = voxel
+            % IVec3::new(
+                sub_chunk::X_AXIS_SIZE as i32,
+                sub_chunk::Y_AXIS_SIZE as i32,
+                sub_chunk::Z_AXIS_SIZE as i32,
+            );
+        self.0[voxel].set(voxel, value);
     }
 
     pub fn is_default(&self) -> bool {
-        matches!(self.0, StorageValue::Single(_))
+        self.0
+            .0
+            .iter()
+            .all(|pack| matches!(pack, ChunkPack::Single(_)))
     }
 
     pub fn all<F>(&self, mut f: F) -> bool
     where
-        F: FnMut(&T) -> bool,
+        F: FnMut(&T) -> bool + Copy,
     {
-        match &self.0 {
-            StorageValue::Dense(buf) => buf.iter().all(f),
-            StorageValue::Single(t) => f(t),
-        }
-    }
-}
-impl<T: ChunkStorageType> std::ops::Index<usize> for ChunkStorage<T> {
-    type Output = T;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        debug_assert!(index < BUFFER_SIZE);
-        match &self.0 {
-            StorageValue::Dense(buf) => &buf[index],
-            StorageValue::Single(t) => t,
-        }
-    }
-}
-
-impl<T: ChunkStorageType> std::ops::IndexMut<usize> for ChunkStorage<T> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        debug_assert!(index < BUFFER_SIZE);
-
-        // Had to do this to avoid the borrow checker yelling at me
-        if matches!(self.0, StorageValue::Dense(_)) {
-            if let StorageValue::Dense(items) = &mut self.0 {
-                &mut items[index]
-            } else {
-                unreachable!()
-            }
-        } else {
-            self.0.as_multiple();
-            self.index_mut(index)
-        }
+        self.0.0.iter().all(move |pack| pack.all(f))
     }
 }
 
