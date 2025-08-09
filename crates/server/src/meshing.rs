@@ -50,8 +50,10 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
     const VERTICES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT * 6) / 2;
 
     let mut vertices = Vec::with_capacity(VERTICES_ESTIMATION);
+
     let kinds_descs = voxel::KindsDescs::get();
     let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
+    let mut faces_vertices = [Vec3::ZERO; 4];
 
     for face in faces {
         let normal = face.side.normal();
@@ -59,17 +61,12 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
         let face_desc = kinds_descs.get_face_desc(face);
         let tile_coord_start = face_desc.offset.as_vec2() * tile_texture_size;
 
-        let faces_vertices = face
-            .vertices
-            .iter()
-            .enumerate()
-            .map(|(i, v)| {
-                let base_vertex_idx = VERTICES_INDICES[face.side as usize][i];
-                let base_vertex: Vec3 = VERTICES[base_vertex_idx].into();
+        for (i, v) in face.vertices.iter().enumerate() {
+            let base_vertex_idx = VERTICES_INDICES[face.side as usize][i];
+            let base_vertex: Vec3 = VERTICES[base_vertex_idx].into();
 
-                base_vertex + v.as_vec3()
-            })
-            .collect::<Vec<_>>();
+            faces_vertices[i] = base_vertex + v.as_vec3();
+        }
 
         debug_assert!(
             faces_vertices.len() == 4,
@@ -92,7 +89,7 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
 
         let light_fraction = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
 
-        for (i, v) in faces_vertices.into_iter().enumerate() {
+        for (i, v) in faces_vertices.iter().copied().enumerate() {
             vertices.push(voxel::Vertex {
                 position: v,
                 normal,
@@ -154,7 +151,7 @@ pub fn generate_faces(
     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
     soft_light: &ChunkStorage<voxel::FacesSoftLight>,
 ) -> Vec<voxel::Face> {
-    const FACES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT) / 4;
+    const FACES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT) / 2;
 
     let mut faces_vertices = Vec::with_capacity(FACES_ESTIMATION);
 

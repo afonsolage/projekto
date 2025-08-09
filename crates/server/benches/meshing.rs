@@ -16,8 +16,10 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     println!("Occlusion: {occlusion:?}");
     println!("Soft Light: {soft_light:?}");
 
-    let vertices = generate_faces(&kind, &occlusion, &soft_light);
+    let faces = generate_faces(&kind, &occlusion, &soft_light);
+    let vertices = generate_vertices(&faces);
 
+    println!("Faces: {:?}", faces.len());
     println!("Vertices: {:?}", vertices.len());
 
     c.bench_function("generate faces", |b| {
@@ -28,7 +30,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("generate vertices", |b| {
         b.iter(|| {
-            std::hint::black_box(generate_vertices(&vertices));
+            std::hint::black_box(generate_vertices(&faces));
         });
     });
 }
