@@ -5,10 +5,11 @@ use projekto_core::{
     voxel::{self, FacesOcclusion},
 };
 
+pub mod greedy;
+
 // v3               v2
 // +-----------+
-// v7  / |      v6 / |
-// +-----------+   |
+// v7  / |      v6 / | +-----------+   |
 // |   |       |   |
 // |   +-------|---+
 // | /  v0     | /  v1
