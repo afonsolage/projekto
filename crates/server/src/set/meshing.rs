@@ -1,7 +1,7 @@
 use bevy::{platform::collections::HashSet, prelude::*};
 use projekto_core::{chunk, voxel};
 
-use crate::{light, meshing, WorldSet};
+use crate::{debug, light, meshing, WorldSet};
 
 use crate::bundle::{
     ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal, ChunkQuery,
@@ -122,15 +122,20 @@ fn generate_vertices(
         Or<(Changed<ChunkKind>, Changed<ChunkFacesSoftLight>)>,
     >,
     mut q_vertex: Query<&mut ChunkVertex>,
+    mut metrics: ResMut<debug::Metrics>,
 ) {
     let mut count = 0;
     let mut map = [0; voxel::SIDE_COUNT];
+
+    let mut metric_data = debug::MetricData::new("generate_vertices");
+
     q_changed_chunks
         .iter()
         .for_each(|(entity, kind, faces_occlusion, faces_soft_light)| {
             if faces_occlusion.all(|occ| occ.is_fully_occluded()) {
                 return;
             }
+            metric_data.begin();
 
             // let faces = meshing::faces_merge(kind, faces_occlusion, faces_soft_light);
             let faces = meshing::generate_faces(kind, faces_occlusion, faces_soft_light);
@@ -139,13 +144,18 @@ fn generate_vertices(
                 map[face.side.index()] += 1;
             });
 
-            let mut vertex = meshing::generate_vertices(faces);
+            let mut vertex = meshing::generate_vertices(&faces);
 
             let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
             std::mem::swap(&mut vertex, &mut chunk_vertex);
 
             count += 1;
+
+            metric_data.end();
         });
+
+    metrics.add(metric_data);
+
     if count > 0 {
         trace!("[generate_vertices] {count} chunks vertices generated. {map:?}");
     }

@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use bevy::math::{IVec3, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +39,7 @@ impl LightTy {
 
 pub type Voxel = IVec3;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
+#[derive(Hash, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Default, Deserialize, Serialize)]
 pub struct Light(u8);
 
 impl Light {
@@ -117,6 +119,7 @@ impl Side {
         }
     }
 
+    #[inline]
     pub fn normal(&self) -> Vec3 {
         match self {
             Side::Right => Vec3::X,
@@ -159,7 +162,7 @@ impl Side {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Deserialize, Serialize)]
+#[derive(Hash, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Deserialize, Serialize)]
 pub struct FacesOcclusion(u8);
 
 const FULL_OCCLUDED_MASK: u8 = 0b0011_1111;
@@ -221,24 +224,46 @@ impl ChunkFacesOcclusion {
 }
 
 /// Contains smoothed vertex light for each face
-#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub struct FacesSoftLight([[f32; 4]; SIDE_COUNT]);
+#[derive(Hash, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Serialize, Deserialize)]
+pub struct FacesSoftLight([u128; SIDE_COUNT]);
 
 impl FacesSoftLight {
     pub fn new(soft_light: [[f32; 4]; SIDE_COUNT]) -> Self {
-        Self(soft_light)
+        let mut buffer = [0u128; SIDE_COUNT];
+        for i in 0..SIDE_COUNT {
+            buffer[i] = Self::from_array_f32(soft_light[i]);
+        }
+        Self(buffer)
     }
 
     pub fn with_intensity(intensity: u8) -> Self {
-        Self([[intensity as f32; 4]; SIDE_COUNT])
+        Self::new([[intensity as f32; 4]; SIDE_COUNT])
     }
 
     pub fn set(&mut self, side: Side, light: [f32; 4]) {
-        self.0[side as usize] = light;
+        self.0[side as usize] = Self::from_array_f32(light);
     }
 
     pub fn get(&self, side: Side) -> [f32; 4] {
-        self.0[side as usize]
+        Self::to_array_f32(self.0[side as usize])
+    }
+
+    #[inline]
+    fn from_array_f32(array: [f32; 4]) -> u128 {
+        (array[0].to_bits() as u128) << 96
+            | (array[1].to_bits() as u128) << 64
+            | (array[2].to_bits() as u128) << 32
+            | array[3].to_bits() as u128
+    }
+
+    #[inline]
+    fn to_array_f32(bits: u128) -> [f32; 4] {
+        [
+            f32::from_bits(((bits >> 96) & 0xFFFF_FFFF) as u32),
+            f32::from_bits(((bits >> 64) & 0xFFFF_FFFF) as u32),
+            f32::from_bits(((bits >> 32) & 0xFFFF_FFFF) as u32),
+            f32::from_bits((bits & 0xFFFF_FFFF) as u32),
+        ]
     }
 }
 
@@ -283,7 +308,7 @@ pub fn to_world(voxel: IVec3, chunk: Chunk) -> Vec3 {
 
 #[cfg(test)]
 mod tests {
-    use rand::{random, Rng};
+    use rand::{Rng, random};
 
     use super::*;
 
@@ -307,6 +332,41 @@ mod tests {
         light.set(LightTy::Artificial, 4);
 
         assert_eq!(light.get_greater_intensity(), 4);
+    }
+
+    #[test]
+    fn faces_soft_light() {
+        let faces_soft_light = FacesSoftLight::with_intensity(15);
+
+        for side in SIDES {
+            assert_eq!(faces_soft_light.get(side), [15.0; 4]);
+        }
+
+        let faces_soft_light = FacesSoftLight::default();
+
+        for side in SIDES {
+            assert_eq!(faces_soft_light.get(side), [0.0; 4]);
+        }
+
+        let soft_light = [
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [9.0, 10.0, 11.0, 12.0],
+            [13.0, 14.0, 15.0, 16.0],
+            [17.0, 18.0, 19.0, 20.0],
+            [21.0, 22.0, 23.0, 24.0],
+        ];
+
+        let mut faces_soft_light = FacesSoftLight::new(soft_light);
+
+        for (i, side) in SIDES.iter().enumerate() {
+            assert_eq!(faces_soft_light.get(*side), soft_light[i]);
+        }
+
+        let light = [25.0, 26.0, 27.0, 28.0];
+        faces_soft_light.set(Side::Up, light);
+
+        assert_eq!(faces_soft_light.get(Side::Up), light);
     }
 
     #[test]

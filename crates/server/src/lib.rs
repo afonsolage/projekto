@@ -6,12 +6,13 @@ use net::NetPlugin;
 
 // pub mod app;
 mod light;
-mod meshing;
+pub mod meshing;
 
 mod asset;
 
 pub use asset::{setup_chunk_asset_loader, ChunkAsset, ChunkAssetHandle};
 
+pub mod debug;
 mod net;
 
 pub mod cache;
@@ -38,6 +39,7 @@ impl Plugin for WorldServerPlugin {
                     .chain(),
             )
             .configure_sets(PostUpdate, WorldSet::SendResponses)
+            .insert_resource(debug::Metrics::new())
             .add_plugins((
                 ChunkAssetPlugin,
                 NetPlugin,

@@ -46,37 +46,38 @@ pub const VERTICES_INDICES: [[usize; 4]; 6] = [
 /// All generated indices will be relative to a triangle list.
 ///
 /// **Returns** a list of generated [`voxel::Vertex`].
-pub(super) fn generate_vertices(faces: Vec<voxel::Face>) -> Vec<voxel::Vertex> {
-    let mut vertices = vec![];
+pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
+    const VERTICES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT * 6) / 2;
+    const LIGHT_FRACTION: f32 = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
+
+    #[inline]
+    fn calc_tile_size(min: Vec3, max: Vec3) -> f32 {
+        (min.x - max.x).abs() + (min.y - max.y).abs() + (min.z - max.z).abs()
+    }
+
+    let mut vertices = Vec::with_capacity(VERTICES_ESTIMATION);
     let kinds_descs = voxel::KindsDescs::get();
-    let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
+
+    let mut faces_vertices = [Vec3::ZERO; 4];
 
     for face in faces {
         let normal = face.side.normal();
 
-        let face_desc = kinds_descs.get_face_desc(&face);
+        let face_desc = kinds_descs.get_face_desc(face);
+        let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
         let tile_coord_start = face_desc.offset.as_vec2() * tile_texture_size;
 
-        let faces_vertices = face
-            .vertices
-            .iter()
-            .enumerate()
-            .map(|(i, v)| {
-                let base_vertex_idx = VERTICES_INDICES[face.side as usize][i];
-                let base_vertex: Vec3 = VERTICES[base_vertex_idx].into();
+        for (i, v) in face.vertices.iter().enumerate() {
+            let base_vertex_idx = VERTICES_INDICES[face.side as usize][i];
+            let base_vertex: Vec3 = VERTICES[base_vertex_idx].into();
 
-                base_vertex + v.as_vec3()
-            })
-            .collect::<Vec<_>>();
+            faces_vertices[i] = base_vertex + v.as_vec3();
+        }
 
         debug_assert!(
             faces_vertices.len() == 4,
             "Each face should have 4 vertices"
         );
-
-        fn calc_tile_size(min: Vec3, max: Vec3) -> f32 {
-            (min.x - max.x).abs() + (min.y - max.y).abs() + (min.z - max.z).abs()
-        }
 
         let x_tile = calc_tile_size(faces_vertices[0], faces_vertices[1]) * tile_texture_size;
         let y_tile = calc_tile_size(faces_vertices[0], faces_vertices[3]) * tile_texture_size;
@@ -88,15 +89,13 @@ pub(super) fn generate_vertices(faces: Vec<voxel::Face>) -> Vec<voxel::Vertex> {
             (0.0, 0.0).into(),
         ];
 
-        let light_fraction = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
-
-        for (i, v) in faces_vertices.into_iter().enumerate() {
+        for (i, v) in faces_vertices.iter().copied().enumerate() {
             vertices.push(voxel::Vertex {
                 position: v,
                 normal,
                 uv: tile_uv[i],
                 tile_coord_start,
-                light: Vec3::splat(face.light[i] * light_fraction),
+                light: Vec3::splat(face.light[i] * LIGHT_FRACTION),
             });
         }
     }
@@ -147,22 +146,28 @@ pub(super) fn faces_occlusion(
     });
 }
 
-pub(super) fn generate_faces(
+pub fn generate_faces(
     kind: &ChunkStorage<voxel::Kind>,
     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
     soft_light: &ChunkStorage<voxel::FacesSoftLight>,
 ) -> Vec<voxel::Face> {
-    let mut faces_vertices = vec![];
+    const FACES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT) / 2;
+
+    let mut faces_vertices = Vec::with_capacity(FACES_ESTIMATION);
 
     for voxel in chunk::voxels() {
-        for side in voxel::SIDES {
-            let kind = kind.get(voxel);
+        let kind = kind.get(voxel);
+        if kind.is_none() {
+            continue;
+        }
 
-            if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
+        let occlusion = occlusion.get(voxel);
+        let voxel_soft_light = soft_light.get(voxel);
+
+        for side in voxel::SIDES {
+            if occlusion.is_occluded(side) {
                 continue;
             }
-
-            let voxel_soft_light = soft_light.get(voxel);
 
             let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
             faces_vertices.push(voxel::Face {

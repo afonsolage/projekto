@@ -323,7 +323,7 @@ mod test {
         let _ = propagate(&kind, &mut light, LightTy::Natural, chunk::top_voxels());
 
         assert!(
-            light.all(|l| l.get(LightTy::Natural) == voxel::Light::MAX_NATURAL_INTENSITY),
+            light.all(|l| { l.get(LightTy::Natural) == voxel::Light::MAX_NATURAL_INTENSITY }),
             "All voxels should have full natural light propagated"
         );
     }

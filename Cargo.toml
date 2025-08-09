@@ -65,7 +65,6 @@ unused_extern_crates = "warn"
 workspace = true
 
 [profile.dev.package."*"]
-hint-mostly-unused = true
 opt-level = 3
 
 [[example]]
