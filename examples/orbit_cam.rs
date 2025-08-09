@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use projekto_camera::{
-    orbit::{OrbitCamera, OrbitCameraConfig, OrbitCameraTarget},
     CameraPlugin,
+    orbit::{OrbitCamera, OrbitCameraConfig, OrbitCameraTarget},
 };
 
 fn main() {

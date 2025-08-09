@@ -2,9 +2,9 @@ use std::marker::PhantomData;
 
 use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
 use projekto_camera::{
+    CameraPlugin,
     fly_by::{FlyByCamera, FlyByCameraConfig},
     orbit::{OrbitCamera, OrbitCameraConfig, OrbitCameraTarget},
-    CameraPlugin,
 };
 
 fn main() {
