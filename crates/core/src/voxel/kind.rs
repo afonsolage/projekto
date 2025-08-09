@@ -86,11 +86,7 @@ impl KindsDescs {
 
     /// **Returns** how a given face should be rendered
     pub fn get_face_desc(&self, face: &Face) -> KindSideTexture {
-        let kind_desc = self
-            .descriptions
-            .iter()
-            .find(|k| k.id == face.kind.0)
-            .unwrap_or_else(|| panic!("Unable to find kind description for face {face:?}"));
+        let kind_desc = &self.descriptions[face.kind.0 as usize];
 
         match kind_desc.sides {
             KindSidesDesc::None => panic!("{} kind should not be rendered.", face.kind.0),
@@ -136,6 +132,7 @@ impl KindsDescs {
         match std::fs::File::open(&path) {
             Ok(file) => {
                 let kinds_descs: KindsDescs = ron::de::from_reader(file).unwrap();
+                check_descs(&kinds_descs);
                 KINDS_DESCS.set(kinds_descs).ok();
                 Self::get()
             }
@@ -145,6 +142,19 @@ impl KindsDescs {
             }
         }
     }
+}
+
+fn check_descs(kind_descs: &KindsDescs) {
+    kind_descs
+        .descriptions
+        .iter()
+        .enumerate()
+        .for_each(|(idx, item)| {
+            assert_eq!(
+                idx, item.id as usize,
+                "Item id and order doesn't match on kind description file!"
+            );
+        });
 }
 
 /// Kind id reference.

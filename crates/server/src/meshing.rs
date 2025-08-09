@@ -48,17 +48,23 @@ pub const VERTICES_INDICES: [[usize; 4]; 6] = [
 /// **Returns** a list of generated [`voxel::Vertex`].
 pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
     const VERTICES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT * 6) / 2;
+    const LIGHT_FRACTION: f32 = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
+
+    #[inline]
+    fn calc_tile_size(min: Vec3, max: Vec3) -> f32 {
+        (min.x - max.x).abs() + (min.y - max.y).abs() + (min.z - max.z).abs()
+    }
 
     let mut vertices = Vec::with_capacity(VERTICES_ESTIMATION);
-
     let kinds_descs = voxel::KindsDescs::get();
-    let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
+
     let mut faces_vertices = [Vec3::ZERO; 4];
 
     for face in faces {
         let normal = face.side.normal();
 
         let face_desc = kinds_descs.get_face_desc(face);
+        let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
         let tile_coord_start = face_desc.offset.as_vec2() * tile_texture_size;
 
         for (i, v) in face.vertices.iter().enumerate() {
@@ -73,10 +79,6 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
             "Each face should have 4 vertices"
         );
 
-        fn calc_tile_size(min: Vec3, max: Vec3) -> f32 {
-            (min.x - max.x).abs() + (min.y - max.y).abs() + (min.z - max.z).abs()
-        }
-
         let x_tile = calc_tile_size(faces_vertices[0], faces_vertices[1]) * tile_texture_size;
         let y_tile = calc_tile_size(faces_vertices[0], faces_vertices[3]) * tile_texture_size;
 
@@ -87,15 +89,13 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
             (0.0, 0.0).into(),
         ];
 
-        let light_fraction = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
-
         for (i, v) in faces_vertices.iter().copied().enumerate() {
             vertices.push(voxel::Vertex {
                 position: v,
                 normal,
                 uv: tile_uv[i],
                 tile_coord_start,
-                light: Vec3::splat(face.light[i] * light_fraction),
+                light: Vec3::splat(face.light[i] * LIGHT_FRACTION),
             });
         }
     }

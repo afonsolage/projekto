@@ -119,6 +119,7 @@ impl Side {
         }
     }
 
+    #[inline]
     pub fn normal(&self) -> Vec3 {
         match self {
             Side::Right => Vec3::X,
@@ -307,7 +308,7 @@ pub fn to_world(voxel: IVec3, chunk: Chunk) -> Vec3 {
 
 #[cfg(test)]
 mod tests {
-    use rand::{random, Rng};
+    use rand::{Rng, random};
 
     use super::*;
 
