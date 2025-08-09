@@ -233,7 +233,14 @@ where
     {
         match self {
             ChunkPack::Single(v) => f(v),
-            ChunkPack::Pallet { pallet, .. } => pallet.iter().all(f),
+            ChunkPack::Pallet { pallet, indices } => {
+                // If pallet isn't dirty, we can trust the pallet items is all used values.
+                if !pallet.dirty {
+                    pallet.iter().all(f)
+                } else {
+                    indices.0.iter().all(|idx| f(&pallet[*idx as usize]))
+                }
+            }
             ChunkPack::Dense(dense_buffer) => dense_buffer.iter().all(f),
         }
     }
@@ -243,15 +250,16 @@ fn single_to_pallet<T>(single: T, new_voxel: Voxel, new_value: T) -> ChunkPack<T
 where
     T: ChunkStorageType,
 {
+    let mut pallet = VoxelStatePallet::new(vec![single, new_value]);
+    pallet.dirty = true;
+
     // init indices point to existing voxel state on pallet
     let mut indices = PackIndices(vec![0; BUFFER_SIZE]);
 
     // the new voxel state voxel and the second on the pallet
     indices[to_index(new_voxel)] = 1;
-    ChunkPack::Pallet {
-        pallet: VoxelStatePallet::new(vec![single, new_value]),
-        indices,
-    }
+
+    ChunkPack::Pallet { pallet, indices }
 }
 
 fn pallet_clean_up<T>(pallet: &mut VoxelStatePallet<T>, indices: &mut [u8]) -> bool
@@ -312,6 +320,29 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn all() {
+        // Arrange
+        let mut single = ChunkPack::Single(u16::MAX);
+        let mut pallet = ChunkPack::Single(u16::MAX);
+        let mut dense = ChunkPack::Single(u16::MAX);
+
+        for i in 0..BUFFER_SIZE {
+            let voxel = from_index(i);
+
+            single.set(voxel, 123u16);
+            pallet.set(voxel, i as u16 % 100u16);
+            dense.set(voxel, i as u16);
+        }
+
+        // Act
+
+        // Assert
+        assert!(single.all(|v| *v == 123u16));
+        assert!(pallet.all(|v| *v < u8::MAX as u16));
+        assert!(dense.all(|v| *v < BUFFER_SIZE as u16));
+    }
 
     #[test]
     fn single_get() {

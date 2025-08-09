@@ -29,9 +29,7 @@ struct SubChunkStorage<T>(Vec<ChunkPack<T>>);
 impl<T> SubChunkStorage<T> {
     #[inline]
     fn to_index(voxel: Voxel) -> usize {
-        (voxel.x as usize & X_MASK) >> X_SHIFT
-            | (voxel.z as usize & Z_MASK) >> Z_SHIFT
-            | (voxel.y as usize & Y_MASK) >> Y_SHIFT
+        (voxel.x << X_SHIFT | voxel.z << Z_SHIFT | voxel.y << Y_SHIFT) as usize
     }
 }
 
@@ -96,23 +94,35 @@ impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
     pub fn get(&self, voxel: Voxel) -> T {
-        let voxel = voxel
+        let sub_chunk = voxel
+            / IVec3::new(
+                sub_chunk::X_AXIS_SIZE as i32,
+                sub_chunk::Y_AXIS_SIZE as i32,
+                sub_chunk::Z_AXIS_SIZE as i32,
+            );
+        let sub_voxel = voxel
             % IVec3::new(
                 sub_chunk::X_AXIS_SIZE as i32,
                 sub_chunk::Y_AXIS_SIZE as i32,
                 sub_chunk::Z_AXIS_SIZE as i32,
             );
-        self.0[voxel].get(voxel)
+        self.0[sub_chunk].get(sub_voxel)
     }
 
     pub fn set(&mut self, voxel: Voxel, value: T) {
-        let voxel = voxel
+        let sub_chunk = voxel
+            / IVec3::new(
+                sub_chunk::X_AXIS_SIZE as i32,
+                sub_chunk::Y_AXIS_SIZE as i32,
+                sub_chunk::Z_AXIS_SIZE as i32,
+            );
+        let sub_voxel = voxel
             % IVec3::new(
                 sub_chunk::X_AXIS_SIZE as i32,
                 sub_chunk::Y_AXIS_SIZE as i32,
                 sub_chunk::Z_AXIS_SIZE as i32,
             );
-        self.0[voxel].set(voxel, value);
+        self.0[sub_chunk].set(sub_voxel, value);
     }
 
     pub fn is_default(&self) -> bool {
@@ -126,7 +136,7 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
     where
         F: FnMut(&T) -> bool + Copy,
     {
-        self.0.0.iter().all(move |pack| pack.all(f))
+        self.0.0.iter().all(|pack| pack.all(f))
     }
 }
 
@@ -155,5 +165,33 @@ impl ChunkStorage<voxel::Light> {
         let mut light = self.get(voxel);
         light.set(ty, intensity);
         self.set(voxel, light);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::voxel::Kind;
+
+    use super::*;
+
+    #[test]
+    fn get_set() {
+        // Arrange
+        let mut storage = ChunkStorage::<Kind>::default();
+
+        // Act
+        chunk::voxels().enumerate().for_each(|(i, v)| {
+            //
+            storage.set(v, (i as u16).into());
+        });
+
+        // Assert
+        chunk::voxels().enumerate().for_each(|(i, v)| {
+            assert_eq!(
+                storage.get(v),
+                (i as u16).into(),
+                "Voxel {v} should have value {i}"
+            );
+        });
     }
 }
