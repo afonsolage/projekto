@@ -46,7 +46,7 @@ pub const VERTICES_INDICES: [[usize; 4]; 6] = [
 /// All generated indices will be relative to a triangle list.
 ///
 /// **Returns** a list of generated [`voxel::Vertex`].
-pub(super) fn generate_vertices(faces: Vec<voxel::Face>) -> Vec<voxel::Vertex> {
+pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
     let mut vertices = vec![];
     let kinds_descs = voxel::KindsDescs::get();
     let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
@@ -147,7 +147,7 @@ pub(super) fn faces_occlusion(
     });
 }
 
-pub(super) fn generate_faces(
+pub fn generate_faces(
     kind: &ChunkStorage<voxel::Kind>,
     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
     soft_light: &ChunkStorage<voxel::FacesSoftLight>,

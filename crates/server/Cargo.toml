@@ -39,6 +39,7 @@ bracket-noise = "0.8.7"
 rand.workspace = true
 tracing = "0.1"
 tracing-subscriber = "0.3"
+criterion = "0.7"
 
 [lints]
 workspace = true
@@ -54,3 +55,7 @@ path = "examples/server_bench.rs"
 [[example]]
 name = "sample_chunks"
 path = "examples/sample_chunks.rs"
+
+[[bench]]
+name = "meshing"
+harness = false

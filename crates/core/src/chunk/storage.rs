@@ -23,7 +23,7 @@ const X_MASK: usize = (SUB_CHUNKS_X - 1) << X_SHIFT;
 const Z_MASK: usize = (SUB_CHUNKS_Z - 1) << Z_SHIFT;
 const Y_MASK: usize = SUB_CHUNKS_Y - 1;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 struct SubChunkStorage<T>(Vec<ChunkPack<T>>);
 
 impl<T> SubChunkStorage<T> {
@@ -77,8 +77,24 @@ impl ChunkStorageType for voxel::Light {}
 impl ChunkStorageType for voxel::FacesOcclusion {}
 impl ChunkStorageType for voxel::FacesSoftLight {}
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ChunkStorage<T>(SubChunkStorage<T>);
+
+impl<T: ChunkStorageType> std::fmt::Debug for ChunkStorage<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s_cnt = 0;
+        let mut p_cnt = 0;
+        let mut d_cnt = 0;
+        for pack in &self.0.0 {
+            match pack {
+                ChunkPack::Single(_) => s_cnt += 1,
+                ChunkPack::Pallet { .. } => p_cnt += 1,
+                ChunkPack::Dense(_) => d_cnt += 1,
+            }
+        }
+        f.write_fmt(format_args!("S: {s_cnt}, P: {p_cnt}, D: {d_cnt}"))
+    }
+}
 
 impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
     fn eq(&self, other: &Self) -> bool {
