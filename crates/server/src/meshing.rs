@@ -47,14 +47,16 @@ pub const VERTICES_INDICES: [[usize; 4]; 6] = [
 ///
 /// **Returns** a list of generated [`voxel::Vertex`].
 pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
-    let mut vertices = vec![];
+    const VERTICES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT * 6) / 2;
+
+    let mut vertices = Vec::with_capacity(VERTICES_ESTIMATION);
     let kinds_descs = voxel::KindsDescs::get();
     let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
 
     for face in faces {
         let normal = face.side.normal();
 
-        let face_desc = kinds_descs.get_face_desc(&face);
+        let face_desc = kinds_descs.get_face_desc(face);
         let tile_coord_start = face_desc.offset.as_vec2() * tile_texture_size;
 
         let faces_vertices = face
@@ -152,17 +154,23 @@ pub fn generate_faces(
     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
     soft_light: &ChunkStorage<voxel::FacesSoftLight>,
 ) -> Vec<voxel::Face> {
-    let mut faces_vertices = vec![];
+    const FACES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT) / 4;
+
+    let mut faces_vertices = Vec::with_capacity(FACES_ESTIMATION);
 
     for voxel in chunk::voxels() {
-        for side in voxel::SIDES {
-            let kind = kind.get(voxel);
+        let kind = kind.get(voxel);
+        if kind.is_none() {
+            continue;
+        }
 
-            if kind.is_none() || (occlusion.get(voxel).is_occluded(side)) {
+        let occlusion = occlusion.get(voxel);
+        let voxel_soft_light = soft_light.get(voxel);
+
+        for side in voxel::SIDES {
+            if occlusion.is_occluded(side) {
                 continue;
             }
-
-            let voxel_soft_light = soft_light.get(voxel);
 
             let (v1, v2, v3, v4) = (voxel, voxel, voxel, voxel);
             faces_vertices.push(voxel::Face {

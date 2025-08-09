@@ -12,7 +12,13 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         ..
     } = setup();
 
+    println!("Kind: {kind:?}");
+    println!("Occlusion: {occlusion:?}");
+    println!("Soft Light: {soft_light:?}");
+
     let vertices = generate_faces(&kind, &occlusion, &soft_light);
+
+    println!("Vertices: {:?}", vertices.len());
 
     c.bench_function("generate faces", |b| {
         b.iter(|| {
