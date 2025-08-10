@@ -31,7 +31,9 @@ impl ChunkCache {
         let new_path = init_path(root);
         if let Err(existing) = CACHE_PATH.set(new_path.clone()) {
             if new_path != existing {
-                warn!("Failed to init CachePath. Another thread already initialized it to {new_path:?}");
+                warn!(
+                    "Failed to init CachePath. Another thread already initialized it to {new_path:?}"
+                );
                 return false;
             }
         }

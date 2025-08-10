@@ -5,7 +5,7 @@ use bevy::{
     log::LogPlugin,
     prelude::*,
 };
-use projekto_server::{set::Landscape, ChunkAssetHandle, WorldServerPlugin};
+use projekto_server::{ChunkAssetHandle, WorldServerPlugin, set::Landscape};
 
 const TICK_EVERY_MILLIS: u64 = 50;
 

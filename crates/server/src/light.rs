@@ -529,7 +529,10 @@ mod test {
         for (i, cnt) in count.into_iter().enumerate() {
             let expected = if corners.contains(&i) { 3 } else { 4 };
 
-            assert_eq!(cnt, expected, "In Lookup each neighbor should appears 4 times, except corners, which should appears 3 times.");
+            assert_eq!(
+                cnt, expected,
+                "In Lookup each neighbor should appears 4 times, except corners, which should appears 3 times."
+            );
         }
     }
 }

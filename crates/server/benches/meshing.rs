@@ -1,7 +1,7 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use projekto_server::{
-    meshing::{generate_faces, generate_vertices, greedy},
     ChunkAsset,
+    meshing::{generate_faces, generate_vertices, greedy},
 };
 
 pub fn criterion_benchmark(c: &mut Criterion) {

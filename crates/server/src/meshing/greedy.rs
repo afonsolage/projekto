@@ -213,7 +213,7 @@ pub fn generate_faces(
     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
     soft_light: &ChunkStorage<voxel::FacesSoftLight>,
 ) -> Vec<voxel::Face> {
-    let mut faces_vertices = vec![];
+    let mut faces_vertices = Vec::with_capacity(chunk::BUFFER_SIZE / 10);
 
     let chunk = kind.zip_2(occlusion, soft_light);
     let mut merged = vec![false; chunk::BUFFER_SIZE];
@@ -245,7 +245,7 @@ pub fn generate_faces(
             let mut v3 = v2 + perpendicular_step;
 
             // The loop walks all the way up on current_axis and than stepping one unit at time
-            // on perpendicular_axis. This walk it'll be possible to find the
+            // on perpendicular_axis. This way it'll be possible to find the
             // next vertex (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
             while let Some(next) = chunk.try_get(next_begin_voxel)

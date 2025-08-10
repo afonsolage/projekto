@@ -2,12 +2,12 @@ use bevy::prelude::*;
 use projekto_core::chunk::Chunk;
 
 use crate::{
+    WorldSet,
     asset::{ChunkAsset, ChunkAssetHandle},
     bundle::{
         ChunkBundle, ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal,
         ChunkMap, ChunkVertex,
     },
-    WorldSet,
 };
 
 pub struct ChunkManagementPlugin;
