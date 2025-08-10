@@ -10,13 +10,13 @@ pub mod meshing;
 
 mod asset;
 
-pub use asset::{setup_chunk_asset_loader, ChunkAsset, ChunkAssetHandle};
+pub use asset::{ChunkAsset, ChunkAssetHandle, setup_chunk_asset_loader};
 
 pub mod debug;
 mod net;
 
 pub mod cache;
-pub mod gen;
+pub mod r#gen;
 
 pub mod bundle;
 pub mod set;

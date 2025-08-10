@@ -136,54 +136,37 @@ impl Iterator for MergerIterator {
 /// Check if a voxel should be merged. This function is used on many places, so the idea
 /// is to keep all conditions in a single place, to keep maintenance easier.
 #[inline]
-fn should_skip_voxel(
-    merged: &[bool],
-    voxel: IVec3,
-    side: voxel::Side,
-    kind: voxel::Kind,
-    occlusion: FacesOcclusion,
-) -> bool {
-    kind.is_none() || merged[chunk::to_index(voxel)] || occlusion.is_occluded(side)
+fn should_skip_voxel(side: voxel::Side, state: VoxelState) -> bool {
+    state.0.is_none() || state.1.is_occluded(side)
 }
 
 /// Checks if an adjacent voxel should be merged with the current one.
 #[inline]
-fn should_merge(
-    current: (Kind, FacesOcclusion, FacesSoftLight),
-    next_voxel: IVec3,
-    merged: &[bool],
-    side: voxel::Side,
-    chunk: &ChunkStorage<(Kind, FacesOcclusion, FacesSoftLight)>,
-) -> bool {
-    if chunk::is_inside(next_voxel) {
-        let next_state = chunk.get(next_voxel);
-
-        !should_skip_voxel(merged, next_voxel, side, next_state.0, next_state.1)
-            && current.0 == next_state.0
-            && current.2.get(side) == next_state.2.get(side)
-    } else {
-        false
-    }
+fn should_merge_next(current: VoxelState, next: VoxelState, side: voxel::Side) -> bool {
+    !should_skip_voxel(side, next) && current.0 == next.0 && current.2.get(side) == next.2.get(side)
 }
 
 /// Finds the furthest equal voxel from the given begin point, into the step direction.
 #[inline]
 fn find_furthest_eq_voxel(
     begin: IVec3,
+    current: VoxelState,
     step: IVec3,
     merged: &[bool],
     side: voxel::Side,
     until: Option<IVec3>,
-    chunk: &ChunkStorage<(Kind, FacesOcclusion, FacesSoftLight)>,
+    chunk: &ChunkStorage<VoxelState>,
 ) -> IVec3 {
     let mut next_voxel = begin + step;
-    let current = chunk.get(begin);
 
-    while should_merge(current, next_voxel, merged, side, chunk) {
-        if let Some(target) = until {
-            if target == next_voxel {
-                return next_voxel;
-            }
+    while let Some(next) = chunk.try_get(next_voxel)
+        && !merged[chunk::to_index(next_voxel)]
+        && should_merge_next(current, next, side)
+    {
+        if let Some(target) = until
+            && target == next_voxel
+        {
+            return next_voxel;
         }
 
         next_voxel += step;
@@ -196,21 +179,21 @@ fn find_furthest_eq_voxel(
 
 /// Generates a list of voxels, based on v1, v2 and v3 inclusive, which was walked.
 #[inline]
-fn calc_walked_voxels(
+fn mark_walked_voxels(
     v1: IVec3,
     v2: IVec3,
     v3: IVec3,
     perpendicular_axis: IVec3,
     current_axis: IVec3,
-) -> Vec<IVec3> {
-    let mut walked_voxels = vec![];
-
+    merged: &mut [bool],
+) {
     let mut begin = v1;
     let mut current = begin;
     let mut end = v2;
 
     while current != v3 {
-        walked_voxels.push(current);
+        merged[chunk::to_index(current)] = true;
+
         if current == end {
             begin += perpendicular_axis;
             end += perpendicular_axis;
@@ -220,28 +203,23 @@ fn calc_walked_voxels(
         }
     }
 
-    walked_voxels.push(current);
-
-    walked_voxels
+    merged[chunk::to_index(current)] = true;
 }
 
-struct ChunkData<'a> {
-    kind: &'a ChunkStorage<voxel::Kind>,
-    faces_occlusion: &'a ChunkStorage<voxel::FacesOcclusion>,
-    faces_soft_light: &'a ChunkStorage<voxel::FacesSoftLight>,
-}
+type VoxelState = (voxel::Kind, voxel::FacesOcclusion, voxel::FacesSoftLight);
 
 pub fn generate_faces(
     kind: &ChunkStorage<voxel::Kind>,
-    faces_occlusion: &ChunkStorage<voxel::FacesOcclusion>,
-    faces_soft_light: &ChunkStorage<voxel::FacesSoftLight>,
+    occlusion: &ChunkStorage<voxel::FacesOcclusion>,
+    soft_light: &ChunkStorage<voxel::FacesSoftLight>,
 ) -> Vec<voxel::Face> {
     let mut faces_vertices = vec![];
 
-    let chunk = kind.zip_2(faces_occlusion, faces_soft_light);
+    let chunk = kind.zip_2(occlusion, soft_light);
+    let mut merged = vec![false; chunk::BUFFER_SIZE];
 
     for side in voxel::SIDES {
-        let mut merged = vec![false; chunk::BUFFER_SIZE];
+        merged.fill(false);
 
         let walk_axis = get_side_walk_axis(side);
 
@@ -253,13 +231,14 @@ pub fn generate_faces(
             let current = chunk.get(voxel);
             let (kind, occlusion, soft_light) = current;
 
-            if should_skip_voxel(&merged, voxel, side, kind, occlusion) {
+            if merged[chunk::to_index(voxel)] || should_skip_voxel(side, current) {
                 continue;
             }
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
-            let v2 = find_furthest_eq_voxel(voxel, current_axis, &merged, side, None, &chunk);
+            let v2 =
+                find_furthest_eq_voxel(voxel, current, current_axis, &merged, side, None, &chunk);
 
             // Finds the furthest equal voxel on perpendicular axis
             let perpendicular_step = perpendicular_axis;
@@ -269,9 +248,13 @@ pub fn generate_faces(
             // on perpendicular_axis. This walk it'll be possible to find the
             // next vertex (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
-            while should_merge(current, next_begin_voxel, &merged, side, &chunk) {
+            while let Some(next) = chunk.try_get(next_begin_voxel)
+                && !merged[chunk::to_index(next_begin_voxel)]
+                && should_merge_next(current, next, side)
+            {
                 let furthest = find_furthest_eq_voxel(
                     next_begin_voxel,
+                    next,
                     current_axis,
                     &merged,
                     side,
@@ -293,9 +276,7 @@ pub fn generate_faces(
 
             // Flag walked voxels, making a perfect square from v1, v2 and v3, on the given
             // axis.
-            for voxel in calc_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis) {
-                merged[chunk::to_index(voxel)] = true;
-            }
+            mark_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis, &mut merged);
 
             // v4 can be inferred with v1, v2 and v3
             let v4 = v1 + (v3 - v2);
@@ -1031,14 +1012,16 @@ mod test {
     }
 
     #[test]
-    fn calc_walked_voxels_negative_axis() {
+    fn mark_walked_voxels_negative_axis() {
         let v1 = (0, 0, 3).into();
         let v2 = (0, 0, 2).into();
         let v3 = (0, 2, 2).into();
         let current_axis = (0, 0, -1).into();
         let perpendicular_axis = (0, 1, 0).into();
 
-        let walked = super::calc_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis);
+        let mut merged = vec![false; chunk::BUFFER_SIZE];
+        super::mark_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis, &mut merged);
+
         let test_walked: Vec<IVec3> = vec![
             (0, 0, 3).into(),
             (0, 0, 2).into(),
@@ -1048,22 +1031,22 @@ mod test {
             (0, 2, 2).into(),
         ];
 
-        assert_eq!(&walked.len(), &test_walked.len());
-
-        test_walked.into_iter().enumerate().for_each(|(i, w)| {
-            assert_eq!(walked[i], w, "Failed on index {}", i);
-        });
+        for voxel in test_walked {
+            assert!(merged[chunk::to_index(voxel)]);
+        }
     }
 
     #[test]
-    fn calc_walked_voxels_negative_x_axis() {
+    fn mark_walked_voxels_negative_x_axis() {
         let v1 = (3, 0, 0).into();
         let v2 = (2, 0, 0).into();
         let v3 = (2, 2, 0).into();
         let current_axis = (-1, 0, 0).into();
         let perpendicular_axis = (0, 1, 0).into();
 
-        let walked = super::calc_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis);
+        let mut merged = vec![false; chunk::BUFFER_SIZE];
+        super::mark_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis, &mut merged);
+
         let test_walked: Vec<IVec3> = vec![
             (3, 0, 0).into(),
             (2, 0, 0).into(),
@@ -1073,22 +1056,22 @@ mod test {
             (2, 2, 0).into(),
         ];
 
-        assert_eq!(&walked.len(), &test_walked.len());
-
-        test_walked.into_iter().enumerate().for_each(|(i, w)| {
-            assert_eq!(walked[i], w, "Failed on index {}", i);
-        });
+        for voxel in test_walked {
+            assert!(merged[chunk::to_index(voxel)]);
+        }
     }
 
     #[test]
-    fn calc_walked_voxels_positive_axis() {
+    fn mark_walked_voxels_positive_axis() {
         let v1 = (1, 2, 0).into();
         let v2 = (4, 2, 0).into();
         let v3 = (4, 4, 0).into();
         let current_axis = (1, 0, 0).into();
         let perpendicular_axis = (0, 1, 0).into();
 
-        let walked = super::calc_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis);
+        let mut merged = vec![false; chunk::BUFFER_SIZE];
+        super::mark_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis, &mut merged);
+
         let test_walked: Vec<IVec3> = vec![
             (1, 2, 0).into(),
             (2, 2, 0).into(),
@@ -1104,11 +1087,9 @@ mod test {
             (4, 4, 0).into(),
         ];
 
-        assert_eq!(&walked.len(), &test_walked.len());
-
-        test_walked.into_iter().enumerate().for_each(|(i, w)| {
-            assert_eq!(walked[i], w, "Failed on index {}", i);
-        });
+        for voxel in test_walked {
+            assert!(merged[chunk::to_index(voxel)]);
+        }
     }
 
     #[test]

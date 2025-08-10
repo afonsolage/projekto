@@ -102,6 +102,14 @@ impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
+    pub fn try_get(&self, voxel: Voxel) -> Option<T> {
+        if chunk::is_inside(voxel) {
+            Some(self.get(voxel))
+        } else {
+            None
+        }
+    }
+
     pub fn get(&self, voxel: Voxel) -> T {
         let sub_chunk = voxel
             / IVec3::new(
