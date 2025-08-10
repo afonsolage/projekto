@@ -35,7 +35,7 @@ impl Iterator for AxisRange {
 /// This function returns a [`Box`] dyn iterator since it can return either [`Range`] or
 /// [`Rev<Iterator>`]
 ///
-/// Returns** a boxed iterator to iterate over a given axis.
+/// **Returns** a boxed iterator to iterate over a given axis.
 #[inline]
 fn get_axis_range(axis: IVec3) -> AxisRange {
     let (begin, end) = match axis {
@@ -52,7 +52,7 @@ fn get_axis_range(axis: IVec3) -> AxisRange {
 
 /// Converts a swizzled Vector in it's conventional (X, Y, Z) format
 ///
-/// Returns** a [`IVec3`] with X, Y and Z elements in order.
+/// **Returns** a [`IVec3`] with X, Y and Z elements in order.
 #[inline]
 fn unswizzle(axis: (IVec3, IVec3, IVec3), a: i32, b: i32, c: i32) -> IVec3 {
     axis.0.abs() * a + axis.1.abs() * b + axis.2.abs() * c
@@ -60,7 +60,7 @@ fn unswizzle(axis: (IVec3, IVec3, IVec3), a: i32, b: i32, c: i32) -> IVec3 {
 
 /// The first tuple item is the outer most loop and the third item is the inner most.
 ///
-/// Returns** a tuple indicating which direction the algorithm will walk in order to merge
+/// **Returns** a tuple indicating which direction the algorithm will walk in order to merge
 /// faces.
 #[inline]
 const fn get_side_walk_axis(side: voxel::Side) -> (IVec3, IVec3, IVec3) {
@@ -238,10 +238,10 @@ pub fn generate_faces(
         faces_soft_light,
     };
 
+    let mut merged = vec![false; chunk::BUFFER_SIZE];
+
     for side in voxel::SIDES {
         let walk_axis = get_side_walk_axis(side);
-
-        let mut merged = vec![false; chunk::BUFFER_SIZE];
 
         for voxel in MergerIterator::new(side) {
             // Due to cache friendliness, the current axis is always the deepest on nested loop

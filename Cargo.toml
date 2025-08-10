@@ -22,6 +22,7 @@ bevy = "0.16"
 rand = "0.9"
 thiserror = "2.0"
 serde = "1.0"
+criterion = "0.7"
 
 # IO
 lz4_flex = "0.11"

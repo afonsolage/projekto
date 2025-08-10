@@ -189,7 +189,7 @@ where
         self.replace(new_value);
     }
 
-    fn pack(&mut self) {
+    pub(crate) fn pack(&mut self) {
         if matches!(self, ChunkPack::Single(_)) {
             // nothing to do there
             return;
