@@ -1,7 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
+use projekto_core::chunk::{self, ChunkStorage};
 use projekto_server::{
     ChunkAsset,
-    meshing::{generate_faces, generate_vertices, greedy},
+    meshing::{faces_occlusion, generate_vertices, greedy},
 };
 
 pub fn criterion_benchmark(c: &mut Criterion) {
@@ -16,28 +17,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     println!("Occlusion: {occlusion:?}");
     println!("Soft Light: {soft_light:?}");
 
-    let faces = generate_faces(&kind, &occlusion, &soft_light);
     let greedy = greedy::generate_faces(&kind, &occlusion, &soft_light);
-    let vertices = generate_vertices(&faces);
     let vertices_greedy = generate_vertices(&greedy);
-
-    println!("Faces: {:?}", faces.len());
-    println!("Vertices: {:?}", vertices.len());
 
     println!("Greedy: {:?}", greedy.len());
     println!("Vertices Greedy: {:?}", vertices_greedy.len());
-
-    c.bench_function("generate faces", |b| {
-        b.iter(|| {
-            std::hint::black_box(generate_faces(&kind, &occlusion, &soft_light));
-        });
-    });
-
-    c.bench_function("generate vertices", |b| {
-        b.iter(|| {
-            std::hint::black_box(generate_vertices(&faces));
-        });
-    });
 
     c.bench_function("generate greedy faces", |b| {
         b.iter(|| {
@@ -45,9 +29,18 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("generate vertices greedy", |b| {
+    c.bench_function("generate vertices", |b| {
         b.iter(|| {
             std::hint::black_box(generate_vertices(&greedy));
+        });
+    });
+
+    let mut occlusion = ChunkStorage::default();
+    let neighborhood = [Some(&kind); chunk::SIDE_COUNT];
+
+    c.bench_function("faces occlusion", |b| {
+        b.iter(|| {
+            faces_occlusion(&kind, &mut occlusion, &neighborhood);
         });
     });
 }

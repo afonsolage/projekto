@@ -102,6 +102,12 @@ impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
+    const SUB_CHUNK_DIM: IVec3 = IVec3::new(
+        sub_chunk::X_AXIS_SIZE as i32,
+        sub_chunk::Y_AXIS_SIZE as i32,
+        sub_chunk::Z_AXIS_SIZE as i32,
+    );
+
     pub fn try_get(&self, voxel: Voxel) -> Option<T> {
         if chunk::is_inside(voxel) {
             Some(self.get(voxel))
@@ -111,34 +117,14 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
     }
 
     pub fn get(&self, voxel: Voxel) -> T {
-        let sub_chunk = voxel
-            / IVec3::new(
-                sub_chunk::X_AXIS_SIZE as i32,
-                sub_chunk::Y_AXIS_SIZE as i32,
-                sub_chunk::Z_AXIS_SIZE as i32,
-            );
-        let sub_voxel = voxel
-            % IVec3::new(
-                sub_chunk::X_AXIS_SIZE as i32,
-                sub_chunk::Y_AXIS_SIZE as i32,
-                sub_chunk::Z_AXIS_SIZE as i32,
-            );
+        let sub_chunk = voxel / Self::SUB_CHUNK_DIM;
+        let sub_voxel = voxel % Self::SUB_CHUNK_DIM;
         self.0[sub_chunk].get(sub_voxel)
     }
 
     pub fn set(&mut self, voxel: Voxel, value: T) {
-        let sub_chunk = voxel
-            / IVec3::new(
-                sub_chunk::X_AXIS_SIZE as i32,
-                sub_chunk::Y_AXIS_SIZE as i32,
-                sub_chunk::Z_AXIS_SIZE as i32,
-            );
-        let sub_voxel = voxel
-            % IVec3::new(
-                sub_chunk::X_AXIS_SIZE as i32,
-                sub_chunk::Y_AXIS_SIZE as i32,
-                sub_chunk::Z_AXIS_SIZE as i32,
-            );
+        let sub_chunk = voxel / Self::SUB_CHUNK_DIM;
+        let sub_voxel = voxel % Self::SUB_CHUNK_DIM;
         self.0[sub_chunk].set(sub_voxel, value);
     }
 

@@ -105,46 +105,51 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
     vertices
 }
 
-pub(super) fn faces_occlusion(
+pub fn faces_occlusion(
     kind: &ChunkStorage<voxel::Kind>,
     faces_occlusion: &mut ChunkStorage<voxel::FacesOcclusion>,
     neighboorhood: &[Option<&ChunkStorage<voxel::Kind>>; chunk::SIDE_COUNT],
 ) {
-    chunk::voxels().for_each(|voxel| {
-        if kind.get(voxel).is_none() {
-            faces_occlusion.set(voxel, voxel::FacesOcclusion::fully_occluded());
-        } else {
-            let mut faces = FacesOcclusion::default();
-            voxel::SIDES.iter().for_each(|&side| {
-                let neighbor = voxel + side.dir();
+    const DIM: IVec3 = IVec3::new(
+        chunk::X_AXIS_SIZE as i32,
+        chunk::Y_AXIS_SIZE as i32,
+        chunk::Z_AXIS_SIZE as i32,
+    );
 
-                let neighbor_kind = if chunk::is_inside(neighbor) {
-                    kind.get(neighbor)
+    for x in 0..chunk::X_AXIS_SIZE as i32 {
+        for z in 0..chunk::Z_AXIS_SIZE as i32 {
+            for y in 0..chunk::Y_AXIS_SIZE as i32 {
+                let voxel = IVec3::new(x, y, z);
+
+                if kind.get(voxel).is_none() {
+                    faces_occlusion.set(voxel, voxel::FacesOcclusion::fully_occluded());
                 } else {
-                    let Some(chunk_side) = ChunkSide::from_voxel_side(side) else {
-                        return;
-                    };
+                    let faces =
+                        voxel::SIDES
+                            .iter()
+                            .fold(FacesOcclusion::default(), |mut faces, &side| {
+                                let neighbor = voxel + side.dir();
 
-                    let Some(neighbor_kind) = neighboorhood[chunk_side as usize] else {
-                        return;
-                    };
+                                let neighbor_kind = if chunk::is_inside(neighbor) {
+                                    kind.get(neighbor)
+                                } else if let Some(chunk_side) = ChunkSide::from_voxel_side(side)
+                                    && let Some(neighbor_kind) = neighboorhood[chunk_side as usize]
+                                {
+                                    let neighbor_chunk_voxel = math::euclid_rem(neighbor, DIM);
+                                    neighbor_kind.get(neighbor_chunk_voxel)
+                                } else {
+                                    return faces;
+                                };
 
-                    let neighbor_chunk_voxel = math::euclid_rem(
-                        neighbor,
-                        IVec3::new(
-                            chunk::X_AXIS_SIZE as i32,
-                            chunk::Y_AXIS_SIZE as i32,
-                            chunk::Z_AXIS_SIZE as i32,
-                        ),
-                    );
-                    neighbor_kind.get(neighbor_chunk_voxel)
-                };
+                                faces.set(side, !neighbor_kind.is_none());
+                                faces
+                            });
 
-                faces.set(side, !neighbor_kind.is_none());
-            });
-            faces_occlusion.set(voxel, faces);
+                    faces_occlusion.set(voxel, faces);
+                }
+            }
         }
-    });
+    }
 }
 
 pub fn generate_faces(
