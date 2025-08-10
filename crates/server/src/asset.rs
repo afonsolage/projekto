@@ -4,11 +4,11 @@ use async_channel::Sender;
 use async_lock::OnceCell;
 use bevy::{
     asset::{
+        AssetLoader, LoadContext,
         io::{
             AssetReader, AssetReaderError, AssetSource, AssetSourceBuilder, AssetSourceBuilders,
             ErasedAssetReader, ErasedAssetWriter, PathStream, Reader, VecReader,
         },
-        AssetLoader, LoadContext,
     },
     prelude::*,
 };
@@ -19,7 +19,7 @@ use projekto_core::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::gen;
+use crate::r#gen;
 
 pub(crate) struct ChunkAssetPlugin;
 
@@ -47,7 +47,7 @@ pub fn setup_chunk_asset_loader(app: &mut App) {
 
     trace!("Chunk asset source was added.");
 
-    gen::start(receiver);
+    r#gen::start(receiver);
 }
 
 #[derive(Debug, Clone)]

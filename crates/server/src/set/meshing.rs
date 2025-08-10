@@ -1,7 +1,7 @@
 use bevy::{platform::collections::HashSet, prelude::*};
 use projekto_core::{chunk, voxel};
 
-use crate::{debug, light, meshing, WorldSet};
+use crate::{WorldSet, debug, light, meshing};
 
 use crate::bundle::{
     ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal, ChunkQuery,
@@ -66,7 +66,9 @@ fn faces_occlusion(
         });
 
     if count > 0 {
-        trace!("[faces_occlusion] {count} chunks faces occlusion computed. {fully_occluded} chunks fully occluded.");
+        trace!(
+            "[faces_occlusion] {count} chunks faces occlusion computed. {fully_occluded} chunks fully occluded."
+        );
     }
 }
 

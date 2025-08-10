@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use projekto_core::chunk::Chunk;
 
-use crate::{bundle::ChunkMap, WorldSet};
+use crate::{WorldSet, bundle::ChunkMap};
 
 use super::{ChunkLoad, ChunkUnload};
 

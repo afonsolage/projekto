@@ -14,6 +14,7 @@ ron = "0.10"
 
 [dev-dependencies]
 rand.workspace = true
+criterion.workspace = true
 
 [features]
 auto_load_kinds_descs = []
@@ -21,3 +22,7 @@ default = ["auto_load_kinds_descs"]
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "storage"
+harness = false

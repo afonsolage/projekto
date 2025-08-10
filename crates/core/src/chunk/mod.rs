@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 mod storage;
 pub use storage::*;
 
+mod impls;
 mod sub_chunk;
+mod zip;
 
 pub const X_AXIS_SIZE: usize = 16;
 pub const Y_AXIS_SIZE: usize = 256;

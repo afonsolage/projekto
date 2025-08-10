@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 
 use crate::{
+    WorldSet,
     bundle::{ChunkLocal, ChunkVertex},
     net::Clients,
-    WorldSet,
 };
 use projekto_messages as messages;
 

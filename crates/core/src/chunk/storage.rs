@@ -70,13 +70,6 @@ pub trait ChunkStorageType:
 {
 }
 
-impl ChunkStorageType for u8 {}
-impl ChunkStorageType for u16 {}
-impl ChunkStorageType for voxel::Kind {}
-impl ChunkStorageType for voxel::Light {}
-impl ChunkStorageType for voxel::FacesOcclusion {}
-impl ChunkStorageType for voxel::FacesSoftLight {}
-
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ChunkStorage<T>(SubChunkStorage<T>);
 
@@ -109,6 +102,14 @@ impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
+    pub fn try_get(&self, voxel: Voxel) -> Option<T> {
+        if chunk::is_inside(voxel) {
+            Some(self.get(voxel))
+        } else {
+            None
+        }
+    }
+
     pub fn get(&self, voxel: Voxel) -> T {
         let sub_chunk = voxel
             / IVec3::new(
@@ -146,6 +147,10 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
             .0
             .iter()
             .all(|pack| matches!(pack, ChunkPack::Single(_)))
+    }
+
+    pub fn pack(&mut self) {
+        self.0.0.iter_mut().for_each(|p| p.pack());
     }
 
     pub fn all<F>(&self, mut f: F) -> bool

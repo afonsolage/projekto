@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
-use projekto_server::{debug, set::Landscape, WorldServerPlugin};
+use projekto_server::{WorldServerPlugin, debug, set::Landscape};
 
 const TICK_EVERY_MILLIS: u64 = 50;
 
