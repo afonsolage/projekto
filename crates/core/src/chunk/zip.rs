@@ -41,6 +41,56 @@ where
             zipped.set(v, (a, b, c));
         }
 
+        zipped.pack();
+
         zipped
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chunk::*;
+
+    #[test]
+    fn test_zip() {
+        let mut s1 = ChunkStorage::default();
+        let mut s2 = ChunkStorage::default();
+
+        for (i, v) in chunk::voxels().enumerate() {
+            s1.set(v, i as u8);
+            s2.set(v, (i * 2) as u16);
+        }
+
+        let zipped = s1.zip(&s2);
+
+        for (i, v) in chunk::voxels().enumerate() {
+            let (a, b) = zipped.get(v);
+            assert_eq!(a, i as u8);
+            assert_eq!(b, (i * 2) as u16);
+        }
+    }
+
+    #[test]
+    fn test_zip_2() {
+        let mut s1 = ChunkStorage::default();
+        let mut s2 = ChunkStorage::default();
+        let mut s3 = ChunkStorage::default();
+
+        for (i, v) in chunk::voxels().enumerate() {
+            s1.set(v, i as u8);
+            s2.set(v, (i * 2) as u16);
+            s3.set(v, (i * 3) as u16);
+        }
+
+        let zipped = s1.zip_2(&s2, &s3);
+
+        for (i, v) in chunk::voxels().enumerate() {
+            let (a, b, c) = zipped.get(v);
+            assert_eq!(a, i as u8);
+            assert_eq!(b, (i * 2) as u16);
+            assert_eq!(c, (i * 3) as u16);
+        }
+    }
+}
+

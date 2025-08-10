@@ -3,7 +3,7 @@ use bevy::math::IVec3;
 
 use projekto_core::{
     chunk::{self, ChunkStorage},
-    voxel::{self},
+    voxel::{self, FacesOcclusion, FacesSoftLight, Kind},
 };
 
 enum AxisRange {
@@ -139,11 +139,9 @@ fn should_skip_voxel(
     voxel: IVec3,
     side: voxel::Side,
     kind: voxel::Kind,
-    chunk: &ChunkData,
+    occlusion: FacesOcclusion,
 ) -> bool {
-    kind.is_none()
-        || merged[chunk::to_index(voxel)]
-        || chunk.faces_occlusion.get(voxel).is_occluded(side)
+    kind.is_none() || merged[chunk::to_index(voxel)] || occlusion.is_occluded(side)
 }
 
 #[inline]
@@ -152,13 +150,18 @@ fn should_merge(
     next_voxel: IVec3,
     merged: &[bool],
     side: voxel::Side,
-    chunk: &ChunkData,
+    chunk: &ChunkStorage<(Kind, FacesOcclusion, FacesSoftLight)>,
 ) -> bool {
-    chunk::is_inside(next_voxel)
-        && !should_skip_voxel(merged, next_voxel, side, chunk.kind.get(next_voxel), chunk)
-        && chunk.kind.get(voxel) == chunk.kind.get(next_voxel)
-        && chunk.faces_soft_light.get(voxel).get(side)
-            == chunk.faces_soft_light.get(next_voxel).get(side)
+    if chunk::is_inside(next_voxel) {
+        let state = chunk.get(voxel);
+        let next_state = chunk.get(next_voxel);
+
+        !should_skip_voxel(merged, next_voxel, side, next_state.0, next_state.1)
+            && state.0 == next_state.0
+            && state.2.get(side) == next_state.2.get(side)
+    } else {
+        false
+    }
 }
 
 /// Finds the furthest equal voxel from the given begin point, into the step direction.
@@ -169,7 +172,7 @@ fn find_furthest_eq_voxel(
     merged: &[bool],
     side: voxel::Side,
     until: Option<IVec3>,
-    chunk: &ChunkData,
+    chunk: &ChunkStorage<(Kind, FacesOcclusion, FacesSoftLight)>,
 ) -> IVec3 {
     let mut next_voxel = begin + step;
 
@@ -232,15 +235,11 @@ pub fn generate_faces(
 ) -> Vec<voxel::Face> {
     let mut faces_vertices = vec![];
 
-    let chunk = ChunkData {
-        kind,
-        faces_occlusion,
-        faces_soft_light,
-    };
-
-    let mut merged = vec![false; chunk::BUFFER_SIZE];
+    let chunk = kind.zip_2(faces_occlusion, faces_soft_light);
 
     for side in voxel::SIDES {
+        let mut merged = vec![false; chunk::BUFFER_SIZE];
+
         let walk_axis = get_side_walk_axis(side);
 
         for voxel in MergerIterator::new(side) {
@@ -248,13 +247,11 @@ pub fn generate_faces(
             let current_axis = walk_axis.2;
             let perpendicular_axis = walk_axis.1;
 
-            let kind = chunk.kind.get(voxel);
+            let (kind, occlusion, soft_light) = chunk.get(voxel);
 
-            if should_skip_voxel(&merged, voxel, side, kind, &chunk) {
+            if should_skip_voxel(&merged, voxel, side, kind, occlusion) {
                 continue;
             }
-
-            let smooth_light = chunk.faces_soft_light.get(voxel);
 
             // Finds the furthest equal voxel on current axis
             let v1 = voxel;
@@ -296,15 +293,15 @@ pub fn generate_faces(
                 merged[chunk::to_index(voxel)] = true;
             }
 
-            // v4 can be inferred com v1, v2 and v3
+            // v4 can be inferred with v1, v2 and v3
             let v4 = v1 + (v3 - v2);
 
             faces_vertices.push(voxel::Face {
                 vertices: [v1, v2, v3, v4],
                 side,
                 kind,
-                light: smooth_light.get(side),
-            })
+                light: soft_light.get(side),
+            });
         }
     }
 
@@ -1140,7 +1137,7 @@ mod test {
 
         merger_it.into_iter().enumerate().for_each(|(i, v)| {
             assert_eq!(&normal_it[i], &v);
-        })
+        });
     }
 
     #[test]
@@ -1164,7 +1161,7 @@ mod test {
 
         merger_it.into_iter().enumerate().for_each(|(i, v)| {
             assert_eq!(&normal_it[i], &v);
-        })
+        });
     }
 
     #[test]
@@ -1188,7 +1185,7 @@ mod test {
 
         merger_it.into_iter().enumerate().for_each(|(i, v)| {
             assert_eq!(&normal_it[i], &v, "Failed to match at index {}", i);
-        })
+        });
     }
 
     #[test]
@@ -1212,7 +1209,7 @@ mod test {
 
         merger_it.into_iter().enumerate().for_each(|(i, v)| {
             assert_eq!(&normal_it[i], &v, "Failed to match at index {}", i);
-        })
+        });
     }
 
     #[test]
@@ -1236,7 +1233,7 @@ mod test {
 
         merger_it.into_iter().enumerate().for_each(|(i, v)| {
             assert_eq!(&normal_it[i], &v, "Failed to match at index {}", i);
-        })
+        });
     }
 
     #[test]
@@ -1260,7 +1257,7 @@ mod test {
 
         merger_it.into_iter().enumerate().for_each(|(i, v)| {
             assert_eq!(&normal_it[i], &v, "Failed to match at index {}", i);
-        })
+        });
     }
 
     #[test]
