@@ -133,6 +133,8 @@ impl Iterator for MergerIterator {
     }
 }
 
+/// Check if a voxel should be merged. This function is used on many places, so the idea
+/// is to keep all conditions in a single place, to keep maintenance easier.
 #[inline]
 fn should_skip_voxel(
     merged: &[bool],
@@ -144,21 +146,21 @@ fn should_skip_voxel(
     kind.is_none() || merged[chunk::to_index(voxel)] || occlusion.is_occluded(side)
 }
 
+/// Checks if an adjacent voxel should be merged with the current one.
 #[inline]
 fn should_merge(
-    voxel: IVec3,
+    current: (Kind, FacesOcclusion, FacesSoftLight),
     next_voxel: IVec3,
     merged: &[bool],
     side: voxel::Side,
     chunk: &ChunkStorage<(Kind, FacesOcclusion, FacesSoftLight)>,
 ) -> bool {
     if chunk::is_inside(next_voxel) {
-        let state = chunk.get(voxel);
         let next_state = chunk.get(next_voxel);
 
         !should_skip_voxel(merged, next_voxel, side, next_state.0, next_state.1)
-            && state.0 == next_state.0
-            && state.2.get(side) == next_state.2.get(side)
+            && current.0 == next_state.0
+            && current.2.get(side) == next_state.2.get(side)
     } else {
         false
     }
@@ -175,8 +177,9 @@ fn find_furthest_eq_voxel(
     chunk: &ChunkStorage<(Kind, FacesOcclusion, FacesSoftLight)>,
 ) -> IVec3 {
     let mut next_voxel = begin + step;
+    let current = chunk.get(begin);
 
-    while should_merge(begin, next_voxel, merged, side, chunk) {
+    while should_merge(current, next_voxel, merged, side, chunk) {
         if let Some(target) = until {
             if target == next_voxel {
                 return next_voxel;
@@ -247,7 +250,8 @@ pub fn generate_faces(
             let current_axis = walk_axis.2;
             let perpendicular_axis = walk_axis.1;
 
-            let (kind, occlusion, soft_light) = chunk.get(voxel);
+            let current = chunk.get(voxel);
+            let (kind, occlusion, soft_light) = current;
 
             if should_skip_voxel(&merged, voxel, side, kind, occlusion) {
                 continue;
@@ -265,7 +269,7 @@ pub fn generate_faces(
             // on perpendicular_axis. This walk it'll be possible to find the
             // next vertex (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
-            while should_merge(voxel, next_begin_voxel, &merged, side, &chunk) {
+            while should_merge(current, next_begin_voxel, &merged, side, &chunk) {
                 let furthest = find_furthest_eq_voxel(
                     next_begin_voxel,
                     current_axis,
