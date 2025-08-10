@@ -82,7 +82,7 @@ const NEIGHBOR_VERTEX_LOOKUP: [[[usize; VERTEX_COUNT]; VERTEX_NEIGHBOR_COUNT]; v
     ],
 ];
 
-fn gather_neighborhood_light<'a>(
+pub fn gather_neighborhood_light<'a>(
     chunk: Chunk,
     voxel: Voxel,
     get_kind: impl GetChunkStorage<'a, voxel::Kind>,
@@ -121,19 +121,16 @@ fn gather_neighborhood_light<'a>(
                     let (dir, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
                     let neighbor_chunk = chunk.neighbor(dir);
 
-                    // TODO: Change this when if-let chains stabilizes
-                    if let Some(kind) = get_kind(neighbor_chunk) {
-                        if let Some(light) = get_light(neighbor_chunk) {
-                            let intensity = light.get(neighbor_voxel).get_greater_intensity();
+                    if let Some(kind) = get_kind(neighbor_chunk)
+                        && let Some(light) = get_light(neighbor_chunk)
+                    {
+                        let intensity = light.get(neighbor_voxel).get_greater_intensity();
 
-                            // Check if returned block is opaque
-                            if intensity == 0 && kind.get(neighbor_voxel).is_opaque() {
-                                None
-                            } else {
-                                Some(intensity)
-                            }
+                        // Check if returned block is opaque
+                        if intensity == 0 && kind.get(neighbor_voxel).is_opaque() {
+                            None
                         } else {
-                            Some(voxel::Light::MAX_NATURAL_INTENSITY)
+                            Some(intensity)
                         }
                     } else {
                         Some(voxel::Light::MAX_NATURAL_INTENSITY)
@@ -203,10 +200,10 @@ pub fn smooth_lighting<'a>(
             voxel::FacesSoftLight::with_intensity(intensity)
         } else {
             let voxel_occlusion = occlusion.get(voxel);
-            let neighbors = gather_neighborhood_light(chunk, voxel, get_kind, get_light);
+            let neighbors = gather_neighborhood_light(chunk, voxel, get_kind, get_light); //50%
             let faces_soft_light = voxel::SIDES.map(|side| {
                 if !voxel_occlusion.is_occluded(side) {
-                    soft_vertex_light(&neighbors, side)
+                    soft_vertex_light(&neighbors, side) //25%
                 } else {
                     Default::default()
                 }
