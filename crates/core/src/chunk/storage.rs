@@ -2,6 +2,7 @@
 use crate::{
     chunk::{
         self, BUFFER_SIZE, Chunk,
+        column::ChunkColumnStorage,
         sub_chunk::{self, ChunkPack, SubChunkStorage},
     },
     voxel::{self, Voxel},
@@ -15,21 +16,12 @@ pub trait ChunkStorageType:
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct ChunkStorage<T>(SubChunkStorage<T>);
+// pub struct ChunkStorage<T>(SubChunkStorage<T>);
+pub struct ChunkStorage<T>(ChunkColumnStorage<T>);
 
 impl<T: ChunkStorageType> std::fmt::Debug for ChunkStorage<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s_cnt = 0;
-        let mut p_cnt = 0;
-        let mut d_cnt = 0;
-        for pack in &self.0.0 {
-            match pack {
-                ChunkPack::Single(_) => s_cnt += 1,
-                ChunkPack::Pallet { .. } => p_cnt += 1,
-                ChunkPack::Dense(_) => d_cnt += 1,
-            }
-        }
-        f.write_fmt(format_args!("S: {s_cnt}, P: {p_cnt}, D: {d_cnt}"))
+        self.0.fmt(f)
     }
 }
 
@@ -46,12 +38,6 @@ impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
-    const SUB_CHUNK_DIM: IVec3 = IVec3::new(
-        sub_chunk::X_AXIS_SIZE as i32,
-        sub_chunk::Y_AXIS_SIZE as i32,
-        sub_chunk::Z_AXIS_SIZE as i32,
-    );
-
     pub fn try_get(&self, voxel: Voxel) -> Option<T> {
         if chunk::is_inside(voxel) {
             Some(self.get(voxel))
@@ -61,33 +47,26 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
     }
 
     pub fn get(&self, voxel: Voxel) -> T {
-        let sub_chunk = voxel / Self::SUB_CHUNK_DIM;
-        let sub_voxel = voxel % Self::SUB_CHUNK_DIM;
-        self.0[sub_chunk].get(sub_voxel)
+        self.0.get(voxel)
     }
 
     pub fn set(&mut self, voxel: Voxel, value: T) {
-        let sub_chunk = voxel / Self::SUB_CHUNK_DIM;
-        let sub_voxel = voxel % Self::SUB_CHUNK_DIM;
-        self.0[sub_chunk].set(sub_voxel, value);
+        self.0.set(voxel, value);
     }
 
     pub fn is_default(&self) -> bool {
-        self.0
-            .0
-            .iter()
-            .all(|pack| matches!(pack, ChunkPack::Single(_)))
+        self.0.is_default()
     }
 
     pub fn pack(&mut self) {
-        self.0.0.iter_mut().for_each(|p| p.pack());
+        self.0.pack();
     }
 
     pub fn all<F>(&self, mut f: F) -> bool
     where
         F: FnMut(&T) -> bool + Copy,
     {
-        self.0.0.iter().all(|pack| pack.all(f))
+        self.0.all(f)
     }
 }
 
@@ -132,7 +111,6 @@ mod tests {
 
         // Act
         chunk::voxels().enumerate().for_each(|(i, v)| {
-            //
             storage.set(v, (i as u16).into());
         });
 

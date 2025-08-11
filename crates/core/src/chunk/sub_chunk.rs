@@ -2,56 +2,24 @@
 use std::ops::{Deref, DerefMut};
 
 use bevy::{
-    math::Vec3,
+    math::{IVec3, Vec3},
     platform::collections::HashSet,
     prelude::{Deref, DerefMut},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    chunk::ChunkStorageType,
+    chunk::{ChunkStorageType, sub_chunk},
     voxel::{self, FacesOcclusion, FacesSoftLight, Kind, Light, LightTy, Voxel},
 };
 
-pub const X_AXIS_SIZE: usize = 8;
-pub const Y_AXIS_SIZE: usize = 8;
-pub const Z_AXIS_SIZE: usize = 8;
-
-pub const X_END: i32 = (X_AXIS_SIZE - 1) as i32;
-pub const Y_END: i32 = (Y_AXIS_SIZE - 1) as i32;
-pub const Z_END: i32 = (Z_AXIS_SIZE - 1) as i32;
-
-pub const BUFFER_SIZE: usize = X_AXIS_SIZE * Z_AXIS_SIZE * Y_AXIS_SIZE;
-
-const X_SHIFT: usize = (Z_AXIS_SIZE.ilog2() + Z_SHIFT as u32) as usize;
-const Z_SHIFT: usize = Y_AXIS_SIZE.ilog2() as usize;
-const Y_SHIFT: usize = 0;
-
-const X_MASK: usize = (X_AXIS_SIZE - 1) << X_SHIFT;
-const Z_MASK: usize = (Z_AXIS_SIZE - 1) << Z_SHIFT;
-const Y_MASK: usize = Y_AXIS_SIZE - 1;
-
-#[inline]
-pub fn to_index(voxel: Voxel) -> usize {
-    (voxel.x << X_SHIFT | voxel.y << Y_SHIFT | voxel.z << Z_SHIFT) as usize
-}
-
-#[inline]
-pub fn from_index(index: usize) -> Voxel {
-    Voxel::new(
-        ((index & X_MASK) >> X_SHIFT) as i32,
-        ((index & Y_MASK) >> Y_SHIFT) as i32,
-        ((index & Z_MASK) >> Z_SHIFT) as i32,
-    )
-}
-
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SubChunkStorage<T>(pub Vec<ChunkPack<T>>);
+pub(crate) struct SubChunkStorage<T>(Vec<ChunkPack<T>>);
 
 impl<T> SubChunkStorage<T> {
-    const SUB_CHUNKS_X: usize = super::X_AXIS_SIZE / super::sub_chunk::X_AXIS_SIZE;
-    const SUB_CHUNKS_Y: usize = super::Y_AXIS_SIZE / super::sub_chunk::Y_AXIS_SIZE;
-    const SUB_CHUNKS_Z: usize = super::Z_AXIS_SIZE / super::sub_chunk::Z_AXIS_SIZE;
+    const SUB_CHUNKS_X: usize = super::X_AXIS_SIZE / pack_consts::X_AXIS_SIZE;
+    const SUB_CHUNKS_Y: usize = super::Y_AXIS_SIZE / pack_consts::Y_AXIS_SIZE;
+    const SUB_CHUNKS_Z: usize = super::Z_AXIS_SIZE / pack_consts::Z_AXIS_SIZE;
 
     const SUB_CHUNKS_BUFFER_SIZE: usize =
         Self::SUB_CHUNKS_X * Self::SUB_CHUNKS_Y * Self::SUB_CHUNKS_Z;
@@ -63,6 +31,12 @@ impl<T> SubChunkStorage<T> {
     const X_MASK: usize = (Self::SUB_CHUNKS_X - 1) << Self::X_SHIFT;
     const Z_MASK: usize = (Self::SUB_CHUNKS_Z - 1) << Self::Z_SHIFT;
     const Y_MASK: usize = Self::SUB_CHUNKS_Y - 1;
+
+    const SUB_CHUNK_DIM: IVec3 = IVec3::new(
+        pack_consts::X_AXIS_SIZE as i32,
+        pack_consts::Y_AXIS_SIZE as i32,
+        pack_consts::Z_AXIS_SIZE as i32,
+    );
 
     #[inline]
     fn to_index(voxel: Voxel) -> usize {
@@ -76,6 +50,22 @@ where
 {
     fn new() -> Self {
         SubChunkStorage(vec![ChunkPack::default(); Self::SUB_CHUNKS_BUFFER_SIZE])
+    }
+}
+
+impl<T> std::fmt::Debug for SubChunkStorage<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s_cnt = 0;
+        let mut p_cnt = 0;
+        let mut d_cnt = 0;
+        for pack in &self.0 {
+            match pack {
+                ChunkPack::Single(_) => s_cnt += 1,
+                ChunkPack::Pallet { .. } => p_cnt += 1,
+                ChunkPack::Dense(_) => d_cnt += 1,
+            }
+        }
+        f.write_fmt(format_args!("S: {s_cnt}, P: {p_cnt}, D: {d_cnt}"))
     }
 }
 
@@ -99,6 +89,40 @@ impl<T> std::ops::Index<Voxel> for SubChunkStorage<T> {
 impl<T> std::ops::IndexMut<Voxel> for SubChunkStorage<T> {
     fn index_mut(&mut self, voxel: Voxel) -> &mut Self::Output {
         &mut self.0[Self::to_index(voxel)]
+    }
+}
+
+impl<T> SubChunkStorage<T>
+where
+    T: ChunkStorageType,
+{
+    pub fn get(&self, voxel: Voxel) -> T {
+        let sub_chunk = voxel / Self::SUB_CHUNK_DIM;
+        let sub_voxel = voxel % Self::SUB_CHUNK_DIM;
+        self[sub_chunk].get(sub_voxel)
+    }
+
+    pub fn set(&mut self, voxel: Voxel, value: T) {
+        let sub_chunk = voxel / Self::SUB_CHUNK_DIM;
+        let sub_voxel = voxel % Self::SUB_CHUNK_DIM;
+        self[sub_chunk].set(sub_voxel, value);
+    }
+
+    pub fn is_default(&self) -> bool {
+        self.0
+            .iter()
+            .all(|pack| matches!(pack, ChunkPack::Single(_)))
+    }
+
+    pub fn pack(&mut self) {
+        self.0.iter_mut().for_each(|p| p.pack());
+    }
+
+    pub fn all<F>(&self, mut f: F) -> bool
+    where
+        F: FnMut(&T) -> bool + Copy,
+    {
+        self.0.iter().all(|pack| pack.all(f))
     }
 }
 
@@ -176,6 +200,44 @@ pub(crate) enum ChunkPack<T> {
     Dense(DenseBuffer<T>),
 }
 
+mod pack_consts {
+    pub(super) const X_AXIS_SIZE: usize = 8;
+    pub(super) const Y_AXIS_SIZE: usize = 8;
+    pub(super) const Z_AXIS_SIZE: usize = 8;
+
+    pub(super) const X_END: i32 = (X_AXIS_SIZE - 1) as i32;
+    pub(super) const Y_END: i32 = (Y_AXIS_SIZE - 1) as i32;
+    pub(super) const Z_END: i32 = (Z_AXIS_SIZE - 1) as i32;
+
+    pub(super) const BUFFER_SIZE: usize = X_AXIS_SIZE * Z_AXIS_SIZE * Y_AXIS_SIZE;
+
+    pub(super) const X_SHIFT: usize = (Z_AXIS_SIZE.ilog2() + Z_SHIFT as u32) as usize;
+    pub(super) const Z_SHIFT: usize = Y_AXIS_SIZE.ilog2() as usize;
+    pub(super) const Y_SHIFT: usize = 0;
+
+    pub(super) const X_MASK: usize = (X_AXIS_SIZE - 1) << X_SHIFT;
+    pub(super) const Z_MASK: usize = (Z_AXIS_SIZE - 1) << Z_SHIFT;
+    pub(super) const Y_MASK: usize = Y_AXIS_SIZE - 1;
+}
+
+impl<T> ChunkPack<T> {
+    #[inline]
+    fn to_index(voxel: Voxel) -> usize {
+        (voxel.x << pack_consts::X_SHIFT
+            | voxel.y << pack_consts::Y_SHIFT
+            | voxel.z << pack_consts::Z_SHIFT) as usize
+    }
+
+    #[inline]
+    fn from_index(index: usize) -> Voxel {
+        Voxel::new(
+            ((index & pack_consts::X_MASK) >> pack_consts::X_SHIFT) as i32,
+            ((index & pack_consts::Y_MASK) >> pack_consts::Y_SHIFT) as i32,
+            ((index & pack_consts::Z_MASK) >> pack_consts::Z_SHIFT) as i32,
+        )
+    }
+}
+
 impl<T> Default for ChunkPack<T>
 where
     T: Default,
@@ -192,7 +254,7 @@ where
     fn new_pallet() -> Self {
         Self::Pallet {
             pallet: VoxelStatePallet::default(),
-            indices: PackIndices(vec![0; BUFFER_SIZE]),
+            indices: PackIndices(vec![0; pack_consts::BUFFER_SIZE]),
         }
     }
 
@@ -209,8 +271,10 @@ where
     pub(crate) fn get(&self, voxel: Voxel) -> T {
         match &self {
             ChunkPack::Single(value) => *value,
-            ChunkPack::Pallet { pallet, indices } => pallet[indices[to_index(voxel)] as usize],
-            ChunkPack::Dense(voxels) => voxels[to_index(voxel)],
+            ChunkPack::Pallet { pallet, indices } => {
+                pallet[indices[Self::to_index(voxel)] as usize]
+            }
+            ChunkPack::Dense(voxels) => voxels[Self::to_index(voxel)],
         }
     }
 
@@ -230,7 +294,7 @@ where
             } => {
                 if pallet.len() < u8::MAX as usize || pallet_clean_up(&mut pallet, &mut indices) {
                     let pallet_index = pallet.find_or_add(value);
-                    indices[to_index(voxel)] = pallet_index;
+                    indices[Self::to_index(voxel)] = pallet_index;
                     ChunkPack::Pallet { pallet, indices }
                 } else {
                     let mut dense = pallet_to_dense(pallet, indices);
@@ -239,7 +303,7 @@ where
                 }
             }
             ChunkPack::Dense(mut voxels) => {
-                voxels[to_index(voxel)] = value;
+                voxels[Self::to_index(voxel)] = value;
                 ChunkPack::Dense(voxels)
             }
         };
@@ -311,10 +375,10 @@ where
     pallet.dirty = true;
 
     // init indices point to existing voxel state on pallet
-    let mut indices = PackIndices(vec![0; BUFFER_SIZE]);
+    let mut indices = PackIndices(vec![0; pack_consts::BUFFER_SIZE]);
 
     // the new voxel state voxel and the second on the pallet
-    indices[to_index(new_voxel)] = 1;
+    indices[ChunkPack::<T>::to_index(new_voxel)] = 1;
 
     ChunkPack::Pallet { pallet, indices }
 }
@@ -328,10 +392,10 @@ where
     }
     pallet.dirty = false;
 
-    let mut new_indices = [0u8; BUFFER_SIZE];
+    let mut new_indices = [0u8; pack_consts::BUFFER_SIZE];
     let mut new_pallet = VoxelStatePallet::empty();
 
-    for i in 0..BUFFER_SIZE {
+    for i in 0..pack_consts::BUFFER_SIZE {
         let new_idx = new_pallet.find_or_add(pallet[indices[i] as usize]);
         new_indices[i] = new_idx;
     }
@@ -349,9 +413,9 @@ fn pallet_to_dense<T>(pallet: VoxelStatePallet<T>, indices: PackIndices) -> Chun
 where
     T: ChunkStorageType,
 {
-    let mut voxels = DenseBuffer(vec![Default::default(); BUFFER_SIZE]);
+    let mut voxels = DenseBuffer(vec![Default::default(); pack_consts::BUFFER_SIZE]);
 
-    for i in 0..BUFFER_SIZE {
+    for i in 0..pack_consts::BUFFER_SIZE {
         voxels[i] = pallet[indices[i] as usize];
     }
 
@@ -364,7 +428,7 @@ where
 {
     let mut pallet = VoxelStatePallet::empty();
 
-    let mut indices = PackIndices(vec![0; BUFFER_SIZE]);
+    let mut indices = PackIndices(vec![0; pack_consts::BUFFER_SIZE]);
 
     voxels.iter().enumerate().for_each(|(i, value)| {
         let pallet_index = pallet.find_or_add(*value);
@@ -376,7 +440,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{pack_consts::*, *};
 
     #[test]
     fn all() {
@@ -386,7 +450,7 @@ mod tests {
         let mut dense = ChunkPack::Single(u16::MAX);
 
         for i in 0..BUFFER_SIZE {
-            let voxel = from_index(i);
+            let voxel = ChunkPack::<u8>::from_index(i);
 
             single.set(voxel, 123u16);
             pallet.set(voxel, i as u16 % 100u16);
@@ -511,12 +575,12 @@ mod tests {
 
         // Act
         for i in 0..u8::MAX as usize {
-            pallet.set(from_index(i), i as u8);
+            pallet.set(ChunkPack::<u8>::from_index(i), i as u8);
         }
 
         // Assert
         for i in 0..u8::MAX as usize {
-            assert_eq!(pallet.get(from_index(i)), i as u8);
+            assert_eq!(pallet.get(ChunkPack::<u8>::from_index(i)), i as u8);
         }
 
         match pallet {
@@ -542,12 +606,12 @@ mod tests {
 
         // Act
         for i in 0..u8::MAX as usize {
-            pallet.set(from_index(i), i as u16);
+            pallet.set(ChunkPack::<u8>::from_index(i), i as u16);
         }
 
         // Assert
         for i in 0..u8::MAX as usize {
-            assert_eq!(pallet.get(from_index(i)), i as u16);
+            assert_eq!(pallet.get(ChunkPack::<u8>::from_index(i)), i as u16);
         }
 
         match pallet {
@@ -563,12 +627,12 @@ mod tests {
 
         // Act
         for i in 0..BUFFER_SIZE {
-            pallet.set(from_index(i), i as u16);
+            pallet.set(ChunkPack::<u8>::from_index(i), i as u16);
         }
 
         // Assert
         for i in 0..BUFFER_SIZE {
-            assert_eq!(pallet.get(from_index(i)), i as u16);
+            assert_eq!(pallet.get(ChunkPack::<u8>::from_index(i)), i as u16);
         }
 
         assert!(matches!(pallet, ChunkPack::Dense(_)));
@@ -591,12 +655,12 @@ mod tests {
 
         // Act
         for i in 0..BUFFER_SIZE {
-            pallet.set(from_index(i), i as u16);
+            pallet.set(ChunkPack::<u8>::from_index(i), i as u16);
         }
 
         // Assert
         for i in 0..BUFFER_SIZE {
-            assert_eq!(pallet.get(from_index(i)), i as u16);
+            assert_eq!(pallet.get(ChunkPack::<u8>::from_index(i)), i as u16);
         }
 
         assert!(matches!(pallet, ChunkPack::Dense(_)));
@@ -694,7 +758,7 @@ mod tests {
             "The pack is full of unique states, so there should be no change"
         );
         for i in 0..BUFFER_SIZE {
-            assert_eq!(dense.get(from_index(i)), i as u16);
+            assert_eq!(dense.get(ChunkPack::<u8>::from_index(i)), i as u16);
         }
     }
 
@@ -722,7 +786,7 @@ mod tests {
 
         for i in 0..BUFFER_SIZE {
             let v = (i % 255) as u8;
-            assert_eq!(dense.get(from_index(i)), v);
+            assert_eq!(dense.get(ChunkPack::<u8>::from_index(i)), v);
         }
     }
 }

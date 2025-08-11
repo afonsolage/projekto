@@ -2,18 +2,102 @@
 use std::ops::{Deref, DerefMut};
 
 use bevy::{
-    math::Vec3,
+    math::{IVec2, Vec3, Vec3Swizzles},
     platform::collections::HashSet,
     prelude::{Deref, DerefMut},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    chunk::ChunkStorageType,
+    chunk::{self, ChunkStorageType},
     voxel::{self, FacesOcclusion, FacesSoftLight, Kind, Light, LightTy, Voxel},
 };
 
-pub const COLUMN_SIZE: usize = super::Y_AXIS_SIZE;
+const COLUMN_SIZE: usize = super::Y_AXIS_SIZE;
+const COLUMN_COUNT: usize = chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE;
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ChunkColumnStorage<T>(Vec<ChunkColumn<T>>);
+
+impl<T> ChunkColumnStorage<T> {
+    #[inline]
+    fn to_column_index(voxel: Voxel) -> usize {
+        assert!(voxel.x >= 0 && voxel.x <= 15);
+        assert!(voxel.z >= 0 && voxel.z <= 15);
+
+        (voxel.x << 4 | voxel.z) as usize
+    }
+}
+
+impl<T> ChunkColumnStorage<T>
+where
+    T: Default + Copy,
+{
+    fn new() -> Self {
+        ChunkColumnStorage(vec![ChunkColumn::default(); COLUMN_COUNT])
+    }
+}
+
+impl<T> std::fmt::Debug for ChunkColumnStorage<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s_cnt = 0;
+        let mut p_cnt = 0;
+        for pack in &self.0 {
+            match pack {
+                ChunkColumn::Single(_) => s_cnt += 1,
+                ChunkColumn::Pallet { .. } => p_cnt += 1,
+            }
+        }
+        f.write_fmt(format_args!("S: {s_cnt}, P: {p_cnt}"))
+    }
+}
+
+impl<T> Default for ChunkColumnStorage<T>
+where
+    T: Default + Copy,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> ChunkColumnStorage<T>
+where
+    T: ChunkStorageType,
+{
+    pub fn get(&self, voxel: Voxel) -> T {
+        let column_index = Self::to_column_index(voxel);
+
+        assert!(voxel.y <= u8::MAX as i32);
+
+        self.0[column_index].get(voxel.y as u8)
+    }
+
+    pub fn set(&mut self, voxel: Voxel, value: T) {
+        let column_index = Self::to_column_index(voxel);
+
+        assert!(voxel.y <= u8::MAX as i32);
+
+        self.0[column_index].set(voxel.y as u8, value);
+    }
+
+    pub fn is_default(&self) -> bool {
+        self.0
+            .iter()
+            .all(|pack| matches!(pack, ChunkColumn::Single(_)))
+    }
+
+    pub fn pack(&mut self) {
+        self.0.iter_mut().for_each(|p| p.pack());
+    }
+
+    pub fn all<F>(&self, mut f: F) -> bool
+    where
+        F: FnMut(&T) -> bool + Copy,
+    {
+        self.0.iter().all(|pack| pack.all(f))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct VoxelPallet<T> {
@@ -41,11 +125,21 @@ where
 
     fn find_or_add(&mut self, value: T) -> u8 {
         if let Some(index) = self.pallet.iter().position(|s| *s == value) {
+            assert!(index <= u8::MAX as usize);
+
             index as u8
         } else {
             self.pallet.push(value);
             self.dirty = true;
-            (self.pallet.len() - 1) as u8
+
+            let new_index = self.pallet.len() - 1;
+
+            assert!(
+                new_index <= u8::MAX as usize,
+                "new_index ({new_index}) overflow u8 max"
+            );
+
+            new_index as u8
         }
     }
 }
@@ -136,10 +230,8 @@ where
                 mut indices,
             } => {
                 if pallet.len() >= COLUMN_SIZE {
-                    pallet_clean_up(&mut pallet, &mut indices);
+                    pallet_clean_up(&mut pallet, &mut indices, Some(index));
                 }
-
-                assert!(pallet.len() < COLUMN_SIZE);
 
                 let pallet_index = pallet.find_or_add(value);
                 indices[index as usize] = pallet_index;
@@ -160,7 +252,7 @@ where
                 mut pallet,
                 mut indices,
             } => {
-                pallet_clean_up(&mut pallet, &mut indices);
+                pallet_clean_up(&mut pallet, &mut indices, None);
 
                 if pallet.len() == 1 {
                     ChunkColumn::Single(pallet[0])
@@ -208,19 +300,30 @@ where
     ChunkColumn::Pallet { pallet, indices }
 }
 
-fn pallet_clean_up<T>(pallet: &mut VoxelPallet<T>, indices: &mut [u8]) -> bool
+fn pallet_clean_up<T>(
+    pallet: &mut VoxelPallet<T>,
+    indices: &mut [u8],
+    skip_index: Option<u8>,
+) -> bool
 where
     T: ChunkStorageType,
 {
     if !pallet.dirty {
         return false;
     }
+
     pallet.dirty = false;
 
-    let mut new_indices = [0u8; COLUMN_SIZE];
+    let mut new_indices = [u8::MAX; COLUMN_SIZE];
     let mut new_pallet = VoxelPallet::empty();
 
     for i in 0..COLUMN_SIZE {
+        if let Some(skip) = skip_index
+            && i == skip as usize
+        {
+            continue;
+        }
+
         let new_idx = new_pallet.find_or_add(pallet[indices[i] as usize]);
         new_indices[i] = new_idx;
     }
