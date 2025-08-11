@@ -157,6 +157,7 @@ fn smooth_ambient_occlusion<const VERTEX: usize>(
     let side1 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][VERTEX][1]];
     let side2 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][VERTEX][2]];
 
+    // It is important to differentiate between no neighbor and 0.
     let corner = if side1.is_none() && side2.is_none() {
         0
     } else {
@@ -171,7 +172,7 @@ fn smooth_ambient_occlusion<const VERTEX: usize>(
     (side + side1 + side2 + corner) as f32 / 4.0
 }
 
-fn soft_vertex_light(neighbors: &[Option<u8>; NEIGHBOR_COUNT], side: voxel::Side) -> [f32; 4] {
+pub fn soft_vertex_light(neighbors: &[Option<u8>; NEIGHBOR_COUNT], side: voxel::Side) -> [f32; 4] {
     [
         smooth_ambient_occlusion::<0>(neighbors, side),
         smooth_ambient_occlusion::<1>(neighbors, side),
@@ -191,7 +192,9 @@ pub fn smooth_lighting<'a>(
     let light = get_light(chunk).expect("Chunk must exists");
 
     chunk::voxels().for_each(|voxel| {
-        if occlusion.get(voxel).is_fully_occluded() {
+        let occlusion = occlusion.get(voxel);
+
+        if occlusion.is_fully_occluded() {
             return;
         }
 
@@ -199,10 +202,10 @@ pub fn smooth_lighting<'a>(
             let intensity = light.get(voxel).get_greater_intensity();
             voxel::FacesSoftLight::with_intensity(intensity)
         } else {
-            let voxel_occlusion = occlusion.get(voxel);
             let neighbors = gather_neighborhood_light(chunk, voxel, get_kind, get_light); //50%
+
             let faces_soft_light = voxel::SIDES.map(|side| {
-                if !voxel_occlusion.is_occluded(side) {
+                if !occlusion.is_occluded(side) {
                     soft_vertex_light(&neighbors, side) //25%
                 } else {
                     Default::default()
