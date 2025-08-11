@@ -42,6 +42,19 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
+    let mut soft_light = Default::default();
+    c.bench_function("faces light softening", |b| {
+        b.iter(|| {
+            projekto_server::light::smooth_lighting(
+                chunk,
+                &occlusion,
+                &mut soft_light,
+                |_| Some(&kind),
+                |_| Some(&light),
+            );
+        });
+    });
+
     let mut occlusion = ChunkStorage::default();
     let neighborhood = [Some(&kind); chunk::SIDE_COUNT];
 
@@ -59,19 +72,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 |_| Some(&kind),
                 |_| Some(&light),
             ));
-        });
-    });
-
-    let mut soft_light = Default::default();
-    c.bench_function("faces light softening", |b| {
-        b.iter(|| {
-            projekto_server::light::smooth_lighting(
-                chunk,
-                &occlusion,
-                &mut soft_light,
-                |_| Some(&kind),
-                |_| Some(&light),
-            );
         });
     });
 }

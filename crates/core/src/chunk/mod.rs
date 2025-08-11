@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 mod storage;
 pub use storage::*;
 
+mod column;
 mod impls;
 mod sub_chunk;
 mod zip;

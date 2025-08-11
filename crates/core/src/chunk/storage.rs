@@ -2,68 +2,12 @@
 use crate::{
     chunk::{
         self, BUFFER_SIZE, Chunk,
-        sub_chunk::{self, ChunkPack},
+        sub_chunk::{self, ChunkPack, SubChunkStorage},
     },
     voxel::{self, Voxel},
 };
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-
-const SUB_CHUNKS_X: usize = super::X_AXIS_SIZE / super::sub_chunk::X_AXIS_SIZE;
-const SUB_CHUNKS_Y: usize = super::Y_AXIS_SIZE / super::sub_chunk::Y_AXIS_SIZE;
-const SUB_CHUNKS_Z: usize = super::Z_AXIS_SIZE / super::sub_chunk::Z_AXIS_SIZE;
-
-const SUB_CHUNKS_BUFFER_SIZE: usize = SUB_CHUNKS_X * SUB_CHUNKS_Y * SUB_CHUNKS_Z;
-
-const X_SHIFT: usize = (SUB_CHUNKS_Z.ilog2() + Z_SHIFT as u32) as usize;
-const Z_SHIFT: usize = SUB_CHUNKS_Y.ilog2() as usize;
-const Y_SHIFT: usize = 0;
-
-const X_MASK: usize = (SUB_CHUNKS_X - 1) << X_SHIFT;
-const Z_MASK: usize = (SUB_CHUNKS_Z - 1) << Z_SHIFT;
-const Y_MASK: usize = SUB_CHUNKS_Y - 1;
-
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
-struct SubChunkStorage<T>(Vec<ChunkPack<T>>);
-
-impl<T> SubChunkStorage<T> {
-    #[inline]
-    fn to_index(voxel: Voxel) -> usize {
-        (voxel.x << X_SHIFT | voxel.z << Z_SHIFT | voxel.y << Y_SHIFT) as usize
-    }
-}
-
-impl<T> SubChunkStorage<T>
-where
-    T: Default + Copy,
-{
-    fn new() -> Self {
-        SubChunkStorage(vec![ChunkPack::default(); SUB_CHUNKS_BUFFER_SIZE])
-    }
-}
-
-impl<T> Default for SubChunkStorage<T>
-where
-    T: Default + Copy,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T> std::ops::Index<Voxel> for SubChunkStorage<T> {
-    type Output = ChunkPack<T>;
-
-    fn index(&self, voxel: Voxel) -> &Self::Output {
-        &self.0[Self::to_index(voxel)]
-    }
-}
-
-impl<T> std::ops::IndexMut<Voxel> for SubChunkStorage<T> {
-    fn index_mut(&mut self, voxel: Voxel) -> &mut Self::Output {
-        &mut self.0[Self::to_index(voxel)]
-    }
-}
 
 pub trait ChunkStorageType:
     Clone + Copy + core::fmt::Debug + Default + PartialEq + Eq + PartialOrd + std::hash::Hash

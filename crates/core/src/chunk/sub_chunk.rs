@@ -45,6 +45,63 @@ pub fn from_index(index: usize) -> Voxel {
     )
 }
 
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct SubChunkStorage<T>(pub Vec<ChunkPack<T>>);
+
+impl<T> SubChunkStorage<T> {
+    const SUB_CHUNKS_X: usize = super::X_AXIS_SIZE / super::sub_chunk::X_AXIS_SIZE;
+    const SUB_CHUNKS_Y: usize = super::Y_AXIS_SIZE / super::sub_chunk::Y_AXIS_SIZE;
+    const SUB_CHUNKS_Z: usize = super::Z_AXIS_SIZE / super::sub_chunk::Z_AXIS_SIZE;
+
+    const SUB_CHUNKS_BUFFER_SIZE: usize =
+        Self::SUB_CHUNKS_X * Self::SUB_CHUNKS_Y * Self::SUB_CHUNKS_Z;
+
+    const X_SHIFT: usize = (Self::SUB_CHUNKS_Z.ilog2() + Self::Z_SHIFT as u32) as usize;
+    const Z_SHIFT: usize = Self::SUB_CHUNKS_Y.ilog2() as usize;
+    const Y_SHIFT: usize = 0;
+
+    const X_MASK: usize = (Self::SUB_CHUNKS_X - 1) << Self::X_SHIFT;
+    const Z_MASK: usize = (Self::SUB_CHUNKS_Z - 1) << Self::Z_SHIFT;
+    const Y_MASK: usize = Self::SUB_CHUNKS_Y - 1;
+
+    #[inline]
+    fn to_index(voxel: Voxel) -> usize {
+        (voxel.x << Self::X_SHIFT | voxel.z << Self::Z_SHIFT | voxel.y << Self::Y_SHIFT) as usize
+    }
+}
+
+impl<T> SubChunkStorage<T>
+where
+    T: Default + Copy,
+{
+    fn new() -> Self {
+        SubChunkStorage(vec![ChunkPack::default(); Self::SUB_CHUNKS_BUFFER_SIZE])
+    }
+}
+
+impl<T> Default for SubChunkStorage<T>
+where
+    T: Default + Copy,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> std::ops::Index<Voxel> for SubChunkStorage<T> {
+    type Output = ChunkPack<T>;
+
+    fn index(&self, voxel: Voxel) -> &Self::Output {
+        &self.0[Self::to_index(voxel)]
+    }
+}
+
+impl<T> std::ops::IndexMut<Voxel> for SubChunkStorage<T> {
+    fn index_mut(&mut self, voxel: Voxel) -> &mut Self::Output {
+        &mut self.0[Self::to_index(voxel)]
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct VoxelStatePallet<T> {
     pallet: Vec<T>,
