@@ -117,7 +117,7 @@ impl AssetLoader for ChunkAssetLoader {
         _load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
         // TODO: Get the exact size from .meta file
-        let mut bytes = vec![];
+        let mut bytes = Vec::with_capacity(256 * 1024); //256k
         reader.read_to_end(&mut bytes).await?;
 
         let (asset, _) = bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;

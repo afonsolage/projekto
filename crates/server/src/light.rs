@@ -82,7 +82,7 @@ const NEIGHBOR_VERTEX_LOOKUP: [[[usize; VERTEX_COUNT]; VERTEX_NEIGHBOR_COUNT]; v
     ],
 ];
 
-fn gather_neighborhood_light<'a>(
+pub fn gather_neighborhood_light<'a>(
     chunk: Chunk,
     voxel: Voxel,
     get_kind: impl GetChunkStorage<'a, voxel::Kind>,
@@ -121,19 +121,16 @@ fn gather_neighborhood_light<'a>(
                     let (dir, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
                     let neighbor_chunk = chunk.neighbor(dir);
 
-                    // TODO: Change this when if-let chains stabilizes
-                    if let Some(kind) = get_kind(neighbor_chunk) {
-                        if let Some(light) = get_light(neighbor_chunk) {
-                            let intensity = light.get(neighbor_voxel).get_greater_intensity();
+                    if let Some(kind) = get_kind(neighbor_chunk)
+                        && let Some(light) = get_light(neighbor_chunk)
+                    {
+                        let intensity = light.get(neighbor_voxel).get_greater_intensity();
 
-                            // Check if returned block is opaque
-                            if intensity == 0 && kind.get(neighbor_voxel).is_opaque() {
-                                None
-                            } else {
-                                Some(intensity)
-                            }
+                        // Check if returned block is opaque
+                        if intensity == 0 && kind.get(neighbor_voxel).is_opaque() {
+                            None
                         } else {
-                            Some(voxel::Light::MAX_NATURAL_INTENSITY)
+                            Some(intensity)
                         }
                     } else {
                         Some(voxel::Light::MAX_NATURAL_INTENSITY)
@@ -160,6 +157,7 @@ fn smooth_ambient_occlusion<const VERTEX: usize>(
     let side1 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][VERTEX][1]];
     let side2 = neighbors[NEIGHBOR_VERTEX_LOOKUP[idx][VERTEX][2]];
 
+    // It is important to differentiate between no neighbor and 0.
     let corner = if side1.is_none() && side2.is_none() {
         0
     } else {
@@ -174,7 +172,7 @@ fn smooth_ambient_occlusion<const VERTEX: usize>(
     (side + side1 + side2 + corner) as f32 / 4.0
 }
 
-fn soft_vertex_light(neighbors: &[Option<u8>; NEIGHBOR_COUNT], side: voxel::Side) -> [f32; 4] {
+pub fn soft_vertex_light(neighbors: &[Option<u8>; NEIGHBOR_COUNT], side: voxel::Side) -> [f32; 4] {
     [
         smooth_ambient_occlusion::<0>(neighbors, side),
         smooth_ambient_occlusion::<1>(neighbors, side),
@@ -194,7 +192,14 @@ pub fn smooth_lighting<'a>(
     let light = get_light(chunk).expect("Chunk must exists");
 
     chunk::voxels().for_each(|voxel| {
-        if occlusion.get(voxel).is_fully_occluded() {
+        let voxel_kind = kind.get(voxel);
+        if voxel_kind.is_none() {
+            return;
+        }
+
+        let occlusion = occlusion.get(voxel);
+
+        if occlusion.is_fully_occluded() {
             return;
         }
 
@@ -202,11 +207,11 @@ pub fn smooth_lighting<'a>(
             let intensity = light.get(voxel).get_greater_intensity();
             voxel::FacesSoftLight::with_intensity(intensity)
         } else {
-            let voxel_occlusion = occlusion.get(voxel);
-            let neighbors = gather_neighborhood_light(chunk, voxel, get_kind, get_light);
+            let neighbors = gather_neighborhood_light(chunk, voxel, get_kind, get_light); //50%
+
             let faces_soft_light = voxel::SIDES.map(|side| {
-                if !voxel_occlusion.is_occluded(side) {
-                    soft_vertex_light(&neighbors, side)
+                if !occlusion.is_occluded(side) {
+                    soft_vertex_light(&neighbors, side) //25%
                 } else {
                     Default::default()
                 }

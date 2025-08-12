@@ -5,7 +5,7 @@ use bevy::{prelude::*, time::common_conditions::on_timer};
 use net::NetPlugin;
 
 // pub mod app;
-mod light;
+pub mod light;
 pub mod meshing;
 
 mod asset;

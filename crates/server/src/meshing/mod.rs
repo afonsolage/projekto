@@ -48,7 +48,7 @@ pub const VERTICES_INDICES: [[usize; 4]; 6] = [
 ///
 /// **Returns** a list of generated [`voxel::Vertex`].
 pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
-    const VERTICES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT * 6) / 2;
+    const VERTICES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT * 6) / 100;
     const LIGHT_FRACTION: f32 = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
 
     #[inline]
