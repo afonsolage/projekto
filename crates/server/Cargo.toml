@@ -54,6 +54,10 @@ name = "server_bench"
 path = "examples/server_bench.rs"
 
 [[example]]
+name = "check_single_chunk"
+path = "examples/check_single_chunk.rs"
+
+[[example]]
 name = "sample_chunks"
 path = "examples/sample_chunks.rs"
 

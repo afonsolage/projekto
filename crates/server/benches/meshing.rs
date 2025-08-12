@@ -1,9 +1,6 @@
 use bevy::math::IVec3;
 use criterion::{Criterion, criterion_group, criterion_main};
-use projekto_core::{
-    chunk::{self, ChunkStorage},
-    voxel,
-};
+use projekto_core::chunk::{self, ChunkStorage};
 use projekto_server::{
     ChunkAsset,
     meshing::{faces_occlusion, generate_vertices, greedy},

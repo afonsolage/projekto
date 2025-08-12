@@ -192,6 +192,11 @@ pub fn smooth_lighting<'a>(
     let light = get_light(chunk).expect("Chunk must exists");
 
     chunk::voxels().for_each(|voxel| {
+        let voxel_kind = kind.get(voxel);
+        if voxel_kind.is_none() {
+            return;
+        }
+
         let occlusion = occlusion.get(voxel);
 
         if occlusion.is_fully_occluded() {

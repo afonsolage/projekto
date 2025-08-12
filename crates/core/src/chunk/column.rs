@@ -2,7 +2,7 @@
 use std::ops::{Deref, DerefMut};
 
 use bevy::{
-    math::{IVec2, Vec3, Vec3Swizzles},
+    math::{IVec2, IVec3, Vec3, Vec3Swizzles},
     platform::collections::HashSet,
     prelude::{Deref, DerefMut},
 };
@@ -26,6 +26,11 @@ impl<T> ChunkColumnStorage<T> {
         assert!(voxel.z >= 0 && voxel.z <= 15);
 
         (voxel.x << 4 | voxel.z) as usize
+    }
+
+    #[inline]
+    fn from_column_index(index: u8) -> Voxel {
+        (((index & 0xF0) >> 4) as i32, 0, (index & 0x0F) as i32).into()
     }
 }
 
@@ -89,6 +94,43 @@ where
 
     pub fn pack(&mut self) {
         self.0.iter_mut().for_each(|p| p.pack());
+    }
+
+    pub fn filter<F>(&self, mut f: F) -> Vec<Voxel>
+    where
+        F: FnMut(&T) -> bool + Copy,
+    {
+        self.0.iter().enumerate().fold(
+            Vec::with_capacity(chunk::BUFFER_SIZE / 4),
+            |mut voxels, (column_idx, column)| {
+                let base_voxel = Self::from_column_index(column_idx as u8);
+                match column {
+                    ChunkColumn::Single(v) => {
+                        if f(v) {
+                            voxels.extend((0..COLUMN_COUNT as i32).map(|y| base_voxel.with_y(y)));
+                        }
+                    }
+                    ChunkColumn::Pallet { pallet, indices } => {
+                        for (pallet_idx, v) in pallet.pallet.iter().enumerate() {
+                            if f(v) {
+                                let target_idx = pallet_idx as u8;
+                                let filtered_voxels = indices
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(_, pallet_idx)| **pallet_idx == target_idx)
+                                    .map(|(y_idx, _)| {
+                                        IVec3::new(base_voxel.x, y_idx as i32, base_voxel.z)
+                                    });
+
+                                voxels.extend(filtered_voxels);
+                            }
+                        }
+                    }
+                }
+
+                voxels
+            },
+        )
     }
 
     pub fn all<F>(&self, mut f: F) -> bool
@@ -565,5 +607,94 @@ mod tests {
             ChunkColumn::Single(voxel_state) => assert_eq!(voxel_state, state),
             _ => panic!("Calling pack on pallet with 1 unique value should return single"),
         }
+    }
+
+    #[test]
+    fn column_storage_filter_single() {
+        // Arrange
+        let mut storage = ChunkColumnStorage::<u8>::new();
+        chunk::voxels().for_each(|v| storage.set(v, 123u8));
+        storage.pack();
+
+        // Act
+        let voxels = storage.filter(|value| *value == 123u8);
+
+        // Assert
+        assert_eq!(voxels.len(), chunk::BUFFER_SIZE);
+    }
+
+    #[test]
+    fn column_storage_filter_single_with_dead_states() {
+        // Arrange
+        let mut storage = ChunkColumnStorage::<u8>::new();
+        chunk::voxels().for_each(|v| storage.set(v, 123u8));
+
+        // Act
+        let voxels = storage.filter(|value| *value == 123u8);
+
+        // Assert
+        assert_eq!(voxels.len(), chunk::BUFFER_SIZE);
+        assert!(voxels.iter().all(|v| storage.get(*v) == 123u8));
+    }
+
+    #[test]
+    fn column_storage_filter_pallet() {
+        // Arrange
+        let mut storage = ChunkColumnStorage::<u8>::new();
+
+        for x in 5..15 {
+            for z in 3..10 {
+                for y in 200..215 {
+                    storage.set(IVec3::new(x, y, z), 123u8);
+                }
+            }
+        }
+
+        // Act
+        let voxels = storage.filter(|value| *value == 123u8);
+
+        // Assert
+        assert_eq!(voxels.len(), 1050);
+        assert!(voxels.iter().all(|v| storage.get(*v) == 123u8));
+    }
+
+    #[test]
+    fn column_storage_filter_pallet_multiple() {
+        // Arrange
+        let mut storage = ChunkColumnStorage::<u8>::new();
+
+        for x in 5..15 {
+            for z in 3..10 {
+                for y in 200..215 {
+                    storage.set(IVec3::new(x, y, z), 123u8);
+                }
+            }
+        }
+
+        for x in 3..12 {
+            for z in 7..11 {
+                for y in 1..15 {
+                    storage.set(IVec3::new(x, y, z), 33u8);
+                }
+            }
+        }
+
+        // Act
+        let voxels_123 = storage.filter(|value| *value == 123u8);
+        let voxels_33 = storage.filter(|value| *value == 33u8);
+        let voxels_default = storage.filter(|value| *value == u8::default());
+
+        // Assert
+        assert_eq!(
+            voxels_123.len() + voxels_33.len() + voxels_default.len(),
+            chunk::BUFFER_SIZE
+        );
+        assert!(voxels_123.iter().all(|v| storage.get(*v) == 123u8));
+        assert!(voxels_33.iter().all(|v| storage.get(*v) == 33u8));
+        assert!(
+            voxels_default
+                .iter()
+                .all(|v| storage.get(*v) == u8::default())
+        );
     }
 }

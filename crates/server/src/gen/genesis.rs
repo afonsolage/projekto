@@ -19,6 +19,8 @@ pub fn generate_chunk(noise: &Noise, chunk: Chunk, chunk_kind: &mut ChunkStorage
             }
         }
     }
+
+    chunk_kind.pack();
 }
 
 pub fn init_light(
@@ -36,6 +38,8 @@ pub fn init_light(
                 voxel::Light::MAX_NATURAL_INTENSITY,
             );
         });
+
+    chunk_light.pack();
 
     let _neighbor_propagation = light::propagate(
         chunk_kind,

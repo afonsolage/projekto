@@ -32,7 +32,7 @@ fn main() {
 fn setup(mut commands: Commands) {
     commands.insert_resource(Landscape {
         center: IVec2::ZERO,
-        radius: 4,
+        radius: 32,
     });
 }
 

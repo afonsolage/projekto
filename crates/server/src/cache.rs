@@ -29,13 +29,14 @@ pub struct ChunkCache {
 impl ChunkCache {
     pub fn init(root: &str) -> bool {
         let new_path = init_path(root);
-        if let Err(existing) = CACHE_PATH.set(new_path.clone()) {
-            if new_path != existing {
-                warn!(
-                    "Failed to init CachePath. Another thread already initialized it to {new_path:?}"
-                );
-                return false;
-            }
+
+        if let Err(existing) = CACHE_PATH.set(new_path.clone())
+            && new_path != existing
+        {
+            warn!(
+                "Failed to init CachePath. Another thread already initialized it to {new_path:?}"
+            );
+            return false;
         }
 
         true
