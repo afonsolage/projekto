@@ -8,6 +8,7 @@ use net::NetPlugin;
 pub mod light;
 pub mod meshing;
 
+mod archive;
 mod asset;
 
 pub use asset::{ChunkAsset, ChunkAssetHandle, setup_chunk_asset_loader};
