@@ -6,7 +6,7 @@ mod channel;
 pub use channel::{Channel, ChannelError, ChannelPair};
 
 mod net;
-pub use net::{connect_to_server, start_server, Client, ClientId, Server};
+pub use net::{Client, ClientId, Server, connect_to_server, start_server};
 
 mod ecs;
 pub use ecs::{NoCopy, RegisterMessageHandler, RunMessageHandlers};

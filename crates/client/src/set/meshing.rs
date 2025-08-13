@@ -7,8 +7,8 @@ use projekto_messages::ChunkVertex;
 use projekto_proto::RegisterMessageHandler;
 
 use crate::{
-    bundle::ChunkLocal, material::ChunkMaterial, net::ServerDisconnected, ChunkBundle, ChunkMap,
-    ChunkMaterialHandle,
+    ChunkBundle, ChunkMap, ChunkMaterialHandle, bundle::ChunkLocal, material::ChunkMaterial,
+    net::ServerDisconnected,
 };
 
 pub(crate) struct MeshingPlugin;

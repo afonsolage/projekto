@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{net::ServerConnection, ClientSet};
+use crate::{ClientSet, net::ServerConnection};
 
 pub(crate) struct SendInputPlugin;
 

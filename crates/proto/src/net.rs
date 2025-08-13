@@ -1,7 +1,7 @@
 use std::{
     io,
     mem::size_of,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
 };
 
 use async_net::{AsyncToSocketAddrs, SocketAddr, TcpListener, TcpStream};
@@ -12,8 +12,8 @@ use bevy::{
 use futures_lite::{AsyncReadExt, AsyncWriteExt, StreamExt};
 
 use crate::{
-    channel::{Channel, ChannelPair},
     MessageError, MessageType,
+    channel::{Channel, ChannelPair},
 };
 
 const CACHE_BUFFER_SIZE: usize = 1024 * 1024 * 32; // 32 MB
@@ -294,7 +294,7 @@ mod tests {
     use projekto_proto_macros::message_source;
 
     use crate::{
-        self as projekto_proto, connect_to_server, start_server, Client, Message, MessageSource,
+        self as projekto_proto, Client, Message, MessageSource, connect_to_server, start_server,
     };
 
     #[message_source(MessageSource::Client)]
