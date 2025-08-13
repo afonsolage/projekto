@@ -9,7 +9,7 @@ use bevy::{
 };
 use futures_lite::future::{block_on, poll_once};
 use projekto_messages::{ClientMessage, ServerMessage};
-use projekto_proto::{connect_to_server, ClientId, MessageType, Server};
+use projekto_proto::{ClientId, MessageType, Server, connect_to_server};
 
 pub(crate) struct NetPlugin;
 

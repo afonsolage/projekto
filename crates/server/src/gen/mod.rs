@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use async_channel::Receiver;
 use bevy::{app::ScheduleRunnerPlugin, ecs::schedule::ExecutorKind, prelude::*};
+use lz4_flex::frame::FrameEncoder;
 
 use crate::{
     asset::{ChunkAsset, ChunkAssetGenRequest},
@@ -159,16 +160,25 @@ fn dispatch_requests(world: &mut World) {
             req.chunk
         );
 
-        if let Ok(bytes) = bincode::serde::encode_to_vec(&asset, bincode::config::standard()) {
+        let mut compressed = Vec::with_capacity(10 * 1024); // 10k
+        let mut lz4 = FrameEncoder::new(&mut compressed);
+
+        if let Err(error) =
+            bincode::serde::encode_into_std_write(&asset, &mut lz4, bincode::config::standard())
+        {
+            error!("Failed to serialize chunk {:?}. Error: {error}", req.chunk);
+            return req.finish(Err(()));
+        }
+
+        if lz4.finish().is_ok() {
             trace!(
                 "[dispatch_requests] Chunk {} serialized. Size: {} bytes",
                 req.chunk,
-                bytes.len()
+                compressed.len()
             );
-            req.finish(Ok(bytes));
+            req.finish(Ok(compressed));
         } else {
-            let chunk = asset.chunk;
-            error!("Failed to serialize chunk {chunk:?}.");
+            error!("Failed to compress chunk {:?}.", req.chunk);
         }
     });
 }

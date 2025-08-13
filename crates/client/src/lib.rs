@@ -15,9 +15,9 @@ use debug::DebugPlugin;
 use material::ChunkMaterial;
 use net::ServerConnection;
 use projekto_camera::{
+    CameraPlugin,
     first_person::{FirstPersonCamera, FirstPersonTarget},
     fly_by::FlyByCamera,
-    CameraPlugin,
 };
 use projekto_core::{
     chunk::Chunk,

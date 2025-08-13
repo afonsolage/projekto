@@ -171,8 +171,8 @@ mod tests {
     use projekto_proto_macros::message_source;
 
     use crate::{
-        self as projekto_proto, ecs::MoveHandler, BoxedMessage, ClientId, MessageSource,
-        RegisterMessageHandler, RunMessageHandlers,
+        self as projekto_proto, BoxedMessage, ClientId, MessageSource, RegisterMessageHandler,
+        RunMessageHandlers, ecs::MoveHandler,
     };
 
     use super::CopyHandlers;

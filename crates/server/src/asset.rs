@@ -12,6 +12,7 @@ use bevy::{
     },
     prelude::*,
 };
+use lz4_flex::frame::FrameDecoder;
 use projekto_core::{
     chunk::{Chunk, ChunkStorage},
     voxel,
@@ -117,10 +118,13 @@ impl AssetLoader for ChunkAssetLoader {
         _load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
         // TODO: Get the exact size from .meta file
-        let mut bytes = Vec::with_capacity(256 * 1024); //256k
+        let mut bytes = Vec::with_capacity(10 * 1024); //10k
         reader.read_to_end(&mut bytes).await?;
 
-        let (asset, _) = bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;
+        let mut frame_dec = FrameDecoder::new(bytes.as_slice());
+
+        let asset =
+            bincode::serde::decode_from_std_read(&mut frame_dec, bincode::config::standard())?;
 
         trace!("[AssetLoader] Loaded asset: {asset:?}");
 
@@ -152,9 +156,12 @@ impl ChunkAssetReader {
 
         let request = ChunkAssetGenRequest::new(path);
         // TODO: Add conversion from TrySendErrror to AssetReaderError
-        self.sender.try_send(request.clone()).unwrap();
-
-        if let Ok(bytes) = request.get_result().await {
+        if let Err(error) = self.sender.try_send(request.clone()) {
+            error!("Failed to send chunk generation request: {error}");
+            Err(AssetReaderError::Io(
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, error).into(),
+            ))
+        } else if let Ok(bytes) = request.get_result().await {
             if let Err(err) = self.writer.write_bytes(path, &bytes).await {
                 error!("Failed to save chunk {path:?} to disk: {err}");
             }
