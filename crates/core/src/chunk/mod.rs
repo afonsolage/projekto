@@ -54,14 +54,17 @@ impl Chunk {
         ))
     }
 
+    #[inline]
     pub fn z(&self) -> i32 {
         self.0.y
     }
 
+    #[inline]
     pub fn x(&self) -> i32 {
         self.0.x
     }
 
+    #[inline]
     pub fn xz(&self) -> IVec2 {
         self.0
     }

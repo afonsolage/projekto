@@ -18,7 +18,7 @@ async fn fill_archive(archive: &mut Archive<ChunkStorage<u128>>) {
     for x in 0..15u8 {
         for z in 0..15u8 {
             let chunk = generate_chunk((x as u64) << 16 | z as u64);
-            archive.write(x, z, &chunk).await.unwrap();
+            archive.write(x, z, chunk).await.unwrap();
         }
     }
 }

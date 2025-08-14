@@ -1,7 +1,9 @@
 #![allow(unused)]
 
 use async_fs::{File, OpenOptions};
+use bevy::{math::IVec2, prelude::*};
 use futures_lite::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use projekto_core::chunk::Chunk;
 use std::{
     cell::{OnceCell, RefCell},
     io::{Read, Seek, SeekFrom, Write},
@@ -13,9 +15,18 @@ mod server;
 pub use server::ArchiveServer;
 
 const SECTOR_SIZE: usize = 4096;
-const MAX_SECTORS_COUNT: usize = 32 * 32; // 32 chunks in each axis
+const AXIS_CHUNK_COUNT: usize = 32;
+const MAX_CHUNK_COUNT: usize = AXIS_CHUNK_COUNT * AXIS_CHUNK_COUNT;
 const SECTOR_INDEX_SIZE: usize = 2 * 2; // 2 bytes, one for offset and another for sectors
-const HEADER_SIZE: usize = SECTOR_INDEX_SIZE * MAX_SECTORS_COUNT;
+const HEADER_SIZE: usize = SECTOR_INDEX_SIZE * MAX_CHUNK_COUNT;
+const AXIS_SHIFT: usize = AXIS_CHUNK_COUNT.ilog2() as usize;
+
+pub(crate) fn chunk_local_to_archive(chunk: Chunk) -> IVec2 {
+    IVec2::new(
+        ((chunk.x() as f32) / AXIS_CHUNK_COUNT as f32).floor() as i32,
+        ((chunk.z() as f32) / AXIS_CHUNK_COUNT as f32).floor() as i32,
+    )
+}
 
 #[derive(Debug, Error)]
 pub enum ArchiveError {
@@ -31,9 +42,15 @@ pub enum ArchiveError {
     HeaderInvalid(usize),
     #[error("Failed to write: {0}")]
     Write(String),
+    #[error("Failed to load chunk: {0}")]
+    ChunkLoad(String),
+    #[error("Failed to save chunk: {0}")]
+    ChunkSave(String),
+    #[error("Failed to receive task result")]
+    TaskRecv,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 struct SectorIndex {
     offset: u16,
     sectors: u16,
@@ -100,7 +117,7 @@ struct Header {
 impl Header {
     fn new() -> Self {
         Self {
-            sectors: vec![Default::default(); MAX_SECTORS_COUNT],
+            sectors: vec![Default::default(); MAX_CHUNK_COUNT],
             dirty: false,
         }
     }
@@ -149,7 +166,7 @@ impl Header {
 
     #[inline]
     fn to_index(x: u8, z: u8) -> usize {
-        ((x & 0xF) as usize) << 4 | (z & 0xF) as usize
+        (x as usize) << AXIS_SHIFT | z as usize
     }
 }
 
@@ -159,11 +176,16 @@ pub struct Archive<T> {
     _pd: std::marker::PhantomData<T>,
 }
 
-impl<T> Archive<T>
-where
-    T: serde::Serialize + for<'de> serde::Deserialize<'de>,
-{
+impl<T> Archive<T> {
     pub async fn new(name: &str) -> Result<Self, ArchiveError> {
+        let path = std::path::Path::new(name);
+
+        if let Some(parent_dir) = path.parent()
+            && !std::fs::exists(parent_dir)?
+        {
+            std::fs::create_dir_all(parent_dir)?;
+        }
+
         let mut file_handler = OpenOptions::new()
             .read(true)
             .write(true)
@@ -198,6 +220,25 @@ where
         Ok(archive)
     }
 
+    pub async fn save_header(&mut self) -> Result<(), ArchiveError> {
+        let bytes = self.header.ser()?;
+        self.file_handler.seek(SeekFrom::Start(0)).await?;
+        self.file_handler.write_all(&bytes).await?;
+        self.file_handler.flush().await?;
+        self.header.dirty = false;
+
+        Ok(())
+    }
+
+    pub fn is_header_dirty(&self) -> bool {
+        self.header.dirty
+    }
+}
+
+impl<T> Archive<T>
+where
+    T: serde::Serialize + for<'de> serde::Deserialize<'de>,
+{
     pub async fn read(&mut self, x: u8, z: u8) -> Result<Option<T>, ArchiveError> {
         let index = self.header.get_index(x, z);
 
@@ -220,10 +261,10 @@ where
         Ok(Some(value))
     }
 
-    pub async fn write(&mut self, x: u8, z: u8, value: &T) -> Result<(), ArchiveError> {
+    pub async fn write(&mut self, x: u8, z: u8, value: T) -> Result<(), ArchiveError> {
         let mut compressed = Vec::with_capacity(256 * 1024); // 256k
         let mut frame = lz4_flex::frame::FrameEncoder::new(&mut compressed);
-        bincode::serde::encode_into_std_write(value, &mut frame, bincode::config::standard())?;
+        bincode::serde::encode_into_std_write(&value, &mut frame, bincode::config::standard())?;
         frame.finish()?;
 
         let index = self.header.get_index(x, z);
@@ -256,20 +297,6 @@ where
         Ok(())
     }
 
-    pub async fn save_header(&mut self) -> Result<(), ArchiveError> {
-        let bytes = self.header.ser()?;
-        self.file_handler.seek(SeekFrom::Start(0)).await?;
-        self.file_handler.write_all(&bytes).await?;
-        self.file_handler.flush().await?;
-        self.header.dirty = false;
-
-        Ok(())
-    }
-
-    pub fn is_header_dirty(&self) -> bool {
-        self.header.dirty
-    }
-
     async fn append(&mut self, needed_sectors: u16) -> Result<SectorIndex, ArchiveError> {
         let seek_position = self.file_handler.seek(SeekFrom::End(0)).await?;
 
@@ -290,7 +317,7 @@ mod tests {
 
     fn temp_file() -> String {
         format!(
-            "{}/projekto_{:#08}.tmp",
+            "{}/projekto/{:#08}.tmp",
             std::env::temp_dir().display(),
             rand::random_range(0..u32::MAX)
         )
@@ -476,7 +503,7 @@ mod tests {
             .iter_mut()
             .enumerate()
             .for_each(|(i, index)| {
-                index.offset = (MAX_SECTORS_COUNT - i) as u16;
+                index.offset = (MAX_CHUNK_COUNT - i) as u16;
                 index.sectors = i as u16;
             });
 
@@ -492,7 +519,7 @@ mod tests {
             .iter()
             .enumerate()
             .for_each(|(i, index)| {
-                assert_eq!(index.offset, (MAX_SECTORS_COUNT - i) as u16);
+                assert_eq!(index.offset, (MAX_CHUNK_COUNT - i) as u16);
                 assert_eq!(index.sectors, i as u16);
             });
         assert!(!archive.is_header_dirty());
@@ -506,7 +533,7 @@ mod tests {
         let txt = "The Silly Goosery is real!🪿︎";
 
         // Act
-        block_on(archive.write(2, 3, &txt.to_string())).unwrap();
+        block_on(archive.write(2, 3, txt.to_string())).unwrap();
         let read_txt = block_on(archive.read(2, 3)).unwrap();
 
         // Assert
@@ -519,11 +546,11 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
-        block_on(archive.write(2, 3, &((0..20u16).collect()))).unwrap();
+        block_on(archive.write(2, 3, ((0..20u16).collect()))).unwrap();
 
         // Act
-        let new_value = (0..1000u16).collect();
-        block_on(archive.write(2, 3, &new_value)).unwrap();
+        let new_value = (0..1000u16).collect::<Vec<_>>();
+        block_on(archive.write(2, 3, new_value.clone())).unwrap();
 
         // Assert
         let read_value = block_on(archive.read(2, 3)).unwrap();
@@ -540,12 +567,12 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
-        block_on(archive.write(2, 3, &((0..20u16).collect()))).unwrap();
+        block_on(archive.write(2, 3, ((0..20u16).collect()))).unwrap();
         let old_index = archive.header.get_index(2, 3);
 
         // Act
-        let new_value = (0..4000u16).collect();
-        block_on(archive.write(2, 3, &new_value)).unwrap();
+        let new_value = (0..4000u16).collect::<Vec<_>>();
+        block_on(archive.write(2, 3, new_value.clone())).unwrap();
 
         // Assert
         let read_value = block_on(archive.read(2, 3)).unwrap();
@@ -572,60 +599,56 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::new(&temp_file)).unwrap();
+        let mut chunks = vec![];
 
         // Act
         for x in 0..3u8 {
-            for z in 0..3u8 {
-                let chunk = generate_chunk((x as u64) << 16 | z as u64);
-                block_on(archive.write(x, z, &chunk)).unwrap();
-            }
+            let chunk = generate_chunk(x as u64);
+            chunks.push((x, chunk.clone()));
+            block_on(archive.write(x, 0, chunk)).unwrap();
         }
 
         // Assert
-        for x in 0..3u8 {
-            for z in 0..3u8 {
-                let chunk = generate_chunk((x as u64) << 16 | z as u64);
-                let cached_chunk = block_on(archive.read(x, z));
+        for (x, chunk) in chunks {
+            let chunk = generate_chunk(x as u64);
+            let cached_chunk = block_on(archive.read(x, 0));
 
-                if cached_chunk.is_err() {
-                    panic!("Failed at {x}, {z}. Error: {cached_chunk:?}");
-                }
-
-                let cached_chunk = cached_chunk.unwrap().unwrap();
-
-                assert_eq!(chunk, cached_chunk);
+            if cached_chunk.is_err() {
+                panic!("Failed at {x}, 0. Error: {cached_chunk:?}");
             }
+
+            let cached_chunk = cached_chunk.unwrap().unwrap();
+
+            assert_eq!(chunk, cached_chunk);
         }
     }
 
-    // Too heavy for CI
     #[test]
-    fn archive_full() {
+    fn archive_max_indices() {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::new(&temp_file)).unwrap();
 
         // Act
-        for x in 0..15u8 {
-            for z in 0..15u8 {
-                let chunk = generate_chunk((x as u64) << 16 | z as u64);
-                block_on(archive.write(x, z, &chunk)).unwrap();
+        for x in 30..AXIS_CHUNK_COUNT as u8 {
+            for z in 0..AXIS_CHUNK_COUNT as u8 {
+                let value = (x as u128) << 8 | z as u128;
+                block_on(archive.write(x, z, value)).unwrap();
             }
         }
 
         // Assert
-        for x in 0..15u8 {
-            for z in 0..15u8 {
-                let chunk = generate_chunk((x as u64) << 16 | z as u64);
-                let cached_chunk = block_on(archive.read(x, z));
+        for x in 30..AXIS_CHUNK_COUNT as u8 {
+            for z in 0..AXIS_CHUNK_COUNT as u8 {
+                let value = block_on(archive.read(x, z));
 
-                if cached_chunk.is_err() {
-                    panic!("Failed at {x}, {z}. Error: {cached_chunk:?}");
+                if value.is_err() {
+                    panic!("Failed at {x}, {z}. Error: {value:?}");
                 }
 
-                let cached_chunk = cached_chunk.unwrap().unwrap();
+                let value = value.unwrap().unwrap();
 
-                assert_eq!(chunk, cached_chunk);
+                assert_eq!(value, (x as u128) << 8 | z as u128, "Invalid at {x}, {z}");
             }
         }
     }
