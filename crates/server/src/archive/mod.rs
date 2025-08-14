@@ -42,6 +42,8 @@ impl SectorIndex {
     }
 
     fn seek_offset(&self) -> u64 {
+        assert_ne!(self.offset, 0);
+
         self.offset as u64 * SECTOR_SIZE as u64
     }
 
@@ -50,8 +52,7 @@ impl SectorIndex {
     }
 
     fn sectors_count(bytes: usize) -> u16 {
-        let sector_size = SECTOR_SIZE as u16;
-        (bytes as u16 + sector_size + 1) / sector_size
+        ((bytes + SECTOR_SIZE + 1) / SECTOR_SIZE) as u16
     }
 
     fn from_seek_position(seek_position: u64, needed_sectors: u16) -> SectorIndex {
@@ -230,7 +231,8 @@ where
             )));
         }
 
-        compressed.resize(SectorIndex::sector_to_bytes(needed_sectors), 0);
+        let new_len = SectorIndex::sector_to_bytes(needed_sectors);
+        compressed.resize(new_len, 0);
 
         self.header.set_index(x, z, index);
         self.file_handler
@@ -263,7 +265,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use projekto_core::chunk::ChunkStorage;
+    use projekto_core::chunk::{self, ChunkStorage};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
 
@@ -534,11 +537,76 @@ mod tests {
         assert_ne!(old_index.sectors, new_index.sectors);
     }
 
-    fn archive_() {
+    fn generate_chunk(seed: u64) -> ChunkStorage<u128> {
+        let mut rnd = StdRng::seed_from_u64(seed);
+        let mut chunk = ChunkStorage::<u128>::default();
+        chunk::voxels().for_each(|voxel| {
+            chunk.set(voxel, rnd.random());
+        });
+
+        chunk
+    }
+
+    #[test]
+    fn archive_many() {
         // Arrange
+        let temp_file = temp_file();
+        let mut archive = Archive::new(&temp_file).unwrap();
 
         // Act
+        for x in 0..3u8 {
+            for z in 0..3u8 {
+                let chunk = generate_chunk((x as u64) << 16 | z as u64);
+                archive.write(x, z, &chunk).unwrap();
+            }
+        }
 
         // Assert
+        for x in 0..3u8 {
+            for z in 0..3u8 {
+                let chunk = generate_chunk((x as u64) << 16 | z as u64);
+                let cached_chunk = archive.read(x, z);
+
+                if cached_chunk.is_err() {
+                    panic!("Failed at {x}, {z}. Error: {cached_chunk:?}");
+                }
+
+                let cached_chunk = cached_chunk.unwrap().unwrap();
+
+                assert_eq!(chunk, cached_chunk);
+            }
+        }
+    }
+
+    // Too heavy for CI
+    //#[test]
+    fn archive_full() {
+        // Arrange
+        let temp_file = temp_file();
+        let mut archive = Archive::new(&temp_file).unwrap();
+
+        // Act
+        for x in 0..15u8 {
+            for z in 0..15u8 {
+                let chunk = generate_chunk((x as u64) << 16 | z as u64);
+                archive.write(x, z, &chunk).unwrap();
+            }
+        }
+
+        // Assert
+        for x in 0..15u8 {
+            for z in 0..15u8 {
+                let chunk = generate_chunk((x as u64) << 16 | z as u64);
+                let cached_chunk = archive.read(x, z);
+
+                if cached_chunk.is_err() {
+                    panic!("Failed at {x}, {z}. Error: {cached_chunk:?}");
+                }
+
+                let cached_chunk = cached_chunk.unwrap().unwrap();
+
+                assert_eq!(chunk, cached_chunk);
+            }
+        }
     }
 }

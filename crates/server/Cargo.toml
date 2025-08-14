@@ -64,3 +64,7 @@ path = "examples/sample_chunks.rs"
 [[bench]]
 name = "meshing"
 harness = false
+
+[[bench]]
+name = "archive"
+harness = false
