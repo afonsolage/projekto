@@ -31,6 +31,7 @@ futures-lite.workspace = true
 async-io.workspace = true
 async-channel.workspace = true
 async-lock.workspace = true
+async-fs.workspace = true
 
 # genesis
 bracket-noise = "0.8.7"

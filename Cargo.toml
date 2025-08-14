@@ -22,7 +22,7 @@ bevy = "0.16"
 rand = "0.9"
 thiserror = "2.0"
 serde = "1.0"
-criterion = "0.7"
+criterion = { version = "0.7", features = ["async_futures"]}
 
 # IO
 lz4_flex = "0.11"
@@ -35,6 +35,7 @@ async-channel = "2.2"
 async-net = "2.0"
 async-io = "2.3"
 async-lock = "3.3"
+async-fs = "2.1"
 
 [dev-dependencies]
 bevy.workspace = true

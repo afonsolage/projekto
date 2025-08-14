@@ -1,12 +1,16 @@
 #![allow(unused)]
 
+use async_fs::{File, OpenOptions};
+use futures_lite::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use std::{
     cell::{OnceCell, RefCell},
-    fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     os::unix::fs::FileExt,
 };
 use thiserror::Error;
+
+mod server;
+pub use server::ArchiveServer;
 
 const SECTOR_SIZE: usize = 4096;
 const MAX_SECTORS_COUNT: usize = 32 * 32; // 32 chunks in each axis
@@ -159,19 +163,21 @@ impl<T> Archive<T>
 where
     T: serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
-    pub fn new(name: &str) -> Result<Self, ArchiveError> {
+    pub async fn new(name: &str) -> Result<Self, ArchiveError> {
         let mut file_handler = OpenOptions::new()
             .read(true)
             .write(true)
             .truncate(false)
             .create(true)
-            .open(std::path::Path::new(name))?;
+            .open(std::path::Path::new(name))
+            .await?;
 
-        let file_len = file_handler.seek(SeekFrom::End(0))?;
+        let file_len = file_handler.seek(SeekFrom::End(0)).await?;
 
         let header = if file_len > 0 {
             let mut bytes = vec![0u8; HEADER_SIZE];
-            file_handler.read_exact_at(&mut bytes, 0)?;
+            file_handler.seek(SeekFrom::Start(0)).await?;
+            file_handler.read_exact(&mut bytes).await?;
             Header::de(&bytes)?
         } else {
             let mut header = Header::new();
@@ -186,30 +192,35 @@ where
         };
 
         if archive.is_header_dirty() {
-            archive.save_header()?;
+            archive.save_header().await?;
         }
 
         Ok(archive)
     }
 
-    pub fn read(&mut self, x: u8, z: u8) -> Result<Option<T>, ArchiveError> {
+    pub async fn read(&mut self, x: u8, z: u8) -> Result<Option<T>, ArchiveError> {
         let index = self.header.get_index(x, z);
 
         if index.is_empty() {
             return Ok(None);
         }
 
-        self.file_handler
-            .seek(SeekFrom::Start(index.seek_offset()))?;
+        let mut buffer = vec![0u8; index.bytes_count()];
 
-        let mut frame = lz4_flex::frame::FrameDecoder::new(&self.file_handler);
+        self.file_handler
+            .seek(SeekFrom::Start(index.seek_offset()))
+            .await?;
+
+        self.file_handler.read_exact(&mut buffer).await?;
+
+        let mut frame = lz4_flex::frame::FrameDecoder::new(&*buffer);
         let value: T =
             bincode::serde::decode_from_std_read(&mut frame, bincode::config::standard())?;
 
         Ok(Some(value))
     }
 
-    pub fn write(&mut self, x: u8, z: u8, value: &T) -> Result<(), ArchiveError> {
+    pub async fn write(&mut self, x: u8, z: u8, value: &T) -> Result<(), ArchiveError> {
         let mut compressed = Vec::with_capacity(256 * 1024); // 256k
         let mut frame = lz4_flex::frame::FrameEncoder::new(&mut compressed);
         bincode::serde::encode_into_std_write(value, &mut frame, bincode::config::standard())?;
@@ -220,7 +231,8 @@ where
 
         // Check sector count
         let index = if index.is_empty() || needed_sectors > index.sectors {
-            self.append(SectorIndex::sectors_count(compressed.len()))?
+            self.append(SectorIndex::sectors_count(compressed.len()))
+                .await?
         } else {
             index
         };
@@ -236,14 +248,19 @@ where
 
         self.header.set_index(x, z, index);
         self.file_handler
-            .write_all_at(&compressed, index.seek_offset())?;
+            .seek(SeekFrom::Start(index.seek_offset()))
+            .await?;
+        self.file_handler.write_all(&compressed).await?;
+        self.file_handler.flush().await?;
 
         Ok(())
     }
 
-    pub fn save_header(&mut self) -> Result<(), ArchiveError> {
+    pub async fn save_header(&mut self) -> Result<(), ArchiveError> {
         let bytes = self.header.ser()?;
-        self.file_handler.write_all_at(&bytes, 0)?;
+        self.file_handler.seek(SeekFrom::Start(0)).await?;
+        self.file_handler.write_all(&bytes).await?;
+        self.file_handler.flush().await?;
         self.header.dirty = false;
 
         Ok(())
@@ -253,8 +270,8 @@ where
         self.header.dirty
     }
 
-    fn append(&mut self, needed_sectors: u16) -> Result<SectorIndex, ArchiveError> {
-        let seek_position = self.file_handler.seek(SeekFrom::End(0))?;
+    async fn append(&mut self, needed_sectors: u16) -> Result<SectorIndex, ArchiveError> {
+        let seek_position = self.file_handler.seek(SeekFrom::End(0)).await?;
 
         Ok(SectorIndex::from_seek_position(
             seek_position,
@@ -265,6 +282,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use bevy::tasks::block_on;
     use projekto_core::chunk::{self, ChunkStorage};
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -371,7 +389,7 @@ mod tests {
         let temp_file = temp_file();
 
         // Act
-        let res = Archive::<u8>::new(&temp_file).unwrap();
+        let res = block_on(Archive::<u8>::new(&temp_file)).unwrap();
 
         // Assert
         assert!(std::fs::exists(&temp_file).unwrap());
@@ -385,15 +403,17 @@ mod tests {
     fn archive_new_existing_file_empty() {
         // Arrange
         let temp_file = temp_file();
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&temp_file)
-            .unwrap();
+        let file = block_on(
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&temp_file),
+        )
+        .unwrap();
         drop(file);
 
         // Act
-        let _res = Archive::<u8>::new(&temp_file).unwrap();
+        let _res = block_on(Archive::<u8>::new(&temp_file)).unwrap();
 
         // Assert
     }
@@ -405,7 +425,7 @@ mod tests {
         std::fs::write(&temp_file, [0x00, 0xFF, 0xF1, 0x12]).unwrap();
 
         // Act
-        let res = Archive::<u8>::new(&temp_file);
+        let res = block_on(Archive::<u8>::new(&temp_file));
 
         // Assert
         assert!(matches!(res, Err(ArchiveError::IO(_))));
@@ -429,7 +449,7 @@ mod tests {
         std::fs::write(&temp_file, header.ser().unwrap()).unwrap();
 
         // Act
-        let archive = Archive::<u8>::new(&temp_file).unwrap();
+        let archive = block_on(Archive::<u8>::new(&temp_file)).unwrap();
 
         // Assert
         archive
@@ -449,7 +469,7 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
 
-        let mut archive = Archive::<u8>::new(&temp_file).unwrap();
+        let mut archive = block_on(Archive::<u8>::new(&temp_file)).unwrap();
         archive
             .header
             .sectors
@@ -461,9 +481,9 @@ mod tests {
             });
 
         // Act
-        archive.save_header().unwrap();
+        block_on(archive.save_header()).unwrap();
         drop(archive);
-        let archive = Archive::<u8>::new(&temp_file).unwrap();
+        let archive = block_on(Archive::<u8>::new(&temp_file)).unwrap();
 
         // Assert
         archive
@@ -482,12 +502,12 @@ mod tests {
     fn archive_read_write_single() {
         // Arrange
         let temp_file = temp_file();
-        let mut archive = Archive::<String>::new(&temp_file).unwrap();
+        let mut archive = block_on(Archive::<String>::new(&temp_file)).unwrap();
         let txt = "The Silly Goosery is real!🪿︎";
 
         // Act
-        archive.write(2, 3, &txt.to_string()).unwrap();
-        let read_txt = archive.read(2, 3).unwrap();
+        block_on(archive.write(2, 3, &txt.to_string())).unwrap();
+        let read_txt = block_on(archive.read(2, 3)).unwrap();
 
         // Assert
         let read_txt = read_txt.unwrap();
@@ -498,15 +518,15 @@ mod tests {
     fn archive_write_same_sector_count() {
         // Arrange
         let temp_file = temp_file();
-        let mut archive = Archive::<Vec<u16>>::new(&temp_file).unwrap();
-        archive.write(2, 3, &((0..20u16).collect())).unwrap();
+        let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
+        block_on(archive.write(2, 3, &((0..20u16).collect()))).unwrap();
 
         // Act
         let new_value = (0..1000u16).collect();
-        archive.write(2, 3, &new_value).unwrap();
+        block_on(archive.write(2, 3, &new_value)).unwrap();
 
         // Assert
-        let read_value = archive.read(2, 3).unwrap();
+        let read_value = block_on(archive.read(2, 3)).unwrap();
         let read_value = read_value.unwrap();
         assert_eq!(new_value, read_value);
 
@@ -519,16 +539,16 @@ mod tests {
     fn archive_write_append_sector() {
         // Arrange
         let temp_file = temp_file();
-        let mut archive = Archive::<Vec<u16>>::new(&temp_file).unwrap();
-        archive.write(2, 3, &((0..20u16).collect())).unwrap();
+        let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
+        block_on(archive.write(2, 3, &((0..20u16).collect()))).unwrap();
         let old_index = archive.header.get_index(2, 3);
 
         // Act
         let new_value = (0..4000u16).collect();
-        archive.write(2, 3, &new_value).unwrap();
+        block_on(archive.write(2, 3, &new_value)).unwrap();
 
         // Assert
-        let read_value = archive.read(2, 3).unwrap();
+        let read_value = block_on(archive.read(2, 3)).unwrap();
         let read_value = read_value.unwrap();
         assert_eq!(new_value, read_value);
 
@@ -551,13 +571,13 @@ mod tests {
     fn archive_many() {
         // Arrange
         let temp_file = temp_file();
-        let mut archive = Archive::new(&temp_file).unwrap();
+        let mut archive = block_on(Archive::new(&temp_file)).unwrap();
 
         // Act
         for x in 0..3u8 {
             for z in 0..3u8 {
                 let chunk = generate_chunk((x as u64) << 16 | z as u64);
-                archive.write(x, z, &chunk).unwrap();
+                block_on(archive.write(x, z, &chunk)).unwrap();
             }
         }
 
@@ -565,7 +585,7 @@ mod tests {
         for x in 0..3u8 {
             for z in 0..3u8 {
                 let chunk = generate_chunk((x as u64) << 16 | z as u64);
-                let cached_chunk = archive.read(x, z);
+                let cached_chunk = block_on(archive.read(x, z));
 
                 if cached_chunk.is_err() {
                     panic!("Failed at {x}, {z}. Error: {cached_chunk:?}");
@@ -579,17 +599,17 @@ mod tests {
     }
 
     // Too heavy for CI
-    //#[test]
+    #[test]
     fn archive_full() {
         // Arrange
         let temp_file = temp_file();
-        let mut archive = Archive::new(&temp_file).unwrap();
+        let mut archive = block_on(Archive::new(&temp_file)).unwrap();
 
         // Act
         for x in 0..15u8 {
             for z in 0..15u8 {
                 let chunk = generate_chunk((x as u64) << 16 | z as u64);
-                archive.write(x, z, &chunk).unwrap();
+                block_on(archive.write(x, z, &chunk)).unwrap();
             }
         }
 
@@ -597,7 +617,7 @@ mod tests {
         for x in 0..15u8 {
             for z in 0..15u8 {
                 let chunk = generate_chunk((x as u64) << 16 | z as u64);
-                let cached_chunk = archive.read(x, z);
+                let cached_chunk = block_on(archive.read(x, z));
 
                 if cached_chunk.is_err() {
                     panic!("Failed at {x}, {z}. Error: {cached_chunk:?}");
