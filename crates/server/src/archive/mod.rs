@@ -12,7 +12,7 @@ use std::{
 use thiserror::Error;
 
 mod server;
-pub use server::ArchiveServer;
+pub use server::{ArchiveServer, ArchiveTask};
 
 const SECTOR_SIZE: usize = 4096;
 const AXIS_CHUNK_COUNT: usize = 32;

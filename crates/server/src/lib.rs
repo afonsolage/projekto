@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use asset::ChunkAssetPlugin;
 use bevy::{prelude::*, time::common_conditions::on_timer};
 use net::NetPlugin;
 
@@ -11,12 +10,11 @@ pub mod meshing;
 pub mod archive;
 mod asset;
 
-pub use asset::{ChunkAsset, ChunkAssetHandle, setup_chunk_asset_loader};
+pub use asset::ChunkAsset;
 
 pub mod debug;
 mod net;
 
-pub mod cache;
 pub mod r#gen;
 
 pub mod bundle;
@@ -42,7 +40,6 @@ impl Plugin for WorldServerPlugin {
             .configure_sets(PostUpdate, WorldSet::SendResponses)
             .insert_resource(debug::Metrics::new())
             .add_plugins((
-                ChunkAssetPlugin,
                 NetPlugin,
                 set::ReceiveRequestsPlugin,
                 set::LandscapePlugin,

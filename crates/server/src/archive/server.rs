@@ -34,13 +34,6 @@ pub enum ArchiveTask<T> {
 }
 
 impl<T> ArchiveTask<T> {
-    pub fn is_finished(&self) -> bool {
-        match self {
-            ArchiveTask::Load(receiver) => !receiver.is_empty(),
-            ArchiveTask::Save(receiver) | ArchiveTask::SaveHeader(receiver) => !receiver.is_empty(),
-        }
-    }
-
     pub fn try_get_result(&self) -> Option<Result<Option<T>, ArchiveError>> {
         match self {
             ArchiveTask::Load(receiver) => receiver.try_recv().ok(),

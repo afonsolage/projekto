@@ -10,10 +10,8 @@ fn main() {
 
     app.add_plugins(LogPlugin::default());
 
-    // TODO: Rework this when plugins dependencies is a thing in bevy
-    projekto_server::setup_chunk_asset_loader(&mut app);
-
     app.add_plugins((
+        LogPlugin::default(),
         AssetPlugin::default(),
         MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(
             TICK_EVERY_MILLIS,

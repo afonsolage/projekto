@@ -1,11 +1,13 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use async_channel::Receiver;
+use async_lock::OnceCell;
 use bevy::{app::ScheduleRunnerPlugin, ecs::schedule::ExecutorKind, prelude::*};
 use lz4_flex::frame::FrameEncoder;
+use projekto_core::chunk::Chunk;
 
 use crate::{
-    asset::{ChunkAsset, ChunkAssetGenRequest},
+    asset::ChunkAsset,
     bundle::{ChunkKind, ChunkLight, ChunkMap},
 };
 
@@ -13,6 +15,35 @@ use self::noise::Noise;
 
 mod genesis;
 pub(crate) mod noise;
+
+#[derive(Debug, Clone)]
+pub(crate) struct ChunkAssetGenRequest {
+    pub chunk: Chunk,
+    cell: Arc<OnceCell<Result<Vec<u8>, ()>>>,
+}
+
+impl ChunkAssetGenRequest {
+    fn new(path: &std::path::Path) -> Self {
+        Self {
+            chunk: Chunk::from_path(path),
+            cell: Arc::new(OnceCell::new()),
+        }
+    }
+
+    async fn get_result(self) -> Result<Vec<u8>, ()> {
+        let _ = self.cell.wait().await;
+        Arc::into_inner(self.cell)
+            .expect("To have only a single ref to cell.")
+            .into_inner()
+            .expect("To be initialized")
+    }
+
+    pub(crate) fn finish(self, result: Result<Vec<u8>, ()>) {
+        self.cell
+            .set_blocking(result)
+            .expect("Cell to not be initialized yet.");
+    }
+}
 
 #[derive(Component, Debug, Deref, DerefMut)]
 struct ChunkRequest(ChunkAssetGenRequest);
