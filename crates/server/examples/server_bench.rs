@@ -5,7 +5,7 @@ use bevy::{
     log::LogPlugin,
     prelude::*,
 };
-use projekto_server::{WorldServerPlugin, set::Landscape};
+use projekto_server::{WorldServerPlugin, bundle::ChunkMap, set::Landscape};
 
 const TICK_EVERY_MILLIS: u64 = 50;
 
@@ -32,6 +32,8 @@ fn setup(mut commands: Commands) {
     });
 }
 
-fn check_if_finished(q: Query<(Entity)>, mut exit: EventWriter<AppExit>) {
-    todo!()
+fn check_if_finished(map: Res<ChunkMap>, mut exit: EventWriter<AppExit>) {
+    if map.len() >= 4225 {
+        exit.write(AppExit::Success);
+    }
 }

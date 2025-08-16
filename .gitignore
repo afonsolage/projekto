@@ -23,6 +23,7 @@ cache/
 tracy/
 world/
 chunks/
+archive/
 
 heaptrack.*
 rustc-ice*

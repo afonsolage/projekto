@@ -8,8 +8,6 @@ const TICK_EVERY_MILLIS: u64 = 50;
 fn main() {
     let mut app = App::new();
 
-    app.add_plugins(LogPlugin::default());
-
     app.add_plugins((
         LogPlugin::default(),
         AssetPlugin::default(),

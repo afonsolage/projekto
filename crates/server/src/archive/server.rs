@@ -28,19 +28,27 @@ impl Region {
 }
 
 pub enum ArchiveTask<T> {
-    Load(Receiver<Result<Option<T>, ArchiveError>>),
-    Save(Receiver<Result<(), ArchiveError>>),
-    SaveHeader(Receiver<Result<(), ArchiveError>>),
+    Load(Chunk, Receiver<Result<Option<T>, ArchiveError>>),
+    Save(Chunk, Receiver<Result<(), ArchiveError>>),
+    SaveHeader(Chunk, Receiver<Result<(), ArchiveError>>),
 }
 
 impl<T> ArchiveTask<T> {
     pub fn try_get_result(&self) -> Option<Result<Option<T>, ArchiveError>> {
         match self {
-            ArchiveTask::Load(receiver) => receiver.try_recv().ok(),
-            ArchiveTask::Save(receiver) | ArchiveTask::SaveHeader(receiver) => {
+            ArchiveTask::Load(_, receiver) => receiver.try_recv().ok(),
+            ArchiveTask::Save(_, receiver) | ArchiveTask::SaveHeader(_, receiver) => {
                 // Nothing to return, so as long there is no error, it's fine to return None
                 receiver.try_recv().ok().map(|_| Ok(None))
             }
+        }
+    }
+
+    pub fn chunk(&self) -> Chunk {
+        match self {
+            ArchiveTask::Load(chunk, _)
+            | ArchiveTask::Save(chunk, _)
+            | ArchiveTask::SaveHeader(chunk, _) => *chunk,
         }
     }
 }
@@ -206,7 +214,7 @@ where
             )));
         }
 
-        Ok(ArchiveTask::Load(receiver))
+        Ok(ArchiveTask::Load(chunk, receiver))
     }
 
     pub fn save_chunk(&mut self, chunk: Chunk, asset: T) -> Result<ArchiveTask<T>, ArchiveError> {
@@ -225,7 +233,7 @@ where
             )));
         }
 
-        Ok(ArchiveTask::Save(receiver))
+        Ok(ArchiveTask::Save(chunk, receiver))
     }
 
     pub fn do_maintenance_stuff(&mut self) -> Task<MaintenanceResult> {
@@ -405,7 +413,7 @@ mod tests {
         }
 
         for task in tasks {
-            if let ArchiveTask::Load(receiver) = task {
+            if let ArchiveTask::Load(chunk, receiver) = task {
                 receiver.recv_blocking().unwrap().unwrap();
             } else {
                 panic!("Unvalid command type!");

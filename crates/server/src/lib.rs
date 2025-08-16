@@ -15,7 +15,7 @@ pub use asset::ChunkAsset;
 pub mod debug;
 mod net;
 
-pub mod r#gen;
+pub mod genesis;
 
 pub mod bundle;
 pub mod set;
