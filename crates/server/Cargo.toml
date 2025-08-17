@@ -19,6 +19,7 @@ dev = [
 projekto_core.workspace = true
 projekto_proto.workspace = true
 projekto_messages.workspace = true
+projekto_archive.workspace = true
 
 bevy.workspace = true
 
@@ -31,7 +32,6 @@ futures-lite.workspace = true
 async-io.workspace = true
 async-channel.workspace = true
 async-lock.workspace = true
-async-fs.workspace = true
 
 # genesis
 bracket-noise = "0.8.7"
@@ -64,8 +64,4 @@ path = "examples/sample_chunks.rs"
 
 [[bench]]
 name = "meshing"
-harness = false
-
-[[bench]]
-name = "archive"
 harness = false

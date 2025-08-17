@@ -15,7 +15,8 @@ projekto_camera = { path = "crates/camera" }
 projekto_proto = { path = "crates/proto" }
 projekto_messages = { path = "crates/messages" }
 projekto_server = { path = "crates/server" }
-projekto_world_client = { path = "crates/world_client" }
+projekto_client = { path = "crates/client" }
+projekto_archive = { path = "crates/archive" }
 
 bevy = "0.16"
 

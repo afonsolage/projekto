@@ -1,7 +1,7 @@
 use async_io::block_on;
 use criterion::{Criterion, criterion_group, criterion_main};
+use projekto_archive::Archive;
 use projekto_core::chunk::{self, ChunkStorage};
-use projekto_server::archive::Archive;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn generate_chunk(seed: u64) -> ChunkStorage<u128> {

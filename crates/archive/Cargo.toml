@@ -1,0 +1,34 @@
+[package]
+name = "projekto_archive"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+projekto_core.workspace = true
+
+bevy.workspace = true
+
+thiserror.workspace = true
+serde.workspace = true
+
+bincode.workspace = true
+lz4_flex.workspace = true
+
+futures-lite.workspace = true
+async-fs.workspace = true
+async-channel.workspace = true
+
+[dev-dependencies]
+async-io.workspace = true
+rand.workspace = true
+criterion.workspace = true
+
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "archive"
+harness = false

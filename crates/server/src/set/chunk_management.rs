@@ -1,9 +1,9 @@
 use bevy::prelude::*;
+use projekto_archive::{ArchiveServer, ArchiveTask};
 use projekto_core::chunk::Chunk;
 
 use crate::{
     WorldSet,
-    archive::{ArchiveServer, ArchiveTask},
     asset::ChunkAsset,
     bundle::{
         ChunkBundle, ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal,

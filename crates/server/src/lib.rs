@@ -7,7 +7,6 @@ use net::NetPlugin;
 pub mod light;
 pub mod meshing;
 
-pub mod archive;
 mod asset;
 
 pub use asset::ChunkAsset;

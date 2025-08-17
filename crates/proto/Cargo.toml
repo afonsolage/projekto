@@ -6,7 +6,6 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-projekto_proto_macros = { path = "macros"}
 
 bevy.workspace = true
 
@@ -19,8 +18,10 @@ async-channel.workspace = true
 async-net.workspace = true
 
 # IO
-lz4_flex.workspace = true
 bincode.workspace = true
+
+[dev-dependencies]
+projekto_proto_macros = { path = "macros"}
 
 [lints]
 workspace = true

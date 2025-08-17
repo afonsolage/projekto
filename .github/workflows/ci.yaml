@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # If nightly is breaking CI, modify this variable to target a specific nightly version.
+  NIGHTLY_TOOLCHAIN: nightly-2025-08-05
 
 jobs:
 
@@ -33,10 +35,12 @@ jobs:
         uses: rui314/setup-mold@v1
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
-      - name: Install Dependencies
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+        with:
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+      - name: Install Linux dependencies
+        uses: ./.github/actions/install-linux-deps
       - name: Run cargo test
-        run: cargo test --workspace
+        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} test --workspace
 
   # Run cargo clippy -- -D warnings
   clippy_check:
@@ -61,11 +65,12 @@ jobs:
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
         with:
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
           components: clippy
-      - name: Install Dependencies
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - name: Install Linux dependencies
+        uses: ./.github/actions/install-linux-deps
       - name: Run clippy
-        run: cargo clippy -- -D warnings
+        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} clippy -- -D warnings
 
   # Run cargo fmt --all -- --check
   format:
@@ -78,6 +83,39 @@ jobs:
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
         with:
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
           components: rustfmt
       - name: Run cargo fmt
-        run: cargo fmt --all -- --check
+        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} fmt --all -- --check
+
+  check-unused-dependencies:
+    name: Unused Dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+      - uses: actions/cache/restore@v4
+        with:
+          # key won't match, will rely on restore-keys
+          key: ${{ runner.os }}-${{ env.NIGHTLY_TOOLCHAIN }}--${{ hashFiles('**/Cargo.toml') }}-
+          # See .github/workflows/validation-jobs.yml for how keys are generated
+          restore-keys: |
+            ${{ runner.os }}-${{ env.NIGHTLY_TOOLCHAIN }}--${{ hashFiles('**/Cargo.toml') }}-
+            ${{ runner.os }}-${{ env.NIGHTLY_TOOLCHAIN }}--
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+      - name: Installs cargo-udeps
+        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} install --force cargo-udeps
+      - name: Install Linux dependencies
+        uses: ./.github/actions/install-linux-deps
+      - name: Run cargo udeps
+        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} udeps

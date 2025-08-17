@@ -10,7 +10,7 @@ use bevy::{
 };
 use projekto_core::chunk::Chunk;
 
-use crate::archive::{self, AXIS_CHUNK_COUNT, Archive, ArchiveError};
+use crate::{AXIS_CHUNK_COUNT, Archive, ArchiveError};
 
 #[derive(Default, Copy, Clone, Debug, Deref, DerefMut, PartialEq, Eq, Hash)]
 pub struct Region(IVec2);
@@ -285,8 +285,8 @@ mod tests {
         let mut task = std::pin::pin!(Archive::<u128>::new(&path));
         let mut archive = block_on(&mut task).unwrap();
 
-        for x in 0..archive::AXIS_CHUNK_COUNT as u8 {
-            for z in 0..archive::AXIS_CHUNK_COUNT as u8 {
+        for x in 0..AXIS_CHUNK_COUNT as u8 {
+            for z in 0..AXIS_CHUNK_COUNT as u8 {
                 let value = ((x as u128) << 8) | z as u128;
                 block_on(archive.write(x, z, value));
             }
