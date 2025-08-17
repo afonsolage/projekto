@@ -7,7 +7,7 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use projekto_core::chunk::Chunk;
+use projekto_core::coords::Chunk;
 
 use crate::{AXIS_CHUNK_SIZE, Archive, ArchiveError};
 
@@ -198,15 +198,15 @@ where
     /// Converts a `Chunk` into a `Region`
     fn to_region(chunk: Chunk) -> Region {
         Region(IVec2::new(
-            ((chunk.x() as f32) / AXIS_CHUNK_SIZE as f32).floor() as i32,
-            ((chunk.z() as f32) / AXIS_CHUNK_SIZE as f32).floor() as i32,
+            ((chunk.x as f32) / AXIS_CHUNK_SIZE as f32).floor() as i32,
+            ((chunk.z as f32) / AXIS_CHUNK_SIZE as f32).floor() as i32,
         ))
     }
 
     /// Gets the local coords (inside the archive) for a given `Chunk`
     fn to_local(chunk: Chunk) -> (u8, u8) {
-        let x = chunk.x().rem_euclid(AXIS_CHUNK_SIZE as i32);
-        let z = chunk.z().rem_euclid(AXIS_CHUNK_SIZE as i32);
+        let x = chunk.x.rem_euclid(AXIS_CHUNK_SIZE as i32);
+        let z = chunk.z.rem_euclid(AXIS_CHUNK_SIZE as i32);
 
         assert!(x >= 0 && x <= AXIS_CHUNK_SIZE as i32);
         assert!(z >= 0 && z <= AXIS_CHUNK_SIZE as i32);
@@ -385,7 +385,7 @@ mod tests {
             }
         };
 
-        assert_eq!(value, (((chunk.x() as u128) << 8) | chunk.z() as u128));
+        assert_eq!(value, (((chunk.x as u128) << 8) | chunk.z as u128));
     }
 
     #[test]

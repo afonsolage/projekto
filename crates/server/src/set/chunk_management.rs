@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use projekto_archive::{ArchiveServer, ArchiveTask};
-use projekto_core::chunk::Chunk;
+use projekto_core::coords::Chunk;
 
 use crate::{
     WorldSet,
@@ -23,7 +23,11 @@ impl Plugin for ChunkManagementPlugin {
             .add_systems(PreStartup, init_servers)
             .add_systems(
                 Update,
-                (chunks_unload.run_if(on_event::<ChunkUnload>), chunks_load)
+                (
+                    chunks_unload.run_if(on_event::<ChunkUnload>),
+                    chunks_load,
+                    chunks_save,
+                )
                     .chain()
                     .in_set(WorldSet::ChunkManagement),
             );
@@ -172,6 +176,48 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
             vertex: ChunkVertex(vertex),
         })
         .id()
+}
+
+fn chunks_save(
+    mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
+    q_chunks: Query<
+        (
+            &ChunkLocal,
+            &ChunkKind,
+            &ChunkLight,
+            &ChunkFacesOcclusion,
+            &ChunkFacesSoftLight,
+            &ChunkVertex,
+        ),
+        Changed<ChunkVertex>,
+    >,
+) {
+    let mut saved = 0;
+    for (
+        ChunkLocal(chunk),
+        ChunkKind(kind),
+        ChunkLight(light),
+        ChunkFacesOcclusion(faces_occlusion),
+        ChunkFacesSoftLight(soft_light),
+        ChunkVertex(vertices),
+    ) in q_chunks.iter()
+    {
+        // TODO: We could serialize everything before sending over to the task
+        let asset = ChunkAsset {
+            chunk: *chunk,
+            kind: kind.clone(),
+            light: light.clone(),
+            occlusion: faces_occlusion.clone(),
+            soft_light: soft_light.clone(),
+            vertex: vertices.clone(),
+        };
+        let _task = archive_server.save_chunk(*chunk, asset);
+        saved += 1;
+    }
+
+    if saved > 0 {
+        trace!("[chunks_save] saved {saved} chunks.");
+    }
 }
 
 // #[cfg(test)]

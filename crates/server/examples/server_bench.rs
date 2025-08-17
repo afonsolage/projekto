@@ -4,8 +4,10 @@ use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     log::LogPlugin,
     prelude::*,
+    tasks::block_on,
 };
-use projekto_server::{WorldServerPlugin, bundle::ChunkMap, set::Landscape};
+use projekto_archive::ArchiveServer;
+use projekto_server::{ChunkAsset, WorldServerPlugin, bundle::ChunkMap, set::Landscape};
 
 const TICK_EVERY_MILLIS: u64 = 50;
 
@@ -32,8 +34,13 @@ fn setup(mut commands: Commands) {
     });
 }
 
-fn check_if_finished(map: Res<ChunkMap>, mut exit: EventWriter<AppExit>) {
+fn check_if_finished(
+    map: Res<ChunkMap>,
+    mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
+    mut exit: EventWriter<AppExit>,
+) {
     if map.len() >= 4225 {
         exit.write(AppExit::Success);
+        block_on(archive_server.do_maintenance_stuff());
     }
 }

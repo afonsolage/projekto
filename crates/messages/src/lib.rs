@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use projekto_core::{chunk::Chunk, voxel};
+use projekto_core::{coords::Chunk, voxel};
 use projekto_proto::MessageSource;
 use projekto_proto_macros::message_source;
 

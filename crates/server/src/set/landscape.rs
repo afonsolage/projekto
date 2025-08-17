@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use projekto_core::chunk::Chunk;
+use projekto_core::coords::Chunk;
 
 use crate::{WorldSet, bundle::ChunkMap};
 
@@ -42,8 +42,8 @@ fn update_landscape(
 
             let center: Chunk = center.into();
             chunks.sort_by(|a, b| {
-                let a_dist = a.distance(center).length_squared();
-                let b_dist = b.distance(center).length_squared();
+                let a_dist = (IVec2::from(*a) - IVec2::from(center)).length_squared();
+                let b_dist = (IVec2::from(*b) - IVec2::from(center)).length_squared();
                 a_dist.cmp(&b_dist)
             });
 

@@ -1,11 +1,12 @@
 #![allow(unused)]
 use crate::{
     chunk::{
-        self, BUFFER_SIZE, Chunk,
+        self, Chunk,
         column::ChunkColumnStorage,
         sub_chunk::{self, ChunkPack, SubChunkStorage},
     },
-    voxel::{self, Voxel},
+    coords::ChunkVoxel,
+    voxel::{self},
 };
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -38,19 +39,11 @@ impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
-    pub fn try_get(&self, voxel: Voxel) -> Option<T> {
-        if chunk::is_inside(voxel) {
-            Some(self.get(voxel))
-        } else {
-            None
-        }
-    }
-
-    pub fn get(&self, voxel: Voxel) -> T {
+    pub fn get(&self, voxel: ChunkVoxel) -> T {
         self.0.get(voxel)
     }
 
-    pub fn set(&mut self, voxel: Voxel, value: T) {
+    pub fn set(&mut self, voxel: ChunkVoxel, value: T) {
         self.0.set(voxel, value);
     }
 
@@ -91,7 +84,7 @@ impl<'a, T: ChunkStorageType + 'a, F: Copy> GetChunkStorageMut<'a, T> for F wher
 }
 
 impl ChunkStorage<voxel::Light> {
-    pub fn set_type(&mut self, voxel: Voxel, ty: voxel::LightTy, intensity: u8) {
+    pub fn set_type(&mut self, voxel: ChunkVoxel, ty: voxel::LightTy, intensity: u8) {
         let mut light = self.get(voxel);
         light.set(ty, intensity);
         self.set(voxel, light);

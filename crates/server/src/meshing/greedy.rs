@@ -3,6 +3,7 @@ use bevy::math::IVec3;
 
 use projekto_core::{
     chunk::{self, ChunkStorage},
+    coords::{Chunk, ChunkVoxel},
     voxel::{self, FacesOcclusion, FacesSoftLight, Kind},
 };
 
@@ -39,15 +40,15 @@ impl Iterator for AxisRange {
 #[inline]
 fn get_axis_range(axis: IVec3) -> AxisRange {
     let (begin, end) = match axis {
-        IVec3::X => (0, chunk::X_END),
-        IVec3::NEG_X => (chunk::X_END, 0),
-        IVec3::Y => (0, chunk::Y_END),
-        IVec3::NEG_Y => (chunk::Y_END, 0),
-        IVec3::Z => (0, chunk::Z_END),
-        IVec3::NEG_Z => (chunk::Z_END, 0),
+        IVec3::X => (0, Chunk::X_END),
+        IVec3::NEG_X => (Chunk::X_END, 0),
+        IVec3::Y => (0, Chunk::Y_END),
+        IVec3::NEG_Y => (Chunk::Y_END, 0),
+        IVec3::Z => (0, Chunk::Z_END),
+        IVec3::NEG_Z => (Chunk::Z_END, 0),
         _ => unreachable!(),
     };
-    AxisRange::new(begin, end)
+    AxisRange::new(begin as i32, end as i32)
 }
 
 /// Converts a swizzled Vector in it's conventional (X, Y, Z) format
@@ -103,7 +104,7 @@ impl MergerIterator {
 }
 
 impl Iterator for MergerIterator {
-    type Item = IVec3;
+    type Item = ChunkVoxel;
 
     fn next(&mut self) -> Option<Self::Item> {
         // When a is -1, next range value
@@ -123,7 +124,11 @@ impl Iterator for MergerIterator {
         }
 
         if let Some(c) = self.c_range.next() {
-            Some(unswizzle(self.walk_axis, self.a, self.b, c))
+            let vec = unswizzle(self.walk_axis, self.a, self.b, c);
+            debug_assert!(vec.x >= 0 && vec.x <= Chunk::X_AXIS_SIZE as i32);
+            debug_assert!(vec.y >= 0 && vec.y <= Chunk::Y_AXIS_SIZE as i32);
+            debug_assert!(vec.z >= 0 && vec.z <= Chunk::Z_AXIS_SIZE as i32);
+            Some(ChunkVoxel::new(vec.x as u8, vec.y as u8, vec.z as u8))
         } else {
             self.b = -1;
             self.c_range = get_axis_range(self.walk_axis.2);
@@ -149,7 +154,7 @@ fn should_merge_next(current: VoxelState, next: VoxelState, side: voxel::Side) -
 /// Finds the furthest equal voxel from the given begin point, into the step direction.
 #[inline]
 fn find_furthest_eq_voxel(
-    begin: IVec3,
+    begin: ChunkVoxel,
     current: VoxelState,
     step: IVec3,
     merged: &[bool],
@@ -157,24 +162,24 @@ fn find_furthest_eq_voxel(
     until: Option<IVec3>,
     chunk: &ChunkStorage<VoxelState>,
 ) -> IVec3 {
-    let mut next_voxel = begin + step;
+    let mut next = IVec3::from(begin) + step;
 
-    while let Some(next) = chunk.try_get(next_voxel)
-        && !merged[chunk::to_index(next_voxel)]
-        && should_merge_next(current, next, side)
+    while let Some(next_voxel) = ChunkVoxel::try_from(next)
+        && !merged[usize::from(next_voxel)]
+        && should_merge_next(current, chunk.get(next_voxel), side)
     {
         if let Some(target) = until
-            && target == next_voxel
+            && target == next
         {
-            return next_voxel;
+            return next;
         }
 
-        next_voxel += step;
+        next += step;
     }
 
-    next_voxel -= step;
+    next -= step;
 
-    next_voxel
+    next
 }
 
 /// Generates a list of voxels, based on v1, v2 and v3 inclusive, which was walked.
@@ -191,8 +196,10 @@ fn mark_walked_voxels(
     let mut current = begin;
     let mut end = v2;
 
-    while current != v3 {
-        merged[chunk::to_index(current)] = true;
+    while current != v3
+        && let Some(current_voxel) = ChunkVoxel::try_from(current)
+    {
+        merged[usize::from(current_voxel)] = true;
 
         if current == end {
             begin += perpendicular_axis;
@@ -203,7 +210,9 @@ fn mark_walked_voxels(
         }
     }
 
-    merged[chunk::to_index(current)] = true;
+    if let Some(current_voxel) = ChunkVoxel::try_from(current) {
+        merged[usize::from(current_voxel)] = true;
+    }
 }
 
 type VoxelState = (voxel::Kind, voxel::FacesOcclusion, voxel::FacesSoftLight);
@@ -213,10 +222,10 @@ pub fn generate_faces(
     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
     soft_light: &ChunkStorage<voxel::FacesSoftLight>,
 ) -> Vec<voxel::Face> {
-    let mut faces_vertices = Vec::with_capacity(chunk::BUFFER_SIZE / 10);
+    let mut faces_vertices = Vec::with_capacity(Chunk::BUFFER_SIZE / 10);
 
     let chunk = kind.zip_2(occlusion, soft_light);
-    let mut merged = vec![false; chunk::BUFFER_SIZE];
+    let mut merged = vec![false; Chunk::BUFFER_SIZE];
 
     for side in voxel::SIDES {
         merged.fill(false);
@@ -231,12 +240,12 @@ pub fn generate_faces(
             let current = chunk.get(voxel);
             let (kind, occlusion, soft_light) = current;
 
-            if merged[chunk::to_index(voxel)] || should_skip_voxel(side, current) {
+            if merged[usize::from(voxel)] || should_skip_voxel(side, current) {
                 continue;
             }
 
             // Finds the furthest equal voxel on current axis
-            let v1 = voxel;
+            let v1 = voxel.into();
             let v2 =
                 find_furthest_eq_voxel(voxel, current, current_axis, &merged, side, None, &chunk);
 
@@ -248,13 +257,13 @@ pub fn generate_faces(
             // on perpendicular_axis. This way it'll be possible to find the
             // next vertex (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
-            while let Some(next) = chunk.try_get(next_begin_voxel)
-                && !merged[chunk::to_index(next_begin_voxel)]
-                && should_merge_next(current, next, side)
+            while let Some(next) = ChunkVoxel::try_from(next_begin_voxel)
+                && !merged[usize::from(next)]
+                && should_merge_next(current, chunk.get(next), side)
             {
                 let furthest = find_furthest_eq_voxel(
-                    next_begin_voxel,
                     next,
+                    chunk.get(next),
                     current_axis,
                     &merged,
                     side,
@@ -281,8 +290,10 @@ pub fn generate_faces(
             // v4 can be inferred with v1, v2 and v3
             let v4 = v1 + (v3 - v2);
 
+            let vertices =
+                [v1, v2, v3, v4].map(|v| ChunkVoxel::try_from(v).expect("To be a valid voxel"));
             faces_vertices.push(voxel::Face {
-                vertices: [v1, v2, v3, v4],
+                vertices,
                 side,
                 kind,
                 light: soft_light.get(side),
@@ -1019,10 +1030,10 @@ mod test {
         let current_axis = (0, 0, -1).into();
         let perpendicular_axis = (0, 1, 0).into();
 
-        let mut merged = vec![false; chunk::BUFFER_SIZE];
+        let mut merged = vec![false; Chunk::BUFFER_SIZE];
         super::mark_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis, &mut merged);
 
-        let test_walked: Vec<IVec3> = vec![
+        let test_walked: Vec<ChunkVoxel> = vec![
             (0, 0, 3).into(),
             (0, 0, 2).into(),
             (0, 1, 3).into(),
@@ -1032,7 +1043,7 @@ mod test {
         ];
 
         for voxel in test_walked {
-            assert!(merged[chunk::to_index(voxel)]);
+            assert!(merged[usize::from(voxel)]);
         }
     }
 
@@ -1044,10 +1055,10 @@ mod test {
         let current_axis = (-1, 0, 0).into();
         let perpendicular_axis = (0, 1, 0).into();
 
-        let mut merged = vec![false; chunk::BUFFER_SIZE];
+        let mut merged = vec![false; Chunk::BUFFER_SIZE];
         super::mark_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis, &mut merged);
 
-        let test_walked: Vec<IVec3> = vec![
+        let test_walked: Vec<ChunkVoxel> = vec![
             (3, 0, 0).into(),
             (2, 0, 0).into(),
             (3, 1, 0).into(),
@@ -1057,7 +1068,7 @@ mod test {
         ];
 
         for voxel in test_walked {
-            assert!(merged[chunk::to_index(voxel)]);
+            assert!(merged[usize::from(voxel)]);
         }
     }
 
@@ -1069,10 +1080,10 @@ mod test {
         let current_axis = (1, 0, 0).into();
         let perpendicular_axis = (0, 1, 0).into();
 
-        let mut merged = vec![false; chunk::BUFFER_SIZE];
+        let mut merged = vec![false; Chunk::BUFFER_SIZE];
         super::mark_walked_voxels(v1, v2, v3, perpendicular_axis, current_axis, &mut merged);
 
-        let test_walked: Vec<IVec3> = vec![
+        let test_walked: Vec<ChunkVoxel> = vec![
             (1, 2, 0).into(),
             (2, 2, 0).into(),
             (3, 2, 0).into(),
@@ -1088,7 +1099,7 @@ mod test {
         ];
 
         for voxel in test_walked {
-            assert!(merged[chunk::to_index(voxel)]);
+            assert!(merged[usize::from(voxel)]);
         }
     }
 
@@ -1108,10 +1119,10 @@ mod test {
         let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
         let normal_it = {
             let mut vec = vec![];
-            for x in 0..chunk::X_AXIS_SIZE {
-                for y in 0..chunk::Y_AXIS_SIZE {
-                    for z in (0..=chunk::Z_END).rev() {
-                        vec.push(IVec3::new(x as i32, y as i32, z));
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for y in 0..Chunk::Y_AXIS_SIZE {
+                    for z in (0..=Chunk::Z_END).rev() {
+                        vec.push(ChunkVoxel::new(x as u8, y as u8, z));
                     }
                 }
             }
@@ -1132,10 +1143,10 @@ mod test {
         let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
         let normal_it = {
             let mut vec = vec![];
-            for x in 0..chunk::X_AXIS_SIZE {
-                for y in 0..chunk::Y_AXIS_SIZE {
-                    for z in 0..chunk::Z_AXIS_SIZE {
-                        vec.push(IVec3::new(x as i32, y as i32, z as i32));
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for y in 0..Chunk::Y_AXIS_SIZE {
+                    for z in 0..Chunk::Z_AXIS_SIZE {
+                        vec.push(ChunkVoxel::new(x as u8, y as u8, z as u8));
                     }
                 }
             }
@@ -1156,10 +1167,10 @@ mod test {
         let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
         let normal_it = {
             let mut vec = vec![];
-            for y in 0..chunk::Y_AXIS_SIZE {
-                for z in (0..=chunk::Z_END).rev() {
-                    for x in 0..chunk::X_AXIS_SIZE {
-                        vec.push(IVec3::new(x as i32, y as i32, z));
+            for y in 0..Chunk::Y_AXIS_SIZE {
+                for z in (0..=Chunk::Z_END).rev() {
+                    for x in 0..Chunk::X_AXIS_SIZE {
+                        vec.push(ChunkVoxel::new(x as u8, y as u8, z));
                     }
                 }
             }
@@ -1180,10 +1191,10 @@ mod test {
         let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
         let normal_it = {
             let mut vec = vec![];
-            for y in 0..chunk::Y_AXIS_SIZE {
-                for z in 0..chunk::Z_AXIS_SIZE {
-                    for x in 0..chunk::X_AXIS_SIZE {
-                        vec.push(IVec3::new(x as i32, y as i32, z as i32));
+            for y in 0..Chunk::Y_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    for x in 0..Chunk::X_AXIS_SIZE {
+                        vec.push(ChunkVoxel::new(x as u8, y as u8, z as u8));
                     }
                 }
             }
@@ -1204,10 +1215,10 @@ mod test {
         let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
         let normal_it = {
             let mut vec = vec![];
-            for z in 0..chunk::Z_AXIS_SIZE {
-                for y in 0..chunk::Y_AXIS_SIZE {
-                    for x in 0..chunk::X_AXIS_SIZE {
-                        vec.push(IVec3::new(x as i32, y as i32, z as i32));
+            for z in 0..Chunk::Z_AXIS_SIZE {
+                for y in 0..Chunk::Y_AXIS_SIZE {
+                    for x in 0..Chunk::X_AXIS_SIZE {
+                        vec.push(ChunkVoxel::new(x as u8, y as u8, z as u8));
                     }
                 }
             }
@@ -1228,10 +1239,10 @@ mod test {
         let merger_it = MergerIterator::new(side).collect::<Vec<_>>();
         let normal_it = {
             let mut vec = vec![];
-            for z in 0..chunk::Z_AXIS_SIZE {
-                for y in 0..chunk::Y_AXIS_SIZE {
-                    for x in (0..=chunk::X_END).rev() {
-                        vec.push(IVec3::new(x, y as i32, z as i32));
+            for z in 0..Chunk::Z_AXIS_SIZE {
+                for y in 0..Chunk::Y_AXIS_SIZE {
+                    for x in (0..=Chunk::X_END).rev() {
+                        vec.push(ChunkVoxel::new(x, y as u8, z as u8));
                     }
                 }
             }
