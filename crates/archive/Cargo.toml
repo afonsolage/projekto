@@ -6,14 +6,18 @@ edition = "2024"
 [dependencies]
 projekto_core.workspace = true
 
+# Bavy!!!
 bevy.workspace = true
 
+# Utilities
 thiserror.workspace = true
-serde.workspace = true
 
+# IO
+serde.workspace = true
 bincode.workspace = true
 lz4_flex.workspace = true
 
+# Async stuff
 futures-lite.workspace = true
 async-fs.workspace = true
 async-channel.workspace = true

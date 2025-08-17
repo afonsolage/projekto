@@ -1,81 +1,124 @@
-#![allow(unused)]
-
+//! This create is used to store asset inside an archive format file. This format is inspired
+//! by the `fastanvil` crate, which is used to manipulate Minecraft anvil files.
+//!
+//! I made some adjustments to fit my needs, like making everything async and not having
+//! timestamp info on header.
+//!
+//! The archive format is pretty straightforward, it has a header section, which has a index
+//! for every possible asset inside the file. It is possible to store `MAX_CHUNK_COUNT` assets
+//! inside it.
+//!
+//! Each index in the header is a `SectorIndex`, which contains an offset and a sectors count.
+//! The offset and also the sectors count are in `SECTOR_SIZE` units, which means to get the
+//! final byte offset or size (in bytes), just multiplicate it with `SECTOR_SIZE`. An index with
+//! offset zero, means there is no valid asset in file.
+//!
+//! Assets are serialized and compressed and a number of sectors is allocated at the end of file
+//! (after `HEADER_SIZE` offset in bytes), so it can be stored. This means an empty archive has
+//! only `HEADER_SIZE` of bytes in size.
+//!
+//! When reading an asset, the (x, z) position converted into an index, which is used to get the
+//! respective `SectorIndex` from header. Then the file pointer is set to desired offset and the
+//! number of bytes is read. After that, the data is decompressed and deserialized.
+//!
+//! When writing an asset, if it fits in the currently allocated sectors, the data is just written
+//! on the disk, pretty much like when reading. If it needs more space, the new number of sectors
+//! are allocated at the end of the file. This means the old sectors is "orphaned" and won't be
+//! used anymore. In the future, it can be worth to add a "defrag" function, which would just
+//! create a new archive, without those gaps.
 use async_fs::{File, OpenOptions};
-use bevy::{math::IVec2, prelude::*};
+use bevy::prelude::*;
 use futures_lite::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use projekto_core::chunk::Chunk;
-use std::{
-    cell::{OnceCell, RefCell},
-    io::{Read, Seek, SeekFrom, Write},
-    os::unix::fs::FileExt,
-};
+use std::io::SeekFrom;
 use thiserror::Error;
 
 mod server;
 pub use server::{ArchiveServer, ArchiveTask};
 
+/// Size, in bytes, of each sector within the archive.
 const SECTOR_SIZE: usize = 4096;
-const AXIS_CHUNK_COUNT: usize = 32;
-const MAX_CHUNK_COUNT: usize = AXIS_CHUNK_COUNT * AXIS_CHUNK_COUNT;
+/// Number of chunks in each axis of archive region.
+const AXIS_CHUNK_SIZE: usize = 32;
+/// Total number of chunks in an archive.
+const MAX_CHUNK_COUNT: usize = AXIS_CHUNK_SIZE * AXIS_CHUNK_SIZE;
+/// Size, in bytes, of each index within the archive.
 const SECTOR_INDEX_SIZE: usize = 2 * 2; // 2 bytes, one for offset and another for sectors
+/// Size, in bytes, of header section of the archive.
 const HEADER_SIZE: usize = SECTOR_INDEX_SIZE * MAX_CHUNK_COUNT;
-const AXIS_SHIFT: usize = AXIS_CHUNK_COUNT.ilog2() as usize;
+/// Number of bits to shift for X AXIS.
+const X_AXIS_SHIFT: usize = AXIS_CHUNK_SIZE.ilog2() as usize;
 
-pub(crate) fn chunk_local_to_archive(chunk: Chunk) -> IVec2 {
-    IVec2::new(
-        ((chunk.x() as f32) / AXIS_CHUNK_COUNT as f32).floor() as i32,
-        ((chunk.z() as f32) / AXIS_CHUNK_COUNT as f32).floor() as i32,
-    )
-}
-
+/// Errors which can happens while using the archive crate.
+/// Check variants for description.
 #[derive(Debug, Error)]
 pub enum ArchiveError {
+    /// A general IO error happened. Usually this is related to the OS.
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
+    /// Raised when there is some error while decoding the asset from uncompressed bytes.
     #[error("Failed to decode: {0}")]
     Decode(#[from] bincode::error::DecodeError),
+    /// Raised when there is some error while encoding the asset into bytes.
     #[error("Failed to encode: {0}")]
     Encode(#[from] bincode::error::EncodeError),
+    /// Indicates a failure while compressing the encoded bytes.
     #[error("Failed to compress: {0}")]
     Compress(#[from] lz4_flex::frame::Error),
+    /// Invalid number of bytes in the archive file. Usually means the file is corrupted.
     #[error("Invalid header size: {0}")]
     HeaderInvalid(usize),
+    /// Raised when unable to write chunk into disk. Usually means some internal logic error.
     #[error("Failed to write: {0}")]
     Write(String),
+    /// Raised when unable to save the chunk.
     #[error("Failed to load chunk: {0}")]
     ChunkLoad(String),
+    /// Raised when unable to load the chunk.
     #[error("Failed to save chunk: {0}")]
     ChunkSave(String),
+    /// Raised then some task was cancelled before returning the result.
     #[error("Failed to receive task result")]
     TaskRecv,
 }
 
+/// Represents a fat pointer to an asset, inside the archive.
 #[derive(Default, Debug, Clone, Copy)]
 struct SectorIndex {
+    /// Offset, in `SECTOR_SIZE` units, of the beginning of the asset in the archive.
     offset: u16,
+    /// Number of sectors allocated for this asset. Each sector has `SECTOR_SIZE` bytes.
     sectors: u16,
 }
 
 impl SectorIndex {
+    /// Checks if this index points to a valid asset.
+    /// An valid offset will always be after header, so zero means no asset.
+    #[inline]
     fn is_empty(&self) -> bool {
-        // A valid offset will always be after header, so non-zero valid.
         self.offset == 0
     }
 
+    /// Returns the number of bytes this index offsets to, from the beginning of the file.
+    #[inline]
     fn seek_offset(&self) -> u64 {
         assert_ne!(self.offset, 0);
 
         self.offset as u64 * SECTOR_SIZE as u64
     }
 
+    /// Returns the total size of bytes this index points to.
     fn bytes_count(&self) -> usize {
         Self::sector_to_bytes(self.sectors)
     }
 
+    /// Calculates the number of sectors needed to fit the given number of bytes.
+    #[inline]
     fn sectors_count(bytes: usize) -> u16 {
         ((bytes + SECTOR_SIZE + 1) / SECTOR_SIZE) as u16
     }
 
+    /// Creates a `SectorIndex` for the given seek position. This function will
+    /// convert the seek position to `SECTOR_SIZE` units.
     fn from_seek_position(seek_position: u64, needed_sectors: u16) -> SectorIndex {
         assert_eq!(
             (seek_position + HEADER_SIZE as u64) % SECTOR_SIZE as u64,
@@ -91,10 +134,13 @@ impl SectorIndex {
         }
     }
 
+    /// Returns the bytes representation of self.
+    #[inline]
     fn as_bytes(&self) -> [u8; 4] {
         ((self.offset as u32) << 16 | self.sectors as u32).to_be_bytes()
     }
 
+    /// Creates an index from the bytes representation.
     fn from_bytes(bytes: [u8; 4]) -> Self {
         let i = u32::from_be_bytes(bytes);
         Self {
@@ -103,18 +149,27 @@ impl SectorIndex {
         }
     }
 
+    /// Converts the sector to absolute bytes.
+    #[inline]
     fn sector_to_bytes(sectors: u16) -> usize {
         sectors as usize * SECTOR_SIZE
     }
 }
 
+/// The header of archive. Holds all assets indices.
+/// When an index is created or update, it does not automatically writes to the disk.
+/// This has to be done calling `Archive::save_header`.
 #[derive(Default)]
 struct Header {
+    /// A list of all indices within the header.
+    /// Even tho this is a `Vec`, it has always the fixed size of `MAX_CHUNK_COUNT` elements.
     sectors: Vec<SectorIndex>,
+    /// Indicates if there was some change in sector indices.
     dirty: bool,
 }
 
 impl Header {
+    /// Creates a new header with `MAX_CHUNK_COUNT` indices.
     fn new() -> Self {
         Self {
             sectors: vec![Default::default(); MAX_CHUNK_COUNT],
@@ -122,6 +177,8 @@ impl Header {
         }
     }
 
+    /// Deserialize a header from a byte slice.
+    /// The slice must have at least `HEADER_SIZE` length
     fn de(bytes: &[u8]) -> Result<Self, ArchiveError> {
         if bytes.len() != HEADER_SIZE {
             return Err(ArchiveError::HeaderInvalid(bytes.len()));
@@ -141,7 +198,11 @@ impl Header {
         })
     }
 
+    /// Serialize header into a byte representation.
+    /// It will always returns `HEADER_SIZE` number of bytes, otherwise an
+    /// `ArchiveError::HeaderInvalid` is returned.
     fn ser(&self) -> Result<Vec<u8>, ArchiveError> {
+        // TODO: It is possible to avoid this allocation by writing directly into the file writer
         let bytes = self
             .sectors
             .iter()
@@ -155,28 +216,41 @@ impl Header {
         }
     }
 
+    /// Returns the `SectorIndex` at the given coords.
     fn get_index(&self, x: u8, z: u8) -> SectorIndex {
         self.sectors[Self::to_index(x, z)]
     }
 
+    /// Sets the given index at the given coords.
+    /// This marks the headers as dirty.
     fn set_index(&mut self, x: u8, z: u8, index: SectorIndex) {
         self.sectors[Self::to_index(x, z)] = index;
         self.dirty = true;
     }
 
+    /// Converts the given coords into a index
     #[inline]
     fn to_index(x: u8, z: u8) -> usize {
-        (x as usize) << AXIS_SHIFT | z as usize
+        (x as usize) << X_AXIS_SHIFT | z as usize
     }
 }
 
+/// This struct represents an archive file.
+/// Check crate level docs for more info.
 pub struct Archive<T> {
+    /// The header of file
     header: Header,
+    /// An async file handler. Used to do OS operations.
     file_handler: File,
     _pd: std::marker::PhantomData<T>,
 }
 
 impl<T> Archive<T> {
+    /// Creates a new archive for the given file path.
+    ///
+    /// This function creates the whole path sub folders, if it doesn't exists.
+    ///
+    /// If there is no file, a new one is created, saving the new header.
     pub async fn new(name: &str) -> Result<Self, ArchiveError> {
         let path = std::path::Path::new(name);
 
@@ -220,6 +294,9 @@ impl<T> Archive<T> {
         Ok(archive)
     }
 
+    /// Save the header into disk.
+    ///
+    /// This needs to be done manually due to performance reasons.
     pub async fn save_header(&mut self) -> Result<(), ArchiveError> {
         let bytes = self.header.ser()?;
         self.file_handler.seek(SeekFrom::Start(0)).await?;
@@ -230,6 +307,7 @@ impl<T> Archive<T> {
         Ok(())
     }
 
+    /// Checks if the header was modified since it was last saved or loaded.
     pub fn is_header_dirty(&self) -> bool {
         self.header.dirty
     }
@@ -239,6 +317,7 @@ impl<T> Archive<T>
 where
     T: serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
+    /// Read an asset at the given coords. If there is no asset, `None` is returned.
     pub async fn read(&mut self, x: u8, z: u8) -> Result<Option<T>, ArchiveError> {
         let index = self.header.get_index(x, z);
 
@@ -254,6 +333,8 @@ where
 
         self.file_handler.read_exact(&mut buffer).await?;
 
+        // TODO: It is possible to avoid allocating a buffer, but both lz4_flex and bincode aren't
+        // compatible with async.
         let mut frame = lz4_flex::frame::FrameDecoder::new(&*buffer);
         let value: T =
             bincode::serde::decode_from_std_read(&mut frame, bincode::config::standard())?;
@@ -261,7 +342,13 @@ where
         Ok(Some(value))
     }
 
+    /// Write the given asset at the given coords.
+    ///
+    /// Attempts to write on the current allocated sectors. If it doesn't fit, a new number of
+    /// sectors are allocated at the end of the archive.
     pub async fn write(&mut self, x: u8, z: u8, value: T) -> Result<(), ArchiveError> {
+        // TODO: It is possible to avoid allocating a buffer, but both lz4_flex and bincode aren't
+        // compatible with async.
         let mut compressed = Vec::with_capacity(256 * 1024); // 256k
         let mut frame = lz4_flex::frame::FrameEncoder::new(&mut compressed);
         bincode::serde::encode_into_std_write(&value, &mut frame, bincode::config::standard())?;
@@ -297,6 +384,7 @@ where
         Ok(())
     }
 
+    /// Creates a new `SectorIndex` pointing to the end of the archive.
     async fn append(&mut self, needed_sectors: u16) -> Result<SectorIndex, ArchiveError> {
         let seek_position = self.file_handler.seek(SeekFrom::End(0)).await?;
 
@@ -416,7 +504,7 @@ mod tests {
         let temp_file = temp_file();
 
         // Act
-        let res = block_on(Archive::<u8>::new(&temp_file)).unwrap();
+        let _res = block_on(Archive::<u8>::new(&temp_file)).unwrap();
 
         // Assert
         assert!(std::fs::exists(&temp_file).unwrap());
@@ -546,7 +634,7 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
-        block_on(archive.write(2, 3, ((0..20u16).collect()))).unwrap();
+        block_on(archive.write(2, 3, (0..20u16).collect())).unwrap();
 
         // Act
         let new_value = (0..1000u16).collect::<Vec<_>>();
@@ -567,7 +655,7 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
-        block_on(archive.write(2, 3, ((0..20u16).collect()))).unwrap();
+        block_on(archive.write(2, 3, (0..20u16).collect())).unwrap();
         let old_index = archive.header.get_index(2, 3);
 
         // Act
@@ -604,12 +692,12 @@ mod tests {
         // Act
         for x in 0..3u8 {
             let chunk = generate_chunk(x as u64);
-            chunks.push((x, chunk.clone()));
+            chunks.push(x);
             block_on(archive.write(x, 0, chunk)).unwrap();
         }
 
         // Assert
-        for (x, chunk) in chunks {
+        for x in chunks {
             let chunk = generate_chunk(x as u64);
             let cached_chunk = block_on(archive.read(x, 0));
 
@@ -630,16 +718,16 @@ mod tests {
         let mut archive = block_on(Archive::new(&temp_file)).unwrap();
 
         // Act
-        for x in 30..AXIS_CHUNK_COUNT as u8 {
-            for z in 0..AXIS_CHUNK_COUNT as u8 {
+        for x in 30..AXIS_CHUNK_SIZE as u8 {
+            for z in 0..AXIS_CHUNK_SIZE as u8 {
                 let value = (x as u128) << 8 | z as u128;
                 block_on(archive.write(x, z, value)).unwrap();
             }
         }
 
         // Assert
-        for x in 30..AXIS_CHUNK_COUNT as u8 {
-            for z in 0..AXIS_CHUNK_COUNT as u8 {
+        for x in 30..AXIS_CHUNK_SIZE as u8 {
+            for z in 0..AXIS_CHUNK_SIZE as u8 {
                 let value = block_on(archive.read(x, z));
 
                 if value.is_err() {
