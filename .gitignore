@@ -24,5 +24,8 @@ tracy/
 world/
 chunks/
 
+archive/
+!crates/archive/
+
 heaptrack.*
 rustc-ice*

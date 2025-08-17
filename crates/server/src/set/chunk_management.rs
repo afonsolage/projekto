@@ -1,13 +1,15 @@
 use bevy::prelude::*;
+use projekto_archive::{ArchiveServer, ArchiveTask};
 use projekto_core::chunk::Chunk;
 
 use crate::{
     WorldSet,
-    asset::{ChunkAsset, ChunkAssetHandle},
+    asset::ChunkAsset,
     bundle::{
         ChunkBundle, ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal,
         ChunkMap, ChunkVertex,
     },
+    genesis::{ChunkCreation, GenesisServer, GenesisTask},
 };
 
 pub struct ChunkManagementPlugin;
@@ -18,13 +20,10 @@ impl Plugin for ChunkManagementPlugin {
             .add_event::<ChunkUnload>()
             .add_event::<ChunkLoad>()
             .add_event::<ChunkGen>()
+            .add_systems(PreStartup, init_servers)
             .add_systems(
                 Update,
-                (
-                    chunks_unload.run_if(on_event::<ChunkUnload>),
-                    chunks_load.run_if(on_event::<ChunkLoad>),
-                    chunks_spawn.run_if(any_chunk_to_spawn),
-                )
+                (chunks_unload.run_if(on_event::<ChunkUnload>), chunks_load)
                     .chain()
                     .in_set(WorldSet::ChunkManagement),
             );
@@ -40,12 +39,18 @@ pub struct ChunkLoad(pub Chunk);
 #[derive(Event, Debug, Clone, Copy)]
 pub struct ChunkGen(pub Chunk);
 
+fn init_servers(mut commands: Commands) {
+    commands.insert_resource(ArchiveServer::<ChunkAsset>::new("archive/region/"));
+    commands.insert_resource(GenesisServer::new(1));
+}
+
 fn chunks_unload(
     mut commands: Commands,
     mut chunk_map: ResMut<ChunkMap>,
     mut reader: EventReader<ChunkUnload>,
 ) {
     let mut count = 0;
+
     reader.read().for_each(|evt| {
         if let Some(entity) = chunk_map.remove(&evt.0) {
             commands.entity(entity).despawn();
@@ -55,81 +60,118 @@ fn chunks_unload(
             warn!("Chunk {local} entity not found.");
         }
     });
+
     trace!("[chunks_unload] {count} chunks despawned");
 }
 
+#[allow(clippy::too_many_arguments)]
 fn chunks_load(
     mut commands: Commands,
     mut reader: EventReader<ChunkLoad>,
-    asset_server: Res<AssetServer>,
-) {
+    mut archive: ResMut<ArchiveServer<ChunkAsset>>,
+    genesis: ResMut<GenesisServer>,
+    mut load_tasks: Local<Vec<ArchiveTask<ChunkAsset>>>,
+    mut gen_tasks: Local<Vec<GenesisTask>>,
+    mut map: ResMut<ChunkMap>,
+    time: Res<Time>,
+) -> Result {
     for &ChunkLoad(chunk) in reader.read() {
-        let handle = asset_server.load::<ChunkAsset>(chunk.path());
-        commands.spawn(ChunkAssetHandle(handle));
+        load_tasks.push(archive.load_chunk(chunk)?);
     }
-}
 
-fn any_chunk_to_spawn(q: Query<(Entity, &ChunkAssetHandle), Without<ChunkLocal>>) -> bool {
-    !q.is_empty()
-}
+    let mut loaded = 0;
+    let mut generated = 0;
 
-fn chunks_spawn(
-    mut commands: Commands,
-    mut chunk_map: ResMut<ChunkMap>,
-    asset_server: Res<AssetServer>,
-    mut assets: ResMut<Assets<ChunkAsset>>,
-    q: Query<(Entity, &ChunkAssetHandle), Without<ChunkLocal>>,
-) {
-    let mut count = 0;
-    for (entity, handle) in &q {
-        let loaded = match asset_server.load_state(&handle.0) {
-            bevy::asset::LoadState::Loading => continue,
-            bevy::asset::LoadState::NotLoaded => {
-                let path = handle.path().expect("All chunk assets must have a path");
-                warn!("Chunk not loaded: {path:?}");
-                false
+    load_tasks.retain_mut(|task| {
+        if let Some(result) = task.try_get_result() {
+            match result {
+                Ok(maybe_asset) => {
+                    if let Some(asset) = maybe_asset {
+                        let chunk = asset.chunk;
+                        let entity = spawn_chunk(&mut commands, asset);
+                        map.insert(chunk, entity);
+
+                        loaded += 1;
+                    } else {
+                        let task = genesis.generate(task.chunk());
+                        gen_tasks.push(task);
+                    }
+                }
+                Err(e) => error!("Unabled to load chunk ({}). {e}", task.chunk()),
             }
-            bevy::asset::LoadState::Loaded => true,
-            bevy::asset::LoadState::Failed(_) => false,
-        };
-
-        if loaded {
-            let ChunkAsset {
-                chunk,
-                kind,
-                light,
-                occlusion,
-                soft_light,
-                vertex,
-            } = assets.remove(&handle.0).expect("Chunk asset exists");
-
-            let entity = commands
-                .spawn((
-                    ChunkBundle {
-                        kind: ChunkKind(kind),
-                        light: ChunkLight(light),
-                        local: ChunkLocal(chunk),
-                        occlusion: ChunkFacesOcclusion(occlusion),
-                        soft_light: ChunkFacesSoftLight(soft_light),
-                        vertex: ChunkVertex(vertex),
-                    },
-                    Name::new(format!("Server Chunk {chunk:?}")),
-                ))
-                .id();
-
-            if chunk_map.insert(chunk, entity).is_some() {
-                warn!("Chunk {chunk:?} overwritten an existing entity on map.");
-            }
-
-            count += 1;
+            // remove task
+            false
+        } else {
+            // keep task
+            true
         }
+    });
 
-        commands.entity(entity).despawn();
+    gen_tasks.retain_mut(|task| {
+        if let Some(result) = task.try_get_result() {
+            let chunk = task.chunk();
+            match result {
+                Ok(creation) => {
+                    let entity = spawn_created_chunk(&mut commands, chunk, creation);
+                    map.insert(chunk, entity);
+
+                    generated += 1;
+                }
+                Err(e) => error!("Unable to generate chunk ({chunk}). {e}"),
+            }
+            // remove task
+            false
+        } else {
+            // keep task
+            true
+        }
+    });
+
+    if time.elapsed_wrapped().as_secs() % 10 == 0 {
+        trace!(
+            "[chunks_spawn] Load tasks: {}. Gen tasks: {}",
+            load_tasks.len(),
+            gen_tasks.len()
+        );
     }
 
-    if count > 0 {
-        trace!("[chunks_spawn] Spawned {count} chunks!");
-    }
+    Ok(())
+}
+
+fn spawn_created_chunk(commands: &mut Commands, chunk: Chunk, creation: ChunkCreation) -> Entity {
+    let ChunkCreation { kind, light } = creation;
+    commands
+        .spawn(ChunkBundle {
+            local: ChunkLocal(chunk),
+            kind: ChunkKind(kind),
+            light: ChunkLight(light),
+            ..Default::default()
+        })
+        .id()
+
+    // TODO: save chunk
+}
+
+fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
+    let ChunkAsset {
+        chunk,
+        kind,
+        light,
+        occlusion,
+        soft_light,
+        vertex,
+    } = asset;
+
+    commands
+        .spawn(ChunkBundle {
+            kind: ChunkKind(kind),
+            light: ChunkLight(light),
+            local: ChunkLocal(chunk),
+            occlusion: ChunkFacesOcclusion(occlusion),
+            soft_light: ChunkFacesSoftLight(soft_light),
+            vertex: ChunkVertex(vertex),
+        })
+        .id()
 }
 
 // #[cfg(test)]

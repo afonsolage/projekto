@@ -44,7 +44,7 @@ pub fn any_chunk<T: QueryFilter>(q_changed_chunks: Query<(), (T, With<ChunkLocal
 }
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
-pub(crate) struct ChunkMap(pub HashMap<Chunk, Entity>);
+pub struct ChunkMap(pub HashMap<Chunk, Entity>);
 
 #[derive(SystemParam)]
 pub(crate) struct ChunkQuery<'w, 's, Q: QueryData + 'static, F: QueryFilter + 'static = ()> {

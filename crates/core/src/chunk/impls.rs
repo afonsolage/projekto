@@ -2,6 +2,9 @@ use crate::{chunk::ChunkStorageType, voxel};
 
 impl ChunkStorageType for u8 {}
 impl ChunkStorageType for u16 {}
+impl ChunkStorageType for u32 {}
+impl ChunkStorageType for u64 {}
+impl ChunkStorageType for u128 {}
 impl ChunkStorageType for voxel::Kind {}
 impl ChunkStorageType for voxel::Light {}
 impl ChunkStorageType for voxel::FacesOcclusion {}

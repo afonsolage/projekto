@@ -5,19 +5,15 @@ use bevy::{
     log::LogPlugin,
     prelude::*,
 };
-use projekto_server::{ChunkAssetHandle, WorldServerPlugin, set::Landscape};
+use projekto_server::{WorldServerPlugin, bundle::ChunkMap, set::Landscape};
 
 const TICK_EVERY_MILLIS: u64 = 50;
 
 fn main() {
     let mut app = App::new();
 
-    app.add_plugins(LogPlugin::default());
-
-    // TODO: Rework this when plugins dependencies is a thing in bevy
-    projekto_server::setup_chunk_asset_loader(&mut app);
-
     app.add_plugins((
+        LogPlugin::default(),
         AssetPlugin::default(),
         MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(
             TICK_EVERY_MILLIS,
@@ -36,8 +32,8 @@ fn setup(mut commands: Commands) {
     });
 }
 
-fn check_if_finished(q: Query<(Entity, &ChunkAssetHandle)>, mut exit: EventWriter<AppExit>) {
-    if q.is_empty() {
+fn check_if_finished(map: Res<ChunkMap>, mut exit: EventWriter<AppExit>) {
+    if map.len() >= 4225 {
         exit.write(AppExit::Success);
     }
 }
