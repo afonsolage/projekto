@@ -216,7 +216,7 @@ fn chunks_save(
     }
 
     if saved > 0 {
-        trace!("[chunks_save] saved {saved} chunks.");
+        trace!("[chunks_save] saved {saved} chunks.",);
     }
 }
 

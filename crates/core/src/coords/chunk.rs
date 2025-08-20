@@ -87,10 +87,12 @@ pub struct ChunkVoxel {
 }
 
 impl ChunkVoxel {
+    #[inline(always)]
     pub const fn new(x: u8, y: u8, z: u8) -> Self {
         Self { x, y, z }
     }
 
+    #[inline]
     pub fn try_from(value: IVec3) -> Option<Self> {
         if value.x >= 0
             && value.x < Chunk::X_AXIS_SIZE as i32
@@ -153,6 +155,7 @@ impl From<ChunkVoxel> for IVec2 {
 }
 
 impl From<ChunkVoxel> for IVec3 {
+    #[inline]
     fn from(value: ChunkVoxel) -> Self {
         IVec3::new(value.x as i32, value.y as i32, value.z as i32)
     }
@@ -170,30 +173,47 @@ impl From<(u8, u8, u8)> for ChunkVoxel {
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct ColumnVoxel {
-    pub x: u8,
-    pub y: u8,
-    pub z: u8,
+    xz: u8,
+    y: u8,
 }
 
 impl ColumnVoxel {
+    #[inline]
     pub fn new(x: u8, y: u8, z: u8) -> Self {
         Self {
-            x: x & 0x0F,
+            xz: (x & 0x0F) << 4 | z & 0x0F,
             y,
-            z: z & 0x0F,
         }
     }
 
+    #[inline]
     pub fn from_index(index: u8) -> Self {
-        ColumnVoxel::new((index & 0xF0) >> 4, 0, index & 0x0F)
+        Self { xz: index, y: 0 }
     }
 
+    #[inline(always)]
     pub fn column_index(&self) -> usize {
-        (self.x << 4 | self.z) as usize
+        self.xz as usize
+    }
+
+    #[inline(always)]
+    pub fn x(&self) -> u8 {
+        self.xz >> 4
+    }
+
+    #[inline(always)]
+    pub fn z(&self) -> u8 {
+        self.xz & 0x0F
+    }
+
+    #[inline(always)]
+    pub fn y(&self) -> u8 {
+        self.y
     }
 }
 
 impl From<ChunkVoxel> for ColumnVoxel {
+    #[inline]
     fn from(value: ChunkVoxel) -> Self {
         Self::new(value.x, value.y, value.z)
     }

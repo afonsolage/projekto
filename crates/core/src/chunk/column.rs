@@ -57,13 +57,13 @@ where
     T: ChunkStorageType,
 {
     pub fn get(&self, voxel: ChunkVoxel) -> T {
-        let voxel: ColumnVoxel = voxel.into();
-        self.0[voxel.column_index()].get(voxel.y)
+        let voxel = ColumnVoxel::from(voxel);
+        self.0[voxel.column_index()].get(voxel.y())
     }
 
     pub fn set(&mut self, voxel: ChunkVoxel, value: T) {
         let voxel: ColumnVoxel = voxel.into();
-        self.0[voxel.column_index()].set(voxel.y, value);
+        self.0[voxel.column_index()].set(voxel.y(), value);
     }
 
     pub fn is_default(&self) -> bool {
@@ -91,7 +91,7 @@ where
                         if f(v) {
                             voxels.extend(
                                 (0..=(COLUMN_COUNT - 1) as u8)
-                                    .map(|y| ChunkVoxel::new(base_voxel.x, y, base_voxel.z)),
+                                    .map(|y| ChunkVoxel::new(base_voxel.x(), y, base_voxel.z())),
                             );
                         }
                     }
@@ -104,7 +104,7 @@ where
                                     .enumerate()
                                     .filter(|(_, pallet_idx)| **pallet_idx == target_idx)
                                     .map(|(y_idx, _)| {
-                                        ChunkVoxel::new(base_voxel.x, y_idx as u8, base_voxel.z)
+                                        ChunkVoxel::new(base_voxel.x(), y_idx as u8, base_voxel.z())
                                     });
 
                                 voxels.extend(filtered_voxels);

@@ -94,6 +94,8 @@ pub fn gather_neighborhood_light<'a>(
     let light = get_light(chunk).expect("base chunk must exists");
     let kind = get_kind(chunk).expect("base chunk must exists");
 
+    let base_voxel = IVec3::from(voxel);
+
     let mut i = 0;
     for y in -1..=1 {
         for z in -1..=1 {
@@ -104,7 +106,7 @@ pub fn gather_neighborhood_light<'a>(
                     continue;
                 }
 
-                let side_voxel = IVec3::from(voxel) + dir;
+                let side_voxel = base_voxel + dir;
 
                 let intensity = if let Some(side_voxel) = ChunkVoxel::try_from(side_voxel) {
                     let intensity = light.get(side_voxel).get_greater_intensity();
