@@ -6,7 +6,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let s = create_storage();
 
         b.iter(|| {
-            std::hint::black_box(s.get(ChunkVoxel::new(2, 0, 111)));
+            std::hint::black_box(s.get(ChunkVoxel::new(2, 0, 1)));
         });
     });
 
@@ -23,8 +23,8 @@ fn criterion_benchmark(c: &mut Criterion) {
 fn create_storage() -> ChunkStorage<u128> {
     let mut storage = ChunkStorage::<u128>::default();
 
-    for x in 1..33 {
-        for z in 100..122 {
+    for x in 1..3 {
+        for z in 10..12 {
             storage.set(ChunkVoxel::new(x, 0, z), x as u128 * z as u128);
         }
     }

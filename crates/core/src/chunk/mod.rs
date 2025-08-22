@@ -145,9 +145,9 @@ pub fn is_at_edge(voxel: ChunkVoxel) -> bool {
     voxel.x == 0
         || voxel.y == 0
         || voxel.z == 0
-        || voxel.x == (Chunk::X_AXIS_SIZE - 1) as u8
-        || voxel.y == (Chunk::Y_AXIS_SIZE - 1) as u8
-        || voxel.z == (Chunk::Z_AXIS_SIZE - 1) as u8
+        || voxel.x as u8 == (Chunk::X_AXIS_SIZE - 1) as u8
+        || voxel.y as u8 == (Chunk::Y_AXIS_SIZE - 1) as u8
+        || voxel.z as u8 == (Chunk::Z_AXIS_SIZE - 1) as u8
 }
 
 pub fn overlap_voxel(voxel: ChunkVoxel, dir: IVec2) -> (IVec2, ChunkVoxel) {
@@ -231,7 +231,7 @@ mod tests {
         assert_eq!(top_voxels.len(), Chunk::X_AXIS_SIZE * Chunk::Z_AXIS_SIZE);
         top_voxels
             .into_iter()
-            .for_each(|voxel| assert_eq!(voxel.y, Chunk::Y_END));
+            .for_each(|voxel| assert_eq!(voxel.y as u8, Chunk::Y_END));
     }
 
     #[test]

@@ -47,9 +47,9 @@ impl PackVoxel {
 
 impl From<ChunkVoxel> for PackVoxel {
     fn from(value: ChunkVoxel) -> Self {
-        let x = value.x % pack_consts::X_AXIS_SIZE as u8;
-        let y = value.y % pack_consts::Y_AXIS_SIZE as u8;
-        let z = value.z % pack_consts::Z_AXIS_SIZE as u8;
+        let x = value.x as u8 % pack_consts::X_AXIS_SIZE as u8;
+        let y = value.y as u8 % pack_consts::Y_AXIS_SIZE as u8;
+        let z = value.z as u8 % pack_consts::Z_AXIS_SIZE as u8;
 
         Self::new(x, y, z)
     }
@@ -82,9 +82,9 @@ impl<T> SubChunkStorage<T> {
 
     #[inline]
     fn get_pack_index(voxel: ChunkVoxel) -> usize {
-        let x = voxel.x / pack_consts::X_AXIS_SIZE as u8;
-        let y = voxel.y / pack_consts::Y_AXIS_SIZE as u8;
-        let z = voxel.z / pack_consts::Z_AXIS_SIZE as u8;
+        let x = voxel.x as u8 / pack_consts::X_AXIS_SIZE as u8;
+        let y = voxel.y as u8 / pack_consts::Y_AXIS_SIZE as u8;
+        let z = voxel.z as u8 / pack_consts::Z_AXIS_SIZE as u8;
 
         (x << Self::X_SHIFT | z << Self::Z_SHIFT | y << Self::Y_SHIFT) as usize
     }

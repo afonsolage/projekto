@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     chunk::{self, ChunkStorageType},
-    coords::{Chunk, ChunkVoxel, ColumnVoxel, Voxel},
+    coords::{Chunk, ChunkVoxel, Voxel},
     voxel::{self, FacesOcclusion, FacesSoftLight, Kind, Light, LightTy},
 };
 
@@ -52,18 +52,27 @@ where
     }
 }
 
+impl ChunkVoxel {
+    #[inline(always)]
+    fn column_index(&self) -> usize {
+        (self.x << 4 | self.z) as usize
+    }
+
+    fn from_column_index(index: u8) -> Self {
+        Self::new(index >> 4, 0, index & 0x0F)
+    }
+}
+
 impl<T> ChunkColumnStorage<T>
 where
     T: ChunkStorageType,
 {
     pub fn get(&self, voxel: ChunkVoxel) -> T {
-        let voxel = ColumnVoxel::from(voxel);
-        self.0[voxel.column_index()].get(voxel.y())
+        self.0[voxel.column_index()].get(voxel.y as u8)
     }
 
     pub fn set(&mut self, voxel: ChunkVoxel, value: T) {
-        let voxel: ColumnVoxel = voxel.into();
-        self.0[voxel.column_index()].set(voxel.y(), value);
+        self.0[voxel.column_index()].set(voxel.y as u8, value);
     }
 
     pub fn is_default(&self) -> bool {
@@ -85,14 +94,13 @@ where
             |mut voxels, (column_idx, column)| {
                 debug_assert!(column_idx < COLUMN_SIZE);
 
-                let base_voxel = ColumnVoxel::from_index(column_idx as u8);
+                let base_voxel = ChunkVoxel::from_column_index(column_idx as u8);
                 match column {
                     ChunkColumn::Single(v) => {
                         if f(v) {
-                            voxels.extend(
-                                (0..=(COLUMN_COUNT - 1) as u8)
-                                    .map(|y| ChunkVoxel::new(base_voxel.x(), y, base_voxel.z())),
-                            );
+                            voxels.extend((0..=(COLUMN_COUNT - 1) as u8).map(|y| {
+                                ChunkVoxel::new(base_voxel.x as u8, y, base_voxel.z as u8)
+                            }));
                         }
                     }
                     ChunkColumn::Pallet { pallet, indices } => {
@@ -104,7 +112,11 @@ where
                                     .enumerate()
                                     .filter(|(_, pallet_idx)| **pallet_idx == target_idx)
                                     .map(|(y_idx, _)| {
-                                        ChunkVoxel::new(base_voxel.x(), y_idx as u8, base_voxel.z())
+                                        ChunkVoxel::new(
+                                            base_voxel.x as u8,
+                                            y_idx as u8,
+                                            base_voxel.z as u8,
+                                        )
                                     });
 
                                 voxels.extend(filtered_voxels);
@@ -369,18 +381,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn column_voxel_from_index() {
+    fn chunk_voxel_from_column_index() {
         // Arrange
 
         // Act
-        let first = ColumnVoxel::from_index(0);
-        let last = ColumnVoxel::from_index((COLUMN_COUNT - 1) as u8);
+        let first = ChunkVoxel::from_column_index(0);
+        let last = ChunkVoxel::from_column_index((COLUMN_COUNT - 1) as u8);
 
         // Assert
-        assert_eq!(first, ColumnVoxel::new(0, 0, 0));
+        assert_eq!(first, ChunkVoxel::new(0, 0, 0));
         assert_eq!(
             last,
-            ColumnVoxel::new(
+            ChunkVoxel::new(
                 (Chunk::X_AXIS_SIZE - 1) as u8,
                 0,
                 (Chunk::Z_AXIS_SIZE - 1) as u8
@@ -389,12 +401,12 @@ mod tests {
     }
 
     #[test]
-    fn column_voxel_column_index() {
+    fn chunk_voxel_column_index() {
         // Arrange
 
         // Act
-        let first = ColumnVoxel::new(0, 0, 0).column_index();
-        let last = ColumnVoxel::new(
+        let first = ChunkVoxel::new(0, 0, 0).column_index();
+        let last = ChunkVoxel::new(
             (Chunk::X_AXIS_SIZE - 1) as u8,
             0,
             (Chunk::Z_AXIS_SIZE - 1) as u8,

@@ -1,4 +1,7 @@
-use bevy::math::{IVec2, IVec3, Vec3};
+use bevy::{
+    math::{IVec2, IVec3, Vec3},
+    prelude::Deref,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::coords::Voxel;
@@ -79,17 +82,14 @@ impl From<Chunk> for IVec2 {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Copy, Hash, Serialize, Deserialize)]
-pub struct ChunkVoxel {
-    pub x: u8,
-    pub y: u8,
-    pub z: u8,
-}
+#[derive(Debug, Default, PartialEq, Deref, Clone, Copy, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct ChunkVoxel(IVec3);
 
 impl ChunkVoxel {
     #[inline(always)]
     pub const fn new(x: u8, y: u8, z: u8) -> Self {
-        Self { x, y, z }
+        Self(IVec3::new(x as i32, y as i32, z as i32))
     }
 
     #[inline]
@@ -144,7 +144,7 @@ impl From<Vec3> for ChunkVoxel {
         let y = voxel.y.rem_euclid(Chunk::Y_AXIS_SIZE as i32) as u8;
         let z = voxel.z.rem_euclid(Chunk::Z_AXIS_SIZE as i32) as u8;
 
-        Self { x, y, z }
+        Self(IVec3::new(x as i32, y as i32, z as i32))
     }
 }
 
@@ -163,63 +163,10 @@ impl From<ChunkVoxel> for IVec3 {
 
 impl From<(u8, u8, u8)> for ChunkVoxel {
     fn from(value: (u8, u8, u8)) -> Self {
-        Self {
-            x: value.0,
-            y: value.1,
-            z: value.2,
-        }
+        Self(IVec3::new(value.0 as i32, value.1 as i32, value.2 as i32))
     }
 }
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct ColumnVoxel {
-    xz: u8,
-    y: u8,
-}
-
-impl ColumnVoxel {
-    #[inline]
-    pub fn new(x: u8, y: u8, z: u8) -> Self {
-        Self {
-            xz: (x & 0x0F) << 4 | z & 0x0F,
-            y,
-        }
-    }
-
-    #[inline]
-    pub fn from_index(index: u8) -> Self {
-        Self { xz: index, y: 0 }
-    }
-
-    #[inline(always)]
-    pub fn column_index(&self) -> usize {
-        self.xz as usize
-    }
-
-    #[inline(always)]
-    pub fn x(&self) -> u8 {
-        self.xz >> 4
-    }
-
-    #[inline(always)]
-    pub fn z(&self) -> u8 {
-        self.xz & 0x0F
-    }
-
-    #[inline(always)]
-    pub fn y(&self) -> u8 {
-        self.y
-    }
-}
-
-impl From<ChunkVoxel> for ColumnVoxel {
-    #[inline]
-    fn from(value: ChunkVoxel) -> Self {
-        Self::new(value.x, value.y, value.z)
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 
