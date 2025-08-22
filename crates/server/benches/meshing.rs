@@ -1,5 +1,9 @@
-use bevy::math::IVec3;
+use bevy::{
+    math::IVec3,
+    tasks::{IoTaskPool, TaskPoolBuilder},
+};
 use criterion::{Criterion, criterion_group, criterion_main};
+use projekto_archive::ArchiveServer;
 use projekto_core::chunk::{self, ChunkStorage};
 use projekto_server::{
     ChunkAsset,
@@ -74,11 +78,15 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 }
 
 fn setup() -> ChunkAsset {
-    let path = std::path::Path::new("../../chunks/0_0");
-    let bytes = std::fs::read(path).unwrap();
-    let (asset, _) =
-        bincode::serde::decode_from_slice(&bytes, bincode::config::standard()).unwrap();
-    asset
+    let _ = IoTaskPool::get_or_init(|| TaskPoolBuilder::new().build());
+    let mut server = ArchiveServer::<ChunkAsset>::new("../../archive/region/");
+    let task = server.load_chunk((0, 0).into()).unwrap();
+
+    loop {
+        if let Some(res) = task.try_get_result() {
+            break res.unwrap().unwrap();
+        }
+    }
 }
 
 criterion_group!(benches, criterion_benchmark);
