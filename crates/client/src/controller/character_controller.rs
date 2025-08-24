@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use projekto_core::chunk::Chunk;
+use projekto_core::coords::Chunk;
 
 use crate::PlayerLandscape;
 

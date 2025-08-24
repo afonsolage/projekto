@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use projekto_core::{chunk::Chunk, voxel};
+use projekto_core::{coords::Chunk, voxel};
 
 #[derive(Component, Default, Debug, Clone, Copy, Deref, DerefMut)]
 pub struct ChunkLocal(pub Chunk);
