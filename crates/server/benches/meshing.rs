@@ -1,10 +1,8 @@
-use bevy::{
-    math::IVec3,
-    tasks::{IoTaskPool, TaskPoolBuilder},
-};
+use bevy::tasks::{IoTaskPool, TaskPoolBuilder};
 use criterion::{Criterion, criterion_group, criterion_main};
 use projekto_archive::ArchiveServer;
 use projekto_core::chunk::{self, ChunkStorage};
+use projekto_core::coords::ChunkVoxel;
 use projekto_server::{
     ChunkAsset,
     meshing::{faces_occlusion, generate_vertices, greedy},
@@ -69,7 +67,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             std::hint::black_box(projekto_server::light::gather_neighborhood_light(
                 chunk,
-                IVec3::ZERO,
+                ChunkVoxel::default(),
                 |_| Some(&kind),
                 |_| Some(&light),
             ));

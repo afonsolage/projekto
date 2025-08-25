@@ -1,10 +1,11 @@
 use std::collections::VecDeque;
 
-use bevy::math::IVec3;
+use bevy::math::{IVec2, IVec3};
 use projekto_core::{
-    chunk::{self, Chunk, ChunkSide, ChunkStorage, GetChunkStorage},
+    chunk::{self, ChunkSide, ChunkStorage, GetChunkStorage},
+    coords::{Chunk, ChunkVoxel},
     math,
-    voxel::{self, LightTy, Voxel},
+    voxel::{self, LightTy},
 };
 
 /// Number of neighbors per voxel
@@ -84,7 +85,7 @@ const NEIGHBOR_VERTEX_LOOKUP: [[[usize; VERTEX_COUNT]; VERTEX_NEIGHBOR_COUNT]; v
 
 pub fn gather_neighborhood_light<'a>(
     chunk: Chunk,
-    voxel: Voxel,
+    voxel: ChunkVoxel,
     get_kind: impl GetChunkStorage<'a, voxel::Kind>,
     get_light: impl GetChunkStorage<'a, voxel::Light>,
 ) -> [Option<u8>; NEIGHBOR_COUNT] {
@@ -92,6 +93,8 @@ pub fn gather_neighborhood_light<'a>(
 
     let light = get_light(chunk).expect("base chunk must exists");
     let kind = get_kind(chunk).expect("base chunk must exists");
+
+    let base_voxel = IVec3::from(voxel);
 
     let mut i = 0;
     for y in -1..=1 {
@@ -103,9 +106,9 @@ pub fn gather_neighborhood_light<'a>(
                     continue;
                 }
 
-                let side_voxel = voxel + dir;
+                let side_voxel = base_voxel + dir;
 
-                let intensity = if chunk::is_inside(side_voxel) {
+                let intensity = if let Some(side_voxel) = ChunkVoxel::try_from(side_voxel) {
                     let intensity = light.get(side_voxel).get_greater_intensity();
 
                     // Check if returned block is opaque
@@ -118,7 +121,9 @@ pub fn gather_neighborhood_light<'a>(
                     // There is no chunk above or below
                     Some(voxel::Light::MAX_NATURAL_INTENSITY)
                 } else {
-                    let (dir, neighbor_voxel) = chunk::overlap_voxel(side_voxel);
+                    let (dir, neighbor_voxel) =
+                        chunk::overlap_voxel(voxel, IVec2::new(dir.x, dir.z));
+
                     let neighbor_chunk = chunk.neighbor(dir);
 
                     if let Some(kind) = get_kind(neighbor_chunk)
@@ -198,7 +203,6 @@ pub fn smooth_lighting<'a>(
         }
 
         let occlusion = occlusion.get(voxel);
-
         if occlusion.is_fully_occluded() {
             return;
         }
@@ -238,7 +242,7 @@ fn calc_propagated_intensity(ty: LightTy, side: voxel::Side, intensity: u8) -> u
 
 pub struct NeighborLightPropagation {
     pub side: ChunkSide,
-    pub voxel: Voxel,
+    pub voxel: ChunkVoxel,
     pub ty: LightTy,
     pub intensity: u8,
 }
@@ -247,7 +251,7 @@ pub fn propagate(
     kind: &ChunkStorage<voxel::Kind>,
     light: &mut ChunkStorage<voxel::Light>,
     light_ty: LightTy,
-    voxels: impl Iterator<Item = Voxel>,
+    voxels: impl Iterator<Item = ChunkVoxel>,
 ) -> Vec<NeighborLightPropagation> {
     let mut queue = voxels.collect::<VecDeque<_>>();
     let mut neighbor_light_propagation = vec![];
@@ -266,28 +270,27 @@ pub fn propagate(
                 continue;
             }
 
-            let side_voxel = voxel + side.dir();
-            if !chunk::is_inside(side_voxel) {
+            let Some(side_voxel) = ChunkVoxel::try_from(IVec3::from(voxel) + side.dir()) else {
                 if let Some(chunk_side) = ChunkSide::from_voxel_side(side) {
                     let neighbor_voxel = math::euclid_rem(
-                        side_voxel,
+                        IVec3::from(voxel) + side.dir(),
                         IVec3::new(
-                            chunk::X_AXIS_SIZE as i32,
-                            chunk::Y_AXIS_SIZE as i32,
-                            chunk::Z_AXIS_SIZE as i32,
+                            Chunk::X_AXIS_SIZE as i32,
+                            Chunk::Y_AXIS_SIZE as i32,
+                            Chunk::Z_AXIS_SIZE as i32,
                         ),
                     );
 
                     neighbor_light_propagation.push(NeighborLightPropagation {
                         side: chunk_side,
-                        voxel: neighbor_voxel,
+                        voxel: ChunkVoxel::try_from(neighbor_voxel).expect("To be a valid voxel"),
                         ty: light_ty,
                         intensity: propagated_intensity,
                     });
                 }
 
                 continue;
-            }
+            };
 
             let side_kind = kind.get(side_voxel);
             if side_kind.is_opaque() {
@@ -342,26 +345,26 @@ mod test {
             light.set_type(voxel, LightTy::Natural, voxel::Light::MAX_NATURAL_INTENSITY);
         });
 
-        kind.set(IVec3::new(1, 0, 0), 1.into());
-        kind.set(IVec3::new(0, 1, 0), 1.into());
-        kind.set(IVec3::new(0, 0, 1), 1.into());
+        kind.set(ChunkVoxel::new(1, 0, 0), 1.into());
+        kind.set(ChunkVoxel::new(0, 1, 0), 1.into());
+        kind.set(ChunkVoxel::new(0, 0, 1), 1.into());
 
         let _ = propagate(&kind, &mut light, LightTy::Natural, chunk::top_voxels());
 
         assert_eq!(
-            light.get(IVec3::ZERO).get(LightTy::Natural),
+            light.get(ChunkVoxel::default()).get(LightTy::Natural),
             0,
             "Should not propagate to enclosed voxels"
         );
 
         assert_eq!(
-            light.get(IVec3::new(1, 0, 0)).get(LightTy::Natural),
+            light.get(ChunkVoxel::new(1, 0, 0)).get(LightTy::Natural),
             0,
             "Should not propagate to opaque voxels"
         );
 
         assert_eq!(
-            light.get(IVec3::new(2, 0, 0)).get(LightTy::Natural),
+            light.get(ChunkVoxel::new(2, 0, 0)).get(LightTy::Natural),
             voxel::Light::MAX_NATURAL_INTENSITY,
             "Should propagate at max intensity to empty voxels"
         );
@@ -377,8 +380,8 @@ mod test {
         });
 
         // block all light except for a voxel at 0, 1, 0
-        (0..=chunk::X_END)
-            .flat_map(|x| (0..=chunk::Z_END).map(move |z| IVec3::new(x, 1, z)))
+        (0..=Chunk::X_END)
+            .flat_map(|x| (0..=Chunk::Z_END).map(move |z| ChunkVoxel::new(x, 1, z)))
             .skip(1)
             .for_each(|v| {
                 kind.set(v, 1.into());
@@ -386,8 +389,8 @@ mod test {
 
         let _ = propagate(&kind, &mut light, LightTy::Natural, chunk::top_voxels());
 
-        (0..=chunk::Z_END).enumerate().for_each(|(i, z)| {
-            let voxel = IVec3::new(0, 0, z);
+        (0..=Chunk::Z_END).enumerate().for_each(|(i, z)| {
+            let voxel = ChunkVoxel::new(0, 0, z);
             assert_eq!(
                 light.get(voxel).get(LightTy::Natural),
                 voxel::Light::MAX_NATURAL_INTENSITY - i as u8,
@@ -418,7 +421,7 @@ mod test {
             )
             .into_iter()
             .for_each(|(_side, voxels)| {
-                assert_eq!(voxels.len(), chunk::X_AXIS_SIZE * chunk::Y_AXIS_SIZE);
+                assert_eq!(voxels.len(), Chunk::X_AXIS_SIZE * Chunk::Y_AXIS_SIZE);
             });
 
         neighbor_propagation.into_iter().for_each(
@@ -455,8 +458,8 @@ mod test {
             light.set_type(voxel, LightTy::Natural, voxel::Light::MAX_NATURAL_INTENSITY);
         });
 
-        let left_wall = (0..=chunk::Z_END)
-            .flat_map(|z| (0..=chunk::Y_END).map(move |y| IVec3::new(0, y, z)))
+        let left_wall = (0..=Chunk::Z_END)
+            .flat_map(|z| (0..=Chunk::Y_END).map(move |y| ChunkVoxel::new(0, y, z)))
             .collect::<Vec<_>>();
         left_wall.iter().for_each(|&v| kind.set(v, 1.into()));
 
@@ -477,7 +480,7 @@ mod test {
     #[test]
     fn gather_neighborhood_light() {
         let chunk = Chunk::default();
-        let voxel = Voxel::new(10, 10, 10);
+        let voxel = ChunkVoxel::new(10, 10, 10);
         let kind = ChunkStorage::<voxel::Kind>::default();
         let mut light = ChunkStorage::<voxel::Light>::default();
 
@@ -485,7 +488,9 @@ mod test {
         for y in -1..=1 {
             for z in -1..=1 {
                 for x in -1..=1 {
-                    light.set(voxel + Voxel::new(x, y, z), voxel::Light::natural(i));
+                    let voxel =
+                        ChunkVoxel::try_from(IVec3::from(voxel) + IVec3::new(x, y, z)).unwrap();
+                    light.set(voxel, voxel::Light::natural(i));
                     i += 1;
                 }
             }
@@ -497,10 +502,14 @@ mod test {
         let neighbors = super::gather_neighborhood_light(chunk, voxel, get_kind, get_light);
 
         let mut i = 0;
-        for y in -1..=1 {
-            for z in -1..=1 {
-                for x in -1..=1 {
-                    let neighbor = voxel + Voxel::new(x, y, z);
+        for y in -1..=1i32 {
+            for z in -1..=1i32 {
+                for x in -1..=1i32 {
+                    let neighbor = ChunkVoxel::new(
+                        (voxel.x as i32 + x) as u8,
+                        (voxel.y as i32 + y) as u8,
+                        (voxel.z as i32 + z) as u8,
+                    );
 
                     if neighbor == voxel {
                         continue;

@@ -5,7 +5,8 @@ use bevy::{
     tasks::{Task, TaskPool, TaskPoolBuilder, block_on, poll_once},
 };
 use projekto_core::{
-    chunk::{Chunk, ChunkStorage},
+    chunk::ChunkStorage,
+    coords::Chunk,
     voxel::{Kind, Light},
 };
 //?
