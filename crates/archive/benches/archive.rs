@@ -1,7 +1,10 @@
 use async_io::block_on;
 use criterion::{Criterion, criterion_group, criterion_main};
 use projekto_archive::Archive;
-use projekto_core::chunk::{self, ChunkStorage};
+use projekto_core::{
+    chunk::{self, ChunkStorage},
+    coords::RegionChunk,
+};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn generate_chunk(seed: u64) -> ChunkStorage<u128> {
@@ -18,7 +21,7 @@ async fn fill_archive(archive: &mut Archive<ChunkStorage<u128>>) {
     for x in 0..15u8 {
         for z in 0..15u8 {
             let chunk = generate_chunk((x as u64) << 16 | z as u64);
-            archive.write(x, z, chunk).await.unwrap();
+            archive.write(RegionChunk::new(x, z), chunk).await.unwrap();
         }
     }
 }
@@ -33,7 +36,7 @@ fn archive_bench(c: &mut Criterion) {
     block_on(archive.save_header()).unwrap();
 
     c.bench_function("archive read", |b| {
-        b.iter(|| block_on(archive.read(3, 3)).unwrap());
+        b.iter(|| block_on(archive.read(RegionChunk::new(3, 3))).unwrap());
     });
 }
 

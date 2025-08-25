@@ -203,7 +203,6 @@ pub fn smooth_lighting<'a>(
         }
 
         let occlusion = occlusion.get(voxel);
-
         if occlusion.is_fully_occluded() {
             return;
         }

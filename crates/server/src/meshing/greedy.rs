@@ -165,7 +165,7 @@ fn find_furthest_eq_voxel(
     let mut next = IVec3::from(begin) + step;
 
     while let Some(next_voxel) = ChunkVoxel::try_from(next)
-        && !merged[usize::from(next_voxel)]
+        && !merged[next_voxel.to_index()]
         && should_merge_next(current, chunk.get(next_voxel), side)
     {
         if let Some(target) = until
@@ -199,7 +199,7 @@ fn mark_walked_voxels(
     while current != v3
         && let Some(current_voxel) = ChunkVoxel::try_from(current)
     {
-        merged[usize::from(current_voxel)] = true;
+        merged[current_voxel.to_index()] = true;
 
         if current == end {
             begin += perpendicular_axis;
@@ -211,7 +211,7 @@ fn mark_walked_voxels(
     }
 
     if let Some(current_voxel) = ChunkVoxel::try_from(current) {
-        merged[usize::from(current_voxel)] = true;
+        merged[current_voxel.to_index()] = true;
     }
 }
 
@@ -240,7 +240,7 @@ pub fn generate_faces(
             let current = chunk.get(voxel);
             let (kind, occlusion, soft_light) = current;
 
-            if merged[usize::from(voxel)] || should_skip_voxel(side, current) {
+            if merged[voxel.to_index()] || should_skip_voxel(side, current) {
                 continue;
             }
 
@@ -258,7 +258,7 @@ pub fn generate_faces(
             // next vertex (v3) which is be able to merge with v1 and v2
             let mut next_begin_voxel = v1 + perpendicular_step;
             while let Some(next) = ChunkVoxel::try_from(next_begin_voxel)
-                && !merged[usize::from(next)]
+                && !merged[next.to_index()]
                 && should_merge_next(current, chunk.get(next), side)
             {
                 let furthest = find_furthest_eq_voxel(
@@ -1043,7 +1043,7 @@ mod test {
         ];
 
         for voxel in test_walked {
-            assert!(merged[usize::from(voxel)]);
+            assert!(merged[voxel.to_index()]);
         }
     }
 
@@ -1068,7 +1068,7 @@ mod test {
         ];
 
         for voxel in test_walked {
-            assert!(merged[usize::from(voxel)]);
+            assert!(merged[voxel.to_index()]);
         }
     }
 
@@ -1099,7 +1099,7 @@ mod test {
         ];
 
         for voxel in test_walked {
-            assert!(merged[usize::from(voxel)]);
+            assert!(merged[voxel.to_index()]);
         }
     }
 

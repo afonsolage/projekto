@@ -2,30 +2,13 @@ use std::fmt::Debug;
 
 use async_channel::{Receiver, Sender};
 use bevy::{
-    math::IVec2,
     platform::collections::HashMap,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use projekto_core::coords::Chunk;
+use projekto_core::coords::{Chunk, Region, RegionChunk};
 
-use crate::{AXIS_CHUNK_SIZE, Archive, ArchiveError};
-
-/// Represents a region of chunks
-#[derive(Default, Copy, Clone, Debug, Deref, DerefMut, PartialEq, Eq, Hash)]
-pub struct Region(IVec2);
-
-impl Region {
-    #[inline]
-    fn x(&self) -> i32 {
-        self.0.x
-    }
-
-    #[inline]
-    fn z(&self) -> i32 {
-        self.0.y
-    }
-}
+use crate::{Archive, ArchiveError};
 
 /// Holds an active running task.
 /// This is used to bridge the sync and async functions.
@@ -64,14 +47,12 @@ impl<T> ArchiveTask<T> {
 enum ArchiveCommand<T> {
     /// Request to load an asset, at the given coords. If there is no asset, `None` is returned.
     Load {
-        x: u8,
-        z: u8,
+        chunk: RegionChunk,
         sender: Sender<Result<Option<T>, ArchiveError>>,
     },
     /// Request to save an asset at the given coords.
     Save {
-        x: u8,
-        z: u8,
+        chunk: RegionChunk,
         asset: T,
         sender: Sender<Result<(), ArchiveError>>,
     },
@@ -85,21 +66,20 @@ enum ArchiveCommand<T> {
 
 impl<T> ArchiveCommand<T> {
     /// Create an `ArchiveCommand::Load` and returns a `Receiver` to wait for result.
-    fn load(x: u8, z: u8) -> (Receiver<Result<Option<T>, ArchiveError>>, Self) {
+    fn load(chunk: RegionChunk) -> (Receiver<Result<Option<T>, ArchiveError>>, Self) {
         let (sender, receiver) = async_channel::unbounded();
 
-        (receiver, ArchiveCommand::Load { x, z, sender })
+        (receiver, ArchiveCommand::Load { chunk, sender })
     }
 
     /// Create an `ArchiveCommand::Save` and returns a `Receiver` to wait for result.
-    fn save(x: u8, z: u8, asset: T) -> (Receiver<Result<(), ArchiveError>>, Self) {
+    fn save(chunk: RegionChunk, asset: T) -> (Receiver<Result<(), ArchiveError>>, Self) {
         let (sender, receiver) = async_channel::unbounded();
 
         (
             receiver,
             ArchiveCommand::Save {
-                x,
-                z,
+                chunk,
                 asset,
                 sender,
             },
@@ -116,7 +96,7 @@ impl<T> ArchiveCommand<T> {
 
 /// Returns the file path for the given region with the prefix.
 fn get_region_path(prefix: &str, region: Region) -> String {
-    format!("{prefix}{}_{}.rgn", region.x(), region.z())
+    format!("{prefix}{}_{}.rgn", region.x, region.z)
 }
 
 /// Starts an async worker which will listen the given receiver and process commands for the given
@@ -140,18 +120,17 @@ where
     loop {
         if let Ok(cmd) = receiver.recv().await {
             match cmd {
-                ArchiveCommand::Load { x, z, sender } => {
-                    let result = archive.read(x, z).await;
+                ArchiveCommand::Load { chunk, sender } => {
+                    let result = archive.read(chunk).await;
                     let _ = sender.send(result).await;
                 }
 
                 ArchiveCommand::Save {
-                    x,
-                    z,
+                    chunk,
                     asset,
                     sender,
                 } => {
-                    let _ = sender.send(archive.write(x, z, asset).await).await;
+                    let _ = sender.send(archive.write(chunk, asset).await).await;
                 }
                 ArchiveCommand::SaveHeader { sender } => {
                     let _ = sender.send(archive.save_header().await).await;
@@ -171,7 +150,7 @@ struct ArchiveWorker<T> {
     task: Task<()>,
 }
 
-pub type MaintenanceResult = Vec<(i32, i32, Option<ArchiveError>)>;
+pub type MaintenanceResult = Vec<(Region, Option<ArchiveError>)>;
 
 /// The archive resource manager. This will server all requests and handle all the async
 /// processing in order to fulfill the requests.
@@ -195,24 +174,16 @@ impl<T> ArchiveServer<T>
 where
     T: serde::Serialize + for<'de> serde::Deserialize<'de> + Send + 'static + Debug,
 {
-    /// Converts a `Chunk` into a `Region`
-    fn to_region(chunk: Chunk) -> Region {
-        Region(IVec2::new(
-            ((chunk.x as f32) / AXIS_CHUNK_SIZE as f32).floor() as i32,
-            ((chunk.z as f32) / AXIS_CHUNK_SIZE as f32).floor() as i32,
-        ))
-    }
-
-    /// Gets the local coords (inside the archive) for a given `Chunk`
-    fn to_local(chunk: Chunk) -> (u8, u8) {
-        let x = chunk.x.rem_euclid(AXIS_CHUNK_SIZE as i32);
-        let z = chunk.z.rem_euclid(AXIS_CHUNK_SIZE as i32);
-
-        assert!(x >= 0 && x <= AXIS_CHUNK_SIZE as i32);
-        assert!(z >= 0 && z <= AXIS_CHUNK_SIZE as i32);
-
-        (x as u8, z as u8)
-    }
+    // /// Gets the local coords (inside the archive) for a given `Chunk`
+    // fn to_local(chunk: Chunk) -> (u8, u8) {
+    //     let x = chunk.x.rem_euclid(AXIS_CHUNK_SIZE as i32);
+    //     let z = chunk.z.rem_euclid(AXIS_CHUNK_SIZE as i32);
+    //
+    //     assert!(x >= 0 && x <= AXIS_CHUNK_SIZE as i32);
+    //     assert!(z >= 0 && z <= AXIS_CHUNK_SIZE as i32);
+    //
+    //     (x as u8, z as u8)
+    // }
 
     /// Creates a new worker for the given region.
     fn new_region_worker(root_folder: &str, region: Region) -> ArchiveWorker<T> {
@@ -229,18 +200,18 @@ where
     /// Attempts to load a `Chunk`. Returns a task which yields the `Chunk` or `None`, if there is
     /// no chunk on the archive.
     pub fn load_chunk(&mut self, chunk: Chunk) -> Result<ArchiveTask<T>, ArchiveError> {
-        let region = Self::to_region(chunk);
-        let (x, z) = Self::to_local(chunk);
+        let region = Region::from_chunk(chunk);
+        let region_chunk = RegionChunk::from_chunk(chunk);
 
         let worker = self
             .workers
             .entry(region)
             .or_insert_with(|| Self::new_region_worker(&self.path, region));
 
-        let (receiver, cmd) = ArchiveCommand::load(x, z);
+        let (receiver, cmd) = ArchiveCommand::load(region_chunk);
         if let Err(e) = worker.sender.send_blocking(cmd) {
             return Err(ArchiveError::ChunkLoad(format!(
-                "Failed to load chunk at {x},{z}. Error: {e}"
+                "Failed to load chunk at {chunk}. Error: {e}"
             )));
         }
 
@@ -249,18 +220,18 @@ where
 
     /// Saves the `Chunk` into the archive.
     pub fn save_chunk(&mut self, chunk: Chunk, asset: T) -> Result<ArchiveTask<T>, ArchiveError> {
-        let region = Self::to_region(chunk);
-        let (x, z) = Self::to_local(chunk);
+        let region = Region::from_chunk(chunk);
+        let region_chunk = RegionChunk::from_chunk(chunk);
 
         let worker = self
             .workers
             .entry(region)
             .or_insert_with(|| Self::new_region_worker(&self.path, region));
 
-        let (receiver, cmd) = ArchiveCommand::save(x, z, asset);
+        let (receiver, cmd) = ArchiveCommand::save(region_chunk, asset);
         if let Err(e) = worker.sender.send_blocking(cmd) {
             return Err(ArchiveError::ChunkSave(format!(
-                "Failed to load save at {x},{z}. Error: {e}"
+                "Failed to load save at {chunk}. Error: {e}"
             )));
         }
 
@@ -290,7 +261,7 @@ where
 
             for (region, receiver) in receivers {
                 if let Ok(res) = receiver.recv().await {
-                    result.push((region.x(), region.z(), res.err()));
+                    result.push((region, res.err()));
                 }
             }
 
@@ -332,10 +303,10 @@ mod tests {
         let mut task = std::pin::pin!(Archive::<u128>::new(&path));
         let mut archive = block_on(&mut task).unwrap();
 
-        for x in 0..AXIS_CHUNK_SIZE as u8 {
-            for z in 0..AXIS_CHUNK_SIZE as u8 {
+        for x in 0..Region::AXIS_SIZE as u8 {
+            for z in 0..Region::AXIS_SIZE as u8 {
                 let value = ((x as u128) << 8) | z as u128;
-                let _ = block_on(archive.write(x, z, value));
+                let _ = block_on(archive.write(RegionChunk::new(x, z), value));
             }
         }
 
@@ -348,10 +319,10 @@ mod tests {
         let chunk = Chunk::new(-33, 44);
 
         // Act
-        let region = ArchiveServer::<u128>::to_region(chunk);
+        let region = Region::from_chunk(chunk);
 
         // Assert
-        assert_eq!(region, Region(IVec2::new(-2, 1)));
+        assert_eq!(region, Region::new(-2, 1));
     }
 
     #[test]
@@ -360,10 +331,10 @@ mod tests {
         let chunk = Chunk::new(-33, 44);
 
         // Act
-        let region = ArchiveServer::<u128>::to_local(chunk);
+        let region = RegionChunk::from_chunk(chunk);
 
         // Assert
-        assert_eq!(region, (31, 12));
+        assert_eq!(region, RegionChunk::new(31, 12));
     }
 
     #[test]
@@ -371,7 +342,7 @@ mod tests {
         // Arrange
         let _pool = IoTaskPool::get_or_init(|| TaskPoolBuilder::default().build());
         let chunk = Chunk::new(3, 4);
-        let region = ArchiveServer::<u128>::to_region(chunk);
+        let region = Region::from_chunk(chunk);
         create_test_archive(region);
         let mut server = ArchiveServer::<u128>::new(&get_temp_path());
 
@@ -449,12 +420,12 @@ mod tests {
         let mut server = ArchiveServer::<u128>::new(&get_temp_path());
         let archives = 5;
         for x in 0..archives {
-            let region = Region(IVec2::new(x, 0));
+            let region = Region::new(x, 0);
             create_test_archive(region);
 
             tasks.push(
                 server
-                    .load_chunk(Chunk::new(region.x() * AXIS_CHUNK_SIZE as i32, 0))
+                    .load_chunk(Chunk::new(region.x * Region::AXIS_SIZE as i32, 0))
                     .unwrap(),
             );
         }

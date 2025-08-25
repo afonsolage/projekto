@@ -1,6 +1,7 @@
 use bevy::math::Vec3;
 
 #[derive(Debug, Hash, PartialEq, Clone, Copy)]
+/// Points to a chunk coordinates in the world in a 3d grid.
 pub struct Voxel {
     pub x: i32,
     pub y: i32,
@@ -8,32 +9,36 @@ pub struct Voxel {
 }
 
 impl Voxel {
-    pub fn new(x: i32, y: i32, z: i32) -> Self {
+    /// Creates a new voxel coordinates.
+    pub const fn new(x: i32, y: i32, z: i32) -> Self {
         Self { x, y, z }
     }
-}
 
-impl std::fmt::Display for Voxel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("({}, {}, {})", self.x, self.y, self.z))
-    }
-}
-
-impl From<Vec3> for Voxel {
-    fn from(world: Vec3) -> Self {
+    /// Converts a world coordinate into a voxel coordinate.
+    pub fn from_world(world: Vec3) -> Self {
         // First round world coords to integer.
         // This transform (1.1, -0.3, 17.5) into (1, -1, 17)
         let x = world.x.floor() as i32;
         let y = world.y.floor() as i32;
         let z = world.z.floor() as i32;
 
-        // Get the euclidean remainder
-        // This transform (1, -1, 17) into (1, 15, 1)
-        // let x = x.rem_euclid(Chunk::X_AXIS_SIZE as i32);
-        // let y = y.rem_euclid(Chunk::Y_AXIS_SIZE as i32);
-        // let z = z.rem_euclid(Chunk::Z_AXIS_SIZE as i32);
-
         Self { x, y, z }
+    }
+}
+
+impl From<Voxel> for Vec3 {
+    fn from(value: Voxel) -> Self {
+        Self {
+            x: value.x as f32,
+            y: value.y as f32,
+            z: value.z as f32,
+        }
+    }
+}
+
+impl std::fmt::Display for Voxel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("({}, {}, {})", self.x, self.y, self.z))
     }
 }
 

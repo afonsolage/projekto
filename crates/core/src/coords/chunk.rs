@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::coords::Voxel;
 
+/// Points to a chunk coordinates in the world in a 2d grid.
+///
+/// A Chunk is a 3d grid container with [`Self::BUFFER_SIZE`] [`Voxel`]s.
 #[derive(Debug, Default, Hash, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub struct Chunk {
     pub x: i32,
@@ -27,12 +30,17 @@ impl Chunk {
     const Z_MASK: usize = (Self::Z_AXIS_SIZE - 1) << Self::Z_SHIFT;
     const Y_MASK: usize = Self::Y_AXIS_SIZE - 1;
 
+    /// Crates a new chunk coordinates.
     pub const fn new(x: i32, z: i32) -> Self {
         Self { x, z }
     }
 
+    /// Creates a new chunk coordinates pointing to a neighbor chunk at the given direction.
     pub fn neighbor(self, dir: IVec2) -> Self {
-        Chunk::from(IVec2::from(self) + dir)
+        Chunk {
+            x: self.x + dir.x,
+            z: self.z + dir.y,
+        }
     }
 }
 
@@ -43,6 +51,9 @@ impl std::fmt::Display for Chunk {
 }
 
 impl From<Vec3> for Chunk {
+    /// Converts a point in the world to a chunk coordinate.
+    ///
+    /// This handles negative coordinates, so (-1.2, -0.3) will point to (-1, 0).
     fn from(world: Vec3) -> Self {
         let x = world.x.floor() as i32;
         let z = world.z.floor() as i32;
@@ -51,6 +62,10 @@ impl From<Vec3> for Chunk {
 }
 
 impl From<Chunk> for Vec3 {
+    /// Converts a chunk coordinate to a global world position.
+    ///
+    /// This will return the absolute position, so (1, 3) will point to (1 *
+    /// [`Chunk::X_AXIS_SIZE`], 3 * [`Chunk::Z_AXIS_SIZE`])
     fn from(chunk: Chunk) -> Self {
         Self {
             x: chunk.x as f32 * Chunk::X_AXIS_SIZE as f32,
@@ -78,6 +93,8 @@ impl From<Chunk> for IVec2 {
     }
 }
 
+/// Represents a voxel coordinate inside a [`Chunk`]. Since it is a relative coordinate, it can't
+/// be negative and is guaranteed to be within chunk bounds.
 #[derive(Debug, Default, PartialEq, Clone, Copy, Hash, Serialize, Deserialize)]
 pub struct ChunkVoxel {
     pub x: u8,
@@ -92,6 +109,8 @@ impl ChunkVoxel {
     }
 
     #[inline]
+    /// Try to convert to a valid chunk voxel coordinates. If the given coordinates is outside the
+    /// chunk bounds, returns [`None`].
     pub fn try_from(value: IVec3) -> Option<Self> {
         if value.x >= 0
             && value.x < Chunk::X_AXIS_SIZE as i32
@@ -105,37 +124,34 @@ impl ChunkVoxel {
             None
         }
     }
-}
 
-impl std::fmt::Display for ChunkVoxel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("({}, {}, {})", self.x, self.y, self.z))
+    #[inline(always)]
+    /// Converts this 3d coordinates into a 1d coordinate
+    pub const fn to_index(self: ChunkVoxel) -> usize {
+        (self.x as usize) << Chunk::X_SHIFT
+            | (self.y as usize) << Chunk::Y_SHIFT
+            | (self.z as usize) << Chunk::Z_SHIFT
     }
-}
 
-impl From<ChunkVoxel> for usize {
-    fn from(value: ChunkVoxel) -> usize {
-        (value.x as usize) << Chunk::X_SHIFT
-            | (value.y as usize) << Chunk::Y_SHIFT
-            | (value.z as usize) << Chunk::Z_SHIFT
-    }
-}
-
-impl From<usize> for ChunkVoxel {
-    fn from(index: usize) -> Self {
+    #[inline(always)]
+    /// Creates a new 3d coordinates from a 1d coordinate
+    pub const fn from_index(index: usize) -> ChunkVoxel {
         ChunkVoxel::new(
             ((index & Chunk::X_MASK) >> Chunk::X_SHIFT) as u8,
             ((index & Chunk::Y_MASK) >> Chunk::Y_SHIFT) as u8,
             ((index & Chunk::Z_MASK) >> Chunk::Z_SHIFT) as u8,
         )
     }
-}
 
-impl From<Vec3> for ChunkVoxel {
-    fn from(world: Vec3) -> Self {
+    /// Crates a new chunk voxel coordinates from a world coordinates.
+    ///
+    /// This converts (1.1, -0.3, 17.5) into (1, 15,1), since given the world coordinates,
+    /// that's where this voxel would be inside a chunk at this position.
+    #[inline(always)]
+    pub fn from_world(world: Vec3) -> Self {
         // First round world coords to integer.
         // This transform (1.1, -0.3, 17.5) into (1, -1, 17)
-        let voxel = Voxel::from(world);
+        let voxel = Voxel::from_world(world);
 
         // Get the euclidean remainder
         // This transform (1, -1, 17) into (1, 15, 1)
@@ -144,6 +160,12 @@ impl From<Vec3> for ChunkVoxel {
         let z = voxel.z.rem_euclid(Chunk::Z_AXIS_SIZE as i32) as u8;
 
         Self::new(x, y, z)
+    }
+}
+
+impl std::fmt::Display for ChunkVoxel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("({}, {}, {})", self.x, self.y, self.z))
     }
 }
 
@@ -172,84 +194,88 @@ mod tests {
 
     #[test]
     fn chunk_voxel_from_index() {
-        assert_eq!(ChunkVoxel::new(0, 0, 0), 0usize.into());
-        assert_eq!(ChunkVoxel::new(0, 1, 0), 1usize.into());
-        assert_eq!(ChunkVoxel::new(0, 2, 0), 2usize.into());
+        assert_eq!(ChunkVoxel::new(0, 0, 0), ChunkVoxel::from_index(0));
+        assert_eq!(ChunkVoxel::new(0, 1, 0), ChunkVoxel::from_index(1));
+        assert_eq!(ChunkVoxel::new(0, 2, 0), ChunkVoxel::from_index(2));
 
         assert_eq!(
             ChunkVoxel::new(0, 0, 1),
-            Chunk::Y_AXIS_SIZE.into(),
+            ChunkVoxel::from_index(Chunk::Y_AXIS_SIZE),
             "X >> Z >> Y, so one Z unit should be a full Y axis"
         );
-        assert_eq!(ChunkVoxel::new(0, 1, 1), (Chunk::Y_AXIS_SIZE + 1).into());
-        assert_eq!(ChunkVoxel::new(0, 2, 1), (Chunk::Y_AXIS_SIZE + 2).into());
+        assert_eq!(
+            ChunkVoxel::new(0, 1, 1),
+            ChunkVoxel::from_index(Chunk::Y_AXIS_SIZE + 1)
+        );
+        assert_eq!(
+            ChunkVoxel::new(0, 2, 1),
+            ChunkVoxel::from_index(Chunk::Y_AXIS_SIZE + 2)
+        );
 
         assert_eq!(
             ChunkVoxel::new(1, 0, 0),
-            (Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE).into()
+            ChunkVoxel::from_index(Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE)
         );
         assert_eq!(
             ChunkVoxel::new(1, 1, 0),
-            (Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + 1).into()
+            ChunkVoxel::from_index(Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + 1)
         );
         assert_eq!(
             ChunkVoxel::new(1, 2, 0),
-            (Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + 2).into()
+            ChunkVoxel::from_index(Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + 2)
         );
 
         assert_eq!(
             ChunkVoxel::new(1, 0, 1),
-            (Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + Chunk::Y_AXIS_SIZE).into()
+            ChunkVoxel::from_index(Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + Chunk::Y_AXIS_SIZE)
         );
         assert_eq!(
             ChunkVoxel::new(1, 1, 1),
-            (Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + Chunk::Y_AXIS_SIZE + 1).into()
+            ChunkVoxel::from_index(
+                Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + Chunk::Y_AXIS_SIZE + 1
+            )
         );
         assert_eq!(
             ChunkVoxel::new(1, 2, 1),
-            (Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + Chunk::Y_AXIS_SIZE + 2).into()
+            ChunkVoxel::from_index(
+                Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + Chunk::Y_AXIS_SIZE + 2
+            )
         );
     }
 
     #[test]
     fn chunk_voxel_to_index() {
-        assert_eq!(usize::from(ChunkVoxel::new(0, 0, 0)), 0usize);
-        assert_eq!(usize::from(ChunkVoxel::new(0, 1, 0)), 1usize);
-        assert_eq!(usize::from(ChunkVoxel::new(0, 2, 0)), 2usize);
+        assert_eq!(ChunkVoxel::new(0, 0, 0).to_index(), 0usize);
+        assert_eq!(ChunkVoxel::new(0, 1, 0).to_index(), 1usize);
+        assert_eq!(ChunkVoxel::new(0, 2, 0).to_index(), 2usize);
 
-        assert_eq!(usize::from(ChunkVoxel::new(0, 0, 1)), Chunk::Y_AXIS_SIZE);
-        assert_eq!(
-            usize::from(ChunkVoxel::new(0, 1, 1)),
-            Chunk::Y_AXIS_SIZE + 1
-        );
-        assert_eq!(
-            usize::from(ChunkVoxel::new(0, 2, 1)),
-            Chunk::Y_AXIS_SIZE + 2
-        );
+        assert_eq!(ChunkVoxel::new(0, 0, 1).to_index(), Chunk::Y_AXIS_SIZE);
+        assert_eq!(ChunkVoxel::new(0, 1, 1).to_index(), Chunk::Y_AXIS_SIZE + 1);
+        assert_eq!(ChunkVoxel::new(0, 2, 1).to_index(), Chunk::Y_AXIS_SIZE + 2);
 
         assert_eq!(
-            usize::from(ChunkVoxel::new(1, 0, 0)),
+            ChunkVoxel::new(1, 0, 0).to_index(),
             Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE
         );
         assert_eq!(
-            usize::from(ChunkVoxel::new(1, 1, 0)),
+            ChunkVoxel::new(1, 1, 0).to_index(),
             Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + 1
         );
         assert_eq!(
-            usize::from(ChunkVoxel::new(1, 2, 0)),
+            ChunkVoxel::new(1, 2, 0).to_index(),
             Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + 2
         );
 
         assert_eq!(
-            usize::from(ChunkVoxel::new(1, 0, 1)),
+            ChunkVoxel::new(1, 0, 1).to_index(),
             Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + Chunk::Y_AXIS_SIZE
         );
         assert_eq!(
-            usize::from(ChunkVoxel::new(1, 1, 1)),
+            ChunkVoxel::new(1, 1, 1).to_index(),
             Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + Chunk::Y_AXIS_SIZE + 1
         );
         assert_eq!(
-            usize::from(ChunkVoxel::new(1, 2, 1)),
+            ChunkVoxel::new(1, 2, 1).to_index(),
             Chunk::Y_AXIS_SIZE * Chunk::Z_AXIS_SIZE + Chunk::Y_AXIS_SIZE + 2
         );
     }

@@ -133,7 +133,7 @@ impl ChunkSide {
 }
 
 pub fn voxels() -> impl Iterator<Item = ChunkVoxel> {
-    (0..Chunk::BUFFER_SIZE).map(ChunkVoxel::from)
+    (0..Chunk::BUFFER_SIZE).map(ChunkVoxel::from_index)
 }
 pub fn top_voxels() -> impl Iterator<Item = ChunkVoxel> {
     (0..=Chunk::X_END)
