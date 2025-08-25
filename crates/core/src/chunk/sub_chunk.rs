@@ -10,16 +10,58 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     chunk::{ChunkStorageType, sub_chunk},
-    voxel::{self, FacesOcclusion, FacesSoftLight, Kind, Light, LightTy, Voxel},
+    coords::{Chunk, ChunkVoxel, Voxel},
+    voxel::{self, FacesOcclusion, FacesSoftLight, Kind, Light, LightTy},
 };
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct PackVoxel {
+    pub x: u8,
+    pub y: u8,
+    pub z: u8,
+}
+
+impl PackVoxel {
+    pub fn new(x: u8, y: u8, z: u8) -> Self {
+        Self {
+            x: x & 0x07,
+            y: y & 0x07,
+            z: z & 0x07,
+        }
+    }
+
+    fn from_index(index: usize) -> Self {
+        Self::new(
+            ((index & pack_consts::X_MASK) >> pack_consts::X_SHIFT) as u8,
+            ((index & pack_consts::Y_MASK) >> pack_consts::Y_SHIFT) as u8,
+            ((index & pack_consts::Z_MASK) >> pack_consts::Z_SHIFT) as u8,
+        )
+    }
+
+    pub fn to_index(self) -> usize {
+        (self.x as usize) << pack_consts::X_SHIFT
+            | (self.y as usize) << pack_consts::Y_SHIFT
+            | (self.z as usize) << pack_consts::Z_SHIFT
+    }
+}
+
+impl From<ChunkVoxel> for PackVoxel {
+    fn from(value: ChunkVoxel) -> Self {
+        let x = value.x % pack_consts::X_AXIS_SIZE as u8;
+        let y = value.y % pack_consts::Y_AXIS_SIZE as u8;
+        let z = value.z % pack_consts::Z_AXIS_SIZE as u8;
+
+        Self::new(x, y, z)
+    }
+}
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct SubChunkStorage<T>(Vec<ChunkPack<T>>);
 
 impl<T> SubChunkStorage<T> {
-    const SUB_CHUNKS_X: usize = super::X_AXIS_SIZE / pack_consts::X_AXIS_SIZE;
-    const SUB_CHUNKS_Y: usize = super::Y_AXIS_SIZE / pack_consts::Y_AXIS_SIZE;
-    const SUB_CHUNKS_Z: usize = super::Z_AXIS_SIZE / pack_consts::Z_AXIS_SIZE;
+    const SUB_CHUNKS_X: usize = Chunk::X_AXIS_SIZE / pack_consts::X_AXIS_SIZE;
+    const SUB_CHUNKS_Y: usize = Chunk::Y_AXIS_SIZE / pack_consts::Y_AXIS_SIZE;
+    const SUB_CHUNKS_Z: usize = Chunk::Z_AXIS_SIZE / pack_consts::Z_AXIS_SIZE;
 
     const SUB_CHUNKS_BUFFER_SIZE: usize =
         Self::SUB_CHUNKS_X * Self::SUB_CHUNKS_Y * Self::SUB_CHUNKS_Z;
@@ -39,8 +81,12 @@ impl<T> SubChunkStorage<T> {
     );
 
     #[inline]
-    fn to_index(voxel: Voxel) -> usize {
-        (voxel.x << Self::X_SHIFT | voxel.z << Self::Z_SHIFT | voxel.y << Self::Y_SHIFT) as usize
+    fn get_pack_index(voxel: ChunkVoxel) -> usize {
+        let x = voxel.x / pack_consts::X_AXIS_SIZE as u8;
+        let y = voxel.y / pack_consts::Y_AXIS_SIZE as u8;
+        let z = voxel.z / pack_consts::Z_AXIS_SIZE as u8;
+
+        (x << Self::X_SHIFT | z << Self::Z_SHIFT | y << Self::Y_SHIFT) as usize
     }
 }
 
@@ -78,34 +124,18 @@ where
     }
 }
 
-impl<T> std::ops::Index<Voxel> for SubChunkStorage<T> {
-    type Output = ChunkPack<T>;
-
-    fn index(&self, voxel: Voxel) -> &Self::Output {
-        &self.0[Self::to_index(voxel)]
-    }
-}
-
-impl<T> std::ops::IndexMut<Voxel> for SubChunkStorage<T> {
-    fn index_mut(&mut self, voxel: Voxel) -> &mut Self::Output {
-        &mut self.0[Self::to_index(voxel)]
-    }
-}
-
 impl<T> SubChunkStorage<T>
 where
     T: ChunkStorageType,
 {
-    pub fn get(&self, voxel: Voxel) -> T {
-        let sub_chunk = voxel / Self::SUB_CHUNK_DIM;
-        let sub_voxel = voxel % Self::SUB_CHUNK_DIM;
-        self[sub_chunk].get(sub_voxel)
+    pub fn get(&self, voxel: ChunkVoxel) -> T {
+        let pack_index = Self::get_pack_index(voxel);
+        self.0[pack_index].get(voxel.into())
     }
 
-    pub fn set(&mut self, voxel: Voxel, value: T) {
-        let sub_chunk = voxel / Self::SUB_CHUNK_DIM;
-        let sub_voxel = voxel % Self::SUB_CHUNK_DIM;
-        self[sub_chunk].set(sub_voxel, value);
+    pub fn set(&mut self, voxel: ChunkVoxel, value: T) {
+        let pack_index = Self::get_pack_index(voxel);
+        self.0[pack_index].set(voxel.into(), value);
     }
 
     pub fn is_default(&self) -> bool {
@@ -200,7 +230,7 @@ pub(crate) enum ChunkPack<T> {
     Dense(DenseBuffer<T>),
 }
 
-mod pack_consts {
+pub(crate) mod pack_consts {
     pub(super) const X_AXIS_SIZE: usize = 8;
     pub(super) const Y_AXIS_SIZE: usize = 8;
     pub(super) const Z_AXIS_SIZE: usize = 8;
@@ -218,24 +248,6 @@ mod pack_consts {
     pub(super) const X_MASK: usize = (X_AXIS_SIZE - 1) << X_SHIFT;
     pub(super) const Z_MASK: usize = (Z_AXIS_SIZE - 1) << Z_SHIFT;
     pub(super) const Y_MASK: usize = Y_AXIS_SIZE - 1;
-}
-
-impl<T> ChunkPack<T> {
-    #[inline]
-    fn to_index(voxel: Voxel) -> usize {
-        (voxel.x << pack_consts::X_SHIFT
-            | voxel.y << pack_consts::Y_SHIFT
-            | voxel.z << pack_consts::Z_SHIFT) as usize
-    }
-
-    #[inline]
-    fn from_index(index: usize) -> Voxel {
-        Voxel::new(
-            ((index & pack_consts::X_MASK) >> pack_consts::X_SHIFT) as i32,
-            ((index & pack_consts::Y_MASK) >> pack_consts::Y_SHIFT) as i32,
-            ((index & pack_consts::Z_MASK) >> pack_consts::Z_SHIFT) as i32,
-        )
-    }
 }
 
 impl<T> Default for ChunkPack<T>
@@ -268,17 +280,15 @@ where
         std::mem::replace(self, new)
     }
 
-    pub(crate) fn get(&self, voxel: Voxel) -> T {
+    pub(crate) fn get(&self, voxel: PackVoxel) -> T {
         match &self {
             ChunkPack::Single(value) => *value,
-            ChunkPack::Pallet { pallet, indices } => {
-                pallet[indices[Self::to_index(voxel)] as usize]
-            }
-            ChunkPack::Dense(voxels) => voxels[Self::to_index(voxel)],
+            ChunkPack::Pallet { pallet, indices } => pallet[indices[voxel.to_index()] as usize],
+            ChunkPack::Dense(voxels) => voxels[voxel.to_index()],
         }
     }
 
-    pub(crate) fn set(&mut self, voxel: Voxel, value: T) {
+    pub(crate) fn set(&mut self, voxel: PackVoxel, value: T) {
         if let ChunkPack::Single(current) = self
             && *current == value
         {
@@ -294,7 +304,7 @@ where
             } => {
                 if pallet.len() < u8::MAX as usize || pallet_clean_up(&mut pallet, &mut indices) {
                     let pallet_index = pallet.find_or_add(value);
-                    indices[Self::to_index(voxel)] = pallet_index;
+                    indices[voxel.to_index()] = pallet_index;
                     ChunkPack::Pallet { pallet, indices }
                 } else {
                     let mut dense = pallet_to_dense(pallet, indices);
@@ -303,7 +313,7 @@ where
                 }
             }
             ChunkPack::Dense(mut voxels) => {
-                voxels[Self::to_index(voxel)] = value;
+                voxels[voxel.to_index()] = value;
                 ChunkPack::Dense(voxels)
             }
         };
@@ -367,7 +377,7 @@ where
     }
 }
 
-fn single_to_pallet<T>(single: T, new_voxel: Voxel, new_value: T) -> ChunkPack<T>
+fn single_to_pallet<T>(single: T, new_voxel: PackVoxel, new_value: T) -> ChunkPack<T>
 where
     T: ChunkStorageType,
 {
@@ -378,7 +388,7 @@ where
     let mut indices = PackIndices(vec![0; pack_consts::BUFFER_SIZE]);
 
     // the new voxel state voxel and the second on the pallet
-    indices[ChunkPack::<T>::to_index(new_voxel)] = 1;
+    indices[new_voxel.to_index()] = 1;
 
     ChunkPack::Pallet { pallet, indices }
 }
@@ -443,6 +453,36 @@ mod tests {
     use super::{pack_consts::*, *};
 
     #[test]
+    fn pack_voxel_from_index() {
+        // Arrange
+
+        // Act
+        let first = PackVoxel::from_index(0);
+        let y_end = PackVoxel::from_index(pack_consts::Y_END as usize);
+        let last = PackVoxel::from_index(BUFFER_SIZE - 1);
+
+        // Assert
+        assert_eq!(first, PackVoxel::new(0, 0, 0));
+        assert_eq!(y_end, PackVoxel::new(0, 7, 0));
+        assert_eq!(last, PackVoxel::new(7, 7, 7));
+    }
+
+    #[test]
+    fn pack_voxel_to_index() {
+        // Arrange
+
+        // Act
+        let first = PackVoxel::new(0, 0, 0).to_index();
+        let y_end = PackVoxel::new(0, 7, 0).to_index();
+        let last = PackVoxel::new(7, 7, 7).to_index();
+
+        // Assert
+        assert_eq!(first, 0);
+        assert_eq!(y_end, pack_consts::Y_AXIS_SIZE - 1);
+        assert_eq!(last, pack_consts::BUFFER_SIZE - 1);
+    }
+
+    #[test]
     fn all() {
         // Arrange
         let mut single = ChunkPack::Single(u16::MAX);
@@ -450,7 +490,7 @@ mod tests {
         let mut dense = ChunkPack::Single(u16::MAX);
 
         for i in 0..BUFFER_SIZE {
-            let voxel = ChunkPack::<u8>::from_index(i);
+            let voxel = PackVoxel::from_index(i);
 
             single.set(voxel, 123u16);
             pallet.set(voxel, i as u16 % 100u16);
@@ -460,7 +500,11 @@ mod tests {
         // Act
 
         // Assert
-        assert!(single.all(|v| *v == 123u16));
+        assert!(single.all(|v| if *v != 123u16 {
+            panic!("Failed at {v:?}.{single:?}");
+        } else {
+            true
+        }));
         assert!(pallet.all(|v| *v < u8::MAX as u16));
         assert!(dense.all(|v| *v < BUFFER_SIZE as u16));
     }
@@ -472,7 +516,7 @@ mod tests {
         let single = ChunkPack::Single(state);
 
         // Act
-        let value = single.get(Voxel::new(0, 1, 2));
+        let value = single.get(PackVoxel::new(0, 1, 2));
 
         // Assert
         assert_eq!(value, state);
@@ -485,11 +529,11 @@ mod tests {
         let mut single = ChunkPack::Single(state);
 
         // Act
-        single.set(Voxel::new(1, 2, 3), state);
+        single.set(PackVoxel::new(1, 2, 3), state);
 
         // Assert
         assert!(matches!(single, ChunkPack::Single(_)));
-        assert_eq!(single.get(Voxel::new(0, 1, 2)), state);
+        assert_eq!(single.get(PackVoxel::new(0, 1, 2)), state);
     }
 
     #[test]
@@ -500,15 +544,15 @@ mod tests {
         let mut chunk = ChunkPack::Single(state);
 
         // Act
-        chunk.set(Voxel::new(1, 2, 3), diff_state);
+        chunk.set(PackVoxel::new(1, 2, 3), diff_state);
 
         // Assert
         assert!(matches!(chunk, ChunkPack::Pallet { .. }));
 
-        let new_state = chunk.get(Voxel::new(1, 2, 3));
+        let new_state = chunk.get(PackVoxel::new(1, 2, 3));
         assert_eq!(new_state, diff_state);
 
-        let existing_state = chunk.get(Voxel::new(5, 1, 5));
+        let existing_state = chunk.get(PackVoxel::new(5, 1, 5));
         assert_eq!(existing_state, state);
     }
 
@@ -518,9 +562,9 @@ mod tests {
         let mut pallet = ChunkPack::new_pallet();
 
         let voxels = [
-            Voxel::new(1, 2, 3),
-            Voxel::new(4, 5, 6),
-            Voxel::new(7, 0, 1),
+            PackVoxel::new(1, 2, 3),
+            PackVoxel::new(4, 5, 6),
+            PackVoxel::new(7, 0, 1),
         ];
 
         let states = [1u8, 3u8, 4u8];
@@ -542,11 +586,11 @@ mod tests {
         let mut pallet = ChunkPack::new_pallet();
 
         let voxels = [
-            Voxel::new(1, 2, 3),
-            Voxel::new(3, 5, 6),
-            Voxel::new(2, 5, 0),
-            Voxel::new(4, 6, 6),
-            Voxel::new(7, 0, 1),
+            PackVoxel::new(1, 2, 3),
+            PackVoxel::new(3, 5, 6),
+            PackVoxel::new(2, 5, 0),
+            PackVoxel::new(4, 6, 6),
+            PackVoxel::new(7, 0, 1),
         ];
 
         let states = [1u8, 2u8, 2u8, 4u8, 4u8];
@@ -575,12 +619,12 @@ mod tests {
 
         // Act
         for i in 0..u8::MAX as usize {
-            pallet.set(ChunkPack::<u8>::from_index(i), i as u8);
+            pallet.set(PackVoxel::from_index(i), i as u8);
         }
 
         // Assert
         for i in 0..u8::MAX as usize {
-            assert_eq!(pallet.get(ChunkPack::<u8>::from_index(i)), i as u8);
+            assert_eq!(pallet.get(PackVoxel::from_index(i)), i as u8);
         }
 
         match pallet {
@@ -606,12 +650,12 @@ mod tests {
 
         // Act
         for i in 0..u8::MAX as usize {
-            pallet.set(ChunkPack::<u8>::from_index(i), i as u16);
+            pallet.set(PackVoxel::from_index(i), i as u16);
         }
 
         // Assert
         for i in 0..u8::MAX as usize {
-            assert_eq!(pallet.get(ChunkPack::<u8>::from_index(i)), i as u16);
+            assert_eq!(pallet.get(PackVoxel::from_index(i)), i as u16);
         }
 
         match pallet {
@@ -627,12 +671,12 @@ mod tests {
 
         // Act
         for i in 0..BUFFER_SIZE {
-            pallet.set(ChunkPack::<u8>::from_index(i), i as u16);
+            pallet.set(PackVoxel::from_index(i), i as u16);
         }
 
         // Assert
         for i in 0..BUFFER_SIZE {
-            assert_eq!(pallet.get(ChunkPack::<u8>::from_index(i)), i as u16);
+            assert_eq!(pallet.get(PackVoxel::from_index(i)), i as u16);
         }
 
         assert!(matches!(pallet, ChunkPack::Dense(_)));
@@ -655,12 +699,12 @@ mod tests {
 
         // Act
         for i in 0..BUFFER_SIZE {
-            pallet.set(ChunkPack::<u8>::from_index(i), i as u16);
+            pallet.set(PackVoxel::from_index(i), i as u16);
         }
 
         // Assert
         for i in 0..BUFFER_SIZE {
-            assert_eq!(pallet.get(ChunkPack::<u8>::from_index(i)), i as u16);
+            assert_eq!(pallet.get(PackVoxel::from_index(i)), i as u16);
         }
 
         assert!(matches!(pallet, ChunkPack::Dense(_)));
@@ -671,7 +715,7 @@ mod tests {
         // Arrange
         let mut pack = ChunkPack::Dense(DenseBuffer(vec![Default::default(); BUFFER_SIZE]));
         let state = 1u8;
-        let voxel = Voxel::new(1, 2, 3);
+        let voxel = PackVoxel::new(1, 2, 3);
 
         // Act
         pack.set(voxel, state);
@@ -758,7 +802,7 @@ mod tests {
             "The pack is full of unique states, so there should be no change"
         );
         for i in 0..BUFFER_SIZE {
-            assert_eq!(dense.get(ChunkPack::<u8>::from_index(i)), i as u16);
+            assert_eq!(dense.get(PackVoxel::from_index(i)), i as u16);
         }
     }
 
@@ -786,7 +830,7 @@ mod tests {
 
         for i in 0..BUFFER_SIZE {
             let v = (i % 255) as u8;
-            assert_eq!(dense.get(ChunkPack::<u8>::from_index(i)), v);
+            assert_eq!(dense.get(PackVoxel::from_index(i)), v);
         }
     }
 }

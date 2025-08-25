@@ -2,7 +2,7 @@ use bevy::{
     prelude::*,
     render::{mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology},
 };
-use projekto_core::{chunk, voxel};
+use projekto_core::voxel;
 use projekto_messages::ChunkVertex;
 use projekto_proto::RegisterMessageHandler;
 
@@ -52,7 +52,7 @@ fn update_chunk_mesh(
                 chunk: ChunkLocal(chunk),
                 mesh: mesh_handler,
                 material: MeshMaterial3d(material.0.clone()),
-                transform: Transform::from_translation(chunk::to_world(chunk)),
+                transform: Transform::from_translation(chunk.into()),
             })
             .insert(Name::new(format!("Client Chunk {chunk}")))
             .id();

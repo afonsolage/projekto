@@ -6,10 +6,7 @@ use bevy::{
     platform::collections::HashMap,
     prelude::*,
 };
-use projekto_core::{
-    chunk::{Chunk, ChunkStorage},
-    voxel,
-};
+use projekto_core::{chunk::ChunkStorage, coords::Chunk, voxel};
 
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 pub struct ChunkKind(pub ChunkStorage<voxel::Kind>);

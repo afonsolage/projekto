@@ -10,29 +10,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     chunk::{self, ChunkStorageType},
-    voxel::{self, FacesOcclusion, FacesSoftLight, Kind, Light, LightTy, Voxel},
+    coords::{Chunk, ChunkVoxel, Voxel},
+    voxel::{self, FacesOcclusion, FacesSoftLight, Kind, Light, LightTy},
 };
 
-const COLUMN_SIZE: usize = super::Y_AXIS_SIZE;
-const COLUMN_COUNT: usize = chunk::X_AXIS_SIZE * chunk::Z_AXIS_SIZE;
+const COLUMN_SIZE: usize = Chunk::Y_AXIS_SIZE;
+const COLUMN_COUNT: usize = Chunk::X_AXIS_SIZE * Chunk::Z_AXIS_SIZE;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct ChunkColumnStorage<T>(Vec<ChunkColumn<T>>);
-
-impl<T> ChunkColumnStorage<T> {
-    #[inline]
-    fn to_column_index(voxel: Voxel) -> usize {
-        assert!(voxel.x >= 0 && voxel.x <= 15);
-        assert!(voxel.z >= 0 && voxel.z <= 15);
-
-        (voxel.x << 4 | voxel.z) as usize
-    }
-
-    #[inline]
-    fn from_column_index(index: u8) -> Voxel {
-        (((index & 0xF0) >> 4) as i32, 0, (index & 0x0F) as i32).into()
-    }
-}
 
 impl<T> ChunkColumnStorage<T>
 where
@@ -66,24 +52,32 @@ where
     }
 }
 
+impl ChunkVoxel {
+    #[inline(always)]
+    fn column_index(&self) -> usize {
+        (self.x << 4 | self.z) as usize
+    }
+
+    fn from_column_index(index: u8) -> Self {
+        Self::new(index >> 4, 0, index & 0x0F)
+    }
+}
+
+#[inline(always)]
+fn column_index(v: IVec3) -> usize {
+    (v.x << 4 | v.z) as usize
+}
+
 impl<T> ChunkColumnStorage<T>
 where
     T: ChunkStorageType,
 {
-    pub fn get(&self, voxel: Voxel) -> T {
-        let column_index = Self::to_column_index(voxel);
-
-        assert!(voxel.y <= u8::MAX as i32);
-
-        self.0[column_index].get(voxel.y as u8)
+    pub fn get(&self, voxel: ChunkVoxel) -> T {
+        self.0[voxel.column_index()].get(voxel.y)
     }
 
-    pub fn set(&mut self, voxel: Voxel, value: T) {
-        let column_index = Self::to_column_index(voxel);
-
-        assert!(voxel.y <= u8::MAX as i32);
-
-        self.0[column_index].set(voxel.y as u8, value);
+    pub fn set(&mut self, voxel: ChunkVoxel, value: T) {
+        self.0[voxel.column_index()].set(voxel.y, value);
     }
 
     pub fn is_default(&self) -> bool {
@@ -96,18 +90,23 @@ where
         self.0.iter_mut().for_each(|p| p.pack());
     }
 
-    pub fn filter<F>(&self, mut f: F) -> Vec<Voxel>
+    pub fn filter<F>(&self, mut f: F) -> Vec<ChunkVoxel>
     where
         F: FnMut(&T) -> bool + Copy,
     {
         self.0.iter().enumerate().fold(
-            Vec::with_capacity(chunk::BUFFER_SIZE / 4),
+            Vec::with_capacity(Chunk::BUFFER_SIZE / 4),
             |mut voxels, (column_idx, column)| {
-                let base_voxel = Self::from_column_index(column_idx as u8);
+                debug_assert!(column_idx < COLUMN_SIZE);
+
+                let base_voxel = ChunkVoxel::from_column_index(column_idx as u8);
                 match column {
                     ChunkColumn::Single(v) => {
                         if f(v) {
-                            voxels.extend((0..COLUMN_COUNT as i32).map(|y| base_voxel.with_y(y)));
+                            voxels.extend(
+                                (0..=(COLUMN_COUNT - 1) as u8)
+                                    .map(|y| ChunkVoxel::new(base_voxel.x, y, base_voxel.z)),
+                            );
                         }
                     }
                     ChunkColumn::Pallet { pallet, indices } => {
@@ -119,7 +118,7 @@ where
                                     .enumerate()
                                     .filter(|(_, pallet_idx)| **pallet_idx == target_idx)
                                     .map(|(y_idx, _)| {
-                                        IVec3::new(base_voxel.x, y_idx as i32, base_voxel.z)
+                                        ChunkVoxel::new(base_voxel.x, y_idx as u8, base_voxel.z)
                                     });
 
                                 voxels.extend(filtered_voxels);
@@ -137,7 +136,7 @@ where
     where
         F: FnMut(&T) -> bool + Copy,
     {
-        self.0.iter().all(|pack| pack.all(f))
+        self.0.iter().enumerate().all(|(idx, pack)| pack.all(f))
     }
 }
 
@@ -384,6 +383,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn chunk_voxel_from_column_index() {
+        // Arrange
+
+        // Act
+        let first = ChunkVoxel::from_column_index(0);
+        let last = ChunkVoxel::from_column_index((COLUMN_COUNT - 1) as u8);
+
+        // Assert
+        assert_eq!(first, ChunkVoxel::new(0, 0, 0));
+        assert_eq!(
+            last,
+            ChunkVoxel::new(
+                (Chunk::X_AXIS_SIZE - 1) as u8,
+                0,
+                (Chunk::Z_AXIS_SIZE - 1) as u8
+            )
+        );
+    }
+
+    #[test]
+    fn chunk_voxel_column_index() {
+        // Arrange
+
+        // Act
+        let first = ChunkVoxel::new(0, 0, 0).column_index();
+        let last = ChunkVoxel::new(
+            (Chunk::X_AXIS_SIZE - 1) as u8,
+            0,
+            (Chunk::Z_AXIS_SIZE - 1) as u8,
+        )
+        .column_index();
+
+        // Assert
+        assert_eq!(first, 0);
+        assert_eq!(last, COLUMN_COUNT - 1);
+    }
+
+    #[test]
     fn all() {
         // Arrange
         let mut single = ChunkColumn::Single(u16::MAX);
@@ -620,7 +657,7 @@ mod tests {
         let voxels = storage.filter(|value| *value == 123u8);
 
         // Assert
-        assert_eq!(voxels.len(), chunk::BUFFER_SIZE);
+        assert_eq!(voxels.len(), Chunk::BUFFER_SIZE);
     }
 
     #[test]
@@ -633,7 +670,7 @@ mod tests {
         let voxels = storage.filter(|value| *value == 123u8);
 
         // Assert
-        assert_eq!(voxels.len(), chunk::BUFFER_SIZE);
+        assert_eq!(voxels.len(), Chunk::BUFFER_SIZE);
         assert!(voxels.iter().all(|v| storage.get(*v) == 123u8));
     }
 
@@ -645,7 +682,7 @@ mod tests {
         for x in 5..15 {
             for z in 3..10 {
                 for y in 200..215 {
-                    storage.set(IVec3::new(x, y, z), 123u8);
+                    storage.set(ChunkVoxel::new(x, y, z), 123u8);
                 }
             }
         }
@@ -666,7 +703,7 @@ mod tests {
         for x in 5..15 {
             for z in 3..10 {
                 for y in 200..215 {
-                    storage.set(IVec3::new(x, y, z), 123u8);
+                    storage.set(ChunkVoxel::new(x, y, z), 123u8);
                 }
             }
         }
@@ -674,7 +711,7 @@ mod tests {
         for x in 3..12 {
             for z in 7..11 {
                 for y in 1..15 {
-                    storage.set(IVec3::new(x, y, z), 33u8);
+                    storage.set(ChunkVoxel::new(x, y, z), 33u8);
                 }
             }
         }
@@ -687,7 +724,7 @@ mod tests {
         // Assert
         assert_eq!(
             voxels_123.len() + voxels_33.len() + voxels_default.len(),
-            chunk::BUFFER_SIZE
+            Chunk::BUFFER_SIZE
         );
         assert!(voxels_123.iter().all(|v| storage.get(*v) == 123u8));
         assert!(voxels_33.iter().all(|v| storage.get(*v) == 33u8));

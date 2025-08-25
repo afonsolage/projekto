@@ -1,7 +1,7 @@
 use bevy::{platform::collections::HashMap, prelude::*};
 use projekto_core::{
-    chunk::Chunk,
-    voxel::{self, Voxel},
+    coords::{Chunk, ChunkVoxel},
+    voxel::{self},
 };
 
 use crate::{
@@ -25,7 +25,7 @@ impl Plugin for PropagationPlugin {
 pub struct LightUpdate {
     pub chunk: Chunk,
     pub ty: voxel::LightTy,
-    pub values: Vec<(Voxel, u8)>,
+    pub values: Vec<(ChunkVoxel, u8)>,
 }
 
 fn propagate_light(
@@ -38,7 +38,7 @@ fn propagate_light(
         .p0()
         .read()
         .fold(
-            HashMap::<(Chunk, voxel::LightTy), Vec<Voxel>>::new(),
+            HashMap::<(Chunk, voxel::LightTy), Vec<ChunkVoxel>>::new(),
             |mut map, LightUpdate { chunk, ty, values }| {
                 if let Some((_, mut light)) = q_light.get_chunk_mut(*chunk) {
                     values.iter().for_each(|&(voxel, intensity)| {

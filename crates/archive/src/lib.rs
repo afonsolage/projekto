@@ -5,7 +5,7 @@
 //! timestamp info on header.
 //!
 //! The archive format is pretty straightforward, it has a header section, which has a index
-//! for every possible asset inside the file. It is possible to store `MAX_CHUNK_COUNT` assets
+//! for every possible asset inside the file. It is possible to store `Region::BUFFER_SIZE` assets
 //! inside it.
 //!
 //! Each index in the header is a `SectorIndex`, which contains an offset and a sectors count.
@@ -29,24 +29,19 @@
 use async_fs::{File, OpenOptions};
 use bevy::prelude::*;
 use futures_lite::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use projekto_core::coords::{Region, RegionChunk};
 use std::io::SeekFrom;
 use thiserror::Error;
 
 mod server;
-pub use server::{ArchiveServer, ArchiveTask};
+pub use server::{ArchiveServer, ArchiveTask, MaintenanceResult};
 
 /// Size, in bytes, of each sector within the archive.
 const SECTOR_SIZE: usize = 4096;
-/// Number of chunks in each axis of archive region.
-const AXIS_CHUNK_SIZE: usize = 32;
-/// Total number of chunks in an archive.
-const MAX_CHUNK_COUNT: usize = AXIS_CHUNK_SIZE * AXIS_CHUNK_SIZE;
 /// Size, in bytes, of each index within the archive.
 const SECTOR_INDEX_SIZE: usize = 2 * 2; // 2 bytes, one for offset and another for sectors
 /// Size, in bytes, of header section of the archive.
-const HEADER_SIZE: usize = SECTOR_INDEX_SIZE * MAX_CHUNK_COUNT;
-/// Number of bits to shift for X AXIS.
-const X_AXIS_SHIFT: usize = AXIS_CHUNK_SIZE.ilog2() as usize;
+const HEADER_SIZE: usize = SECTOR_INDEX_SIZE * Region::BUFFER_SIZE;
 
 /// Errors which can happens while using the archive crate.
 /// Check variants for description.
@@ -172,7 +167,7 @@ impl Header {
     /// Creates a new header with `MAX_CHUNK_COUNT` indices.
     fn new() -> Self {
         Self {
-            sectors: vec![Default::default(); MAX_CHUNK_COUNT],
+            sectors: vec![Default::default(); Region::BUFFER_SIZE],
             dirty: false,
         }
     }
@@ -216,22 +211,16 @@ impl Header {
         }
     }
 
-    /// Returns the `SectorIndex` at the given coords.
-    fn get_index(&self, x: u8, z: u8) -> SectorIndex {
-        self.sectors[Self::to_index(x, z)]
+    /// Returns the `SectorIndex` at the given chunk.
+    fn get_index(&self, chunk: RegionChunk) -> SectorIndex {
+        self.sectors[chunk.to_index()]
     }
 
-    /// Sets the given index at the given coords.
+    /// Sets the given index at the given chunk.
     /// This marks the headers as dirty.
-    fn set_index(&mut self, x: u8, z: u8, index: SectorIndex) {
-        self.sectors[Self::to_index(x, z)] = index;
+    fn set_index(&mut self, chunk: RegionChunk, index: SectorIndex) {
+        self.sectors[chunk.to_index()] = index;
         self.dirty = true;
-    }
-
-    /// Converts the given coords into a index
-    #[inline]
-    fn to_index(x: u8, z: u8) -> usize {
-        (x as usize) << X_AXIS_SHIFT | z as usize
     }
 }
 
@@ -318,8 +307,8 @@ where
     T: serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
     /// Read an asset at the given coords. If there is no asset, `None` is returned.
-    pub async fn read(&mut self, x: u8, z: u8) -> Result<Option<T>, ArchiveError> {
-        let index = self.header.get_index(x, z);
+    pub async fn read(&mut self, chunk: RegionChunk) -> Result<Option<T>, ArchiveError> {
+        let index = self.header.get_index(chunk);
 
         if index.is_empty() {
             return Ok(None);
@@ -346,7 +335,7 @@ where
     ///
     /// Attempts to write on the current allocated sectors. If it doesn't fit, a new number of
     /// sectors are allocated at the end of the archive.
-    pub async fn write(&mut self, x: u8, z: u8, value: T) -> Result<(), ArchiveError> {
+    pub async fn write(&mut self, chunk: RegionChunk, value: T) -> Result<(), ArchiveError> {
         // TODO: It is possible to avoid allocating a buffer, but both lz4_flex and bincode aren't
         // compatible with async.
         let mut compressed = Vec::with_capacity(256 * 1024); // 256k
@@ -354,7 +343,7 @@ where
         bincode::serde::encode_into_std_write(&value, &mut frame, bincode::config::standard())?;
         frame.finish()?;
 
-        let index = self.header.get_index(x, z);
+        let index = self.header.get_index(chunk);
         let needed_sectors = SectorIndex::sectors_count(compressed.len());
 
         // Check sector count
@@ -367,14 +356,14 @@ where
 
         if index.is_empty() {
             return Err(ArchiveError::Write(format!(
-                "Unable to find a index at {x}, {z}"
+                "Unable to find a index at {chunk}"
             )));
         }
 
         let new_len = SectorIndex::sector_to_bytes(needed_sectors);
         compressed.resize(new_len, 0);
 
-        self.header.set_index(x, z, index);
+        self.header.set_index(chunk, index);
         self.file_handler
             .seek(SeekFrom::Start(index.seek_offset()))
             .await?;
@@ -409,6 +398,15 @@ mod tests {
             std::env::temp_dir().display(),
             rand::random_range(0..u32::MAX)
         )
+    }
+
+    #[test]
+    fn header_size_matches_buffer_size() {
+        assert_eq!(
+            HEADER_SIZE % SECTOR_SIZE,
+            0,
+            "HEADER_SIZE must be multiple of SECTOR_SIZE"
+        );
     }
 
     #[test]
@@ -451,8 +449,7 @@ mod tests {
         for x in 0..16 {
             for z in 0..16 {
                 header.set_index(
-                    x,
-                    z,
+                    RegionChunk::new(x as u8, z as u8),
                     SectorIndex {
                         offset: x as u16,
                         sectors: z as u16,
@@ -464,7 +461,8 @@ mod tests {
         // Assert
         for x in 0..16 {
             for z in 0..16 {
-                let index = header.get_index(x, z);
+                let chunk = RegionChunk::new(x as u8, z as u8);
+                let index = header.get_index(chunk);
 
                 assert_eq!(index.offset, x as u16);
                 assert_eq!(index.sectors, z as u16);
@@ -591,7 +589,7 @@ mod tests {
             .iter_mut()
             .enumerate()
             .for_each(|(i, index)| {
-                index.offset = (MAX_CHUNK_COUNT - i) as u16;
+                index.offset = (Region::BUFFER_SIZE - i) as u16;
                 index.sectors = i as u16;
             });
 
@@ -607,7 +605,7 @@ mod tests {
             .iter()
             .enumerate()
             .for_each(|(i, index)| {
-                assert_eq!(index.offset, (MAX_CHUNK_COUNT - i) as u16);
+                assert_eq!(index.offset, (Region::BUFFER_SIZE - i) as u16);
                 assert_eq!(index.sectors, i as u16);
             });
         assert!(!archive.is_header_dirty());
@@ -621,8 +619,8 @@ mod tests {
         let txt = "The Silly Goosery is real!🪿︎";
 
         // Act
-        block_on(archive.write(2, 3, txt.to_string())).unwrap();
-        let read_txt = block_on(archive.read(2, 3)).unwrap();
+        block_on(archive.write(RegionChunk::new(2, 3), txt.to_string())).unwrap();
+        let read_txt = block_on(archive.read(RegionChunk::new(2, 3))).unwrap();
 
         // Assert
         let read_txt = read_txt.unwrap();
@@ -634,18 +632,18 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
-        block_on(archive.write(2, 3, (0..20u16).collect())).unwrap();
+        block_on(archive.write(RegionChunk::new(2, 3), (0..20u16).collect())).unwrap();
 
         // Act
         let new_value = (0..1000u16).collect::<Vec<_>>();
-        block_on(archive.write(2, 3, new_value.clone())).unwrap();
+        block_on(archive.write(RegionChunk::new(2, 3), new_value.clone())).unwrap();
 
         // Assert
-        let read_value = block_on(archive.read(2, 3)).unwrap();
+        let read_value = block_on(archive.read(RegionChunk::new(2, 3))).unwrap();
         let read_value = read_value.unwrap();
         assert_eq!(new_value, read_value);
 
-        let index = archive.header.get_index(2, 3);
+        let index = archive.header.get_index(RegionChunk::new(2, 3));
         assert_eq!(index.offset, 1);
         assert_eq!(index.sectors, 1);
     }
@@ -655,19 +653,19 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
-        block_on(archive.write(2, 3, (0..20u16).collect())).unwrap();
-        let old_index = archive.header.get_index(2, 3);
+        block_on(archive.write(RegionChunk::new(2, 3), (0..20u16).collect())).unwrap();
+        let old_index = archive.header.get_index(RegionChunk::new(2, 3));
 
         // Act
         let new_value = (0..4000u16).collect::<Vec<_>>();
-        block_on(archive.write(2, 3, new_value.clone())).unwrap();
+        block_on(archive.write(RegionChunk::new(2, 3), new_value.clone())).unwrap();
 
         // Assert
-        let read_value = block_on(archive.read(2, 3)).unwrap();
+        let read_value = block_on(archive.read(RegionChunk::new(2, 3))).unwrap();
         let read_value = read_value.unwrap();
         assert_eq!(new_value, read_value);
 
-        let new_index = archive.header.get_index(2, 3);
+        let new_index = archive.header.get_index(RegionChunk::new(2, 3));
         assert_ne!(old_index.offset, new_index.offset);
         assert_ne!(old_index.sectors, new_index.sectors);
     }
@@ -693,13 +691,13 @@ mod tests {
         for x in 0..3u8 {
             let chunk = generate_chunk(x as u64);
             chunks.push(x);
-            block_on(archive.write(x, 0, chunk)).unwrap();
+            block_on(archive.write(RegionChunk::new(x, 0), chunk)).unwrap();
         }
 
         // Assert
         for x in chunks {
             let chunk = generate_chunk(x as u64);
-            let cached_chunk = block_on(archive.read(x, 0));
+            let cached_chunk = block_on(archive.read(RegionChunk::new(x, 0)));
 
             if cached_chunk.is_err() {
                 panic!("Failed at {x}, 0. Error: {cached_chunk:?}");
@@ -718,17 +716,17 @@ mod tests {
         let mut archive = block_on(Archive::new(&temp_file)).unwrap();
 
         // Act
-        for x in 30..AXIS_CHUNK_SIZE as u8 {
-            for z in 0..AXIS_CHUNK_SIZE as u8 {
+        for x in 30..Region::AXIS_SIZE as u8 {
+            for z in 0..Region::AXIS_SIZE as u8 {
                 let value = (x as u128) << 8 | z as u128;
-                block_on(archive.write(x, z, value)).unwrap();
+                block_on(archive.write(RegionChunk::new(x, z), value)).unwrap();
             }
         }
 
         // Assert
-        for x in 30..AXIS_CHUNK_SIZE as u8 {
-            for z in 0..AXIS_CHUNK_SIZE as u8 {
-                let value = block_on(archive.read(x, z));
+        for x in 30..Region::AXIS_SIZE as u8 {
+            for z in 0..Region::AXIS_SIZE as u8 {
+                let value = block_on(archive.read(RegionChunk::new(x, z)));
 
                 if value.is_err() {
                     panic!("Failed at {x}, {z}. Error: {value:?}");

@@ -20,7 +20,7 @@ use projekto_camera::{
     fly_by::FlyByCamera,
 };
 use projekto_core::{
-    chunk::Chunk,
+    coords::Chunk,
     voxel::{self},
 };
 

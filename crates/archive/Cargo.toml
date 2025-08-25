@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 projekto_core.workspace = true
 
-# Bavy!!!
 bevy.workspace = true
 
 # Utilities

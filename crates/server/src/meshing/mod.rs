@@ -1,6 +1,7 @@
 use bevy::math::{IVec3, Vec3};
 use projekto_core::{
     chunk::{self, ChunkSide, ChunkStorage},
+    coords::{Chunk, ChunkVoxel},
     math,
     voxel::{self, FacesOcclusion},
 };
@@ -48,7 +49,7 @@ pub const VERTICES_INDICES: [[usize; 4]; 6] = [
 ///
 /// **Returns** a list of generated [`voxel::Vertex`].
 pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
-    const VERTICES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT * 6) / 100;
+    const VERTICES_ESTIMATION: usize = (Chunk::BUFFER_SIZE * voxel::SIDE_COUNT * 6) / 100;
     const LIGHT_FRACTION: f32 = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
 
     #[inline]
@@ -72,7 +73,7 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
             let base_vertex_idx = VERTICES_INDICES[face.side as usize][i];
             let base_vertex: Vec3 = VERTICES[base_vertex_idx].into();
 
-            faces_vertices[i] = base_vertex + v.as_vec3();
+            faces_vertices[i] = base_vertex + Vec3::new(v.x as f32, v.y as f32, v.z as f32);
         }
 
         debug_assert!(
@@ -111,15 +112,15 @@ pub fn faces_occlusion(
     neighboorhood: &[Option<&ChunkStorage<voxel::Kind>>; chunk::SIDE_COUNT],
 ) {
     const DIM: IVec3 = IVec3::new(
-        chunk::X_AXIS_SIZE as i32,
-        chunk::Y_AXIS_SIZE as i32,
-        chunk::Z_AXIS_SIZE as i32,
+        Chunk::X_AXIS_SIZE as i32,
+        Chunk::Y_AXIS_SIZE as i32,
+        Chunk::Z_AXIS_SIZE as i32,
     );
 
-    for x in 0..chunk::X_AXIS_SIZE as i32 {
-        for z in 0..chunk::Z_AXIS_SIZE as i32 {
-            for y in 0..chunk::Y_AXIS_SIZE as i32 {
-                let voxel = IVec3::new(x, y, z);
+    for x in 0..Chunk::X_AXIS_SIZE {
+        for z in 0..Chunk::Z_AXIS_SIZE {
+            for y in 0..Chunk::Y_AXIS_SIZE {
+                let voxel = ChunkVoxel::new(x as u8, y as u8, z as u8);
 
                 if kind.get(voxel).is_none() {
                     faces_occlusion.set(voxel, voxel::FacesOcclusion::fully_occluded());
@@ -128,14 +129,19 @@ pub fn faces_occlusion(
                         voxel::SIDES
                             .iter()
                             .fold(FacesOcclusion::default(), |mut faces, &side| {
-                                let neighbor = voxel + side.dir();
+                                let neighbor = IVec3::from(voxel) + side.dir();
 
-                                let neighbor_kind = if chunk::is_inside(neighbor) {
+                                let neighbor_kind = if let Some(neighbor) =
+                                    ChunkVoxel::try_from(neighbor)
+                                {
                                     kind.get(neighbor)
                                 } else if let Some(chunk_side) = ChunkSide::from_voxel_side(side)
                                     && let Some(neighbor_kind) = neighboorhood[chunk_side as usize]
                                 {
                                     let neighbor_chunk_voxel = math::euclid_rem(neighbor, DIM);
+                                    let neighbor_chunk_voxel =
+                                        ChunkVoxel::try_from(neighbor_chunk_voxel)
+                                            .expect("Should be a valid voxel");
                                     neighbor_kind.get(neighbor_chunk_voxel)
                                 } else {
                                     return faces;
@@ -157,7 +163,7 @@ pub fn generate_faces(
     occlusion: &ChunkStorage<voxel::FacesOcclusion>,
     soft_light: &ChunkStorage<voxel::FacesSoftLight>,
 ) -> Vec<voxel::Face> {
-    const FACES_ESTIMATION: usize = (chunk::BUFFER_SIZE * voxel::SIDE_COUNT) / 2;
+    const FACES_ESTIMATION: usize = (Chunk::BUFFER_SIZE * voxel::SIDE_COUNT) / 2;
 
     let mut faces_vertices = Vec::with_capacity(FACES_ESTIMATION);
 
@@ -212,11 +218,11 @@ mod test {
         let mut faces_occlusion = Default::default();
         let neighborhood = [None; chunk::SIDE_COUNT];
 
-        kind.set([0, 0, 0].into(), 1.into());
+        kind.set((0, 0, 0).into(), 1.into());
 
         super::faces_occlusion(&kind, &mut faces_occlusion, &neighborhood);
 
-        let occ = faces_occlusion.get([0, 0, 0].into());
+        let occ = faces_occlusion.get((0, 0, 0).into());
 
         voxel::SIDES.iter().for_each(|&side| {
             assert!(!occ.is_occluded(side), "No side should be occluded");
@@ -230,13 +236,13 @@ mod test {
         let mut faces_occlusion = Default::default();
         let mut neighborhood = [None; chunk::SIDE_COUNT];
 
-        kind.set([0, 0, 0].into(), 1.into());
-        neighbor_kind.set([chunk::X_END, 0, 0].into(), 1.into());
+        kind.set((0, 0, 0).into(), 1.into());
+        neighbor_kind.set((Chunk::X_END, 0, 0).into(), 1.into());
         neighborhood[voxel::Side::Left as usize] = Some(&neighbor_kind);
 
         super::faces_occlusion(&kind, &mut faces_occlusion, &neighborhood);
 
-        let occ = faces_occlusion.get([0, 0, 0].into());
+        let occ = faces_occlusion.get((0, 0, 0).into());
 
         voxel::SIDES.iter().for_each(|&side| {
             if side == voxel::Side::Left {

@@ -1,8 +1,5 @@
 use bevy::prelude::*;
-use projekto_core::{
-    chunk::{Chunk, ChunkStorage},
-    voxel,
-};
+use projekto_core::{chunk::ChunkStorage, coords::Chunk, voxel};
 use serde::{Deserialize, Serialize};
 
 #[derive(Asset, Component, Default, Debug, TypePath, Serialize, Deserialize)]
