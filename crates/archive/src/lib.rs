@@ -59,7 +59,7 @@ pub enum ArchiveError {
     /// Indicates a failure while compressing the encoded bytes.
     #[error("Failed to compress: {0}")]
     Compress(#[from] lz4_flex::frame::Error),
-    /// Invalid number of bytes in the archive file. Usually means the file is corrupted.
+    /// Invalid number of bytes in the archive header file. Usually means the file is corrupted.
     #[error("Invalid header size: {0}")]
     HeaderInvalid(usize),
     /// Raised when unable to write chunk into disk. Usually means some internal logic error.
@@ -231,6 +231,8 @@ pub struct Archive<T> {
     header: Header,
     /// An async file handler. Used to do OS operations.
     file_handler: File,
+    /// Internal buffer, used to read data and avoid extra allocations.
+    read_buffer: Vec<u8>,
     _pd: std::marker::PhantomData<T>,
 }
 
@@ -273,6 +275,7 @@ impl<T> Archive<T> {
         let mut archive = Self {
             header,
             file_handler,
+            read_buffer: Vec::with_capacity(SECTOR_SIZE),
             _pd: Default::default(),
         };
 
@@ -314,42 +317,40 @@ where
             return Ok(None);
         }
 
-        let mut buffer = vec![0u8; index.bytes_count()];
+        self.read_buffer.resize(index.bytes_count(), 0);
 
         self.file_handler
             .seek(SeekFrom::Start(index.seek_offset()))
             .await?;
 
-        self.file_handler.read_exact(&mut buffer).await?;
+        self.file_handler.read_exact(&mut self.read_buffer).await?;
 
         // TODO: It is possible to avoid allocating a buffer, but both lz4_flex and bincode aren't
         // compatible with async.
-        let mut frame = lz4_flex::frame::FrameDecoder::new(&*buffer);
+        let mut frame = lz4_flex::frame::FrameDecoder::new(&*self.read_buffer);
         let value: T =
             bincode::serde::decode_from_std_read(&mut frame, bincode::config::standard())?;
 
         Ok(Some(value))
     }
 
-    /// Write the given asset at the given coords.
+    /// Write the given asset data at the given coords.
+    ///
+    /// The data must be compressed with `compress`.
     ///
     /// Attempts to write on the current allocated sectors. If it doesn't fit, a new number of
     /// sectors are allocated at the end of the archive.
-    pub async fn write(&mut self, chunk: RegionChunk, value: T) -> Result<(), ArchiveError> {
-        // TODO: It is possible to avoid allocating a buffer, but both lz4_flex and bincode aren't
-        // compatible with async.
-        let mut compressed = Vec::with_capacity(256 * 1024); // 256k
-        let mut frame = lz4_flex::frame::FrameEncoder::new(&mut compressed);
-        bincode::serde::encode_into_std_write(&value, &mut frame, bincode::config::standard())?;
-        frame.finish()?;
-
+    pub async fn write(
+        &mut self,
+        chunk: RegionChunk,
+        mut data: Vec<u8>,
+    ) -> Result<(), ArchiveError> {
         let index = self.header.get_index(chunk);
-        let needed_sectors = SectorIndex::sectors_count(compressed.len());
+        let needed_sectors = SectorIndex::sectors_count(data.len());
 
         // Check sector count
         let index = if index.is_empty() || needed_sectors > index.sectors {
-            self.append(SectorIndex::sectors_count(compressed.len()))
-                .await?
+            self.append(needed_sectors).await?
         } else {
             index
         };
@@ -360,14 +361,15 @@ where
             )));
         }
 
+        // Resized the compressed buffer to match the sector size, filling with 0.
         let new_len = SectorIndex::sector_to_bytes(needed_sectors);
-        compressed.resize(new_len, 0);
+        data.resize(new_len, 0);
 
         self.header.set_index(chunk, index);
         self.file_handler
             .seek(SeekFrom::Start(index.seek_offset()))
             .await?;
-        self.file_handler.write_all(&compressed).await?;
+        self.file_handler.write_all(&data).await?;
         self.file_handler.flush().await?;
 
         Ok(())
@@ -381,6 +383,33 @@ where
             seek_position,
             needed_sectors,
         ))
+    }
+
+    /// Compress the given asset into a new buffer.
+    pub fn compress(asset: &T) -> Result<Vec<u8>, ArchiveError> {
+        // TODO: Find the better avg capacity for this later on.
+        let mut compressed = Vec::with_capacity(128 * 1024); // 128k
+
+        let mut frame = lz4_flex::frame::FrameEncoder::new(&mut compressed);
+        bincode::serde::encode_into_std_write(asset, &mut frame, bincode::config::standard())?;
+        frame.finish()?;
+
+        #[cfg(debug_assertions)]
+        {
+            // Added this to check if it's better to keep compressing the asset inside the frame
+            // time to save memory allocation.
+            //
+            // If this becomes a problem, better to just clone the asset and move to task pool. It
+            // will use more memory allocations, but will save frame time.
+            if compressed.len() > 256 * 1024 {
+                warn!(
+                    "Big asset being compressed: {}. This may cause lag spikes",
+                    compressed.len()
+                );
+            }
+        }
+
+        Ok(compressed)
     }
 }
 
@@ -617,9 +646,11 @@ mod tests {
         let temp_file = temp_file();
         let mut archive = block_on(Archive::<String>::new(&temp_file)).unwrap();
         let txt = "The Silly Goosery is real!🪿︎";
+        let data = Archive::compress(&txt.to_string()).unwrap();
 
         // Act
-        block_on(archive.write(RegionChunk::new(2, 3), txt.to_string())).unwrap();
+
+        block_on(archive.write(RegionChunk::new(2, 3), data)).unwrap();
         let read_txt = block_on(archive.read(RegionChunk::new(2, 3))).unwrap();
 
         // Assert
@@ -632,11 +663,13 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
-        block_on(archive.write(RegionChunk::new(2, 3), (0..20u16).collect())).unwrap();
+        let data = Archive::compress(&(0..20u16).collect::<Vec<_>>()).unwrap();
+        block_on(archive.write(RegionChunk::new(2, 3), data)).unwrap();
 
         // Act
         let new_value = (0..1000u16).collect::<Vec<_>>();
-        block_on(archive.write(RegionChunk::new(2, 3), new_value.clone())).unwrap();
+        let new_data = Archive::compress(&new_value).unwrap();
+        block_on(archive.write(RegionChunk::new(2, 3), new_data.clone())).unwrap();
 
         // Assert
         let read_value = block_on(archive.read(RegionChunk::new(2, 3))).unwrap();
@@ -653,12 +686,14 @@ mod tests {
         // Arrange
         let temp_file = temp_file();
         let mut archive = block_on(Archive::<Vec<u16>>::new(&temp_file)).unwrap();
-        block_on(archive.write(RegionChunk::new(2, 3), (0..20u16).collect())).unwrap();
+        let data = Archive::compress(&(0..20u16).collect::<Vec<_>>()).unwrap();
+        block_on(archive.write(RegionChunk::new(2, 3), data)).unwrap();
         let old_index = archive.header.get_index(RegionChunk::new(2, 3));
 
         // Act
         let new_value = (0..4000u16).collect::<Vec<_>>();
-        block_on(archive.write(RegionChunk::new(2, 3), new_value.clone())).unwrap();
+        let new_data = Archive::compress(&new_value).unwrap();
+        block_on(archive.write(RegionChunk::new(2, 3), new_data)).unwrap();
 
         // Assert
         let read_value = block_on(archive.read(RegionChunk::new(2, 3))).unwrap();
@@ -691,7 +726,8 @@ mod tests {
         for x in 0..3u8 {
             let chunk = generate_chunk(x as u64);
             chunks.push(x);
-            block_on(archive.write(RegionChunk::new(x, 0), chunk)).unwrap();
+            let data = Archive::compress(&chunk).unwrap();
+            block_on(archive.write(RegionChunk::new(x, 0), data)).unwrap();
         }
 
         // Assert
@@ -713,13 +749,14 @@ mod tests {
     fn archive_max_indices() {
         // Arrange
         let temp_file = temp_file();
-        let mut archive = block_on(Archive::new(&temp_file)).unwrap();
+        let mut archive = block_on(Archive::<u128>::new(&temp_file)).unwrap();
 
         // Act
         for x in 30..Region::AXIS_SIZE as u8 {
             for z in 0..Region::AXIS_SIZE as u8 {
                 let value = (x as u128) << 8 | z as u128;
-                block_on(archive.write(RegionChunk::new(x, z), value)).unwrap();
+                block_on(archive.write(RegionChunk::new(x, z), Archive::compress(&value).unwrap()))
+                    .unwrap();
             }
         }
 

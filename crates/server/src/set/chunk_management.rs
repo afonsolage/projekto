@@ -211,7 +211,7 @@ fn chunks_save(
             soft_light: soft_light.clone(),
             vertex: vertices.clone(),
         };
-        let _task = archive_server.save_chunk(*chunk, asset);
+        let _task = archive_server.save_chunk(*chunk, &asset);
         saved += 1;
     }
 
