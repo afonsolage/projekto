@@ -10,6 +10,7 @@ pub use storage::*;
 
 mod column;
 mod impls;
+pub mod state;
 mod sub_chunk;
 mod zip;
 
