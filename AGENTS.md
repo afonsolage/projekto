@@ -7,8 +7,10 @@ applies to any AI/assistant (including coding agents) working on this repository
 
 - **Do not generate code with AI.** The codebase is mainly written by hand on purpose. This is
   a hobby project and writing the code is part of the enjoyment; generating it would remove that.
-- **AI may be used for** reviewing architecture concepts, knowledge checking, and generating
-  documentation (e.g. [ARCHITECTURE.md](ARCHITECTURE.md)).
+  Tests are the exception, see below.
+- **AI may be used for** reviewing architecture concepts, knowledge checking, generating
+  documentation (e.g. [ARCHITECTURE.md](ARCHITECTURE.md)), and generating tests, since most
+  tests are just boilerplate for future-proofing.
 - **Always disclose AI-generated content.** Whenever AI is used to produce something, state it.
   [ARCHITECTURE.md](ARCHITECTURE.md) carries a disclaimer because it is AI-generated and
   reviewed by the author before committing.
@@ -49,7 +51,7 @@ This project follows Bevy Org best practices, so the table below maps Bevy's
 | Bevy norm | Proposed here |
 | --- | --- |
 | No AI-generated media | Adopt. Textures, models and audio must be hand-made or permissively licensed; `assets_src/` holds the hand-authored sources. |
-| No AI-generated prose | Adapted. AI may still draft documentation (as the README already allows), but a human must review, rewrite where needed and own the result. No AI prose pasted into issues, PR descriptions or conversations. |
+| No AI-generated prose | Partially adopt. AI may still draft documentation (as the README already allows), but a human must review, rewrite where needed and own the result. No AI prose pasted into issues, PR descriptions or conversations. |
 | No AI-generated communication | Adopt. Talk to people directly; do not paste AI output into human conversations. |
 | No AI-authored commits | Adopt. Commits are authored by humans; no AI `Co-authored-by`. |
 | Ownership | Adopt. The author understands every line submitted and can explain its rationale. |
@@ -58,5 +60,5 @@ This project follows Bevy Org best practices, so the table below maps Bevy's
 | Refusal / Harassment | Adopt. No one is required to review AI-assisted work; keep the discussion civil. |
 
 Bevy's policy fully bans AI-generated prose, which conflicts with this project's current
-allowance for AI-generated documentation. The "Adapted" row is the proposed compromise; strict
+allowance for AI-generated documentation. The "Partially adopt" row is the proposed compromise; strict
 adoption would mean dropping AI-generated docs such as [ARCHITECTURE.md](ARCHITECTURE.md).
