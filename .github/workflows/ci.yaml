@@ -38,7 +38,7 @@ jobs:
       - name: Run cargo test
         run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} test --workspace --config 'profile.dev.package."*".opt-level=1'
 
-  # Run cargo clippy -- -D warnings
+  # Run cargo clippy --workspace -- -D warnings
   clippy_check:
     name: Clippy
     runs-on: ubuntu-latest
@@ -60,7 +60,7 @@ jobs:
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
       - name: Run clippy
-        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} clippy -- -D warnings
+        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} clippy --workspace -- -D warnings
 
   # Run cargo fmt --all -- --check
   format:
