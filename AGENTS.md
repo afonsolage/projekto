@@ -3,6 +3,11 @@
 This file mirrors and extends the "AI Usage" section of [README.md](README.md#ai-usage). It
 applies to any AI/assistant (including coding agents) working on this repository.
 
+## Language
+
+The main and default language of the project is en-US. Code, documentation, comments, commit
+messages and AI-assisted output are written in that language unless the author asks otherwise.
+
 ## Rules
 
 - **Do not generate code with AI.** The codebase is mainly written by hand on purpose. This is
