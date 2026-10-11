@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use bevy::{ecs::world::World, log::error};
+use bevy::ecs::world::World;
 
 mod channel;
 pub use channel::{Channel, ChannelError, ChannelPair};

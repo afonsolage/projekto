@@ -9,7 +9,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   # If nightly is breaking CI, modify this variable to target a specific nightly version.
-  NIGHTLY_TOOLCHAIN: nightly-2025-08-05
+  NIGHTLY_TOOLCHAIN: nightly-2026-08-15
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
 
 jobs:
 
@@ -21,26 +23,20 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.toml') }}
       - name: Install mold
         uses: rui314/setup-mold@v1
       - name: Install nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
         with:
           toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ env.NIGHTLY_TOOLCHAIN }}
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
       - name: Run cargo test
-        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} test --workspace
+        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} test --workspace --config 'profile.dev.package."*".opt-level=1'
 
   # Run cargo clippy -- -D warnings
   clippy_check:
@@ -50,16 +46,6 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.toml') }}
       - name: Install mold
         uses: rui314/setup-mold@v1
       - name: Install nightly toolchain
@@ -67,6 +53,10 @@ jobs:
         with:
           toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
           components: clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ env.NIGHTLY_TOOLCHAIN }}
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
       - name: Run clippy
@@ -97,24 +87,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
-      - uses: actions/cache/restore@v4
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
         with:
-          # key won't match, will rely on restore-keys
-          key: ${{ runner.os }}-${{ env.NIGHTLY_TOOLCHAIN }}--${{ hashFiles('**/Cargo.toml') }}-
-          # See .github/workflows/validation-jobs.yml for how keys are generated
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NIGHTLY_TOOLCHAIN }}--${{ hashFiles('**/Cargo.toml') }}-
-            ${{ runner.os }}-${{ env.NIGHTLY_TOOLCHAIN }}--
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
+          key: ${{ env.NIGHTLY_TOOLCHAIN }}
       - name: Install mold
         uses: rui314/setup-mold@v1
       - name: Installs cargo-udeps
-        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} install --force cargo-udeps
+        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} install --locked cargo-udeps
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
       - name: Run cargo udeps
