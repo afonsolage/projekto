@@ -43,6 +43,19 @@ messages - must be reviewed and owned by a human before it lands. In particular:
 - **No duplication or padding.** Do not restate the same thing in prose, doc comments and
   inline comments at once, and do not explain what the code already says clearly.
 
+## Adversarial review before a PR
+
+Before opening a PR, or asking a human to review it, spawn the `adversarial-review` subagent
+(defined in [`.opencode/agent/adversarial-review.md`](.opencode/agent/adversarial-review.md))
+to check the change. It is fine-tuned to this project and the Bevy ecosystem: its job is to
+actively try to falsify the work, catching real bugs, Bevy ECS pitfalls, protocol/serialization
+breaks and voxel-specific edge cases.
+
+- Required when the change is substantial, or whenever the user explicitly asks for it.
+- Not required for every follow-up push or minor update to an already-open PR.
+- Do not ask for review until the blocking findings are fixed or consciously dismissed by the
+  author.
+
 ## Aligning with Bevy's AI policy (proposal for review)
 
 This project follows Bevy Org best practices, so the table below maps Bevy's
