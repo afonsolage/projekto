@@ -43,6 +43,20 @@ messages - must be reviewed and owned by a human before it lands. In particular:
 - **No duplication or padding.** Do not restate the same thing in prose, doc comments and
   inline comments at once, and do not explain what the code already says clearly.
 
+## CI checks before review
+
+This repository runs GitHub Actions on every PR: `cargo test --workspace`, `cargo clippy -- -D
+warnings`, `cargo fmt --all -- --check` and `cargo udeps` (see
+[`.github/workflows/ci.yaml`](.github/workflows/ci.yaml)). CI often catches common failures, so
+before spawning the adversarial review or asking the user to review, monitor the checks of the
+open PR until they finish.
+
+- Always add a monitor for the PR checks; do not consider the PR ready while any check is
+  failing or still pending.
+- If a check fails, investigate and fix it before requesting review. If the failure is
+  pre-existing on `main` and unrelated to the change, say so explicitly instead of ignoring it.
+- Useful commands: `gh pr checks <number>` and `gh run view <run-id> --log-failed`.
+
 ## Adversarial review before a PR
 
 Before opening a PR, or asking a human to review it, spawn the `adversarial-review` subagent
