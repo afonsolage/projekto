@@ -114,7 +114,7 @@ jobs:
       - name: Install mold
         uses: rui314/setup-mold@v1
       - name: Installs cargo-udeps
-        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} install --force cargo-udeps
+        run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} install --locked --force cargo-udeps
       - name: Install Linux dependencies
         uses: ./.github/actions/install-linux-deps
       - name: Run cargo udeps

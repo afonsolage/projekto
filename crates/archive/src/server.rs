@@ -288,11 +288,17 @@ where
 #[cfg(test)]
 mod tests {
     use bevy::tasks::{TaskPoolBuilder, block_on};
+    use rand::RngCore;
 
     use super::*;
 
     fn get_temp_path() -> String {
-        format!("{}/projekto/test_", std::env::temp_dir().display())
+        let rnd_id = rand::rng().next_u32();
+        format!(
+            "{}/projekto/test_{}_",
+            rnd_id,
+            std::env::temp_dir().display()
+        )
     }
 
     fn create_test_archive(region: Region) {
