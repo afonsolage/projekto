@@ -288,21 +288,28 @@ where
 #[cfg(test)]
 mod tests {
     use bevy::tasks::{TaskPoolBuilder, block_on};
+    use rand::RngCore;
 
     use super::*;
 
     fn get_temp_path() -> String {
-        format!("{}/projekto/test_", std::env::temp_dir().display())
+        let rnd_id = rand::rng().next_u32();
+        format!(
+            "{}/projekto/test_{}_",
+            std::env::temp_dir().display(),
+            rnd_id,
+        )
     }
 
-    fn create_test_archive(region: Region) {
-        let path = get_region_path(&get_temp_path(), region);
+    fn create_test_archive(region: Region) -> String {
+        let path = get_temp_path();
+        let region_path = get_region_path(&path, region);
 
-        if std::fs::exists(&path).unwrap() {
-            return;
+        if std::fs::exists(&region_path).unwrap() {
+            return path;
         }
 
-        let mut task = std::pin::pin!(Archive::<u128>::new(&path));
+        let mut task = std::pin::pin!(Archive::<u128>::new(&region_path));
         let mut archive = block_on(&mut task).unwrap();
 
         for x in 0..Region::AXIS_SIZE as u8 {
@@ -315,6 +322,8 @@ mod tests {
         }
 
         let _ = block_on(archive.save_header());
+
+        path
     }
 
     #[test]
@@ -347,8 +356,8 @@ mod tests {
         let _pool = IoTaskPool::get_or_init(|| TaskPoolBuilder::default().build());
         let chunk = Chunk::new(3, 4);
         let region = Region::from_chunk(chunk);
-        create_test_archive(region);
-        let mut server = ArchiveServer::<u128>::new(&get_temp_path());
+        let path = create_test_archive(region);
+        let mut server = ArchiveServer::<u128>::new(&path);
 
         // Act
         let task = server.load_chunk(chunk).unwrap();
