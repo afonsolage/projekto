@@ -7,10 +7,10 @@ applies to any AI/assistant (including coding agents) working on this repository
 
 - **Do not generate code with AI.** The codebase is mainly written by hand on purpose. This is
   a hobby project and writing the code is part of the enjoyment; generating it would remove that.
-  Tests are the exception, see below.
+  Tests are the exception: they are mostly boilerplate for future-proofing.
 - **AI may be used for** reviewing architecture concepts, knowledge checking, generating
-  documentation (e.g. [ARCHITECTURE.md](ARCHITECTURE.md)), and generating tests, since most
-  tests are just boilerplate for future-proofing.
+  documentation (e.g. [ARCHITECTURE.md](ARCHITECTURE.md)) and drafting PR titles and
+  descriptions.
 - **Always disclose AI-generated content.** Whenever AI is used to produce something, state it.
   [ARCHITECTURE.md](ARCHITECTURE.md) carries a disclaimer because it is AI-generated and
   reviewed by the author before committing.
@@ -45,14 +45,14 @@ messages - must be reviewed and owned by a human before it lands. In particular:
 
 ## CI checks before review
 
-This repository runs GitHub Actions on every PR: `cargo test --workspace`, `cargo clippy -- -D
-warnings`, `cargo fmt --all -- --check` and `cargo udeps` (see
-[`.github/workflows/ci.yaml`](.github/workflows/ci.yaml)). CI often catches common failures, so
-before spawning the adversarial review or asking the user to review, monitor the checks of the
-open PR until they finish.
+This repository runs GitHub Actions on every PR, on a pinned nightly toolchain (see
+[`.github/workflows/ci.yaml`](.github/workflows/ci.yaml)): `cargo test --workspace`, `cargo
+clippy --workspace -- -D warnings`, `cargo fmt --all -- --check` and `cargo udeps`. CI often
+catches common failures, so before spawning the adversarial review or asking the user to review,
+monitor the checks of the open PR until they finish.
 
-- Always add a monitor for the PR checks; do not consider the PR ready while any check is
-  failing or still pending.
+- Always monitor the PR checks; do not consider the PR ready while any check is failing or
+  still pending. Use `gh pr checks <number> --watch` to follow them to completion.
 - If a check fails, investigate and fix it before requesting review. If the failure is
   pre-existing on `main` and unrelated to the change, say so explicitly instead of ignoring it.
 - Useful commands: `gh pr checks <number>` and `gh run view <run-id> --log-failed`.
@@ -78,14 +78,16 @@ This project follows Bevy Org best practices, so the table below maps Bevy's
 | Bevy norm | Proposed here |
 | --- | --- |
 | No AI-generated media | Adopt. Textures, models and audio must be hand-made or permissively licensed; `assets_src/` holds the hand-authored sources. |
-| No AI-generated prose | Partially adopt. AI may still draft documentation (as the README already allows), but a human must review, rewrite where needed and own the result. No AI prose pasted into issues, PR descriptions or conversations. |
+| No AI-generated prose | Partially adopt. AI may still draft documentation (as the README already allows) and PR titles/descriptions, but a human must review, rewrite where needed and own the result before it lands. AI output is not pasted directly into issue comments or human conversations. |
 | No AI-generated communication | Adopt. Talk to people directly; do not paste AI output into human conversations. |
 | No AI-authored commits | Adopt. Commits are authored by humans; no AI `Co-authored-by`. |
 | Ownership | Adopt. The author understands every line submitted and can explain its rationale. |
 | Disclosure | Adopt. Already covered above and in [ARCHITECTURE.md](ARCHITECTURE.md). |
 | Quality | Adopt. AI-assisted changes are held to the same review bar as hand-written ones. |
-| Refusal / Harassment | Adopt. No one is required to review AI-assisted work; keep the discussion civil. |
+| Harassment | Adopt. Do not harass, demean or pressure others; keep the discussion civil. |
+| Refusal | Adopt. No one is required to review AI-assisted work or use AI tools. |
 
 Bevy's policy fully bans AI-generated prose, which conflicts with this project's current
-allowance for AI-generated documentation. The "Partially adopt" row is the proposed compromise; strict
-adoption would mean dropping AI-generated docs such as [ARCHITECTURE.md](ARCHITECTURE.md).
+allowance for AI-generated documentation and AI-drafted PR titles/descriptions. The "Partially
+adopt" row is the proposed compromise; strict adoption would mean dropping AI-generated docs
+such as [ARCHITECTURE.md](ARCHITECTURE.md) and hand-writing every PR title and description.

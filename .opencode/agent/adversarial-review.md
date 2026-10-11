@@ -27,9 +27,12 @@ problem and try to find it. Prioritize correctness and runtime failure over styl
 - Crates: `core` (voxel/coords/chunk storage), `proto` (message macro and traits), `messages`
   (client/server message enums), `server`, `client`, `archive`, `camera`.
 - Terminology (see `README.md`): Voxel, Chunk (16x256x16), Kind, Side, Face.
-- System sets: server `WorldSet` = ReceiveRequests -> LandscapeUpdate -> ChunkManagement ->
-  Propagation -> Meshing -> SendResponses; client `ClientSet` = ReceiveMessages -> Meshing ->
-  SendInput.
+- System sets: server `WorldSet` = ReceiveRequests, LandscapeUpdate, ChunkManagement,
+  ChunkInitialization, Propagation, Meshing, SendResponses (the `Update` chain active today is
+  LandscapeUpdate -> ChunkManagement -> Propagation -> Meshing; `ChunkInitialization` is
+  declared but unused); client `ClientSet` = ReceiveMessages, ChunkManagement, LandscapeUpdate,
+  Meshing, SendInput (`ReceiveMessages` runs in `PreUpdate`, `Meshing` in `Update`, `SendInput`
+  in `PostUpdate`).
 - Networking: async (`async-net`/`futures-lite`), `bincode`, `127.0.0.1:11223`.
 
 ## What to attack
