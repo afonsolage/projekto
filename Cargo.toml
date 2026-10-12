@@ -5,6 +5,17 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# wgsl-analyzer can't load Cargo packages yet, so Bevy's shaders come from a local
+# clone of the matching Bevy tag, linked (and ignored) as `.bevy`:
+#   git clone --depth 1 --branch v0.20.0 https://github.com/bevyengine/bevy ~/ref/bevy-0.20
+#   ln -s ~/ref/bevy-0.20 .bevy
+[package.metadata.wgsl-analyzer]
+edition = "2026_pre"
+root = "assets/shaders"
+
+[package.metadata.wgsl-analyzer.dependencies]
+bevy_pbr = { path = ".bevy/crates/bevy_pbr" }
+
 [workspace]
 members = ["crates/*"]
 default-members = ["crates/client"]
