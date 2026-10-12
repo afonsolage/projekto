@@ -10,7 +10,6 @@ default-run = "client"
 default = [
     "dev",
     "bevy/tonemapping_luts",
-    "bevy/wayland",
 ]
 
 dev = [

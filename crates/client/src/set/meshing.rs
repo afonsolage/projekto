@@ -1,6 +1,7 @@
 use bevy::{
+    asset::RenderAssetUsages,
+    mesh::{Indices, PrimitiveTopology},
     prelude::*,
-    render::{mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology},
 };
 use projekto_core::voxel;
 use projekto_messages::ChunkVertex;
@@ -17,14 +18,14 @@ impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
         app.set_message_handler(update_chunk_mesh).add_systems(
             Update,
-            despawn_chunks_on_server_disconnect.run_if(on_event::<ServerDisconnected>),
+            despawn_chunks_on_server_disconnect.run_if(on_message::<ServerDisconnected>),
         );
     }
 }
 
 fn despawn_chunks_on_server_disconnect(
     mut map: ResMut<ChunkMap>,
-    mut reader: EventReader<ServerDisconnected>,
+    mut reader: MessageReader<ServerDisconnected>,
     mut commands: Commands,
 ) {
     reader.clear();

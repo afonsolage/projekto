@@ -293,8 +293,8 @@ fn move_camera_keycode(
 /// [`OrbitCameraConfig`]
 fn move_camera_mouse(
     input: Res<ButtonInput<MouseButton>>,
-    mut mouse_move: EventReader<MouseMotion>,
-    mut mouse_wheel: EventReader<MouseWheel>,
+    mut mouse_move: MessageReader<MouseMotion>,
+    mut mouse_wheel: MessageReader<MouseWheel>,
     time: Res<Time>,
     mut config: ResMut<OrbitCameraConfig>,
 ) {

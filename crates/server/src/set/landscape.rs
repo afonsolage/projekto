@@ -26,8 +26,8 @@ pub struct Landscape {
 fn update_landscape(
     maybe_landscape: Option<Res<Landscape>>,
     chunk_map: Res<ChunkMap>,
-    mut load_writer: EventWriter<ChunkLoad>,
-    mut unload_writer: EventWriter<ChunkUnload>,
+    mut load_writer: MessageWriter<ChunkLoad>,
+    mut unload_writer: MessageWriter<ChunkUnload>,
 ) {
     trace!("Updating landscape!");
     let new_landscape_chunks = {
@@ -87,16 +87,16 @@ mod tests {
 
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .init_resource::<ChunkMap>()
-            .add_event::<ChunkLoad>()
-            .add_event::<ChunkUnload>()
+            .add_message::<ChunkLoad>()
+            .add_message::<ChunkUnload>()
             .add_plugins(super::LandscapePlugin);
 
         // act
         app.update();
 
         // assert
-        let load_events = app.world().get_resource::<Events<ChunkLoad>>().unwrap();
-        let unload_events = app.world().get_resource::<Events<ChunkUnload>>().unwrap();
+        let load_events = app.world().get_resource::<Messages<ChunkLoad>>().unwrap();
+        let unload_events = app.world().get_resource::<Messages<ChunkUnload>>().unwrap();
 
         assert!(load_events.is_empty(), "No entity should be loaded");
         assert!(unload_events.is_empty(), "No entity should be unloaded");
@@ -109,8 +109,8 @@ mod tests {
 
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .init_resource::<ChunkMap>()
-            .add_event::<ChunkLoad>()
-            .add_event::<ChunkUnload>()
+            .add_message::<ChunkLoad>()
+            .add_message::<ChunkUnload>()
             .add_plugins(super::LandscapePlugin);
 
         app.world_mut().insert_resource(Landscape {
@@ -136,8 +136,8 @@ mod tests {
 
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .init_resource::<ChunkMap>()
-            .add_event::<ChunkLoad>()
-            .add_event::<ChunkUnload>()
+            .add_message::<ChunkLoad>()
+            .add_message::<ChunkUnload>()
             .add_plugins(super::LandscapePlugin);
 
         app.world_mut().insert_resource(Landscape {

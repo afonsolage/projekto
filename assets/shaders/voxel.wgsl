@@ -20,13 +20,13 @@ struct MaterialData {
     tile_texture_size: f32,
 };
 
-@group(2) @binding(0)
+@group(#{MATERIAL_BIND_GROUP}) @binding(0)
 var atlas_texture: texture_2d<f32>;
 
-@group(2) @binding(1)
+@group(#{MATERIAL_BIND_GROUP}) @binding(1)
 var atlas_sampler: sampler;
 
-@group(2) @binding(2)
+@group(#{MATERIAL_BIND_GROUP}) @binding(2)
 var<uniform> material_data: MaterialData;
 
 @vertex

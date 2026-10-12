@@ -1,11 +1,10 @@
+use bevy::mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef};
+use bevy::shader::ShaderRef;
 use bevy::{pbr::MaterialPipelineKey, prelude::*};
 
 use bevy::{
     pbr::MaterialPipeline,
-    render::{
-        mesh::MeshVertexAttribute,
-        render_resource::{AsBindGroup, Face, ShaderRef, VertexFormat},
-    },
+    render::render_resource::{AsBindGroup, Face, VertexFormat},
 };
 
 #[derive(Reflect, AsBindGroup, Asset, Debug, Clone)]
@@ -55,9 +54,9 @@ impl Material for ChunkMaterial {
     // }
 
     fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        layout: &bevy::render::mesh::MeshVertexBufferLayoutRef,
+        layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         let vertex_layout = layout.0.get_layout(&[

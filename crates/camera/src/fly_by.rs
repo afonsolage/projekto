@@ -134,7 +134,7 @@ fn move_camera(
 /// This system is gated by [`is_active`] run criteria.
 fn rotate_camera(
     time: Res<Time>,
-    mut motion_evt: EventReader<MouseMotion>,
+    mut motion_evt: MessageReader<MouseMotion>,
     config: Res<FlyByCameraConfig>,
     mut q: Query<&mut Transform, With<FlyByCamera>>,
 ) {
