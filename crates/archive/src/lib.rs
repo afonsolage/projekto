@@ -417,7 +417,7 @@ where
 mod tests {
     use bevy::tasks::block_on;
     use projekto_core::chunk::{self, ChunkStorage};
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
 
     use super::*;
 

@@ -185,7 +185,7 @@ pub fn overlap_voxel(voxel: ChunkVoxel, dir: IVec2) -> (IVec2, ChunkVoxel) {
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
+    use rand::RngExt;
 
     use super::*;
 
