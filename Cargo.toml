@@ -18,7 +18,7 @@ projekto_server = { path = "crates/server" }
 projekto_client = { path = "crates/client" }
 projekto_archive = { path = "crates/archive" }
 
-bevy = "0.17"
+bevy = { version = "0.18", default-features = false, features = ["3d"]}
 
 rand = "0.9"
 thiserror = "2.0"
