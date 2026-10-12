@@ -42,11 +42,11 @@ impl ChunkMaterial {
 
 impl Material for ChunkMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/voxel.wgsl".into()
+        "shaders/voxel.wesl".into()
     }
 
     fn vertex_shader() -> ShaderRef {
-        "shaders/voxel.wgsl".into()
+        "shaders/voxel.wesl".into()
     }
 
     // fn alpha_mode(&self) -> AlphaMode {
