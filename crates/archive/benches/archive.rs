@@ -5,7 +5,7 @@ use projekto_core::{
     chunk::ChunkStorage,
     coords::{ChunkVoxel, RegionChunk},
 };
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 fn generate_chunk(seed: u64) -> ChunkStorage<u128> {
     let mut rnd = StdRng::seed_from_u64(seed);

@@ -288,7 +288,7 @@ where
 #[cfg(test)]
 mod tests {
     use bevy::tasks::{TaskPoolBuilder, block_on};
-    use rand::RngCore;
+    use rand::Rng;
 
     use super::*;
 
