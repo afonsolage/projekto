@@ -48,13 +48,30 @@ messages - must be reviewed and owned by a human before it lands. In particular:
 - **No duplication or padding.** Do not restate the same thing in prose, doc comments and
   inline comments at once, and do not explain what the code already says clearly.
 
+## Posting PR comments and reviews
+
+`gh pr review` and `gh pr comment` create a new review or comment on every invocation. They are
+not idempotent and print nothing on success, so they must be sent once and verified by reading
+the result back, not by re-running them.
+
+- Post once, then confirm with `gh pr view <number> --json reviews` (or the equivalent query for
+  the comment type) before considering the step done.
+- Treat an empty output as a possible success, not a failure. Never re-run a side-effecting
+  command just because its stdout was empty; check the PR state first and skip the call if the
+  comment already exists.
+- Do not wrap `gh pr review` or `gh pr comment` in loops or automatic retries.
+- A submitted review cannot be deleted: `DELETE
+  /repos/{owner}/{repo}/pulls/{number}/reviews/{id}` only removes *pending* reviews. A duplicate
+  can only be minimized (`minimizeComment`), not removed, so prevention is the only reliable fix.
+
 ## CI checks before review
 
 This repository runs GitHub Actions on every PR, on a pinned nightly toolchain (see
 [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml)): `cargo test --workspace`, `cargo
-clippy --workspace -- -D warnings`, `cargo fmt --all -- --check` and `cargo udeps`. CI often
-catches common failures, so before spawning the adversarial review or asking the user to review,
-monitor the checks of the open PR until they finish.
+clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check` and `cargo
+udeps`. The same validations run locally with `just ci`. CI often catches common failures, so
+before spawning the adversarial review or asking the user to review, monitor the checks of the
+open PR until they finish.
 
 - Always monitor the PR checks; do not consider the PR ready while any check is failing or
   still pending. Use `gh pr checks <number> --watch` to follow them to completion.
