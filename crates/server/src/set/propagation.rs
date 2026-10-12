@@ -14,14 +14,14 @@ pub struct PropagationPlugin;
 
 impl Plugin for PropagationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<LightUpdate>().add_systems(
+        app.add_message::<LightUpdate>().add_systems(
             Update,
-            (propagate_light.run_if(on_event::<LightUpdate>),).in_set(WorldSet::Propagation),
+            (propagate_light.run_if(on_message::<LightUpdate>),).in_set(WorldSet::Propagation),
         );
     }
 }
 
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct LightUpdate {
     pub chunk: Chunk,
     pub ty: voxel::LightTy,
@@ -30,7 +30,7 @@ pub struct LightUpdate {
 
 fn propagate_light(
     mut q_light: ChunkQuery<(&ChunkKind, &mut ChunkLight)>,
-    mut params: ParamSet<(EventReader<LightUpdate>, EventWriter<LightUpdate>)>,
+    mut params: ParamSet<(MessageReader<LightUpdate>, MessageWriter<LightUpdate>)>,
 ) {
     let mut count = 0;
 

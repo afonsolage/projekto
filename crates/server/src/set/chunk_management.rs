@@ -17,14 +17,14 @@ pub struct ChunkManagementPlugin;
 impl Plugin for ChunkManagementPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkMap>()
-            .add_event::<ChunkUnload>()
-            .add_event::<ChunkLoad>()
-            .add_event::<ChunkGen>()
+            .add_message::<ChunkUnload>()
+            .add_message::<ChunkLoad>()
+            .add_message::<ChunkGen>()
             .add_systems(PreStartup, init_servers)
             .add_systems(
                 Update,
                 (
-                    chunks_unload.run_if(on_event::<ChunkUnload>),
+                    chunks_unload.run_if(on_message::<ChunkUnload>),
                     chunks_load,
                     chunks_save,
                 )
@@ -34,13 +34,13 @@ impl Plugin for ChunkManagementPlugin {
     }
 }
 
-#[derive(Event, Debug, Clone, Copy)]
+#[derive(Message, Debug, Clone, Copy)]
 pub struct ChunkUnload(pub Chunk);
 
-#[derive(Event, Debug, Clone, Copy)]
+#[derive(Message, Debug, Clone, Copy)]
 pub struct ChunkLoad(pub Chunk);
 
-#[derive(Event, Debug, Clone, Copy)]
+#[derive(Message, Debug, Clone, Copy)]
 pub struct ChunkGen(pub Chunk);
 
 fn init_servers(mut commands: Commands) {
@@ -51,7 +51,7 @@ fn init_servers(mut commands: Commands) {
 fn chunks_unload(
     mut commands: Commands,
     mut chunk_map: ResMut<ChunkMap>,
-    mut reader: EventReader<ChunkUnload>,
+    mut reader: MessageReader<ChunkUnload>,
 ) {
     let mut count = 0;
 
@@ -71,7 +71,7 @@ fn chunks_unload(
 #[allow(clippy::too_many_arguments)]
 fn chunks_load(
     mut commands: Commands,
-    mut reader: EventReader<ChunkLoad>,
+    mut reader: MessageReader<ChunkLoad>,
     mut archive: ResMut<ArchiveServer<ChunkAsset>>,
     genesis: ResMut<GenesisServer>,
     mut load_tasks: Local<Vec<ArchiveTask<ChunkAsset>>>,

@@ -1,6 +1,10 @@
 use std::marker::PhantomData;
 
-use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
+use bevy::{
+    ecs::system::SystemParam,
+    prelude::*,
+    window::{CursorOptions, PrimaryWindow},
+};
 use projekto_camera::{
     CameraPlugin,
     fly_by::{FlyByCamera, FlyByCameraConfig},
@@ -65,7 +69,7 @@ fn toggle_camera(input: Res<ButtonInput<KeyCode>>, mut config: CameraConfig) {
 }
 
 fn grab_mouse(
-    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut q_cursor_opts: Query<&mut CursorOptions, With<PrimaryWindow>>,
     mouse_btn: Res<ButtonInput<MouseButton>>,
     key_btn: Res<ButtonInput<KeyCode>>,
     mut config: CameraConfig,
@@ -79,14 +83,14 @@ fn grab_mouse(
     //     }
     // }
 
-    if let Ok(mut window) = primary_window.single_mut() {
-        if window.cursor_options.visible && mouse_btn.just_pressed(MouseButton::Left) {
-            window.cursor_options.visible = false;
-            window.cursor_options.grab_mode = bevy::window::CursorGrabMode::Locked;
+    if let Ok(mut cursor_options) = q_cursor_opts.single_mut() {
+        if cursor_options.visible && mouse_btn.just_pressed(MouseButton::Left) {
+            cursor_options.visible = false;
+            cursor_options.grab_mode = bevy::window::CursorGrabMode::Locked;
             config.set_active(true);
-        } else if !window.cursor_options.visible && key_btn.just_pressed(KeyCode::Escape) {
-            window.cursor_options.visible = true;
-            window.cursor_options.grab_mode = bevy::window::CursorGrabMode::None;
+        } else if !cursor_options.visible && key_btn.just_pressed(KeyCode::Escape) {
+            cursor_options.visible = true;
+            cursor_options.grab_mode = bevy::window::CursorGrabMode::None;
             config.set_active(false);
         }
     }

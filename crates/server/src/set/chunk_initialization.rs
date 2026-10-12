@@ -5,9 +5,9 @@ use projekto_core::{
 };
 
 use crate::{
-    bundle::{any_chunk, ChunkKind, ChunkLight, ChunkLocal},
-    light::{self, NeighborLightPropagation},
     WorldSet,
+    bundle::{ChunkKind, ChunkLight, ChunkLocal, any_chunk},
+    light::{self, NeighborLightPropagation},
 };
 
 use super::LightUpdate;
@@ -27,7 +27,7 @@ impl Plugin for ChunkInitializationPlugin {
 
 fn init_light(
     mut q: Query<(&ChunkLocal, &ChunkKind, &mut ChunkLight), Added<ChunkLight>>,
-    mut writer: EventWriter<LightUpdate>,
+    mut writer: MessageWriter<LightUpdate>,
 ) {
     let mut map = HashMap::new();
     let mut count = 0;
@@ -68,7 +68,7 @@ fn init_light(
     let events = map.len();
 
     map.into_iter().for_each(|((chunk, ty), values)| {
-        writer.send(LightUpdate { chunk, ty, values });
+        writer.write(LightUpdate { chunk, ty, values });
     });
 
     trace!("[init_light] {count} chunks light initialized. {events} propagation events sent.");
@@ -87,7 +87,7 @@ mod tests {
         // Arrange
         let mut app = App::new();
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-            .add_event::<LightUpdate>()
+            .add_message::<LightUpdate>()
             .add_plugins(ChunkInitializationPlugin);
 
         app.world.spawn(ChunkBundle::default());

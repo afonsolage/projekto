@@ -1,9 +1,9 @@
 use bevy::{
+    camera::visibility::RenderLayers,
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     ecs::query::QueryFilter,
     platform::collections::HashMap,
     prelude::*,
-    render::view::RenderLayers,
     window::PresentMode,
 };
 use bundle::{ChunkLocal, ChunkVertex};

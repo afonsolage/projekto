@@ -15,7 +15,7 @@ pub(crate) struct NetPlugin;
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<ServerDisconnected>().add_systems(
+        app.add_message::<ServerDisconnected>().add_systems(
             PreUpdate,
             (
                 reconnect_to_server.run_if(resource_exists::<ServerConnection>),
@@ -29,7 +29,7 @@ impl Plugin for NetPlugin {
 #[derive(Resource, Debug, Deref, DerefMut)]
 pub struct ServerConnection(Server<ClientMessage, ServerMessage>);
 
-#[derive(Event, Debug)]
+#[derive(Message, Debug)]
 pub struct ServerDisconnected;
 
 impl ServerConnection {
@@ -40,7 +40,7 @@ impl ServerConnection {
 
 fn reconnect_to_server(
     connection: Res<ServerConnection>,
-    mut writer: EventWriter<ServerDisconnected>,
+    mut writer: MessageWriter<ServerDisconnected>,
     mut commands: Commands,
 ) {
     if !connection.is_active() {

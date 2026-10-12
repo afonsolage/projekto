@@ -54,7 +54,7 @@ impl<'w, 's, Q: QueryData + 'static, F: QueryFilter + 'static> ChunkQuery<'w, 's
     //     self.map.0.get(&chunk).copied()
     // }
 
-    pub fn get_chunk(&self, chunk: Chunk) -> Option<QueryItem<'_, <Q as QueryData>::ReadOnly>> {
+    pub fn get_chunk(&self, chunk: Chunk) -> Option<QueryItem<'_, '_, <Q as QueryData>::ReadOnly>> {
         self.map.0.get(&chunk).map(|&entity| {
             self.query
                 .get(entity)
@@ -62,12 +62,13 @@ impl<'w, 's, Q: QueryData + 'static, F: QueryFilter + 'static> ChunkQuery<'w, 's
         })
     }
 
-    pub fn get_chunk_mut(&mut self, chunk: Chunk) -> Option<Q::Item<'_>> {
-        self.map.0.get(&chunk).map(|&entity| {
+    pub fn get_chunk_mut(&mut self, chunk: Chunk) -> Option<Q::Item<'_, 's>> {
+        let entity = *self.map.0.get(&chunk)?;
+        Some(
             self.query
                 .get_mut(entity)
-                .expect("All entities inside the map must exists")
-        })
+                .expect("All entities inside the map must exists"),
+        )
     }
 
     pub fn chunk_exists(&self, chunk: Chunk) -> bool {

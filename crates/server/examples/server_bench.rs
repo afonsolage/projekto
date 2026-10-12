@@ -37,7 +37,7 @@ fn setup(mut commands: Commands) {
 
 fn check_if_finished(
     map: Res<ChunkMap>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
     mut local: Local<Option<Task<MaintenanceResult>>>,
 ) {

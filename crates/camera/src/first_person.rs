@@ -55,7 +55,7 @@ pub fn is_active(config: Res<FirstPersonCameraConfig>) -> bool {
 /// This system is gated by [`is_active`] run criteria.
 fn rotate_camera(
     time: Res<Time>,
-    mut motion_evt: EventReader<MouseMotion>,
+    mut motion_evt: MessageReader<MouseMotion>,
     config: Res<FirstPersonCameraConfig>,
     mut q: Query<&mut Transform, With<FirstPersonTarget>>,
 ) {
