@@ -26,3 +26,7 @@ workspace = true
 [[bench]]
 name = "storage"
 harness = false
+
+[[bench]]
+name = "memory"
+harness = false
