@@ -8,6 +8,13 @@ alias c := client-win
 default:
     @just --list
 
+# Run the same validations as CI locally (requires `cargo install cargo-udeps`).
+ci:
+    cargo fmt --all -- --check
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo test --workspace
+    cargo udeps
+
 # Run the server on Linux.
 server *args:
     cargo run -p projekto_server {{args}}
