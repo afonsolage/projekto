@@ -102,15 +102,15 @@ mod tests {
 
     #[message_source(MessageSource::Client)]
     enum TestMsg {
-        UnitMsg,
-        UnnamedMsg(u32, u8, bool),
-        NamedMsg {
+        Unit,
+        Unnamed(u32, u8, bool),
+        Named {
             a: i8,
             b: f32,
             c: (u8, u8),
         },
         #[no_copy]
-        NoCopyMsg(String, Vec<u8>),
+        NoCopyTuple(String, Vec<u8>),
     }
 
     fn no_copy_only(_: impl Message<TestMsg> + NoCopy) {
@@ -125,40 +125,38 @@ mod tests {
 
     #[test]
     fn macro_message_source_unit() {
-        assert!(TestMsg::UnitMsg.is_unit_type());
+        assert!(TestMsg::Unit.is_unit_type());
 
-        let boxed: BoxedMessage<TestMsg> = Box::new(UnitMsg);
+        let boxed: BoxedMessage<TestMsg> = Box::new(Unit);
         let mut buf = vec![0u8; 0];
-        let size = TestMsg::UnitMsg
+        let size = TestMsg::Unit
             .serialize_boxed(boxed, &mut buf)
             .expect("Unit types should generate not byte when serializing");
 
         assert_eq!(size, 0);
 
-        let boxed = TestMsg::UnitMsg
+        let boxed = TestMsg::Unit
             .deserialize_boxed(&[])
             .expect("Unit types should not require bytes to deserialize");
 
-        assert_eq!(boxed.downcast::<UnitMsg>().unwrap(), UnitMsg);
+        assert_eq!(boxed.downcast::<Unit>().unwrap(), Unit);
     }
 
     #[test]
     fn macro_message_source_unnamed() {
-        assert!(!TestMsg::UnnamedMsg.is_unit_type());
+        assert!(!TestMsg::Unnamed.is_unit_type());
 
-        let boxed: BoxedMessage<TestMsg> = Box::new(UnnamedMsg(1, 2, true));
+        let boxed: BoxedMessage<TestMsg> = Box::new(Unnamed(1, 2, true));
         let mut buf = vec![0u8; 64];
-        let size = TestMsg::UnnamedMsg
-            .serialize_boxed(boxed, &mut buf)
-            .unwrap();
+        let size = TestMsg::Unnamed.serialize_boxed(boxed, &mut buf).unwrap();
 
         assert!(size > 0);
 
-        let boxed = TestMsg::UnnamedMsg
+        let boxed = TestMsg::Unnamed
             .deserialize_boxed(&buf[..size as usize])
             .unwrap();
 
-        let UnnamedMsg(n1, n2, b1) = boxed.downcast::<UnnamedMsg>().unwrap();
+        let Unnamed(n1, n2, b1) = boxed.downcast::<Unnamed>().unwrap();
 
         assert_eq!(n1, 1);
         assert_eq!(n2, 2);
@@ -167,24 +165,24 @@ mod tests {
 
     #[test]
     fn macro_message_source_named() {
-        assert!(!TestMsg::NamedMsg.is_unit_type());
+        assert!(!TestMsg::Named.is_unit_type());
 
-        let boxed: BoxedMessage<TestMsg> = Box::new(NamedMsg {
+        let boxed: BoxedMessage<TestMsg> = Box::new(Named {
             a: 42,
             b: 3.123,
             c: (22, 33),
         });
 
         let mut buf = vec![0u8; 64];
-        let size = TestMsg::NamedMsg.serialize_boxed(boxed, &mut buf).unwrap();
+        let size = TestMsg::Named.serialize_boxed(boxed, &mut buf).unwrap();
 
         assert!(size > 0);
 
-        let boxed = TestMsg::NamedMsg
+        let boxed = TestMsg::Named
             .deserialize_boxed(&buf[..size as usize])
             .unwrap();
 
-        let NamedMsg { a, b, c } = boxed.downcast::<NamedMsg>().unwrap();
+        let Named { a, b, c } = boxed.downcast::<Named>().unwrap();
 
         assert_eq!(a, 42);
         assert_eq!(b, 3.123);
@@ -193,22 +191,24 @@ mod tests {
 
     #[test]
     fn macro_message_source_no_copy() {
-        no_copy_only(NoCopyMsg("asd".to_string(), vec![]));
+        no_copy_only(NoCopyTuple("asd".to_string(), vec![]));
 
-        assert!(!TestMsg::NoCopyMsg.is_unit_type());
+        assert!(!TestMsg::NoCopyTuple.is_unit_type());
 
-        let boxed: BoxedMessage<TestMsg> = Box::new(NoCopyMsg("msg".to_string(), vec![1, 2, 3]));
+        let boxed: BoxedMessage<TestMsg> = Box::new(NoCopyTuple("msg".to_string(), vec![1, 2, 3]));
 
         let mut buf = vec![0u8; 64];
-        let size = TestMsg::NoCopyMsg.serialize_boxed(boxed, &mut buf).unwrap();
+        let size = TestMsg::NoCopyTuple
+            .serialize_boxed(boxed, &mut buf)
+            .unwrap();
 
         assert!(size > 0);
 
-        let boxed = TestMsg::NoCopyMsg
+        let boxed = TestMsg::NoCopyTuple
             .deserialize_boxed(&buf[..size as usize])
             .unwrap();
 
-        let NoCopyMsg(s, v) = boxed.downcast::<NoCopyMsg>().unwrap();
+        let NoCopyTuple(s, v) = boxed.downcast::<NoCopyTuple>().unwrap();
 
         assert_eq!(s, "msg".to_string());
         assert_eq!(v, vec![1, 2, 3]);

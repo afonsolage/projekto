@@ -122,8 +122,8 @@ mod tests {
         app.update();
 
         // assert
-        let load_events = app.world().get_resource::<Events<ChunkLoad>>().unwrap();
-        let unload_events = app.world().get_resource::<Events<ChunkUnload>>().unwrap();
+        let load_events = app.world().get_resource::<Messages<ChunkLoad>>().unwrap();
+        let unload_events = app.world().get_resource::<Messages<ChunkUnload>>().unwrap();
 
         assert_eq!(load_events.len(), 9, "9 Chunks events should be load");
         assert!(unload_events.is_empty(), "No unload events should be sent");
@@ -149,8 +149,8 @@ mod tests {
         app.update();
 
         // assert
-        let load_events = app.world().get_resource::<Events<ChunkLoad>>().unwrap();
-        let unload_events = app.world().get_resource::<Events<ChunkUnload>>().unwrap();
+        let load_events = app.world().get_resource::<Messages<ChunkLoad>>().unwrap();
+        let unload_events = app.world().get_resource::<Messages<ChunkUnload>>().unwrap();
 
         assert_eq!(load_events.len(), 1, "1 Chunk event should be load");
         assert!(unload_events.is_empty(), "No unload events should be sent");
