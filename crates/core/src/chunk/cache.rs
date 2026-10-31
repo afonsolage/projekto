@@ -29,7 +29,7 @@ struct Entry<T: ChunkStorageType> {
 /// The cache is intentionally unaware of the data semantics: it does not know when an entry is
 /// stale. Callers must [`invalidate`](Self::invalidate) chunks whose source data (and their
 /// neighbors) changed. This keeps the cache usable for different derived layers, such as soft
-/// light, occlusion or future water/fire propagation data.
+/// light, occlusion or future water/fire propagation data, for instance.
 ///
 /// Pinned entries are never evicted. If every entry is pinned the cache may temporarily exceed
 /// its configured capacity instead of evicting pinned data.
