@@ -104,15 +104,17 @@ mod tests {
 
         // Act
         chunk::voxels().enumerate().for_each(|(i, v)| {
-            storage.set(v, (i as u16).into());
+            storage.set(v, ((i % 255) as u16).into());
         });
 
         // Assert
         chunk::voxels().enumerate().for_each(|(i, v)| {
+            let value = (i % 255) as u16;
+
             assert_eq!(
                 storage.get(v),
-                (i as u16).into(),
-                "Voxel {v} should have value {i}"
+                value.into(),
+                "Voxel {v} should have value {value}"
             );
         });
     }

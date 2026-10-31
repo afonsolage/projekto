@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use projekto_archive::{ArchiveServer, ArchiveTask};
+use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask};
 use projekto_core::coords::Chunk;
 
 use crate::{
@@ -101,7 +101,11 @@ fn chunks_load(
                         gen_tasks.push(task);
                     }
                 }
-                Err(e) => error!("Unabled to load chunk ({}). {e}", task.chunk()),
+                Err(ArchiveError::UnsupportedVersion) => error!(
+                    "Chunk {} was saved with an unsupported archive format version. Delete or migrate archive/region before loading.",
+                    task.chunk()
+                ),
+                Err(e) => error!("Unable to load chunk ({}). {e}", task.chunk()),
             }
             // remove task
             false

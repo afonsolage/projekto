@@ -116,7 +116,7 @@ where
                                 let filtered_voxels = indices
                                     .iter()
                                     .enumerate()
-                                    .filter(|(_, pallet_idx)| **pallet_idx == target_idx)
+                                    .filter(|(_, pallet_idx)| *pallet_idx == target_idx)
                                     .map(|(y_idx, _)| {
                                         ChunkVoxel::new(base_voxel.x, y_idx as u8, base_voxel.z)
                                     });
@@ -141,9 +141,35 @@ where
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "RawVoxelPallet<T>")]
 struct VoxelPallet<T> {
     pallet: Vec<T>,
     dirty: bool,
+}
+
+#[derive(Deserialize)]
+struct RawVoxelPallet<T> {
+    pallet: Vec<T>,
+    dirty: bool,
+}
+
+impl<T> TryFrom<RawVoxelPallet<T>> for VoxelPallet<T> {
+    type Error = String;
+
+    fn try_from(raw: RawVoxelPallet<T>) -> Result<Self, Self::Error> {
+        if raw.pallet.len() > u8::MAX as usize {
+            return Err(format!(
+                "a voxel pallet cannot have more than {} entries, got {}",
+                u8::MAX,
+                raw.pallet.len()
+            ));
+        }
+
+        Ok(Self {
+            pallet: raw.pallet,
+            dirty: raw.dirty,
+        })
+    }
 }
 
 impl<T> VoxelPallet<T>
@@ -164,21 +190,23 @@ where
         }
     }
 
+    fn len(&self) -> usize {
+        self.pallet.len()
+    }
+
     fn find_or_add(&mut self, value: T) -> u8 {
         if let Some(index) = self.pallet.iter().position(|s| *s == value) {
-            assert!(index <= u8::MAX as usize);
-
             index as u8
         } else {
+            assert!(
+                self.pallet.len() < u8::MAX as usize,
+                "A chunk column cannot have more than 255 voxel types"
+            );
+
             self.pallet.push(value);
             self.dirty = true;
 
             let new_index = self.pallet.len() - 1;
-
-            assert!(
-                new_index <= u8::MAX as usize,
-                "new_index ({new_index}) overflow u8 max"
-            );
 
             new_index as u8
         }
@@ -205,18 +233,186 @@ impl<T> Deref for VoxelPallet<T> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deref, DerefMut, Serialize, Deserialize)]
-#[repr(transparent)]
-pub(crate) struct Indices(pub(crate) Vec<u8>);
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "RawIndices")]
+pub(crate) struct Indices {
+    bits: u8,
+    buffer: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+struct RawIndices {
+    bits: u8,
+    buffer: Vec<u8>,
+}
+
+impl TryFrom<RawIndices> for Indices {
+    type Error = String;
+
+    fn try_from(raw: RawIndices) -> Result<Self, Self::Error> {
+        if !(1..=8).contains(&raw.bits) {
+            return Err(format!(
+                "indices bits must be between 1 and 8, got {}",
+                raw.bits
+            ));
+        }
+
+        let expected = (COLUMN_SIZE * raw.bits as usize).div_ceil(8);
+        if raw.buffer.len() != expected {
+            return Err(format!(
+                "indices buffer for {} bits must have {} bytes, got {}",
+                raw.bits,
+                expected,
+                raw.buffer.len()
+            ));
+        }
+
+        Ok(Self {
+            bits: raw.bits,
+            buffer: raw.buffer,
+        })
+    }
+}
+
+impl Indices {
+    pub(crate) fn new(pallet_len: usize) -> Self {
+        let bits = (pallet_len as f32).log2().ceil().max(1.0) as u8;
+        let buffer_size = ((COLUMN_SIZE * bits as usize / 8usize) as f32).ceil() as usize;
+        Self {
+            bits,
+            buffer: vec![0; buffer_size],
+        }
+    }
+
+    fn get(&self, index: u8) -> u8 {
+        //Convert the index to a bit-wise index;
+        let bit = index as usize * self.bits as usize;
+        //Get the byte index which would have the begining of our bits;
+        let byte = bit / 8;
+        //Get the position of the bit whitin the byte;
+        let offset = bit % 8;
+
+        //Since the bit can be spread across two bytes, we need to get a word (2 bytes)
+        let lo = self.buffer[byte] as u16;
+        let hi = self.buffer.get(byte + 1).copied().unwrap_or(0) as u16;
+        let word = lo | (hi << 8);
+
+        //Compute the mask where the bit is inside the word
+        let mask = (1u16 << self.bits as u16) - 1;
+
+        //Shift the word to the desired bit position and apply the mask, so only the relevant
+        //bits are retrived
+        ((word >> offset) & mask) as u8
+    }
+
+    fn set(&mut self, index: u8, value: u8) {
+        //Convert the index to a bit-wise index;
+        let bit = index as usize * self.bits as usize;
+        //Get the byte index which would have the begining of our bits;
+        let byte = bit / 8;
+        //Get the position of the bit whitin the byte;
+        let offset = bit % 8;
+
+        //Since the bit can be spread across two bytes, we need to get a word (2 bytes)
+        let lo = self.buffer[byte] as u16;
+        let hi = self.buffer.get(byte + 1).copied().unwrap_or(0) as u16;
+        let word = lo | (hi << 8);
+
+        //Compute the mask where the bit is inside the word
+        let mask = (1u16 << self.bits as u16) - 1;
+
+        //Clear the existing value on the word
+        let cleared = word & !(mask << offset);
+        //Now apply the new value on the correct position
+        let new_word = cleared | ((value as u16 & mask) << offset);
+
+        self.buffer[byte] = new_word as u8;
+        if byte + 1 < self.buffer.len() {
+            self.buffer[byte + 1] = (new_word >> 8) as u8;
+        }
+    }
+
+    fn iter(&self) -> IndicesIter<'_> {
+        IndicesIter {
+            indices: self,
+            next: 0,
+        }
+    }
+
+    fn grow(&mut self, new_size: u8) {
+        let mut new_indices = Indices::new(new_size as usize);
+        self.iter()
+            .enumerate()
+            .for_each(|(idx, value)| new_indices.set(idx as u8, value));
+
+        *self = new_indices;
+    }
+
+    fn needs_to_grow(&self, new_size: u8) -> bool {
+        new_size as u16 > 1 << self.bits as u16
+    }
+}
+
+pub(crate) struct IndicesIter<'a> {
+    indices: &'a Indices,
+    next: usize,
+}
+
+impl<'a> Iterator for IndicesIter<'a> {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next < COLUMN_SIZE {
+            let item = self.indices.get(self.next as u8);
+            self.next += 1;
+            Some(item)
+        } else {
+            None
+        }
+    }
+}
 
 #[allow(private_interfaces)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "RawChunkColumn<T>")]
 pub(crate) enum ChunkColumn<T> {
     Single(T),
     Pallet {
         pallet: VoxelPallet<T>,
         indices: Indices,
     },
+}
+
+#[derive(Deserialize)]
+enum RawChunkColumn<T> {
+    Single(T),
+    Pallet {
+        pallet: VoxelPallet<T>,
+        indices: Indices,
+    },
+}
+
+impl<T> TryFrom<RawChunkColumn<T>> for ChunkColumn<T> {
+    type Error = String;
+
+    fn try_from(raw: RawChunkColumn<T>) -> Result<Self, Self::Error> {
+        match raw {
+            RawChunkColumn::Single(value) => Ok(ChunkColumn::Single(value)),
+            RawChunkColumn::Pallet { pallet, indices } => {
+                for index in indices.iter() {
+                    if index as usize >= pallet.len() {
+                        return Err(format!(
+                            "voxel pallet index {} is out of bounds for {} entries",
+                            index,
+                            pallet.len()
+                        ));
+                    }
+                }
+
+                Ok(ChunkColumn::Pallet { pallet, indices })
+            }
+        }
+    }
 }
 
 impl<T> Default for ChunkColumn<T>
@@ -235,7 +431,7 @@ where
     fn new_pallet() -> Self {
         Self::Pallet {
             pallet: VoxelPallet::default(),
-            indices: Indices(vec![0; COLUMN_SIZE]),
+            indices: Indices::new(0),
         }
     }
 
@@ -252,7 +448,7 @@ where
     pub(crate) fn get(&self, index: u8) -> T {
         match &self {
             ChunkColumn::Single(value) => *value,
-            ChunkColumn::Pallet { pallet, indices } => pallet[indices[index as usize] as usize],
+            ChunkColumn::Pallet { pallet, indices } => pallet[indices.get(index) as usize],
         }
     }
 
@@ -275,7 +471,13 @@ where
                 }
 
                 let pallet_index = pallet.find_or_add(value);
-                indices[index as usize] = pallet_index;
+
+                if indices.needs_to_grow(pallet_index + 1) {
+                    indices.grow(pallet_index + 1);
+                }
+
+                indices.set(index, pallet_index);
+
                 ChunkColumn::Pallet { pallet, indices }
             }
         };
@@ -318,7 +520,7 @@ where
                 if !pallet.dirty {
                     pallet.iter().all(f)
                 } else {
-                    indices.0.iter().all(|idx| f(&pallet[*idx as usize]))
+                    indices.iter().all(|idx| f(&pallet[idx as usize]))
                 }
             }
         }
@@ -333,17 +535,17 @@ where
     pallet.dirty = true;
 
     // init indices point to existing voxel state on pallet
-    let mut indices = Indices(vec![0; COLUMN_SIZE]);
+    let mut indices = Indices::new(pallet.len());
 
     // the new voxel state voxel and the second on the pallet
-    indices[index as usize] = 1;
+    indices.set(index, 1);
 
     ChunkColumn::Pallet { pallet, indices }
 }
 
 fn pallet_clean_up<T>(
     pallet: &mut VoxelPallet<T>,
-    indices: &mut [u8],
+    indices: &mut Indices,
     skip_index: Option<u8>,
 ) -> bool
 where
@@ -352,8 +554,6 @@ where
     if !pallet.dirty {
         return false;
     }
-
-    pallet.dirty = false;
 
     let mut new_indices = [u8::MAX; COLUMN_SIZE];
     let mut new_pallet = VoxelPallet::empty();
@@ -365,22 +565,40 @@ where
             continue;
         }
 
-        let new_idx = new_pallet.find_or_add(pallet[indices[i] as usize]);
+        let new_idx = new_pallet.find_or_add(pallet[indices.get(i as u8) as usize]);
         new_indices[i] = new_idx;
     }
 
-    if new_pallet.len() < pallet.len() {
-        std::mem::swap(pallet, &mut new_pallet);
-        indices.copy_from_slice(&new_indices);
+    let res = if new_pallet.len() < pallet.len() {
+        *indices = Indices::new(new_pallet.len());
+        new_indices.iter().enumerate().for_each(|(idx, &value)| {
+            indices.set(idx as u8, value);
+        });
+        *pallet = new_pallet;
         true
     } else {
         false
-    }
+    };
+
+    pallet.dirty = false;
+
+    res
 }
 
 #[cfg(test)]
 mod tests {
+    use serde::{Serialize, de::DeserializeOwned};
+
     use super::*;
+
+    fn encode<T: Serialize>(value: &T) -> Vec<u8> {
+        bincode::serde::encode_to_vec(value, bincode::config::standard()).unwrap()
+    }
+
+    fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, bincode::error::DecodeError> {
+        bincode::serde::decode_from_slice(bytes, bincode::config::standard())
+            .map(|(value, _)| value)
+    }
 
     #[test]
     fn chunk_voxel_from_column_index() {
@@ -560,29 +778,41 @@ mod tests {
         // Arrange
         let mut pallet = ChunkColumn::new_pallet();
 
-        // insert some dead states
+        // Insert some dead states. They count towards the 255 entry limit.
         match &mut pallet {
-            ChunkColumn::Pallet { pallet, indices } => {
-                for i in 0u8..20 {
+            ChunkColumn::Pallet { pallet, .. } => {
+                for i in 0u8..5 {
                     pallet.pallet.push(1000 + i as u16);
                 }
             }
             _ => unreachable!(),
         }
 
-        // Act
-        for i in 0..u8::MAX {
-            pallet.set(i, i as u16);
+        // Act: 5 dead states + the default state + 249 new states = 255 entries.
+        for i in 0..250u16 {
+            pallet.set(i as u8, i);
         }
 
         // Assert
-        for i in 0..u8::MAX {
-            assert_eq!(pallet.get(i), i as u16);
+        for i in 0..250u16 {
+            assert_eq!(pallet.get(i as u8), i);
         }
 
         match pallet {
             ChunkColumn::Pallet { pallet, .. } => assert_eq!(pallet.len(), u8::MAX as usize),
             _ => unreachable!("Pallet was changed somewhere"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot have more than 255 voxel types")]
+    fn pallet_get_set_over_255_panics() {
+        // Arrange
+        let mut pallet = ChunkColumn::new_pallet();
+
+        // Act: values 0..=255 are 256 distinct values.
+        for i in 0..=u8::MAX {
+            pallet.set(i, i as u16);
         }
     }
 
@@ -609,7 +839,7 @@ mod tests {
 
         let mut pallet = ChunkColumn::Pallet {
             pallet: VoxelPallet::new(vec![state]),
-            indices: Indices(vec![0; COLUMN_SIZE]),
+            indices: Indices::new(1),
         };
 
         // Act
@@ -633,7 +863,7 @@ mod tests {
 
         let mut pallet = ChunkColumn::Pallet {
             pallet,
-            indices: Indices(vec![0; COLUMN_SIZE]),
+            indices: Indices::new(1),
         };
 
         // Act
@@ -733,5 +963,105 @@ mod tests {
                 .iter()
                 .all(|v| storage.get(*v) == u8::default())
         );
+    }
+
+    #[test]
+    fn indices_serde_round_trip_all_bits() {
+        for (pallet_len, expected_bits) in [
+            (2usize, 1u8),
+            (3, 2),
+            (5, 3),
+            (9, 4),
+            (17, 5),
+            (33, 6),
+            (65, 7),
+            (129, 8),
+        ] {
+            let mut indices = Indices::new(pallet_len);
+            assert_eq!(indices.bits, expected_bits);
+
+            let max_index = (pallet_len - 1) as u8;
+            indices.set(0, max_index);
+
+            let bytes = encode(&indices);
+            let decoded: Indices = decode(&bytes).unwrap();
+
+            assert_eq!(decoded, indices);
+            assert_eq!(decoded.get(0), max_index);
+            assert_eq!(decoded.get(1), 0);
+        }
+    }
+
+    #[test]
+    fn indices_serde_rejects_invalid_bits() {
+        let invalid = Indices {
+            bits: 0,
+            buffer: Vec::new(),
+        };
+        assert!(decode::<Indices>(&encode(&invalid)).is_err());
+
+        let invalid = Indices {
+            bits: 9,
+            buffer: vec![0; (COLUMN_SIZE * 9usize).div_ceil(8)],
+        };
+        assert!(decode::<Indices>(&encode(&invalid)).is_err());
+    }
+
+    #[test]
+    fn indices_serde_rejects_wrong_buffer_len() {
+        let invalid = Indices {
+            bits: 2,
+            buffer: vec![0; 10],
+        };
+
+        assert!(decode::<Indices>(&encode(&invalid)).is_err());
+    }
+
+    #[test]
+    fn voxel_pallet_serde_rejects_too_many_entries() {
+        let invalid = VoxelPallet {
+            pallet: vec![0u16; u8::MAX as usize + 1],
+            dirty: false,
+        };
+
+        assert!(decode::<VoxelPallet<u16>>(&encode(&invalid)).is_err());
+    }
+
+    #[test]
+    fn voxel_pallet_serde_accepts_255_entries() {
+        let valid = VoxelPallet {
+            pallet: vec![0u16; u8::MAX as usize],
+            dirty: false,
+        };
+
+        let decoded: VoxelPallet<u16> = decode(&encode(&valid)).unwrap();
+        assert_eq!(decoded.pallet.len(), u8::MAX as usize);
+    }
+
+    #[test]
+    fn chunk_column_serde_rejects_out_of_bounds_index() {
+        let mut indices = Indices::new(3);
+        indices.set(0, 3);
+
+        let invalid = ChunkColumn::Pallet {
+            pallet: VoxelPallet::new(vec![1u16, 2, 3]),
+            indices,
+        };
+
+        assert!(decode::<ChunkColumn<u16>>(&encode(&invalid)).is_err());
+    }
+
+    #[test]
+    fn chunk_column_serde_round_trip_pallet() {
+        let mut column = ChunkColumn::new_pallet();
+        column.set(0, 1u16);
+        column.set(1, 2u16);
+        column.set(2, 1u16);
+
+        let decoded: ChunkColumn<u16> = decode(&encode(&column)).unwrap();
+
+        assert_eq!(decoded.get(0), 1);
+        assert_eq!(decoded.get(1), 2);
+        assert_eq!(decoded.get(2), 1);
     }
 }
