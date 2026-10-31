@@ -8,8 +8,10 @@ pub mod light;
 pub mod meshing;
 
 mod asset;
+mod cache;
 
 pub use asset::ChunkAsset;
+pub use cache::*;
 
 pub mod debug;
 mod net;

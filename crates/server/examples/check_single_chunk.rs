@@ -1,16 +1,25 @@
+use projekto_core::chunk;
 use projekto_server::{
     ChunkAsset,
-    meshing::{generate_vertices, greedy},
+    meshing::{faces_occlusion, generate_vertices, greedy},
 };
 
 fn main() {
     let ChunkAsset {
-        kind,
-        light,
-        occlusion,
-        soft_light,
-        ..
+        chunk, kind, light, ..
     } = setup();
+
+    let mut occlusion = Default::default();
+    faces_occlusion(&kind, &mut occlusion, &[Some(&kind); chunk::SIDE_COUNT]);
+
+    let mut soft_light = Default::default();
+    projekto_server::light::smooth_lighting(
+        chunk,
+        &occlusion,
+        &mut soft_light,
+        |_| Some(&kind),
+        |_| Some(&light),
+    );
 
     println!("Kind: {kind:?}");
     println!("Light: {light:?}");

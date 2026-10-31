@@ -3,12 +3,9 @@ use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask};
 use projekto_core::coords::Chunk;
 
 use crate::{
-    WorldSet,
+    DerivedCaches, DirtyChunks, WorldSet,
     asset::ChunkAsset,
-    bundle::{
-        ChunkBundle, ChunkFacesOcclusion, ChunkFacesSoftLight, ChunkKind, ChunkLight, ChunkLocal,
-        ChunkMap, ChunkVertex,
-    },
+    bundle::{ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkVertex},
     genesis::{ChunkCreation, GenesisServer, GenesisTask},
     net::{ClientSync, Clients},
 };
@@ -20,6 +17,8 @@ pub struct ChunkManagementPlugin;
 impl Plugin for ChunkManagementPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkMap>()
+            .init_resource::<DerivedCaches>()
+            .init_resource::<DirtyChunks>()
             .init_resource::<Clients>()
             .init_resource::<ClientSync>()
             .add_message::<ChunkUnload>()
@@ -56,6 +55,8 @@ fn init_servers(mut commands: Commands) {
 fn chunks_unload(
     mut commands: Commands,
     mut chunk_map: ResMut<ChunkMap>,
+    mut caches: ResMut<DerivedCaches>,
+    mut dirty: ResMut<DirtyChunks>,
     clients: Res<Clients>,
     mut sync: ResMut<ClientSync>,
     mut reader: MessageReader<ChunkUnload>,
@@ -80,6 +81,8 @@ fn chunks_unload(
                 }
             }
 
+            caches.invalidate(evt.0);
+            dirty.0.remove(&evt.0);
             count += 1;
         } else {
             let local = evt.0;
@@ -218,8 +221,6 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
         chunk,
         kind,
         light,
-        occlusion,
-        soft_light,
         vertex,
     } = asset;
 
@@ -228,8 +229,6 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
             kind: ChunkKind(kind),
             light: ChunkLight(light),
             local: ChunkLocal(chunk),
-            occlusion: ChunkFacesOcclusion(occlusion),
-            soft_light: ChunkFacesSoftLight(soft_light),
             vertex: ChunkVertex(vertex),
         })
         .id()
@@ -237,35 +236,17 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
 
 fn chunks_save(
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
-    q_chunks: Query<
-        (
-            &ChunkLocal,
-            &ChunkKind,
-            &ChunkLight,
-            &ChunkFacesOcclusion,
-            &ChunkFacesSoftLight,
-            &ChunkVertex,
-        ),
-        Changed<ChunkVertex>,
-    >,
+    q_chunks: Query<(&ChunkLocal, &ChunkKind, &ChunkLight, &ChunkVertex), Changed<ChunkVertex>>,
 ) {
     let mut saved = 0;
-    for (
-        ChunkLocal(chunk),
-        ChunkKind(kind),
-        ChunkLight(light),
-        ChunkFacesOcclusion(faces_occlusion),
-        ChunkFacesSoftLight(soft_light),
-        ChunkVertex(vertices),
-    ) in q_chunks.iter()
+    for (ChunkLocal(chunk), ChunkKind(kind), ChunkLight(light), ChunkVertex(vertices)) in
+        q_chunks.iter()
     {
         // TODO: We could serialize everything before sending over to the task
         let asset = ChunkAsset {
             chunk: *chunk,
             kind: kind.clone(),
             light: light.clone(),
-            occlusion: faces_occlusion.clone(),
-            soft_light: soft_light.clone(),
             vertex: vertices.clone(),
         };
         let _task = archive_server.save_chunk(*chunk, &asset);

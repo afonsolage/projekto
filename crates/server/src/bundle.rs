@@ -18,12 +18,6 @@ pub struct ChunkLight(pub ChunkStorage<voxel::Light>);
 pub struct ChunkLocal(pub Chunk);
 
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
-pub struct ChunkFacesOcclusion(pub ChunkStorage<voxel::FacesOcclusion>);
-
-#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
-pub struct ChunkFacesSoftLight(pub ChunkStorage<voxel::FacesSoftLight>);
-
-#[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 pub struct ChunkVertex(pub Vec<voxel::Vertex>);
 
 #[derive(Bundle, Default)]
@@ -31,8 +25,6 @@ pub struct ChunkBundle {
     pub kind: ChunkKind,
     pub light: ChunkLight,
     pub local: ChunkLocal,
-    pub occlusion: ChunkFacesOcclusion,
-    pub soft_light: ChunkFacesSoftLight,
     pub vertex: ChunkVertex,
 }
 
@@ -69,10 +61,6 @@ impl<'w, 's, Q: QueryData + 'static, F: QueryFilter + 'static> ChunkQuery<'w, 's
                 .get_mut(entity)
                 .expect("All entities inside the map must exists"),
         )
-    }
-
-    pub fn chunk_exists(&self, chunk: Chunk) -> bool {
-        self.map.0.contains_key(&chunk)
     }
 
     // fn get_chunk_component_mut<T: Component>(&mut self, chunk: IVec3) -> Option<Mut<'_, T>> {
