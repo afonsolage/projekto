@@ -437,11 +437,17 @@ mod tests {
     use super::*;
 
     fn temp_file() -> String {
-        format!(
+        let path = format!(
             "{}/projekto/{:#08}.tmp",
             std::env::temp_dir().display(),
             rand::random_range(0..u32::MAX)
-        )
+        );
+
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(parent).expect("unable to create archive test directory");
+        }
+
+        path
     }
 
     #[test]
