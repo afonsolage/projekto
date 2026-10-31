@@ -28,11 +28,12 @@ If you need a detailed view, check [ARCHITECTURE](ARCHITECTURE.md)
 
 # AI Usage
 
-The code on this project is mainly written by hand (or keyboard) without the direct use of AI, although AI can be used to review architecture concepts, 
-knowledge checking or to generate documentation (like ARCHITECTURE.md). Whenever I'm using AI for generate something I'll state about it.
+AI may be used to write code on this project, but every AI-written change must be reviewed and
+refined by a human before it lands. The author must understand every line and be able to explain
+its design rationale and tradeoffs. AI use is always disclosed.
 
-I don't know if not using AI for coding is a good or a bad thing, but since this is a hobby project and I like programming, doing so would kill my enjoyment,
-so while I'm not against the use of IA for programming, I'll avoid using AI for generating code on this project.
+AI is also used to review architecture concepts, do knowledge checking and generate documentation
+(like ARCHITECTURE.md). The full policy lives in [AGENTS.md](AGENTS.md).
 
 # License
 [MIT](https://choosealicense.com/licenses/mit/)
