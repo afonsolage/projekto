@@ -43,6 +43,10 @@ const SECTOR_INDEX_SIZE: usize = 2 * 2; // 2 bytes, one for offset and another f
 /// Size, in bytes, of header section of the archive.
 const HEADER_SIZE: usize = SECTOR_INDEX_SIZE * Region::BUFFER_SIZE;
 
+const MAGIC_SIZE: usize = 8;
+/// Magic prefix written at the start of every asset; its trailing bytes encode the format version.
+const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x32, 0x34, 0x45, 0x00, 0x01];
+
 /// Errors which can happens while using the archive crate.
 /// Check variants for description.
 #[derive(Debug, Error)]
@@ -62,6 +66,9 @@ pub enum ArchiveError {
     /// Invalid number of bytes in the archive header file. Usually means the file is corrupted.
     #[error("Invalid header size: {0}")]
     HeaderInvalid(usize),
+    /// Unsupported archive version.
+    #[error("Unsupported archive version.")]
+    UnsupportedVersion,
     /// Raised when unable to write chunk into disk. Usually means some internal logic error.
     #[error("Failed to write: {0}")]
     Write(String),
@@ -109,7 +116,7 @@ impl SectorIndex {
     /// Calculates the number of sectors needed to fit the given number of bytes.
     #[inline]
     fn sectors_count(bytes: usize) -> u16 {
-        ((bytes + SECTOR_SIZE + 1) / SECTOR_SIZE) as u16
+        bytes.div_ceil(SECTOR_SIZE).max(1) as u16
     }
 
     /// Creates a `SectorIndex` for the given seek position. This function will
@@ -317,17 +324,20 @@ where
             return Ok(None);
         }
 
-        self.read_buffer.resize(index.bytes_count(), 0);
-
         self.file_handler
             .seek(SeekFrom::Start(index.seek_offset()))
             .await?;
 
+        self.read_buffer.resize(index.bytes_count(), 0);
         self.file_handler.read_exact(&mut self.read_buffer).await?;
+
+        if !self.read_buffer.starts_with(&VERSION_MAGIC) {
+            return Err(ArchiveError::UnsupportedVersion);
+        }
 
         // TODO: It is possible to avoid allocating a buffer, but both lz4_flex and bincode aren't
         // compatible with async.
-        let mut frame = lz4_flex::frame::FrameDecoder::new(&*self.read_buffer);
+        let mut frame = lz4_flex::frame::FrameDecoder::new(&self.read_buffer[MAGIC_SIZE..]);
         let value: T =
             bincode::serde::decode_from_std_read(&mut frame, bincode::config::standard())?;
 
@@ -346,7 +356,7 @@ where
         mut data: Vec<u8>,
     ) -> Result<(), ArchiveError> {
         let index = self.header.get_index(chunk);
-        let needed_sectors = SectorIndex::sectors_count(data.len());
+        let needed_sectors = SectorIndex::sectors_count(data.len() + MAGIC_SIZE);
 
         // Check sector count
         let index = if index.is_empty() || needed_sectors > index.sectors {
@@ -361,14 +371,17 @@ where
             )));
         }
 
-        // Resized the compressed buffer to match the sector size, filling with 0.
+        // Resize the compressed buffer so the magic plus data fills the allocated sectors.
         let new_len = SectorIndex::sector_to_bytes(needed_sectors);
-        data.resize(new_len, 0);
+        data.resize(new_len - MAGIC_SIZE, 0);
 
         self.header.set_index(chunk, index);
         self.file_handler
             .seek(SeekFrom::Start(index.seek_offset()))
             .await?;
+
+        self.file_handler.write_all(&VERSION_MAGIC).await?;
+
         self.file_handler.write_all(&data).await?;
         self.file_handler.flush().await?;
 
@@ -659,6 +672,38 @@ mod tests {
     }
 
     #[test]
+    fn archive_rejects_unknown_magic() {
+        // Arrange
+        let temp_file = temp_file();
+        let mut archive = block_on(Archive::<u16>::new(&temp_file)).unwrap();
+        let chunk = RegionChunk::new(2, 3);
+        let data = Archive::compress(&123u16).unwrap();
+        block_on(archive.write(chunk, data)).unwrap();
+
+        // Act: overwrite the magic of the stored asset.
+        let index = archive.header.get_index(chunk);
+        block_on(async {
+            use futures_lite::{AsyncSeekExt, AsyncWriteExt};
+
+            archive
+                .file_handler
+                .seek(std::io::SeekFrom::Start(index.seek_offset()))
+                .await
+                .unwrap();
+            archive
+                .file_handler
+                .write_all(&[0u8; MAGIC_SIZE])
+                .await
+                .unwrap();
+            archive.file_handler.flush().await.unwrap();
+        });
+
+        // Assert
+        let error = block_on(archive.read(chunk)).unwrap_err();
+        assert!(matches!(error, ArchiveError::UnsupportedVersion));
+    }
+
+    #[test]
     fn archive_write_same_sector_count() {
         // Arrange
         let temp_file = temp_file();
@@ -709,7 +754,7 @@ mod tests {
         let mut rnd = StdRng::seed_from_u64(seed);
         let mut chunk = ChunkStorage::<u128>::default();
         chunk::voxels().for_each(|voxel| {
-            chunk.set(voxel, rnd.random());
+            chunk.set(voxel, (rnd.random::<u8>() % 255) as u128);
         });
 
         chunk
