@@ -5,7 +5,7 @@ use projekto_core::{
 };
 
 use crate::{
-    DerivedCaches, DirtyChunks, WorldSet,
+    DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
     bundle::{ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery, ChunkVertex},
     debug, light, meshing,
 };
@@ -26,18 +26,25 @@ impl Plugin for MeshingPlugin {
 }
 
 fn mark_dirty_chunks(
-    q_changed_chunks: Query<&ChunkLocal, Or<(Changed<ChunkKind>, Changed<ChunkLight>)>>,
+    q_kind_changed: Query<&ChunkLocal, Changed<ChunkKind>>,
+    q_light_changed: Query<&ChunkLocal, Changed<ChunkLight>>,
     mut dirty: ResMut<DirtyChunks>,
     mut caches: ResMut<DerivedCaches>,
 ) {
     let mut count = 0;
 
-    q_changed_chunks.iter().for_each(|local| {
-        for chunk in std::iter::once(local.0)
-            .chain(chunk::SIDES.iter().map(|side| local.0.neighbor(side.dir())))
-        {
+    q_kind_changed.iter().for_each(|local| {
+        for chunk in affected_chunks(local.0) {
             dirty.0.insert(chunk);
             caches.invalidate(chunk);
+            count += 1;
+        }
+    });
+
+    q_light_changed.iter().for_each(|local| {
+        for chunk in affected_chunks(local.0) {
+            dirty.0.insert(chunk);
+            caches.invalidate_light(chunk);
             count += 1;
         }
     });
@@ -208,6 +215,94 @@ mod tests {
             caches.soft_light.stats().misses,
             initial_misses + 1,
             "invalidated soft light must be recomputed"
+        );
+    }
+
+    #[test]
+    fn kind_change_invalidates_diagonal_neighbor_cache() {
+        let (mut app, entity_a, _chunk_a) = app_with_chunk();
+        let chunk_b = Chunk::new(1, 1);
+
+        let entity_b = app
+            .world_mut()
+            .spawn(ChunkBundle {
+                kind: ChunkKind(ChunkStorage::default()),
+                light: ChunkLight(ChunkStorage::default()),
+                local: ChunkLocal(chunk_b),
+                vertex: ChunkVertex::default(),
+            })
+            .id();
+
+        app.world_mut()
+            .resource_mut::<ChunkMap>()
+            .0
+            .insert(chunk_b, entity_b);
+
+        app.update();
+
+        let initial_misses = app
+            .world()
+            .resource::<DerivedCaches>()
+            .soft_light
+            .stats()
+            .misses;
+        assert_eq!(initial_misses, 2, "both chunks should be cached");
+
+        app.world_mut()
+            .get_mut::<ChunkKind>(entity_a)
+            .expect("chunk kind must exist")
+            .0
+            .set(ChunkVoxel::new(1, 0, 0), voxel::Kind::id(1));
+
+        app.update();
+
+        let caches = app.world().resource::<DerivedCaches>();
+        assert!(
+            caches.soft_light.contains(chunk_b),
+            "diagonal neighbor should be recomputed and cached"
+        );
+        assert_eq!(
+            caches.soft_light.stats().misses,
+            initial_misses + 2,
+            "the changed chunk and its diagonal neighbor must both be recomputed"
+        );
+    }
+
+    #[test]
+    fn light_change_reuses_cached_occlusion() {
+        let (mut app, entity, _chunk) = app_with_chunk();
+        app.update();
+
+        let initial_occlusion = app.world().resource::<DerivedCaches>().occlusion.stats();
+        let initial_soft_light = app.world().resource::<DerivedCaches>().soft_light.stats();
+
+        app.world_mut()
+            .get_mut::<ChunkLight>(entity)
+            .expect("chunk light must exist")
+            .0
+            .set_type(
+                ChunkVoxel::new(1, 0, 0),
+                voxel::LightTy::Natural,
+                voxel::Light::MAX_NATURAL_INTENSITY,
+            );
+
+        app.update();
+
+        let caches = app.world().resource::<DerivedCaches>();
+        assert_eq!(
+            caches.occlusion.stats().misses,
+            initial_occlusion.misses,
+            "occlusion does not depend on light"
+        );
+        assert_eq!(
+            caches.occlusion.stats().hits,
+            initial_occlusion.hits + 1,
+            "occlusion should be served from the cache"
+        );
+        assert_eq!(
+            caches.soft_light.stats().misses,
+            initial_soft_light.misses + 1,
+            "soft light must be recomputed after a light change"
         );
     }
 

@@ -2,7 +2,8 @@ use bevy::{platform::collections::HashSet, prelude::*};
 use projekto_core::{chunk::ChunkStorageCache, coords::Chunk, voxel};
 
 /// Number of derived chunk layers kept by the server's LRU caches.
-pub const DEFAULT_DERIVED_CACHE_CAPACITY: usize = 32;
+pub const DEFAULT_DERIVED_CACHE_CAPACITY: usize =
+    projekto_core::chunk::DEFAULT_CHUNK_STORAGE_CACHE_CAPACITY;
 
 /// Non-persistent derived data caches.
 ///
@@ -28,6 +29,21 @@ impl DerivedCaches {
         let _ = self.occlusion.invalidate(chunk);
         let _ = self.soft_light.invalidate(chunk);
     }
+
+    /// Invalidates only the light-dependent layers for `chunk`.
+    ///
+    /// Occlusion depends on `Kind`, so it survives a light-only update.
+    pub fn invalidate_light(&mut self, chunk: Chunk) {
+        let _ = self.soft_light.invalidate(chunk);
+    }
+}
+
+/// Returns `chunk` and its eight surrounding chunks.
+///
+/// Soft light samples diagonal chunks at voxel corners, so a change in any of the eight
+/// neighbors can invalidate the center chunk's derived data.
+pub fn affected_chunks(chunk: Chunk) -> impl Iterator<Item = Chunk> {
+    (-1..=1).flat_map(move |dx| (-1..=1).map(move |dz| Chunk::new(chunk.x + dx, chunk.z + dz)))
 }
 
 impl Default for DerivedCaches {

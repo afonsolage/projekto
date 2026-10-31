@@ -3,7 +3,7 @@ use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask};
 use projekto_core::coords::Chunk;
 
 use crate::{
-    DerivedCaches, DirtyChunks, WorldSet,
+    DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
     asset::ChunkAsset,
     bundle::{ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkVertex},
     genesis::{ChunkCreation, GenesisServer, GenesisTask},
@@ -83,6 +83,12 @@ fn chunks_unload(
 
             caches.invalidate(evt.0);
             dirty.0.remove(&evt.0);
+
+            for neighbor in affected_chunks(evt.0).filter(|&chunk| chunk != evt.0) {
+                caches.invalidate(neighbor);
+                dirty.0.insert(neighbor);
+            }
+
             count += 1;
         } else {
             let local = evt.0;

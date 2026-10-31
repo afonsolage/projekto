@@ -712,6 +712,38 @@ mod tests {
     }
 
     #[test]
+    fn archive_rejects_v1_magic() {
+        // Arrange
+        let temp_file = temp_file();
+        let mut archive = block_on(Archive::<u16>::new(&temp_file)).unwrap();
+        let chunk = RegionChunk::new(2, 3);
+        let data = Archive::compress(&123u16).unwrap();
+        block_on(archive.write(chunk, data)).unwrap();
+
+        // Act: overwrite the magic with the previous (v1) version.
+        let index = archive.header.get_index(chunk);
+        block_on(async {
+            use futures_lite::{AsyncSeekExt, AsyncWriteExt};
+
+            archive
+                .file_handler
+                .seek(std::io::SeekFrom::Start(index.seek_offset()))
+                .await
+                .unwrap();
+            archive
+                .file_handler
+                .write_all(&[0x01, 0x12, 0x23, 0x32, 0x34, 0x45, 0x00, 0x01])
+                .await
+                .unwrap();
+            archive.file_handler.flush().await.unwrap();
+        });
+
+        // Assert
+        let error = block_on(archive.read(chunk)).unwrap_err();
+        assert!(matches!(error, ArchiveError::UnsupportedVersion));
+    }
+
+    #[test]
     fn archive_write_same_sector_count() {
         // Arrange
         let temp_file = temp_file();
