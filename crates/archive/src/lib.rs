@@ -47,7 +47,7 @@ const MAGIC_SIZE: usize = 8;
 /// Magic prefix written at the start of every asset; its trailing bytes encode the format version.
 ///
 /// Version 2 removed the derived occlusion and soft-light layers from `ChunkAsset`.
-const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x32, 0x34, 0x45, 0x00, 0x02];
+const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x02];
 
 /// Errors which can happens while using the archive crate.
 /// Check variants for description.
