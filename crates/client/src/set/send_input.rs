@@ -2,12 +2,20 @@ use bevy::prelude::*;
 
 use crate::{ClientSet, net::ServerConnection};
 
+/// Chunks around the player are loaded in a square of this radius.
+///
+/// The server caps requests at 32. `PROJEKTO_VIEW_RADIUS` can temporarily lower the value for
+/// testing without changing the default view distance.
+const DEFAULT_LANDSCAPE_RADIUS: u8 = 32;
+const MAX_LANDSCAPE_RADIUS: u8 = 32;
+const RADIUS_ENV: &str = "PROJEKTO_VIEW_RADIUS";
+
 pub(crate) struct SendInputPlugin;
 
 impl Plugin for SendInputPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PlayerLandscape {
-            radius: 32,
+            radius: radius_from_env(std::env::var(RADIUS_ENV).ok().as_deref()),
             ..Default::default()
         })
         .add_systems(
@@ -19,6 +27,13 @@ impl Plugin for SendInputPlugin {
                 .in_set(ClientSet::SendInput),
         );
     }
+}
+
+fn radius_from_env(value: Option<&str>) -> u8 {
+    value
+        .and_then(|value| value.parse::<u8>().ok())
+        .map(|radius| radius.clamp(1, MAX_LANDSCAPE_RADIUS))
+        .unwrap_or(DEFAULT_LANDSCAPE_RADIUS)
 }
 
 #[derive(Resource, Default, Debug, Clone, Copy)]
@@ -39,4 +54,23 @@ fn send_welcome_message(server: Res<ServerConnection>, landscape: Res<PlayerLand
     let _ = server
         .channel()
         .send(projekto_messages::LandscapeUpdate { center, radius });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn radius_defaults_to_32() {
+        assert_eq!(radius_from_env(None), 32);
+        assert_eq!(radius_from_env(Some("not-a-number")), 32);
+    }
+
+    #[test]
+    fn radius_is_clamped_to_supported_bounds() {
+        assert_eq!(radius_from_env(Some("0")), 1);
+        assert_eq!(radius_from_env(Some("16")), 16);
+        assert_eq!(radius_from_env(Some("32")), 32);
+        assert_eq!(radius_from_env(Some("255")), MAX_LANDSCAPE_RADIUS);
+    }
 }

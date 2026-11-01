@@ -1,16 +1,31 @@
-use bevy::{platform::collections::HashSet, prelude::*};
-use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask};
+use bevy::{
+    platform::collections::HashSet,
+    prelude::*,
+    tasks::{Task, block_on},
+};
+use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask, MaintenanceResult};
 use projekto_core::coords::Chunk;
 
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
     asset::ChunkAsset,
-    bundle::{ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkVertex},
+    bundle::{
+        CachedMesh, ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery,
+        ChunkVertex,
+    },
     genesis::{ChunkCreation, GenesisServer, GenesisTask},
     net::{ClientSync, Clients},
 };
 
 use super::Landscape;
+
+/// Chunks whose latest vertices still need to be persisted.
+#[derive(Resource, Default)]
+pub struct PendingSaves(HashSet<Chunk>);
+
+const SAVE_INTERVAL_SECS: f32 = 0.5;
+const SAVE_BATCH_SIZE: usize = 32;
+const MAINTENANCE_INTERVAL_SECS: f32 = 2.0;
 
 pub struct ChunkManagementPlugin;
 
@@ -19,6 +34,7 @@ impl Plugin for ChunkManagementPlugin {
         app.init_resource::<ChunkMap>()
             .init_resource::<DerivedCaches>()
             .init_resource::<DirtyChunks>()
+            .init_resource::<PendingSaves>()
             .init_resource::<Clients>()
             .init_resource::<ClientSync>()
             .add_message::<ChunkUnload>()
@@ -30,7 +46,9 @@ impl Plugin for ChunkManagementPlugin {
                 (
                     chunks_unload.run_if(on_message::<ChunkUnload>),
                     chunks_load,
+                    queue_chunks_to_save,
                     chunks_save,
+                    archive_maintenance,
                 )
                     .chain()
                     .in_set(WorldSet::ChunkManagement),
@@ -52,11 +70,59 @@ fn init_servers(mut commands: Commands) {
     commands.insert_resource(GenesisServer::new(1));
 }
 
+/// Periodically flushes the archive headers.
+///
+/// `Archive::write` only updates the in-memory header; without this, saved chunks are never
+/// indexed and every run regenerates the whole world.
+fn archive_maintenance(
+    mut archive: ResMut<ArchiveServer<ChunkAsset>>,
+    pending: Res<PendingSaves>,
+    time: Res<Time>,
+    mut timer: Local<Option<Timer>>,
+    mut task: Local<Option<Task<MaintenanceResult>>>,
+    mut was_empty: Local<bool>,
+    mut force_flush: Local<bool>,
+) {
+    if task.as_ref().is_some_and(Task::is_finished)
+        && let Some(task) = task.take()
+    {
+        for (region, error) in block_on(task) {
+            if let Some(error) = error {
+                error!("Archive maintenance failed for {region:?}: {error}");
+            }
+        }
+    }
+
+    let pending_empty = pending.0.is_empty();
+
+    if !*was_empty && pending_empty {
+        // The save burst finished: flush a header that includes every queued write.
+        *force_flush = true;
+    }
+    *was_empty = pending_empty;
+
+    if task.is_some() {
+        return;
+    }
+
+    let timer = timer.get_or_insert_with(|| {
+        Timer::from_seconds(MAINTENANCE_INTERVAL_SECS, TimerMode::Repeating)
+    });
+    let timer_due = timer.tick(time.delta()).just_finished();
+
+    if *force_flush || timer_due {
+        *force_flush = false;
+        *task = Some(archive.do_maintenance_stuff());
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn chunks_unload(
     mut commands: Commands,
     mut chunk_map: ResMut<ChunkMap>,
     mut caches: ResMut<DerivedCaches>,
     mut dirty: ResMut<DirtyChunks>,
+    mut pending_saves: ResMut<PendingSaves>,
     clients: Res<Clients>,
     mut sync: ResMut<ClientSync>,
     mut reader: MessageReader<ChunkUnload>,
@@ -83,6 +149,7 @@ fn chunks_unload(
 
             caches.invalidate(evt.0);
             dirty.0.remove(&evt.0);
+            pending_saves.0.remove(&evt.0);
 
             for neighbor in affected_chunks(evt.0).filter(|&chunk| chunk != evt.0) {
                 caches.invalidate(neighbor);
@@ -237,26 +304,67 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
             local: ChunkLocal(chunk),
             vertex: ChunkVertex(vertex),
         })
+        .insert(CachedMesh)
         .id()
 }
 
+fn queue_chunks_to_save(
+    q_chunks: Query<(&ChunkLocal, Ref<ChunkVertex>, Option<&CachedMesh>), Changed<ChunkVertex>>,
+    mut pending: ResMut<PendingSaves>,
+) {
+    for (ChunkLocal(chunk), vertex, cached) in &q_chunks {
+        // The archive already holds this mesh; only save it if it is rebuilt.
+        if vertex.is_added() && cached.is_some() {
+            continue;
+        }
+
+        pending.0.insert(*chunk);
+    }
+}
+
+/// Persists at most [`SAVE_BATCH_SIZE`] chunks every [`SAVE_INTERVAL_SECS`] seconds.
+///
+/// Initial meshing changes thousands of chunks; saving them immediately competes with meshing
+/// for the ECS thread and the archive workers. Deferring keeps the render path responsive while
+/// the archive catches up in the background.
 fn chunks_save(
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
-    q_chunks: Query<(&ChunkLocal, &ChunkKind, &ChunkLight, &ChunkVertex), Changed<ChunkVertex>>,
+    mut pending: ResMut<PendingSaves>,
+    chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex)>,
+    time: Res<Time>,
+    mut timer: Local<Option<Timer>>,
 ) {
+    if pending.0.is_empty() {
+        return;
+    }
+
+    let timer =
+        timer.get_or_insert_with(|| Timer::from_seconds(SAVE_INTERVAL_SECS, TimerMode::Repeating));
+
+    if !timer.tick(time.delta()).just_finished() {
+        return;
+    }
+
     let mut saved = 0;
-    for (ChunkLocal(chunk), ChunkKind(kind), ChunkLight(light), ChunkVertex(vertices)) in
-        q_chunks.iter()
-    {
-        // TODO: We could serialize everything before sending over to the task
-        let asset = ChunkAsset {
-            chunk: *chunk,
-            kind: kind.clone(),
-            light: light.clone(),
-            vertex: vertices.clone(),
-        };
-        let _task = archive_server.save_chunk(*chunk, &asset);
-        saved += 1;
+    let mut handled = Vec::with_capacity(SAVE_BATCH_SIZE);
+
+    for chunk in pending.0.iter().take(SAVE_BATCH_SIZE) {
+        if let Some((kind, light, vertex)) = chunks.get_chunk(*chunk) {
+            let asset = ChunkAsset {
+                chunk: *chunk,
+                kind: kind.0.clone(),
+                light: light.0.clone(),
+                vertex: vertex.0.clone(),
+            };
+            let _task = archive_server.save_chunk(*chunk, asset);
+            saved += 1;
+        }
+
+        handled.push(*chunk);
+    }
+
+    for chunk in handled {
+        pending.0.remove(&chunk);
     }
 
     if saved > 0 {

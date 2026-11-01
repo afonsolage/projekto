@@ -1,0 +1,11 @@
+[package]
+name = "projekto_diagnostics"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy.workspace = true
+memory-stats.workspace = true
+
+[lints]
+workspace = true

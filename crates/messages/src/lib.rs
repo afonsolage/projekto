@@ -19,4 +19,8 @@ pub enum ServerMessage {
     ChunkUnload {
         pub chunk: Chunk,
     },
+    DebugMemory {
+        pub rss_bytes: u64,
+        pub peak_rss_bytes: u64,
+    },
 }

@@ -1,14 +1,17 @@
 use bevy::prelude::*;
 use projekto_core::{
     chunk::{self, ChunkStorage},
+    coords::Chunk,
     voxel,
 };
 
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
-    bundle::{ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery, ChunkVertex},
+    bundle::{CachedMesh, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery, ChunkVertex},
     debug, light, meshing,
 };
+
+use super::Landscape;
 
 pub struct MeshingPlugin;
 
@@ -26,14 +29,23 @@ impl Plugin for MeshingPlugin {
 }
 
 fn mark_dirty_chunks(
-    q_kind_changed: Query<&ChunkLocal, Changed<ChunkKind>>,
-    q_light_changed: Query<&ChunkLocal, Changed<ChunkLight>>,
+    q_kind_changed: Query<(&ChunkLocal, Ref<ChunkKind>, Option<&CachedMesh>), Changed<ChunkKind>>,
+    q_light_changed: Query<
+        (&ChunkLocal, Ref<ChunkLight>, Option<&CachedMesh>),
+        Changed<ChunkLight>,
+    >,
     mut dirty: ResMut<DirtyChunks>,
     mut caches: ResMut<DerivedCaches>,
 ) {
     let mut count = 0;
 
-    q_kind_changed.iter().for_each(|local| {
+    q_kind_changed.iter().for_each(|(local, kind, cached)| {
+        // Chunks loaded from the archive already carry a valid mesh. Their neighbors were
+        // saved with the same world, so there is nothing to rebuild until something changes.
+        if kind.is_added() && cached.is_some() {
+            return;
+        }
+
         for chunk in affected_chunks(local.0) {
             dirty.0.insert(chunk);
             caches.invalidate(chunk);
@@ -41,7 +53,11 @@ fn mark_dirty_chunks(
         }
     });
 
-    q_light_changed.iter().for_each(|local| {
+    q_light_changed.iter().for_each(|(local, light, cached)| {
+        if light.is_added() && cached.is_some() {
+            return;
+        }
+
         for chunk in affected_chunks(local.0) {
             dirty.0.insert(chunk);
             caches.invalidate_light(chunk);
@@ -54,27 +70,47 @@ fn mark_dirty_chunks(
     }
 }
 
+fn neighbors_ready(chunk: Chunk, chunk_map: &ChunkMap, landscape: Option<&Landscape>) -> bool {
+    affected_chunks(chunk).all(|neighbor| {
+        neighbor == chunk
+            || landscape.is_none_or(|landscape| !landscape.contains(neighbor))
+            || chunk_map.0.contains_key(&neighbor)
+    })
+}
+
 fn generate_vertices(
     mut dirty: ResMut<DirtyChunks>,
     mut caches: ResMut<DerivedCaches>,
     chunk_map: Res<ChunkMap>,
+    landscape: Option<Res<Landscape>>,
     q_chunks: ChunkQuery<(&ChunkKind, &ChunkLight)>,
     mut q_vertex: Query<&mut ChunkVertex>,
     mut metrics: ResMut<debug::Metrics>,
 ) {
     let chunks = std::mem::take(&mut dirty.0);
     let mut count = 0;
+    let mut deferred = 0;
     let mut map = [0; voxel::SIDE_COUNT];
 
     let mut metric_data = debug::MetricData::new("generate_vertices");
 
     for chunk in chunks {
+        // Meshing before the chunk's halo is loaded produces geometry that has to be rebuilt
+        // when the neighbors arrive. Waiting for the halo removes those redundant passes.
+        if !neighbors_ready(chunk, &chunk_map, landscape.as_deref()) {
+            dirty.0.insert(chunk);
+            deferred += 1;
+            continue;
+        }
+
         let Some((kind, _light)) = q_chunks.get_chunk(chunk) else {
             continue;
         };
         let Some(&entity) = chunk_map.0.get(&chunk) else {
             continue;
         };
+
+        metric_data.begin();
 
         let kind = &kind.0;
         let neighborhood = chunk::SIDES.map(|side| {
@@ -94,23 +130,21 @@ fn generate_vertices(
             occlusion
         });
 
-        let soft_light = soft_light_cache.get_or_insert_with(chunk, || {
-            let mut soft_light = ChunkStorage::default();
-            light::smooth_lighting(
-                chunk,
-                occlusion,
-                &mut soft_light,
-                |chunk| q_chunks.get_chunk(chunk).map(|(kind, _)| &kind.0),
-                |chunk| q_chunks.get_chunk(chunk).map(|(_, light)| &light.0),
-            );
-            soft_light
-        });
-
-        metric_data.begin();
-
         let mut vertex = if occlusion.all(|occ| occ.is_fully_occluded()) {
             Vec::new()
         } else {
+            let soft_light = soft_light_cache.get_or_insert_with(chunk, || {
+                let mut soft_light = ChunkStorage::default();
+                light::smooth_lighting(
+                    chunk,
+                    occlusion,
+                    &mut soft_light,
+                    |chunk| q_chunks.get_chunk(chunk).map(|(kind, _)| &kind.0),
+                    |chunk| q_chunks.get_chunk(chunk).map(|(_, light)| &light.0),
+                );
+                soft_light
+            });
+
             let faces = meshing::generate_faces(kind, occlusion, soft_light);
             faces.iter().for_each(|face| map[face.side.index()] += 1);
             meshing::generate_vertices(&faces)
@@ -125,8 +159,10 @@ fn generate_vertices(
 
     metrics.add(metric_data);
 
-    if count > 0 {
-        trace!("[generate_vertices] {count} chunks vertices generated. {map:?}");
+    if count > 0 || deferred > 0 {
+        trace!(
+            "[generate_vertices] {count} chunks vertices generated, {deferred} waiting for halo. {map:?}"
+        );
     }
 }
 
@@ -170,6 +206,53 @@ mod tests {
             .insert(chunk, entity);
 
         (app, entity, chunk)
+    }
+
+    fn solid_kind() -> ChunkStorage<voxel::Kind> {
+        let mut kind = ChunkStorage::default();
+        kind.set(ChunkVoxel::new(0, 0, 0), voxel::Kind::id(1));
+        kind.pack();
+        kind
+    }
+
+    #[test]
+    fn cached_mesh_is_not_rebuilt_on_spawn() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .init_resource::<ChunkMap>()
+            .insert_resource(Metrics::new())
+            .add_plugins(MeshingPlugin);
+
+        let chunk = Chunk::new(0, 0);
+        let cached = vec![voxel::Vertex::default()];
+        let entity = app
+            .world_mut()
+            .spawn((
+                ChunkBundle {
+                    kind: ChunkKind(solid_kind()),
+                    light: ChunkLight(ChunkStorage::default()),
+                    local: ChunkLocal(chunk),
+                    vertex: ChunkVertex(cached.clone()),
+                },
+                CachedMesh,
+            ))
+            .id();
+        app.world_mut()
+            .resource_mut::<ChunkMap>()
+            .0
+            .insert(chunk, entity);
+
+        app.update();
+
+        let vertex = app.world().get::<ChunkVertex>(entity).unwrap();
+        assert_eq!(vertex.0, cached, "cached mesh must be reused");
+        assert!(
+            !app.world()
+                .resource::<DerivedCaches>()
+                .occlusion
+                .contains(chunk),
+            "cached chunk must not be meshed"
+        );
     }
 
     #[test]
@@ -226,7 +309,7 @@ mod tests {
         let entity_b = app
             .world_mut()
             .spawn(ChunkBundle {
-                kind: ChunkKind(ChunkStorage::default()),
+                kind: ChunkKind(solid_kind()),
                 light: ChunkLight(ChunkStorage::default()),
                 local: ChunkLocal(chunk_b),
                 vertex: ChunkVertex::default(),
@@ -314,7 +397,7 @@ mod tests {
         let entity_b = app
             .world_mut()
             .spawn(ChunkBundle {
-                kind: ChunkKind(ChunkStorage::default()),
+                kind: ChunkKind(solid_kind()),
                 light: ChunkLight(ChunkStorage::default()),
                 local: ChunkLocal(chunk_b),
                 vertex: ChunkVertex::default(),

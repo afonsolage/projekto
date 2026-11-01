@@ -20,6 +20,13 @@ pub struct ChunkLocal(pub Chunk);
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 pub struct ChunkVertex(pub Vec<voxel::Vertex>);
 
+/// The chunk was loaded with a mesh saved by a previous session.
+///
+/// Its vertices can be used as-is; only real changes (light propagation, editing) should force
+/// a rebuild.
+#[derive(Component)]
+pub struct CachedMesh;
+
 #[derive(Bundle, Default)]
 pub struct ChunkBundle {
     pub kind: ChunkKind,

@@ -51,6 +51,11 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
         self.0.is_default()
     }
 
+    /// Sets every voxel to `value` in bulk.
+    pub fn fill(&mut self, value: T) {
+        self.0.fill(value);
+    }
+
     pub fn pack(&mut self) {
         self.0.pack();
     }

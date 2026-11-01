@@ -1,9 +1,15 @@
 use bevy::{app::AppExit, prelude::*};
 
+#[cfg(debug_assertions)]
+mod memory;
+
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
+        #[cfg(debug_assertions)]
+        app.add_plugins(memory::MemoryOverlayPlugin);
+
         app.add_systems(Startup, setup_hold_est_to_exit)
             // .add_system(slow_down_fps)
             .add_systems(Update, hold_esc_to_exit);
