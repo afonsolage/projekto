@@ -4,9 +4,9 @@ use crate::{ClientSet, net::ServerConnection};
 
 /// Chunks around the player are loaded in a square of this radius.
 ///
-/// The server caps requests at 32. Lowering the default keeps the initial load small while the
-/// `PROJEKTO_VIEW_RADIUS` environment variable still allows a larger view distance.
-const DEFAULT_LANDSCAPE_RADIUS: u8 = 16;
+/// The server caps requests at 32. `PROJEKTO_VIEW_RADIUS` can temporarily lower the value for
+/// testing without changing the default view distance.
+const DEFAULT_LANDSCAPE_RADIUS: u8 = 32;
 const MAX_LANDSCAPE_RADIUS: u8 = 32;
 const RADIUS_ENV: &str = "PROJEKTO_VIEW_RADIUS";
 
@@ -61,17 +61,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn radius_defaults_to_the_smaller_world() {
-        assert_eq!(radius_from_env(None), DEFAULT_LANDSCAPE_RADIUS);
-        assert_eq!(
-            radius_from_env(Some("not-a-number")),
-            DEFAULT_LANDSCAPE_RADIUS
-        );
+    fn radius_defaults_to_32() {
+        assert_eq!(radius_from_env(None), 32);
+        assert_eq!(radius_from_env(Some("not-a-number")), 32);
     }
 
     #[test]
     fn radius_is_clamped_to_supported_bounds() {
         assert_eq!(radius_from_env(Some("0")), 1);
+        assert_eq!(radius_from_env(Some("16")), 16);
         assert_eq!(radius_from_env(Some("32")), 32);
         assert_eq!(radius_from_env(Some("255")), MAX_LANDSCAPE_RADIUS);
     }
