@@ -80,6 +80,19 @@ open PR until they finish.
   pre-existing on `main` and unrelated to the change, say so explicitly instead of ignoring it.
 - Useful commands: `gh pr checks <number>` and `gh run view <run-id> --log-failed`.
 
+## Build and disk usage
+
+Bevy builds are large. Preserve the existing `target/` directory and avoid unnecessary full
+workspace rebuilds while iterating:
+
+- Prefer targeted checks and tests (`cargo check -p <crate>`, `cargo test -p <crate>`) during
+  development.
+- Do not run `cargo clean`, release builds or `--all-targets` builds unless the task requires
+  them; check `df -h` and `du -sh target` before a costly build.
+- Do not create extra worktrees or isolated `CARGO_TARGET_DIR`s for small changes; they duplicate
+  gigabytes of build artifacts.
+- Run the full `just ci` when preparing the change for review, not repeatedly during iteration.
+
 ## Adversarial review before a PR
 
 Before opening a PR, or asking a human to review it, spawn the `adversarial-review` subagent
