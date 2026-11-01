@@ -25,6 +25,14 @@ pub(crate) struct DebugWorldPlugin;
 
 impl Plugin for DebugWorldPlugin {
     fn build(&self, app: &mut App) {
+        if let Some(mut store) = app.world_mut().get_resource_mut::<GizmoConfigStore>()
+            && let Some((config, _)) = store.get_config_mut::<DefaultGizmoConfigGroup>()
+        {
+            // Draw through terrain so the debug grid and labels stay visible.
+            config.depth_bias = -1.0;
+            config.line.width = 3.0;
+        }
+
         app.add_plugins(MeshPickingPlugin)
             .init_resource::<DebugViewConfig>()
             .init_resource::<HoveredChunk>()
