@@ -17,10 +17,23 @@ impl Plugin for LandscapePlugin {
     }
 }
 
+/// Upper bound for a client-requested landscape radius.
+pub const MAX_LANDSCAPE_RADIUS: u8 = 32;
+
 #[derive(Resource, Default, Debug, Clone, Copy, Reflect)]
 pub struct Landscape {
     pub center: IVec2,
     pub radius: u8,
+}
+
+impl Landscape {
+    pub fn contains(&self, chunk: Chunk) -> bool {
+        let radius = self.radius as i64;
+        let dx = (chunk.x as i64 - self.center.x as i64).abs();
+        let dz = (chunk.z as i64 - self.center.y as i64).abs();
+
+        dx <= radius && dz <= radius
+    }
 }
 
 fn update_landscape(
@@ -36,7 +49,9 @@ fn update_landscape(
             let center = landscape.center;
             let mut chunks = (-radius..=radius)
                 .flat_map(|x| {
-                    (-radius..=radius).map(move |z| Chunk::new(x + center.x, z + center.y))
+                    (-radius..=radius).map(move |z| {
+                        Chunk::new(center.x.saturating_add(x), center.y.saturating_add(z))
+                    })
                 })
                 .collect::<Vec<_>>();
 

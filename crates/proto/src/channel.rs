@@ -4,6 +4,12 @@ use async_channel::{Receiver, Sender};
 
 use super::{BoxedMessage, Message, MessageType};
 
+/// Maximum number of in-flight messages per direction.
+///
+/// A bounded channel gives the network tasks backpressure instead of letting a slow peer grow
+/// an unbounded queue in memory.
+const CHANNEL_CAPACITY: usize = 128;
+
 pub struct ChannelPair<S, R> {
     pub client: Channel<S, R>,
     pub server: Channel<R, S>,
@@ -36,7 +42,7 @@ impl<S, R> Channel<S, R> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ChannelError {
-    #[error("Failed to send message. Channel is closed.")]
+    #[error("Failed to send message. Channel is closed or full.")]
     Send(),
     #[error("Failed to receive message. Channel is empty and closed.")]
     Recv(#[from] async_channel::RecvError),
@@ -44,8 +50,8 @@ pub enum ChannelError {
 
 impl<S: MessageType, R: MessageType> Channel<S, R> {
     pub fn new_pair() -> ChannelPair<S, R> {
-        let (server_sender, server_receiver) = async_channel::unbounded();
-        let (client_sender, client_receiver) = async_channel::unbounded();
+        let (server_sender, server_receiver) = async_channel::bounded(CHANNEL_CAPACITY);
+        let (client_sender, client_receiver) = async_channel::bounded(CHANNEL_CAPACITY);
         ChannelPair {
             client: Channel::<S, R> {
                 sender: server_sender,
@@ -81,9 +87,24 @@ impl<S: MessageType, R: MessageType> Channel<S, R> {
         self.send_boxed(boxed)
     }
 
+    /// Tries to enqueue a message without blocking.
+    ///
+    /// Returns [`ChannelError::Send`] when the bounded channel is full or closed. Callers on the
+    /// ECS thread must treat failure as backpressure and retry later, never block the frame.
+    /// Network tasks use [`send_boxed_async`](Self::send_boxed_async) so they yield instead.
     pub fn send_boxed(&self, boxed: BoxedMessage<S>) -> Result<(), ChannelError> {
         self.sender
             .try_send(boxed)
+            .map_err(|_| ChannelError::Send())
+    }
+
+    pub(crate) async fn send_boxed_async(
+        &self,
+        boxed: BoxedMessage<S>,
+    ) -> Result<(), ChannelError> {
+        self.sender
+            .send(boxed)
+            .await
             .map_err(|_| ChannelError::Send())
     }
 }

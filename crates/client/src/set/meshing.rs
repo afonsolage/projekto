@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
 };
 use projekto_core::voxel;
-use projekto_messages::ChunkVertex;
+use projekto_messages::{ChunkUnload, ChunkVertex};
 use projekto_proto::RegisterMessageHandler;
 
 use crate::{
@@ -16,10 +16,23 @@ pub(crate) struct MeshingPlugin;
 
 impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
-        app.set_message_handler(update_chunk_mesh).add_systems(
-            Update,
-            despawn_chunks_on_server_disconnect.run_if(on_message::<ServerDisconnected>),
-        );
+        app.set_message_handler(update_chunk_mesh)
+            .add_message_handler(remove_chunk_mesh)
+            .add_systems(
+                Update,
+                despawn_chunks_on_server_disconnect.run_if(on_message::<ServerDisconnected>),
+            );
+    }
+}
+
+fn remove_chunk_mesh(
+    In(ChunkUnload { chunk }): In<ChunkUnload>,
+    mut commands: Commands,
+    mut map: ResMut<ChunkMap>,
+) {
+    if let Some(entity) = map.remove(&chunk) {
+        commands.entity(entity).despawn();
+        trace!("[remove_chunk_mesh] chunk {chunk:?} despawned");
     }
 }
 
@@ -104,11 +117,8 @@ fn generate_mesh(vertices: &[voxel::Vertex]) -> Mesh {
 ///
 /// Returns** a list of indices in the CCW order
 pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
-    // Each 4 vertex is a voxel face and each voxel face has 6 indices, so we can multiply the
-    // vertex count by 1.5
-    let index_count = (vertex_count as f32 * 1.5) as usize;
-
-    let mut res = vec![0; index_count];
+    // Each 4 vertices form a voxel face, which needs 6 indices.
+    let mut res = Vec::with_capacity((vertex_count / 4) * 6);
     let mut i = 0u32;
 
     while i < vertex_count as u32 {
@@ -124,4 +134,39 @@ pub fn compute_indices(vertex_count: usize) -> Vec<u32> {
     }
 
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::app::ScheduleRunnerPlugin;
+    use projekto_core::coords::Chunk;
+    use projekto_proto::{ClientId, RunMessageHandlers};
+
+    use super::*;
+
+    #[test]
+    fn compute_indices_does_not_pad() {
+        assert_eq!(compute_indices(8), vec![0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4]);
+    }
+
+    #[test]
+    fn chunk_unload_despawns_entity_and_removes_map_entry() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .init_resource::<ChunkMap>();
+        app.add_message_handler(remove_chunk_mesh);
+
+        let chunk = Chunk::new(1, -2);
+        let entity = app.world_mut().spawn(ChunkLocal(chunk)).id();
+        app.world_mut()
+            .resource_mut::<ChunkMap>()
+            .insert(chunk, entity);
+
+        app.world_mut()
+            .run_handlers::<ChunkUnload>(ClientId::default(), Box::new(ChunkUnload { chunk }));
+        app.update();
+
+        assert!(!app.world().resource::<ChunkMap>().contains_key(&chunk));
+        assert!(app.world().get_entity(entity).is_err());
+    }
 }
