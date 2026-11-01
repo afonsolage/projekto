@@ -53,7 +53,7 @@ enum ArchiveCommand<T> {
     /// Request to save an asset at the given coords.
     Save {
         chunk: RegionChunk,
-        data: Vec<u8>,
+        asset: T,
         sender: Sender<Result<(), ArchiveError>>,
     },
     /// Request to save an archive header into disk.
@@ -73,14 +73,14 @@ impl<T> ArchiveCommand<T> {
     }
 
     /// Create an `ArchiveCommand::Save` and returns a `Receiver` to wait for result.
-    fn save(chunk: RegionChunk, data: Vec<u8>) -> (Receiver<Result<(), ArchiveError>>, Self) {
+    fn save(chunk: RegionChunk, asset: T) -> (Receiver<Result<(), ArchiveError>>, Self) {
         let (sender, receiver) = async_channel::unbounded();
 
         (
             receiver,
             ArchiveCommand::Save {
                 chunk,
-                data,
+                asset,
                 sender,
             },
         )
@@ -127,10 +127,14 @@ where
 
                 ArchiveCommand::Save {
                     chunk,
-                    data,
+                    asset,
                     sender,
                 } => {
-                    let _ = sender.send(archive.write(chunk, data).await).await;
+                    let result = match Archive::<T>::compress(&asset) {
+                        Ok(data) => archive.write(chunk, data).await,
+                        Err(e) => Err(e),
+                    };
+                    let _ = sender.send(result).await;
                 }
                 ArchiveCommand::SaveHeader { sender } => {
                     let _ = sender.send(archive.save_header().await).await;
@@ -219,7 +223,9 @@ where
     }
 
     /// Saves the `Chunk` into the archive.
-    pub fn save_chunk(&mut self, chunk: Chunk, asset: &T) -> Result<ArchiveTask<T>, ArchiveError> {
+    ///
+    /// Serialization and compression run in the region worker, keeping them off the ECS thread.
+    pub fn save_chunk(&mut self, chunk: Chunk, asset: T) -> Result<ArchiveTask<T>, ArchiveError> {
         let region = Region::from_chunk(chunk);
         let region_chunk = RegionChunk::from_chunk(chunk);
 
@@ -228,9 +234,7 @@ where
             .entry(region)
             .or_insert_with(|| Self::new_region_worker(&self.path, region));
 
-        let data = Archive::compress(asset)?;
-
-        let (receiver, cmd) = ArchiveCommand::save(region_chunk, data);
+        let (receiver, cmd) = ArchiveCommand::save(region_chunk, asset);
         if let Err(e) = worker.sender.send_blocking(cmd) {
             return Err(ArchiveError::ChunkSave(format!(
                 "Failed to load save at {chunk}. Error: {e}"
@@ -387,7 +391,7 @@ mod tests {
         let mut server = ArchiveServer::<u128>::new(&temp);
 
         // Act
-        let task = server.save_chunk(chunk, &987654321).unwrap();
+        let task = server.save_chunk(chunk, 987654321).unwrap();
         while task.try_get_result().is_none() {
             std::thread::sleep(std::time::Duration::from_micros(100));
         }

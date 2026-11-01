@@ -117,23 +117,25 @@ pub fn faces_occlusion(
         Chunk::Z_AXIS_SIZE as i32,
     );
 
+    faces_occlusion.fill(voxel::FacesOcclusion::fully_occluded());
+
     for x in 0..Chunk::X_AXIS_SIZE {
         for z in 0..Chunk::Z_AXIS_SIZE {
             for y in 0..Chunk::Y_AXIS_SIZE {
                 let voxel = ChunkVoxel::new(x as u8, y as u8, z as u8);
 
                 if kind.get(voxel).is_none() {
-                    faces_occlusion.set(voxel, voxel::FacesOcclusion::fully_occluded());
-                } else {
-                    let faces =
-                        voxel::SIDES
-                            .iter()
-                            .fold(FacesOcclusion::default(), |mut faces, &side| {
-                                let neighbor = IVec3::from(voxel) + side.dir();
+                    continue;
+                }
 
-                                let neighbor_kind = if let Some(neighbor) =
-                                    ChunkVoxel::try_from(neighbor)
-                                {
+                let faces =
+                    voxel::SIDES
+                        .iter()
+                        .fold(FacesOcclusion::default(), |mut faces, &side| {
+                            let neighbor = IVec3::from(voxel) + side.dir();
+
+                            let neighbor_kind =
+                                if let Some(neighbor) = ChunkVoxel::try_from(neighbor) {
                                     kind.get(neighbor)
                                 } else if let Some(chunk_side) = ChunkSide::from_voxel_side(side)
                                     && let Some(neighbor_kind) = neighboorhood[chunk_side as usize]
@@ -147,12 +149,11 @@ pub fn faces_occlusion(
                                     return faces;
                                 };
 
-                                faces.set(side, !neighbor_kind.is_none());
-                                faces
-                            });
+                            faces.set(side, !neighbor_kind.is_none());
+                            faces
+                        });
 
-                    faces_occlusion.set(voxel, faces);
-                }
+                faces_occlusion.set(voxel, faces);
             }
         }
     }

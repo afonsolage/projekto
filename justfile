@@ -30,5 +30,5 @@ client-win *args:
     cp -u "$(rustc --print sysroot)"/lib/rustlib/{{win_target}}/lib/std-*.dll {{win_dir}}/
     export BEVY_ASSET_ROOT="$(wslpath -w .)"
     export RUST_LOG="${RUST_LOG:-error,projekto=debug,projekto_client=trace}"
-    export WSLENV="RUST_LOG:WGPU_BACKEND:BEVY_ASSET_ROOT"
+    export WSLENV="RUST_LOG:WGPU_BACKEND:BEVY_ASSET_ROOT:PROJEKTO_VIEW_RADIUS"
     exec {{win_dir}}/client.exe

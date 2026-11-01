@@ -86,6 +86,10 @@ where
             .all(|pack| matches!(pack, ChunkColumn::Single(_)))
     }
 
+    pub fn fill(&mut self, value: T) {
+        self.0.fill(ChunkColumn::Single(value));
+    }
+
     pub fn pack(&mut self) {
         self.0.iter_mut().for_each(|p| p.pack());
     }

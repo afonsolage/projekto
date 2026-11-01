@@ -110,15 +110,23 @@ The following plugins are used to organize the server's systems:
     longer needed and notifies clients.
   - [`chunks_load`](./crates/server/src/set/chunk_management.rs#L102): Loads new chunks, dropping
     results that left the landscape while loading.
+  - [`queue_chunks_to_save`](./crates/server/src/set/chunk_management.rs#L310): Collects chunks
+    whose vertices changed since the last save.
+  - [`chunks_save`](./crates/server/src/set/chunk_management.rs#L324): Saves a bounded batch of
+    changed chunks, leaving compression to the archive workers.
+  - [`archive_maintenance`](./crates/server/src/set/chunk_management.rs#L77): Flushes archive
+    headers so saved chunks can be loaded in the next session.
 - **[`PropagationPlugin`](./crates/server/src/set/propagation.rs#L13)**: Propagates light through
   the world.
   - [`propagate_light`](./crates/server/src/set/propagation.rs#L31): Propagates light based on
     `LightUpdate` events.
 - **[`MeshingPlugin`](./crates/server/src/set/meshing.rs#L13)**: Generates the chunk meshes.
-  - [`mark_dirty_chunks`](./crates/server/src/set/meshing.rs#L28): Invalidates the derived caches
-    and queues chunk meshes affected by `Kind` or `Light` changes.
-  - [`generate_vertices`](./crates/server/src/set/meshing.rs#L57): Computes occlusion and soft
-    light on demand, then generates the vertices for the chunk meshes.
+  - [`mark_dirty_chunks`](./crates/server/src/set/meshing.rs#L31): Invalidates the derived caches
+    and queues chunk meshes affected by `Kind` or `Light` changes. Chunks loaded with a saved
+    mesh are skipped until something actually changes.
+  - [`generate_vertices`](./crates/server/src/set/meshing.rs#L81): Computes occlusion and soft
+    light on demand, waits for the chunk's halo before meshing, and generates the vertices for
+    the chunk meshes.
 - **[`SendResponsesPlugin`](./crates/server/src/set/send_responses.rs#L11)**: Sends responses to
   clients.
   - [`notify_chunk_vertex_updated`](./crates/server/src/set/send_responses.rs#L24): Queues chunk
