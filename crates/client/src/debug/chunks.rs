@@ -7,7 +7,6 @@ use std::{
 use bevy::{
     math::Isometry3d,
     picking::events::{PointerOut, PointerOver},
-    platform::collections::HashSet,
     prelude::*,
     render::view::screenshot::{Screenshot, save_to_disk},
 };
@@ -196,7 +195,7 @@ fn draw_grid(
     }
 
     let center = Chunk::from(camera_position);
-    let y = grid_y(&config);
+    let y = grid_y(&config, camera_position);
 
     for dx in -GRID_RADIUS..=GRID_RADIUS {
         for dz in -GRID_RADIUS..=GRID_RADIUS {
@@ -230,38 +229,18 @@ fn draw_grid(
             gizmos.line(b, c, color);
             gizmos.line(c, d, color);
             gizmos.line(d, a, color);
-        }
-    }
 
-    let mut corners = HashSet::new();
-    for dx in -GRID_RADIUS..=GRID_RADIUS {
-        for dz in -GRID_RADIUS..=GRID_RADIUS {
-            if dx.abs() > BOX_RADIUS || dz.abs() > BOX_RADIUS {
-                continue;
+            if dx.abs() <= BOX_RADIUS && dz.abs() <= BOX_RADIUS {
+                let post_color = color.with_alpha(0.35);
+                for (corner_x, corner_z) in [(x0, z0), (x1, z0), (x1, z1), (x0, z1)] {
+                    gizmos.line(
+                        Vec3::new(corner_x, y, corner_z),
+                        Vec3::new(corner_x, y + 4.0, corner_z),
+                        post_color,
+                    );
+                }
             }
-
-            let chunk = Chunk::new(center.x + dx, center.z + dz);
-            if !chunk_map.contains_key(&chunk) {
-                continue;
-            }
-
-            corners.insert((chunk.x, chunk.z));
-            corners.insert((chunk.x + 1, chunk.z));
-            corners.insert((chunk.x, chunk.z + 1));
-            corners.insert((chunk.x + 1, chunk.z + 1));
         }
-    }
-
-    let vertical_color = Color::srgb(0.7, 0.8, 1.0).with_alpha(0.18);
-    let top = Chunk::Y_AXIS_SIZE as f32;
-
-    for (x, z) in corners {
-        let base = Vec3::new(
-            x as f32 * Chunk::X_AXIS_SIZE as f32,
-            0.0,
-            z as f32 * Chunk::Z_AXIS_SIZE as f32,
-        );
-        gizmos.line(base, base + Vec3::Y * top, vertical_color);
     }
 }
 
@@ -294,8 +273,8 @@ fn draw_pins(mut gizmos: Gizmos, config: Res<DebugViewConfig>, pins: Query<&Debu
     }
 }
 
-fn grid_y(config: &DebugViewConfig) -> f32 {
-    config.grid_height
+pub(crate) fn grid_y(config: &DebugViewConfig, camera_position: Vec3) -> f32 {
+    config.grid_height.min(camera_position.y - 16.0)
 }
 
 fn draw_labels(
@@ -314,7 +293,7 @@ fn draw_labels(
     };
 
     let center = Chunk::from(camera_position);
-    let y = config.grid_height + 1.0;
+    let y = grid_y(&config, camera_position) + 1.0;
 
     for dx in -LABEL_RADIUS..=LABEL_RADIUS {
         for dz in -LABEL_RADIUS..=LABEL_RADIUS {
@@ -441,7 +420,8 @@ fn update_debug_overlay(
         .find(|(camera, _)| camera.is_active)
         .and_then(|(camera, transform)| {
             let screen = camera.logical_viewport_size()? / 2.0;
-            chunk_at_screen_position(camera, transform, screen, config.grid_height)
+            let plane_y = grid_y(&config, transform.translation());
+            chunk_at_screen_position(camera, transform, screen, plane_y)
         })
         .map(|chunk| format!("Crosshair chunk: ({}, {})", chunk.x, chunk.z))
         .unwrap_or_else(|| "Crosshair chunk: --".to_string());

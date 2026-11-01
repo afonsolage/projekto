@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{
-    chunks::{ReportRequest, chunk_at_screen_position, spawn_pin},
+    chunks::{ReportRequest, chunk_at_screen_position, grid_y, spawn_pin},
     memory::ServerMemory,
 };
 
@@ -31,6 +31,7 @@ impl Plugin for RemoteDebugPlugin {
             .with_method_main("projekto/memory", memory)
             .with_method_main("projekto/player_landscape", player_landscape)
             .with_method_main("projekto/chunk_at_screen", chunk_at_screen)
+            .with_method_main("projekto/set_camera", set_camera)
             .with_method_main("projekto/report", report);
 
         #[cfg(feature = "ai")]
@@ -63,6 +64,12 @@ struct ScreenChunkParams {
     x: f32,
     y: f32,
     plane_y: Option<f32>,
+}
+
+#[derive(Deserialize)]
+struct CameraParams {
+    position: [f32; 3],
+    target: [f32; 3],
 }
 
 fn parse<T: serde::de::DeserializeOwned>(params: Option<Value>) -> Result<T, BrpError> {
@@ -176,7 +183,9 @@ fn chunk_at_screen(
         });
     };
 
-    let plane_y = params.plane_y.unwrap_or(config.grid_height);
+    let plane_y = params
+        .plane_y
+        .unwrap_or_else(|| grid_y(&config, transform.translation()));
     let Some(chunk) =
         chunk_at_screen_position(camera, transform, Vec2::new(params.x, params.y), plane_y)
     else {
@@ -188,6 +197,27 @@ fn chunk_at_screen(
     };
 
     Ok(json!({ "x": chunk.x, "z": chunk.z, "plane_y": plane_y }))
+}
+
+fn set_camera(
+    In(params): In<Option<Value>>,
+    mut cameras: Query<(&mut Transform, &Camera), With<Camera3d>>,
+) -> BrpResult {
+    let params: CameraParams = parse(params)?;
+
+    for (mut transform, camera) in &mut cameras {
+        if camera.is_active {
+            *transform = Transform::from_translation(Vec3::from(params.position))
+                .looking_at(Vec3::from(params.target), Vec3::Y);
+            return Ok(json!({ "ok": true, "position": params.position, "target": params.target }));
+        }
+    }
+
+    Err(BrpError {
+        code: -32001,
+        message: "no active Camera3d".to_string(),
+        data: None,
+    })
 }
 
 fn report(_: In<Option<Value>>, mut request: ResMut<ReportRequest>) -> BrpResult {

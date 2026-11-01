@@ -16,9 +16,10 @@ The bottom-left overlay shows the hovered chunk, its `ChunkDebug` summary, the c
 the crosshair chunk and the pin count. Chunks without a mesh are drawn in red in the grid and
 labels.
 
-The grid and labels are world-space: F4 draws chunk boundary squares and vertical chunk-column
-edges, F5 draws `(x, z)` labels at chunk centres. The crosshair chunk is the chunk where the
-camera centre ray crosses the configured grid height.
+The grid and labels are world-space: F4 draws chunk boundary squares plus short corner posts
+near the camera, F5 draws `(x, z)` labels at chunk centres. The grid plane follows below the
+camera, so it never floats in the sky. The crosshair chunk is the chunk where the camera centre
+ray crosses that plane.
 
 ## Debug reports
 
@@ -106,6 +107,8 @@ Built-in BRP methods include `world.query`, `world.get_components`, `world.get_r
 - `projekto/player_landscape`
 - `projekto/chunk_at_screen` — `{ "x": f32, "y": f32, "plane_y": f32? }` projects a screen point
   onto the grid plane and returns its chunk
+- `projekto/set_camera` — `{ "position": [f32; 3], "target": [f32; 3] }` moves the active fly-by
+  camera (useful for AI-driven snapshots)
 - `projekto/report` — triggers a debug report and screenshot
 
 BRP can mutate the world. Never enable the feature in a release build or expose it outside
