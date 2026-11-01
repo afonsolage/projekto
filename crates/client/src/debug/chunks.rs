@@ -5,6 +5,7 @@ use std::{
 };
 
 use bevy::{
+    math::Isometry3d,
     picking::events::{PointerOut, PointerOver},
     prelude::*,
     render::view::screenshot::{Screenshot, save_to_disk},
@@ -18,7 +19,6 @@ use crate::{ChunkMap, bundle::ChunkLocal, debug::memory::ServerMemory};
 
 const GRID_RADIUS: i32 = 6;
 const LABEL_RADIUS: i32 = 4;
-const LABEL_POOL_SIZE: usize = ((LABEL_RADIUS * 2 + 1) * (LABEL_RADIUS * 2 + 1)) as usize;
 const OVERLAY_REFRESH_SECS: f32 = 0.25;
 
 pub(crate) struct DebugWorldPlugin;
@@ -31,7 +31,7 @@ impl Plugin for DebugWorldPlugin {
             .init_resource::<ReportRequest>()
             .add_observer(on_pointer_over)
             .add_observer(on_pointer_out)
-            .add_systems(Startup, (spawn_debug_overlay, spawn_label_pool))
+            .add_systems(Startup, spawn_debug_overlay)
             .add_systems(
                 Update,
                 (
@@ -39,9 +39,8 @@ impl Plugin for DebugWorldPlugin {
                     pin_hovered_chunk,
                     request_report,
                     draw_grid,
+                    draw_labels,
                     draw_pins,
-                    update_labels,
-                    update_pin_labels,
                     update_debug_overlay,
                     capture_report,
                 ),
@@ -59,17 +58,8 @@ pub(crate) struct HoveredChunk {
 #[derive(Resource, Default)]
 pub(crate) struct ReportRequest(pub(crate) bool);
 
-#[derive(Resource, Default)]
-struct ChunkLabels(Vec<Entity>);
-
 #[derive(Component)]
 struct DebugOverlay;
-
-#[derive(Component)]
-struct ChunkLabel;
-
-#[derive(Component)]
-struct PinLabel;
 
 fn on_pointer_over(
     over: On<PointerOver>,
@@ -135,25 +125,13 @@ fn pin_hovered_chunk(
 }
 
 pub(crate) fn spawn_pin(commands: &mut Commands, chunk: Chunk, position: Vec3) {
-    let pin = DebugPin {
+    commands.spawn(DebugPin {
         id: chunk_id(chunk.x, chunk.z),
         x: chunk.x,
         z: chunk.z,
         position,
         label: format!("PIN ({}, {})", chunk.x, chunk.z),
-    };
-
-    let label = pin.label.clone();
-
-    commands.spawn((
-        pin,
-        PinLabel,
-        Text2d::new(label),
-        TextFont::from_font_size(14.0),
-        TextColor(Color::srgb(1.0, 0.2, 1.0)),
-        Transform::from_translation(position + Vec3::Y * 2.0),
-        Visibility::Visible,
-    ));
+    });
 }
 
 fn request_report(keys: Res<ButtonInput<KeyCode>>, mut request: ResMut<ReportRequest>) {
@@ -187,7 +165,7 @@ fn draw_grid(
     };
 
     let center = Chunk::from(camera_position);
-    let y = config.grid_height;
+    let y = grid_y(&config, camera_position);
 
     for dx in -GRID_RADIUS..=GRID_RADIUS {
         for dz in -GRID_RADIUS..=GRID_RADIUS {
@@ -243,56 +221,33 @@ fn draw_pins(mut gizmos: Gizmos, config: Res<DebugViewConfig>, pins: Query<&Debu
             pin.position - Vec3::Z * 1.5,
             color,
         );
-    }
-}
 
-fn spawn_label_pool(mut commands: Commands) {
-    let mut labels = Vec::with_capacity(LABEL_POOL_SIZE);
-
-    for _ in 0..LABEL_POOL_SIZE {
-        labels.push(
-            commands
-                .spawn((
-                    ChunkLabel,
-                    Text2d::new(""),
-                    TextFont::from_font_size(12.0),
-                    TextColor(Color::WHITE),
-                    Transform::default(),
-                    Visibility::Hidden,
-                ))
-                .id(),
+        gizmos.text(
+            Isometry3d::from_translation(pin.position + Vec3::Y * 2.0),
+            &pin.label,
+            4.0,
+            Vec2::ZERO,
+            color,
         );
     }
-
-    commands.insert_resource(ChunkLabels(labels));
 }
 
-#[allow(clippy::too_many_arguments)]
-fn update_labels(
-    time: Res<Time>,
+fn grid_y(config: &DebugViewConfig, camera: Vec3) -> f32 {
+    if config.grid_height > 0.0 {
+        config.grid_height
+    } else {
+        camera.y - 8.0
+    }
+}
+
+fn draw_labels(
+    mut gizmos: Gizmos,
     config: Res<DebugViewConfig>,
     chunk_map: Res<ChunkMap>,
     q_debug: Query<&ChunkDebug>,
-    labels: Res<ChunkLabels>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    mut q_labels: Query<
-        (&mut Text2d, &mut Transform, &mut Visibility, &mut TextColor),
-        With<ChunkLabel>,
-    >,
-    mut elapsed: Local<f32>,
 ) {
-    *elapsed += time.delta_secs();
-    if *elapsed < OVERLAY_REFRESH_SECS {
-        return;
-    }
-    *elapsed = 0.0;
-
     if !config.show_labels {
-        for &entity in &labels.0 {
-            if let Ok((_, _, mut visibility, _)) = q_labels.get_mut(entity) {
-                *visibility = Visibility::Hidden;
-            }
-        }
         return;
     }
 
@@ -301,23 +256,12 @@ fn update_labels(
     };
 
     let center = Chunk::from(camera_position);
-    let mut index = 0usize;
+    let y = grid_y(&config, camera_position) + 1.0;
 
     for dx in -LABEL_RADIUS..=LABEL_RADIUS {
         for dz in -LABEL_RADIUS..=LABEL_RADIUS {
-            let Some(&entity) = labels.0.get(index) else {
-                return;
-            };
-            index += 1;
-
-            let Ok((mut text, mut transform, mut visibility, mut color)) = q_labels.get_mut(entity)
-            else {
-                continue;
-            };
-
             let chunk = Chunk::new(center.x + dx, center.z + dz);
             if !chunk_map.contains_key(&chunk) {
-                *visibility = Visibility::Hidden;
                 continue;
             }
 
@@ -326,43 +270,27 @@ fn update_labels(
                 .and_then(|entity| q_debug.get(*entity).ok())
                 .is_some_and(|debug| debug.vertex_count == 0);
 
-            text.0 = format!("({}, {})", chunk.x, chunk.z);
-            *color = if hole {
-                TextColor(Color::srgb(1.0, 0.2, 0.2))
-            } else {
-                TextColor(Color::WHITE)
-            };
-            transform.translation = Vec3::new(
+            let position = Vec3::new(
                 chunk.x as f32 * Chunk::X_AXIS_SIZE as f32 + Chunk::X_AXIS_SIZE as f32 / 2.0,
-                config.grid_height + 4.0,
+                y,
                 chunk.z as f32 * Chunk::Z_AXIS_SIZE as f32 + Chunk::Z_AXIS_SIZE as f32 / 2.0,
             );
+            let direction = (camera_position - position).normalize_or_zero();
+            let rotation = Quat::from_rotation_arc(Vec3::Z, direction);
+            let color = if hole {
+                Color::srgb(1.0, 0.2, 0.2)
+            } else {
+                Color::WHITE
+            };
 
-            let direction = camera_position - transform.translation;
-            transform.rotation = Quat::from_rotation_y(direction.x.atan2(direction.z));
-            *visibility = Visibility::Visible;
+            gizmos.text(
+                Isometry3d::new(position, rotation),
+                &format!("({}, {})", chunk.x, chunk.z),
+                4.0,
+                Vec2::ZERO,
+                color,
+            );
         }
-    }
-}
-
-fn update_pin_labels(
-    config: Res<DebugViewConfig>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    mut pins: Query<(&DebugPin, &mut Transform, &mut Visibility), With<PinLabel>>,
-) {
-    let Some((camera, _)) = active_camera_transform(&cameras) else {
-        return;
-    };
-
-    for (pin, mut transform, mut visibility) in &mut pins {
-        *visibility = if config.show_pins {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-
-        let direction = camera - pin.position;
-        transform.rotation = Quat::from_rotation_y(direction.x.atan2(direction.z));
     }
 }
 
@@ -383,10 +311,12 @@ fn spawn_debug_overlay(mut commands: Commands) {
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_debug_overlay(
     time: Res<Time>,
     config: Res<DebugViewConfig>,
     hovered: Res<HoveredChunk>,
+    chunk_map: Res<ChunkMap>,
     q_debug: Query<&ChunkDebug>,
     pins: Query<&DebugPin>,
     mut overlay: Query<&mut Text, With<DebugOverlay>>,
@@ -422,7 +352,8 @@ fn update_debug_overlay(
 
     if let Ok(mut text) = overlay.single_mut() {
         text.0 = format!(
-            "{chunk_line}\nPins: {} | Empty meshes: {holes}\nF4 grid[{}] | F5 labels[{}] | F7 report | F8 pin | F9 clear pins",
+            "{chunk_line}\nLoaded: {} | Pins: {} | Empty meshes: {holes}\nF4 grid[{}] | F5 labels[{}] | F7 report | F8 pin | F9 clear pins",
+            chunk_map.len(),
             pins.iter().count(),
             config.show_grid,
             config.show_labels,
