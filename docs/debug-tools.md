@@ -49,7 +49,7 @@ The server and client expose the Bevy Remote Protocol over HTTP when built with 
 `remote-debug` feature. `just s` and `just c` enable it automatically.
 
 - Server main app: `127.0.0.1:15702`
-- Client main app: `127.0.0.1:15712`
+- Client main app: `127.0.0.1:15712` (visible client) / `127.0.0.1:15722` (AI client)
 - Client render subapp: `127.0.0.1:15703`
 
 The client uses a different main port because WSL forwards Windows `localhost:15702` to the
@@ -103,3 +103,30 @@ Built-in BRP methods include `world.query`, `world.get_components`, `world.get_r
 
 BRP can mutate the world. Never enable the feature in a release build or expose it outside
 localhost.
+
+## AI client (`just cia`)
+
+`just cia` builds the same client with the `ai` feature and runs it on Windows without creating a
+window:
+
+- windowless, one update per second;
+- renders the world to a 960x540 offscreen image;
+- grid and chunk labels enabled by default;
+- writes `debug_reports/ai/latest.png` every 5 seconds;
+- exposes BRP on `127.0.0.1:15722` and the render subapp on `15703`;
+- does not accept keyboard/mouse input.
+
+Request an on-demand snapshot:
+
+```bash
+curl.exe -s http://127.0.0.1:15722 -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"projekto/ai_snapshot"}'
+```
+
+The image is written to `debug_reports/ai/latest.png` in the project root (via
+`BEVY_ASSET_ROOT`) after the next frame. The AI client should be run instead of, not alongside,
+the visible client: both use the render BRP port `15703`.
+
+Use the server custom methods (`projekto/teleport`, `projekto/chunk_info`, etc.) and the client BRP
+methods (`projekto/chunk_info`, `projekto/pins`, `projekto/memory`) to drive and inspect the
+windowless session.

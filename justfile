@@ -3,6 +3,7 @@ win_dir := "target/" + win_target + "/debug"
 
 alias s := server
 alias c := client-win
+alias cia := ai-client
 
 # List available recipes.
 default:
@@ -22,6 +23,19 @@ server *args:
 # Inspect region archives.
 archive *args:
     cargo run -q -p projekto_archive_cli -- {{args}}
+
+# Cross-compile the windowless AI client and run it natively on Windows.
+ai-client *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export ASSETS_PATH="$(wslpath -w assets)"
+    cargo xwin build --target {{win_target}} -p projekto_client --features ai {{args}}
+    cp -u "$(rustc --print sysroot)"/lib/rustlib/{{win_target}}/lib/std-*.dll {{win_dir}}/
+    export BEVY_ASSET_ROOT="$(wslpath -w .)"
+    export PROJEKTO_VIEW_RADIUS="${PROJEKTO_VIEW_RADIUS:-16}"
+    export RUST_LOG="${RUST_LOG:-error,projekto=debug,projekto_client=debug}"
+    export WSLENV="RUST_LOG:WGPU_BACKEND:BEVY_ASSET_ROOT:PROJEKTO_VIEW_RADIUS"
+    exec {{win_dir}}/client.exe
 
 # Cross-compile the client in WSL and run it natively on Windows.
 client-win *args:

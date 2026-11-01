@@ -3,8 +3,13 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     platform::collections::HashMap,
     prelude::*,
-    window::PresentMode,
 };
+
+#[cfg(not(feature = "ai"))]
+use bevy::window::PresentMode;
+
+#[cfg(feature = "ai")]
+use bevy::{app::ScheduleRunnerPlugin, window::ExitCondition, winit::WinitPlugin};
 use bundle::ChunkLocal;
 use controller::{
     camera_controller::CameraControllerPlugin,
@@ -22,6 +27,11 @@ use projekto_core::{
     coords::Chunk,
     voxel::{self},
 };
+#[cfg(feature = "ai")]
+use std::time::Duration;
+
+#[cfg(feature = "ai")]
+pub(crate) mod ai;
 
 mod bundle;
 mod controller;
@@ -36,28 +46,32 @@ pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
-        app
-            // This may cause problems later on. Ideally this setup should be done per image
-            .add_plugins((
-                DefaultPlugins
-                    .set(WindowPlugin {
-                        primary_window: Some(Window {
-                            present_mode: PresentMode::AutoNoVsync,
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    })
-                    .set(ImagePlugin::default_nearest()),
-                LogDiagnosticsPlugin::default(),
-                FrameTimeDiagnosticsPlugin::default(),
-            ))
-            .add_plugins((
-                CameraPlugin,
-                DebugPlugin,
-                CameraControllerPlugin,
-                CharacterControllerPlugin,
-            ))
-            .add_systems(Startup, setup_mockup_scene);
+        // This may cause problems later on. Ideally this setup should be done per image
+        let default_plugins = DefaultPlugins
+            .set(window_plugin())
+            .set(ImagePlugin::default_nearest());
+
+        #[cfg(feature = "ai")]
+        let default_plugins = default_plugins.disable::<WinitPlugin>();
+
+        app.add_plugins((
+            default_plugins,
+            LogDiagnosticsPlugin::default(),
+            FrameTimeDiagnosticsPlugin::default(),
+        ))
+        .add_plugins((
+            CameraPlugin,
+            DebugPlugin,
+            CameraControllerPlugin,
+            CharacterControllerPlugin,
+        ))
+        .add_systems(Startup, setup_mockup_scene);
+
+        #[cfg(feature = "ai")]
+        app.add_plugins((
+            ScheduleRunnerPlugin::run_loop(Duration::from_secs(1)),
+            ai::AiClientPlugin,
+        ));
 
         // World setup
         app.init_resource::<ChunkMap>()
@@ -77,6 +91,26 @@ impl Plugin for ClientPlugin {
             ))
             .add_systems(Startup, setup_material)
             .add_systems(PreStartup, load_assets);
+    }
+}
+
+#[cfg(not(feature = "ai"))]
+fn window_plugin() -> WindowPlugin {
+    WindowPlugin {
+        primary_window: Some(Window {
+            present_mode: PresentMode::AutoNoVsync,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+#[cfg(feature = "ai")]
+fn window_plugin() -> WindowPlugin {
+    WindowPlugin {
+        primary_window: None,
+        exit_condition: ExitCondition::DontExit,
+        ..Default::default()
     }
 }
 

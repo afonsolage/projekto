@@ -12,22 +12,34 @@ use super::{
     chunks::{ReportRequest, spawn_pin},
     memory::ServerMemory,
 };
+
 use crate::PlayerLandscape;
+#[cfg(feature = "ai")]
+use crate::ai::AiSnapshot;
 
 pub(crate) struct RemoteDebugPlugin;
 
+const CLIENT_BRP_PORT: u16 = if cfg!(feature = "ai") { 15722 } else { 15712 };
+
 impl Plugin for RemoteDebugPlugin {
     fn build(&self, app: &mut App) {
+        let mut remote = RemotePlugin::default()
+            .with_method_main("projekto/chunk_info", chunk_info)
+            .with_method_main("projekto/pins", pins)
+            .with_method_main("projekto/pin", pin)
+            .with_method_main("projekto/unpin", unpin)
+            .with_method_main("projekto/memory", memory)
+            .with_method_main("projekto/player_landscape", player_landscape)
+            .with_method_main("projekto/report", report);
+
+        #[cfg(feature = "ai")]
+        {
+            remote = remote.with_method_main("projekto/ai_snapshot", ai_snapshot);
+        }
+
         app.add_plugins((
-            RemotePlugin::default()
-                .with_method_main("projekto/chunk_info", chunk_info)
-                .with_method_main("projekto/pins", pins)
-                .with_method_main("projekto/pin", pin)
-                .with_method_main("projekto/unpin", unpin)
-                .with_method_main("projekto/memory", memory)
-                .with_method_main("projekto/player_landscape", player_landscape)
-                .with_method_main("projekto/report", report),
-            RemoteHttpPlugin::default().with_port(15712),
+            remote,
+            RemoteHttpPlugin::default().with_port(CLIENT_BRP_PORT),
         ));
     }
 }
@@ -143,6 +155,12 @@ fn player_landscape(_: In<Option<Value>>, landscape: Option<Res<PlayerLandscape>
 }
 
 fn report(_: In<Option<Value>>, mut request: ResMut<ReportRequest>) -> BrpResult {
+    request.0 = true;
+    Ok(json!({ "ok": true }))
+}
+
+#[cfg(feature = "ai")]
+fn ai_snapshot(_: In<Option<Value>>, mut request: ResMut<AiSnapshot>) -> BrpResult {
     request.0 = true;
     Ok(json!({ "ok": true }))
 }

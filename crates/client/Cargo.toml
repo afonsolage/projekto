@@ -18,6 +18,9 @@ dev = [
 
 remote-debug = ["bevy/bevy_remote"]
 
+# Windowless, low-fps client used for AI-driven diagnostics.
+ai = ["remote-debug"]
+
 
 [dependencies]
 projekto_core.workspace = true

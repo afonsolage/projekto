@@ -111,7 +111,7 @@ impl Default for DebugViewConfig {
             show_grid: false,
             show_labels: false,
             show_pins: true,
-            grid_height: 0.0,
+            grid_height: 224.0,
         }
     }
 }

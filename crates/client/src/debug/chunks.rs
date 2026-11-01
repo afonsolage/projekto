@@ -17,8 +17,9 @@ use serde::Serialize;
 
 use crate::{ChunkMap, bundle::ChunkLocal, debug::memory::ServerMemory};
 
-const GRID_RADIUS: i32 = 6;
-const LABEL_RADIUS: i32 = 4;
+const GRID_RADIUS: i32 = 8;
+const LABEL_RADIUS: i32 = 2;
+const LABEL_POOL_SIZE: usize = ((LABEL_RADIUS * 2 + 1) * (LABEL_RADIUS * 2 + 1)) as usize;
 const OVERLAY_REFRESH_SECS: f32 = 0.25;
 
 pub(crate) struct DebugWorldPlugin;
@@ -33,13 +34,15 @@ impl Plugin for DebugWorldPlugin {
             config.line.width = 3.0;
         }
 
-        app.add_plugins(MeshPickingPlugin)
-            .init_resource::<DebugViewConfig>()
+        #[cfg(not(feature = "ai"))]
+        app.add_plugins(MeshPickingPlugin);
+
+        app.init_resource::<DebugViewConfig>()
             .init_resource::<HoveredChunk>()
             .init_resource::<ReportRequest>()
             .add_observer(on_pointer_over)
             .add_observer(on_pointer_out)
-            .add_systems(Startup, spawn_debug_overlay)
+            .add_systems(Startup, (spawn_debug_overlay, spawn_screen_labels))
             .add_systems(
                 Update,
                 (
@@ -47,8 +50,8 @@ impl Plugin for DebugWorldPlugin {
                     pin_hovered_chunk,
                     request_report,
                     draw_grid,
-                    draw_labels,
                     draw_pins,
+                    update_screen_labels,
                     update_debug_overlay,
                     capture_report,
                 ),
@@ -68,6 +71,12 @@ pub(crate) struct ReportRequest(pub(crate) bool);
 
 #[derive(Component)]
 struct DebugOverlay;
+
+#[derive(Component)]
+struct ChunkLabel;
+
+#[derive(Resource, Default)]
+struct ScreenLabels(Vec<Entity>);
 
 fn on_pointer_over(
     over: On<PointerOver>,
@@ -157,23 +166,42 @@ fn active_camera_transform(
         .map(|(_, transform)| (transform.translation(), transform.forward().as_vec3()))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_grid(
     mut gizmos: Gizmos,
     config: Res<DebugViewConfig>,
     chunk_map: Res<ChunkMap>,
     q_debug: Query<&ChunkDebug>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    gizmo_config: Res<GizmoConfigStore>,
+    mut logged: Local<bool>,
 ) {
     if !config.show_grid {
         return;
     }
 
-    let Some((camera_position, _)) = active_camera_transform(&cameras) else {
+    let Some((camera_position, _camera_forward)) = active_camera_transform(&cameras) else {
+        if !*logged {
+            warn!("draw_grid: no active Camera3d");
+            *logged = true;
+        }
         return;
     };
 
+    if !*logged {
+        let (settings, _) = gizmo_config.config::<DefaultGizmoConfigGroup>();
+        debug!(
+            "draw_grid: camera={camera_position:?} center={:?} loaded={} depth_bias={} width={}",
+            Chunk::from(camera_position),
+            chunk_map.len(),
+            settings.depth_bias,
+            settings.line.width,
+        );
+        *logged = true;
+    }
+
     let center = Chunk::from(camera_position);
-    let y = grid_y(&config, camera_position);
+    let y = grid_y(&config);
 
     for dx in -GRID_RADIUS..=GRID_RADIUS {
         for dz in -GRID_RADIUS..=GRID_RADIUS {
@@ -240,64 +268,116 @@ fn draw_pins(mut gizmos: Gizmos, config: Res<DebugViewConfig>, pins: Query<&Debu
     }
 }
 
-fn grid_y(config: &DebugViewConfig, camera: Vec3) -> f32 {
-    if config.grid_height > 0.0 {
-        config.grid_height
-    } else {
-        camera.y - 8.0
-    }
+fn grid_y(config: &DebugViewConfig) -> f32 {
+    config.grid_height
 }
 
-fn draw_labels(
-    mut gizmos: Gizmos,
+fn spawn_screen_labels(mut commands: Commands) {
+    let mut labels = Vec::with_capacity(LABEL_POOL_SIZE);
+
+    for _ in 0..LABEL_POOL_SIZE {
+        labels.push(
+            commands
+                .spawn((
+                    ChunkLabel,
+                    Text::new(""),
+                    TextFont::from_font_size(12.0),
+                    TextColor(Color::WHITE),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(0.0),
+                        top: Val::Px(0.0),
+                        padding: UiRect::all(Val::Px(2.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.45)),
+                    Visibility::Hidden,
+                ))
+                .id(),
+        );
+    }
+
+    commands.insert_resource(ScreenLabels(labels));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_screen_labels(
+    time: Res<Time>,
     config: Res<DebugViewConfig>,
     chunk_map: Res<ChunkMap>,
     q_debug: Query<&ChunkDebug>,
+    labels: Res<ScreenLabels>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut q_labels: Query<(&mut Text, &mut Node, &mut Visibility, &mut TextColor), With<ChunkLabel>>,
+    mut elapsed: Local<f32>,
 ) {
+    *elapsed += time.delta_secs();
+    if *elapsed < OVERLAY_REFRESH_SECS {
+        return;
+    }
+    *elapsed = 0.0;
+
     if !config.show_labels {
+        for &entity in &labels.0 {
+            if let Ok((_, _, mut visibility, _)) = q_labels.get_mut(entity) {
+                *visibility = Visibility::Hidden;
+            }
+        }
         return;
     }
 
-    let Some((camera_position, _)) = active_camera_transform(&cameras) else {
+    let Some((camera, camera_transform)) = cameras.iter().find(|(camera, _)| camera.is_active)
+    else {
         return;
     };
 
-    let center = Chunk::from(camera_position);
-    let y = grid_y(&config, camera_position) + 1.0;
+    let center = Chunk::from(camera_transform.translation());
+    let y = camera_transform.translation().y - 16.0;
+    let mut index = 0usize;
 
     for dx in -LABEL_RADIUS..=LABEL_RADIUS {
         for dz in -LABEL_RADIUS..=LABEL_RADIUS {
+            let Some(&entity) = labels.0.get(index) else {
+                return;
+            };
+            index += 1;
+
+            let Ok((mut text, mut node, mut visibility, mut color)) = q_labels.get_mut(entity)
+            else {
+                continue;
+            };
+
             let chunk = Chunk::new(center.x + dx, center.z + dz);
             if !chunk_map.contains_key(&chunk) {
+                *visibility = Visibility::Hidden;
                 continue;
             }
+
+            let world = Vec3::new(
+                chunk.x as f32 * Chunk::X_AXIS_SIZE as f32 + Chunk::X_AXIS_SIZE as f32 / 2.0,
+                y,
+                chunk.z as f32 * Chunk::Z_AXIS_SIZE as f32 + Chunk::Z_AXIS_SIZE as f32 / 2.0,
+            );
+
+            let Ok(viewport) = camera.world_to_viewport(camera_transform, world) else {
+                *visibility = Visibility::Hidden;
+                continue;
+            };
 
             let hole = chunk_map
                 .get(&chunk)
                 .and_then(|entity| q_debug.get(*entity).ok())
                 .is_some_and(|debug| debug.vertex_count == 0);
 
-            let position = Vec3::new(
-                chunk.x as f32 * Chunk::X_AXIS_SIZE as f32 + Chunk::X_AXIS_SIZE as f32 / 2.0,
-                y,
-                chunk.z as f32 * Chunk::Z_AXIS_SIZE as f32 + Chunk::Z_AXIS_SIZE as f32 / 2.0,
-            );
-            let direction = (camera_position - position).normalize_or_zero();
-            let rotation = Quat::from_rotation_arc(Vec3::Z, direction);
-            let color = if hole {
-                Color::srgb(1.0, 0.2, 0.2)
+            text.0 = format!("({}, {})", chunk.x, chunk.z);
+            node.left = Val::Px(viewport.x);
+            node.top = Val::Px(viewport.y);
+            *color = if hole {
+                TextColor(Color::srgb(1.0, 0.2, 0.2))
             } else {
-                Color::WHITE
+                TextColor(Color::WHITE)
             };
-
-            gizmos.text(
-                Isometry3d::new(position, rotation),
-                &format!("({}, {})", chunk.x, chunk.z),
-                4.0,
-                Vec2::ZERO,
-                color,
-            );
+            *visibility = Visibility::Visible;
         }
     }
 }
@@ -327,6 +407,7 @@ fn update_debug_overlay(
     chunk_map: Res<ChunkMap>,
     q_debug: Query<&ChunkDebug>,
     pins: Query<&DebugPin>,
+    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut overlay: Query<&mut Text, With<DebugOverlay>>,
     mut elapsed: Local<f32>,
 ) {
@@ -346,7 +427,7 @@ fn update_debug_overlay(
         .and_then(|entity| q_debug.get(entity).ok())
         .map(|debug| {
             format!(
-                "Chunk ({}, {}) #{} {:?} verts={} faces={} hole={}",
+                "Hover ({}, {}) #{} {:?} verts={} faces={} hole={}",
                 debug.x,
                 debug.z,
                 debug.id,
@@ -356,11 +437,16 @@ fn update_debug_overlay(
                 debug.suspect_hole
             )
         })
-        .unwrap_or_else(|| "Chunk: --".to_string());
+        .unwrap_or_else(|| "Hover: --".to_string());
+
+    let camera_chunk = active_camera_transform(&cameras)
+        .map(|(position, _)| Chunk::from(position))
+        .map(|chunk| format!("Camera chunk: ({}, {})", chunk.x, chunk.z))
+        .unwrap_or_else(|| "Camera chunk: --".to_string());
 
     if let Ok(mut text) = overlay.single_mut() {
         text.0 = format!(
-            "{chunk_line}\nLoaded: {} | Pins: {} | Empty meshes: {holes}\nF4 grid[{}] | F5 labels[{}] | F7 report | F8 pin | F9 clear pins",
+            "{chunk_line}\n{camera_chunk}\nLoaded: {} | Pins: {} | Empty meshes: {holes}\nF4 grid[{}] | F5 labels[{}] | F7 report | F8 pin | F9 clear pins",
             chunk_map.len(),
             pins.iter().count(),
             config.show_grid,
