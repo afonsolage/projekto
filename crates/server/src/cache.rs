@@ -38,6 +38,7 @@ impl DerivedCaches {
     }
 }
 
+// @TODO: Add unit tests for this.
 /// Returns `chunk` and its eight surrounding chunks.
 ///
 /// Soft light samples diagonal chunks at voxel corners, so a change in any of the eight
