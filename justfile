@@ -17,7 +17,7 @@ ci:
 
 # Run the server on Linux.
 server *args:
-    cargo run -p projekto_server {{args}}
+    cargo run -p projekto_server --features remote-debug {{args}}
 
 # Inspect region archives.
 archive *args:
@@ -29,7 +29,7 @@ client-win *args:
     set -euo pipefail
     # `env!("ASSETS_PATH")` is baked in at compile time, so it must be a Windows path.
     export ASSETS_PATH="$(wslpath -w assets)"
-    cargo xwin build --target {{win_target}} -p projekto_client {{args}}
+    cargo xwin build --target {{win_target}} -p projekto_client --features remote-debug {{args}}
     # `dynamic_linking` needs the toolchain's std DLL next to the executable.
     cp -u "$(rustc --print sysroot)"/lib/rustlib/{{win_target}}/lib/std-*.dll {{win_dir}}/
     export BEVY_ASSET_ROOT="$(wslpath -w .)"

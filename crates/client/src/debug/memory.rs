@@ -24,10 +24,10 @@ impl Plugin for MemoryOverlayPlugin {
 struct MemoryOverlay;
 
 #[derive(Resource, Default)]
-struct ServerMemory {
-    rss_bytes: u64,
-    peak_rss_bytes: u64,
-    last_report: Option<Instant>,
+pub(crate) struct ServerMemory {
+    pub(crate) rss_bytes: u64,
+    pub(crate) peak_rss_bytes: u64,
+    pub(crate) last_report: Option<Instant>,
 }
 
 fn spawn_overlay(mut commands: Commands) {

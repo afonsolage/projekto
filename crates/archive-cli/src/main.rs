@@ -14,6 +14,8 @@ use projekto_core::{
     chunk,
     coords::{Chunk, ChunkVoxel, Region, RegionChunk},
 };
+use serde::Serialize;
+use serde_json::json;
 
 const REGION_AXIS: i32 = Region::AXIS_SIZE as i32;
 
@@ -31,18 +33,26 @@ fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     };
 
     match command {
-        "info" => info(required_path(&args, 1)?),
+        "info" => info(required_path(&args, 1)?, flag(&args, "--json")),
         "list" => list(
             required_path(&args, 1)?,
-            args.iter().any(|arg| arg == "--chunks"),
+            flag(&args, "--chunks"),
+            flag(&args, "--json"),
         ),
-        "holes" => holes(required_path(&args, 1)?),
-        "verify" => verify(required_path(&args, 1)?),
+        "holes" => holes(
+            required_path(&args, 1)?,
+            parse_center(&args)?,
+            value_of(&args, "--radius").and_then(|value| value.parse().ok()),
+            value_of(&args, "--limit").and_then(|value| value.parse().ok()),
+            flag(&args, "--json"),
+        ),
+        "verify" => verify(required_path(&args, 1)?, flag(&args, "--json")),
         "dump" => dump(
             required_path(&args, 1)?,
             parse_i32(&args, 2)?,
             parse_i32(&args, 3)?,
-            args.iter().any(|arg| arg == "--map"),
+            flag(&args, "--map"),
+            flag(&args, "--json"),
         ),
         "help" | "--help" | "-h" => {
             print_help();
@@ -58,11 +68,11 @@ fn print_help() {
 projekto-archive — inspect Projekto region archives
 
 USAGE:
-  projekto-archive info   <region-dir>
-  projekto-archive list   <region-dir> [--chunks]
-  projekto-archive holes  <region-dir>
-  projekto-archive verify <region-dir>
-  projekto-archive dump   <region-dir> <chunk-x> <chunk-z> [--map]
+  projekto-archive info   <region-dir> [--json]
+  projekto-archive list   <region-dir> [--chunks] [--json]
+  projekto-archive holes  <region-dir> [--center x,z] [--radius N] [--limit N] [--json]
+  projekto-archive verify <region-dir> [--json]
+  projekto-archive dump   <region-dir> <chunk-x> <chunk-z> [--map] [--json]
 
 The region directory is usually `archive/region`."
     );
@@ -72,6 +82,27 @@ fn required_path(args: &[String], index: usize) -> Result<&Path, Box<dyn Error>>
     args.get(index)
         .map(Path::new)
         .ok_or_else(|| "missing region directory".into())
+}
+
+fn flag(args: &[String], name: &str) -> bool {
+    args.iter().any(|arg| arg == name)
+}
+
+fn value_of<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+    args.iter()
+        .position(|arg| arg == name)
+        .and_then(|index| args.get(index + 1))
+        .map(String::as_str)
+}
+
+fn parse_center(args: &[String]) -> Result<Option<(i32, i32)>, Box<dyn Error>> {
+    let Some(value) = value_of(args, "--center") else {
+        return Ok(None);
+    };
+    let (x, z) = value
+        .split_once(',')
+        .ok_or_else(|| "--center must be formatted as x,z".to_string())?;
+    Ok(Some((x.parse()?, z.parse()?)))
 }
 
 fn parse_i32(args: &[String], index: usize) -> Result<i32, Box<dyn Error>> {
@@ -84,14 +115,23 @@ fn parse_i32(args: &[String], index: usize) -> Result<i32, Box<dyn Error>> {
         })
 }
 
-fn info(dir: &Path) -> Result<(), Box<dyn Error>> {
+#[derive(Serialize)]
+struct RegionInfo {
+    x: i32,
+    z: i32,
+    file: String,
+    bytes: u64,
+    indexed: usize,
+    used_sectors: u64,
+    orphan_sectors: u64,
+}
+
+fn info(dir: &Path, as_json: bool) -> Result<(), Box<dyn Error>> {
     let files = region_files(dir)?;
+    let mut regions = Vec::new();
     let mut total_bytes = 0u64;
     let mut total_indexed = 0usize;
     let mut total_used_sectors = 0u64;
-
-    println!("format version: {VERSION_MAGIC:02X?}");
-    println!("sector size: {SECTOR_SIZE} B");
 
     for (region, path) in files {
         let len = fs::metadata(&path)?.len();
@@ -105,19 +145,52 @@ fn info(dir: &Path) -> Result<(), Box<dyn Error>> {
         total_indexed += indexed;
         total_used_sectors += used_sectors;
 
-        println!(
-            "region {region}: {} ({} B), indexed {indexed}/{}, used {used_sectors} sectors, orphan {orphan_sectors} sectors",
-            path.display(),
-            len,
-            Region::BUFFER_SIZE,
-        );
+        regions.push(RegionInfo {
+            x: region.x,
+            z: region.z,
+            file: path.display().to_string(),
+            bytes: len,
+            indexed,
+            used_sectors,
+            orphan_sectors,
+        });
     }
 
+    if as_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "format_version": VERSION_MAGIC,
+                "sector_size": SECTOR_SIZE,
+                "regions": regions,
+                "total_chunks": total_indexed,
+                "total_bytes": total_bytes,
+                "total_used_sectors": total_used_sectors,
+            }))?
+        );
+        return Ok(());
+    }
+
+    println!("format version: {VERSION_MAGIC:02X?}");
+    println!("sector size: {SECTOR_SIZE} B");
+    for region in regions {
+        println!(
+            "region ({}, {}): {} ({} B), indexed {}/{}, used {} sectors, orphan {} sectors",
+            region.x,
+            region.z,
+            region.file,
+            region.bytes,
+            region.indexed,
+            Region::BUFFER_SIZE,
+            region.used_sectors,
+            region.orphan_sectors,
+        );
+    }
     println!("total: {total_indexed} chunks, {total_bytes} B, {total_used_sectors} used sectors");
     Ok(())
 }
 
-fn list(dir: &Path, show_chunks: bool) -> Result<(), Box<dyn Error>> {
+fn list(dir: &Path, show_chunks: bool, as_json: bool) -> Result<(), Box<dyn Error>> {
     let mut chunks = 0usize;
     let mut vertices = 0usize;
     let mut suspicious = 0usize;
@@ -140,7 +213,19 @@ fn list(dir: &Path, show_chunks: bool) -> Result<(), Box<dyn Error>> {
         }
     })?;
 
-    println!("chunks: {chunks}, vertices: {vertices}, suspicious empty meshes: {suspicious}");
+    if as_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "chunks": chunks,
+                "vertices": vertices,
+                "suspicious_empty_meshes": suspicious,
+                "read_errors": summary.errors,
+            }))?
+        );
+    } else {
+        println!("chunks: {chunks}, vertices: {vertices}, suspicious empty meshes: {suspicious}");
+    }
 
     if summary.errors > 0 {
         return Err(format!("{} archive entries failed to read", summary.errors).into());
@@ -148,9 +233,15 @@ fn list(dir: &Path, show_chunks: bool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn holes(dir: &Path) -> Result<(), Box<dyn Error>> {
+fn holes(
+    dir: &Path,
+    center: Option<(i32, i32)>,
+    radius: Option<i32>,
+    limit: Option<usize>,
+    as_json: bool,
+) -> Result<(), Box<dyn Error>> {
     let mut chunks = 0usize;
-    let mut holes = 0usize;
+    let mut reports = Vec::new();
 
     let summary = scan_chunks(dir, |chunk, asset| {
         chunks += 1;
@@ -159,14 +250,30 @@ fn holes(dir: &Path) -> Result<(), Box<dyn Error>> {
             return;
         }
 
+        if let Some((cx, cz)) = center
+            && let Some(radius) = radius
+            && ((chunk.x - cx).abs() > radius || (chunk.z - cz).abs() > radius)
+        {
+            return;
+        }
+
         let report = ChunkReport::new(chunk, &asset);
-        if report.suspicious {
-            holes += 1;
-            println!("{report}");
+        if report.suspicious && limit.is_none_or(|limit| reports.len() < limit) {
+            reports.push(report);
         }
     })?;
 
-    println!("scanned {chunks} chunks, found {holes} suspicious empty meshes");
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&reports)?);
+    } else {
+        for report in &reports {
+            println!("{report}");
+        }
+        println!(
+            "scanned {chunks} chunks, found {} suspicious empty meshes",
+            reports.len()
+        );
+    }
 
     if summary.errors > 0 {
         return Err(format!("{} archive entries failed to read", summary.errors).into());
@@ -174,7 +281,7 @@ fn holes(dir: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn verify(dir: &Path) -> Result<(), Box<dyn Error>> {
+fn verify(dir: &Path, as_json: bool) -> Result<(), Box<dyn Error>> {
     let mut empty_surface = 0usize;
 
     let summary = scan_chunks(dir, |chunk, asset| {
@@ -186,10 +293,21 @@ fn verify(dir: &Path) -> Result<(), Box<dyn Error>> {
         }
     })?;
 
-    println!(
-        "verified {} chunks, {empty_surface} suspicious empty meshes, {} read errors",
-        summary.chunks, summary.errors
-    );
+    if as_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "chunks": summary.chunks,
+                "suspicious_empty_meshes": empty_surface,
+                "read_errors": summary.errors,
+            }))?
+        );
+    } else {
+        println!(
+            "verified {} chunks, {empty_surface} suspicious empty meshes, {} read errors",
+            summary.chunks, summary.errors
+        );
+    }
 
     if summary.errors > 0 {
         return Err(format!("{} archive entries failed to read", summary.errors).into());
@@ -205,7 +323,7 @@ fn verify(dir: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn dump(dir: &Path, x: i32, z: i32, show_map: bool) -> Result<(), Box<dyn Error>> {
+fn dump(dir: &Path, x: i32, z: i32, show_map: bool, as_json: bool) -> Result<(), Box<dyn Error>> {
     let chunk = Chunk::new(x, z);
     let region = Region::from_chunk(chunk);
     let path = region_path(dir, region);
@@ -222,16 +340,35 @@ fn dump(dir: &Path, x: i32, z: i32, show_map: bool) -> Result<(), Box<dyn Error>
         return Err(format!("chunk {chunk} is not indexed in {}", path.display()).into());
     };
 
+    let report = ChunkReport::new(chunk, &asset);
+    let heights = show_map.then(|| top_heights(&asset));
+
+    if as_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "chunk": { "x": x, "z": z },
+                "region": { "x": region.x, "z": region.z },
+                "local": { "x": region_chunk.x, "z": region_chunk.z },
+                "file": path.display().to_string(),
+                "vertices": asset.vertex.len(),
+                "faces": asset.vertex.len() / 4,
+                "report": report,
+                "top_heights": heights,
+            }))?
+        );
+        return Ok(());
+    }
+
     println!("chunk: {chunk}");
     println!("region: {region}, local: {region_chunk}");
     println!("region file: {}", path.display());
     println!("vertices: {}", asset.vertex.len());
     println!("faces: {}", asset.vertex.len() / 4);
-    println!("{}", ChunkReport::new(chunk, &asset));
+    println!("{report}");
 
-    if show_map {
+    if let Some(heights) = heights {
         println!("\ntop solid height per column (y or --):");
-        let heights = top_heights(&asset);
         for row in heights {
             let line = row
                 .iter()
@@ -395,6 +532,7 @@ fn read_header(path: &Path) -> Result<Vec<HeaderEntry>, Box<dyn Error>> {
         .collect())
 }
 
+#[derive(Serialize)]
 struct ChunkReport {
     chunk: Chunk,
     vertices: usize,

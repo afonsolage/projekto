@@ -4,6 +4,7 @@ use bevy::{
     prelude::*,
 };
 use projekto_core::voxel;
+use projekto_debug::{ChunkDebug, ChunkDebugSource};
 use projekto_messages::{ChunkUnload, ChunkVertex};
 use projekto_proto::RegisterMessageHandler;
 
@@ -53,21 +54,37 @@ fn update_chunk_mesh(
     mut map: ResMut<ChunkMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     material: Res<ChunkMaterialHandle>,
+    mut q_debug: Query<&mut ChunkDebug>,
 ) {
     let ChunkVertex { chunk, vertex } = vertex;
+    let vertex_count = vertex.len() as u32;
 
     let mesh_handler = Mesh3d(meshes.add(generate_mesh(&vertex)));
 
     if let Some(&entity) = map.get(&chunk) {
         commands.entity(entity).insert(mesh_handler);
+
+        if let Ok(mut debug) = q_debug.get_mut(entity) {
+            debug.set_mesh(vertex_count, false);
+        } else {
+            let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Streamed);
+            debug.set_mesh(vertex_count, false);
+            commands.entity(entity).insert(debug);
+        }
     } else {
+        let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Streamed);
+        debug.set_mesh(vertex_count, false);
+
         let entity = commands
-            .spawn(ChunkBundle {
-                chunk: ChunkLocal(chunk),
-                mesh: mesh_handler,
-                material: MeshMaterial3d(material.0.clone()),
-                transform: Transform::from_translation(chunk.into()),
-            })
+            .spawn((
+                ChunkBundle {
+                    chunk: ChunkLocal(chunk),
+                    mesh: mesh_handler,
+                    material: MeshMaterial3d(material.0.clone()),
+                    transform: Transform::from_translation(chunk.into()),
+                },
+                debug,
+            ))
             .insert(Name::new(format!("Client Chunk {chunk}")))
             .id();
         map.insert(chunk, entity);

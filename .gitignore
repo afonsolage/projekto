@@ -32,3 +32,5 @@ rustc-ice*
 
 # Local Bevy clone used by wgsl-analyzer, see Cargo.toml
 .bevy
+
+debug_reports/

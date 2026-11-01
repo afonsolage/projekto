@@ -29,6 +29,7 @@ projekto_server = { path = "crates/server" }
 projekto_client = { path = "crates/client" }
 projekto_archive = { path = "crates/archive" }
 projekto_diagnostics = { path = "crates/diagnostics" }
+projekto_debug = { path = "crates/debug" }
 
 bevy = { version = "0.20", default-features = false, features = ["3d", "bevy_ui_render"]}
 
@@ -44,6 +45,9 @@ criterion = { version = "0.7", features = ["async_futures"]}
 lz4_flex = "0.11"
 # bincode 2 changed a lot, don't know if it's worth the upgrade
 bincode = { version = "2.0", features = ["serde"] }
+
+# Debug tools
+serde_json = "1.0"
 
 # smol
 futures-lite = "2.2"

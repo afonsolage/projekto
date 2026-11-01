@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{ClientSet, net::ServerConnection};
 
@@ -14,18 +15,19 @@ pub(crate) struct SendInputPlugin;
 
 impl Plugin for SendInputPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(PlayerLandscape {
-            radius: radius_from_env(std::env::var(RADIUS_ENV).ok().as_deref()),
-            ..Default::default()
-        })
-        .add_systems(
-            PostUpdate,
-            (
-                update_player_landscape.run_if(resource_changed::<PlayerLandscape>),
-                send_welcome_message.run_if(resource_added::<ServerConnection>),
-            )
-                .in_set(ClientSet::SendInput),
-        );
+        app.register_type::<PlayerLandscape>()
+            .insert_resource(PlayerLandscape {
+                radius: radius_from_env(std::env::var(RADIUS_ENV).ok().as_deref()),
+                ..Default::default()
+            })
+            .add_systems(
+                PostUpdate,
+                (
+                    update_player_landscape.run_if(resource_changed::<PlayerLandscape>),
+                    send_welcome_message.run_if(resource_added::<ServerConnection>),
+                )
+                    .in_set(ClientSet::SendInput),
+            );
     }
 }
 
@@ -36,7 +38,8 @@ fn radius_from_env(value: Option<&str>) -> u8 {
         .unwrap_or(DEFAULT_LANDSCAPE_RADIUS)
 }
 
-#[derive(Resource, Default, Debug, Clone, Copy)]
+#[derive(Resource, Default, Debug, Clone, Copy, Reflect, Serialize, Deserialize)]
+#[reflect(Resource, Serialize, Deserialize)]
 pub struct PlayerLandscape {
     pub center: IVec2,
     pub radius: u8,

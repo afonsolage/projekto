@@ -1,14 +1,23 @@
 use bevy::{app::AppExit, prelude::*};
 
 #[cfg(debug_assertions)]
+mod chunks;
+#[cfg(debug_assertions)]
 mod memory;
+#[cfg(all(debug_assertions, feature = "remote-debug"))]
+mod remote;
 
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         #[cfg(debug_assertions)]
-        app.add_plugins(memory::MemoryOverlayPlugin);
+        app.add_plugins((memory::MemoryOverlayPlugin, chunks::DebugWorldPlugin));
+
+        #[cfg(all(debug_assertions, feature = "remote-debug"))]
+        app.add_plugins(remote::RemoteDebugPlugin);
+
+        projekto_debug::register_types(app);
 
         app.add_systems(Startup, setup_hold_est_to_exit)
             // .add_system(slow_down_fps)

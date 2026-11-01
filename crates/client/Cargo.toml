@@ -16,6 +16,8 @@ dev = [
     "bevy/dynamic_linking",
 ]
 
+remote-debug = ["bevy/bevy_remote"]
+
 
 [dependencies]
 projekto_core.workspace = true
@@ -23,8 +25,11 @@ projekto_camera.workspace = true
 projekto_proto.workspace = true
 projekto_messages.workspace = true
 projekto_diagnostics.workspace = true
+projekto_debug.workspace = true
 
 bevy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 futures-lite.workspace = true
 

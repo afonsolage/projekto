@@ -227,3 +227,19 @@ Finally, you need to register the message handler in the client or server app:
 app.add_message_handler(handle_my_message);
 ```
 
+
+## Debug tooling
+
+- **`projekto_debug`**: reflected, lightweight debug data shared by both binaries:
+  `ChunkDebug`, `DebugPin`, `DebugViewConfig`, stable chunk ids and chunk colours.
+- **Client debug overlay** (`crates/client/src/debug`): chunk grid and coordinate labels (F4/F5),
+  hovered-chunk summary, world pins (F8/F9), the RAM overlay (F3) and debug report capture (F7).
+  Reports contain a screenshot, camera/hovered/nearby chunk data, pins and memory.
+- **Remote API**: with the `remote-debug` feature, the server and client expose the Bevy Remote
+  Protocol over HTTP on `127.0.0.1:15702` (and `15703` for the render subapp). Custom methods
+  cover chunk inspection, pins, reports and controlled mutations such as remesh, teleport and
+  set-voxel.
+- **`projekto-archive` CLI**: `just archive info|list|holes|verify|dump` reads region archives
+  offline, with `--json` output for automated diagnostics.
+
+See [docs/debug-tools.md](docs/debug-tools.md) for hotkeys, BRP examples and report format.

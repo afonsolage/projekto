@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use projekto_core::coords::Chunk;
+use serde::{Deserialize, Serialize};
 
 use crate::{WorldSet, bundle::ChunkMap};
 
@@ -9,7 +10,7 @@ pub(crate) struct LandscapePlugin;
 
 impl Plugin for LandscapePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
+        app.register_type::<Landscape>().add_systems(
             Update,
             (update_landscape.run_if(resource_changed_or_removed::<Landscape>),)
                 .in_set(WorldSet::LandscapeUpdate),
@@ -20,7 +21,8 @@ impl Plugin for LandscapePlugin {
 /// Upper bound for a client-requested landscape radius.
 pub const MAX_LANDSCAPE_RADIUS: u8 = 32;
 
-#[derive(Resource, Default, Debug, Clone, Copy, Reflect)]
+#[derive(Resource, Default, Debug, Clone, Copy, Reflect, Serialize, Deserialize)]
+#[reflect(Resource, Serialize, Deserialize)]
 pub struct Landscape {
     pub center: IVec2,
     pub radius: u8,

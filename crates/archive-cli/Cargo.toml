@@ -8,6 +8,8 @@ projekto_archive.workspace = true
 projekto_core.workspace = true
 
 futures-lite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

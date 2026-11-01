@@ -4,6 +4,7 @@ use projekto_core::{
     coords::Chunk,
     voxel,
 };
+use projekto_debug::ChunkDebug;
 
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
@@ -70,6 +71,30 @@ fn mark_dirty_chunks(
     }
 }
 
+fn neighbors_mask(chunk: Chunk, chunk_map: &ChunkMap) -> u8 {
+    let mut mask = 0u8;
+    let mut bit = 0u8;
+
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            if dx == 0 && dz == 0 {
+                continue;
+            }
+
+            if chunk_map
+                .0
+                .contains_key(&Chunk::new(chunk.x + dx, chunk.z + dz))
+            {
+                mask |= 1 << bit;
+            }
+
+            bit += 1;
+        }
+    }
+
+    mask
+}
+
 fn neighbors_ready(chunk: Chunk, chunk_map: &ChunkMap, landscape: Option<&Landscape>) -> bool {
     affected_chunks(chunk).all(|neighbor| {
         neighbor == chunk
@@ -78,6 +103,7 @@ fn neighbors_ready(chunk: Chunk, chunk_map: &ChunkMap, landscape: Option<&Landsc
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_vertices(
     mut dirty: ResMut<DirtyChunks>,
     mut caches: ResMut<DerivedCaches>,
@@ -85,6 +111,7 @@ fn generate_vertices(
     landscape: Option<Res<Landscape>>,
     q_chunks: ChunkQuery<(&ChunkKind, &ChunkLight)>,
     mut q_vertex: Query<&mut ChunkVertex>,
+    mut q_debug: Query<&mut ChunkDebug>,
     mut metrics: ResMut<debug::Metrics>,
 ) {
     let chunks = std::mem::take(&mut dirty.0);
@@ -152,6 +179,17 @@ fn generate_vertices(
 
         let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
         std::mem::swap(&mut vertex, &mut chunk_vertex);
+
+        if let Ok(mut debug) = q_debug.get_mut(entity) {
+            let vertex_count = chunk_vertex.0.len() as u32;
+            let suspect_hole = chunk_vertex.is_empty() && !kind.all(|kind| kind.is_none());
+            debug.set_mesh(vertex_count, suspect_hole);
+            debug.neighbors_loaded = neighbors_mask(chunk, &chunk_map);
+
+            if suspect_hole {
+                warn!("chunk {chunk} produced an empty mesh over solid terrain");
+            }
+        }
 
         metric_data.end();
         count += 1;

@@ -5,6 +5,7 @@ use bevy::{
 };
 use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask, MaintenanceResult};
 use projekto_core::coords::Chunk;
+use projekto_debug::{ChunkDebug, ChunkDebugSource};
 
 use projekto_archive::ChunkAsset;
 
@@ -50,6 +51,7 @@ impl Plugin for ChunkManagementPlugin {
                     queue_chunks_to_save,
                     chunks_save,
                     archive_maintenance,
+                    refresh_chunk_debug,
                 )
                     .chain()
                     .in_set(WorldSet::ChunkManagement),
@@ -285,6 +287,11 @@ fn spawn_created_chunk(commands: &mut Commands, chunk: Chunk, creation: ChunkCre
             light: ChunkLight(light),
             ..Default::default()
         })
+        .insert(ChunkDebug::new(
+            chunk.x,
+            chunk.z,
+            ChunkDebugSource::Generated,
+        ))
         .id()
 
     // TODO: save chunk
@@ -298,6 +305,16 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
         vertex,
     } = asset;
 
+    let vertex_count = vertex.len() as u32;
+    let suspect_hole = vertex.is_empty() && !kind.all(|kind| kind.is_none());
+    let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Archive);
+    debug.set_mesh(vertex_count, suspect_hole);
+    debug.saved = true;
+
+    if suspect_hole {
+        warn!("chunk {chunk} was loaded with an empty mesh over solid terrain");
+    }
+
     commands
         .spawn(ChunkBundle {
             kind: ChunkKind(kind),
@@ -306,7 +323,43 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
             vertex: ChunkVertex(vertex),
         })
         .insert(CachedMesh)
+        .insert(debug)
         .id()
+}
+
+fn refresh_chunk_debug(
+    time: Res<Time>,
+    chunk_map: Res<ChunkMap>,
+    dirty: Res<DirtyChunks>,
+    mut q_debug: Query<(&ChunkLocal, &mut ChunkDebug)>,
+    mut timer: Local<Option<Timer>>,
+) {
+    let timer = timer.get_or_insert_with(|| Timer::from_seconds(0.5, TimerMode::Repeating));
+    if !timer.tick(time.delta()).just_finished() {
+        return;
+    }
+
+    for (ChunkLocal(chunk), mut debug) in &mut q_debug {
+        let mut mask = 0u8;
+        let mut bit = 0u8;
+
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                if dx == 0 && dz == 0 {
+                    continue;
+                }
+
+                if chunk_map.contains_key(&Chunk::new(chunk.x + dx, chunk.z + dz)) {
+                    mask |= 1 << bit;
+                }
+
+                bit += 1;
+            }
+        }
+
+        debug.neighbors_loaded = mask;
+        debug.dirty = dirty.0.contains(chunk);
+    }
 }
 
 fn queue_chunks_to_save(
@@ -328,10 +381,13 @@ fn queue_chunks_to_save(
 /// Initial meshing changes thousands of chunks; saving them immediately competes with meshing
 /// for the ECS thread and the archive workers. Deferring keeps the render path responsive while
 /// the archive catches up in the background.
+#[allow(clippy::too_many_arguments)]
 fn chunks_save(
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
     mut pending: ResMut<PendingSaves>,
     chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex)>,
+    chunk_map: Res<ChunkMap>,
+    mut q_debug: Query<&mut ChunkDebug>,
     time: Res<Time>,
     mut timer: Local<Option<Timer>>,
 ) {
@@ -358,6 +414,11 @@ fn chunks_save(
                 vertex: vertex.0.clone(),
             };
             let _task = archive_server.save_chunk(*chunk, asset);
+            if let Some(&entity) = chunk_map.0.get(chunk)
+                && let Ok(mut debug) = q_debug.get_mut(entity)
+            {
+                debug.mark_saved();
+            }
             saved += 1;
         }
 
