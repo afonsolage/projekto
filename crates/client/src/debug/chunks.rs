@@ -7,6 +7,7 @@ use std::{
 use bevy::{
     math::Isometry3d,
     picking::events::{PointerOut, PointerOver},
+    platform::collections::HashSet,
     prelude::*,
     render::view::screenshot::{Screenshot, save_to_disk},
 };
@@ -19,6 +20,7 @@ use crate::{ChunkMap, bundle::ChunkLocal, debug::memory::ServerMemory};
 
 const GRID_RADIUS: i32 = 8;
 const LABEL_RADIUS: i32 = 3;
+const BOX_RADIUS: i32 = 3;
 const OVERLAY_REFRESH_SECS: f32 = 0.25;
 
 pub(crate) struct DebugWorldPlugin;
@@ -231,20 +233,35 @@ fn draw_grid(
         }
     }
 
-    let min = center.x - GRID_RADIUS;
-    let max = center.x + GRID_RADIUS + 1;
+    let mut corners = HashSet::new();
+    for dx in -GRID_RADIUS..=GRID_RADIUS {
+        for dz in -GRID_RADIUS..=GRID_RADIUS {
+            if dx.abs() > BOX_RADIUS || dz.abs() > BOX_RADIUS {
+                continue;
+            }
+
+            let chunk = Chunk::new(center.x + dx, center.z + dz);
+            if !chunk_map.contains_key(&chunk) {
+                continue;
+            }
+
+            corners.insert((chunk.x, chunk.z));
+            corners.insert((chunk.x + 1, chunk.z));
+            corners.insert((chunk.x, chunk.z + 1));
+            corners.insert((chunk.x + 1, chunk.z + 1));
+        }
+    }
+
     let vertical_color = Color::srgb(0.7, 0.8, 1.0).with_alpha(0.18);
     let top = Chunk::Y_AXIS_SIZE as f32;
 
-    for x in min..=max {
-        for z in min..=max {
-            let base = Vec3::new(
-                x as f32 * Chunk::X_AXIS_SIZE as f32,
-                0.0,
-                z as f32 * Chunk::Z_AXIS_SIZE as f32,
-            );
-            gizmos.line(base, base + Vec3::Y * top, vertical_color);
-        }
+    for (x, z) in corners {
+        let base = Vec3::new(
+            x as f32 * Chunk::X_AXIS_SIZE as f32,
+            0.0,
+            z as f32 * Chunk::Z_AXIS_SIZE as f32,
+        );
+        gizmos.line(base, base + Vec3::Y * top, vertical_color);
     }
 }
 
