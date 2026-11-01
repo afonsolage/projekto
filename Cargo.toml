@@ -28,8 +28,12 @@ projekto_messages = { path = "crates/messages" }
 projekto_server = { path = "crates/server" }
 projekto_client = { path = "crates/client" }
 projekto_archive = { path = "crates/archive" }
+projekto_diagnostics = { path = "crates/diagnostics" }
 
-bevy = { version = "0.20", default-features = false, features = ["3d"]}
+bevy = { version = "0.20", default-features = false, features = ["3d", "bevy_ui_render"]}
+
+# Diagnostics
+memory-stats = "1.2"
 
 rand = "0.10"
 thiserror = "2.0"

@@ -50,6 +50,9 @@ impl Plugin for WorldServerPlugin {
                 set::MeshingPlugin,
                 set::SendResponsesPlugin,
             ));
+
+        #[cfg(debug_assertions)]
+        app.add_plugins(debug::MemoryReportPlugin);
     }
 }
 

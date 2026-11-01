@@ -68,3 +68,46 @@ impl Metrics {
         }
     }
 }
+
+#[cfg(debug_assertions)]
+pub use memory_report::MemoryReportPlugin;
+
+#[cfg(debug_assertions)]
+mod memory_report {
+    use bevy::prelude::*;
+    use projekto_diagnostics::{ProcessMemory, ProcessMemoryPlugin};
+    use projekto_messages::DebugMemory;
+
+    use crate::{WorldSet, net::Clients};
+
+    pub struct MemoryReportPlugin;
+
+    impl Plugin for MemoryReportPlugin {
+        fn build(&self, app: &mut App) {
+            app.add_plugins(ProcessMemoryPlugin).add_systems(
+                PostUpdate,
+                send_memory_report.in_set(WorldSet::SendResponses),
+            );
+        }
+    }
+
+    fn send_memory_report(
+        clients: Res<Clients>,
+        memory: Res<ProcessMemory>,
+        time: Res<Time>,
+        mut timer: Local<Option<Timer>>,
+    ) {
+        let timer = timer.get_or_insert_with(|| Timer::from_seconds(1.0, TimerMode::Repeating));
+
+        if !timer.tick(time.delta()).just_finished() || clients.is_empty() {
+            return;
+        }
+
+        for client in clients.values() {
+            let _ = client.channel().send(DebugMemory {
+                rss_bytes: memory.rss_bytes,
+                peak_rss_bytes: memory.peak_rss_bytes,
+            });
+        }
+    }
+}

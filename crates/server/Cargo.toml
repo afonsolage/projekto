@@ -20,6 +20,7 @@ projekto_core.workspace = true
 projekto_proto.workspace = true
 projekto_messages.workspace = true
 projekto_archive.workspace = true
+projekto_diagnostics.workspace = true
 
 bevy.workspace = true
 
