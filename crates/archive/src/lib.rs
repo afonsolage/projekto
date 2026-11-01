@@ -45,7 +45,9 @@ const HEADER_SIZE: usize = SECTOR_INDEX_SIZE * Region::BUFFER_SIZE;
 
 const MAGIC_SIZE: usize = 8;
 /// Magic prefix written at the start of every asset; its trailing bytes encode the format version.
-const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x32, 0x34, 0x45, 0x00, 0x01];
+///
+/// Version 2 removed the derived occlusion and soft-light layers from `ChunkAsset`.
+const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x02];
 
 /// Errors which can happens while using the archive crate.
 /// Check variants for description.
@@ -435,11 +437,17 @@ mod tests {
     use super::*;
 
     fn temp_file() -> String {
-        format!(
+        let path = format!(
             "{}/projekto/{:#08}.tmp",
             std::env::temp_dir().display(),
             rand::random_range(0..u32::MAX)
-        )
+        );
+
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(parent).expect("unable to create archive test directory");
+        }
+
+        path
     }
 
     #[test]
@@ -693,6 +701,38 @@ mod tests {
             archive
                 .file_handler
                 .write_all(&[0u8; MAGIC_SIZE])
+                .await
+                .unwrap();
+            archive.file_handler.flush().await.unwrap();
+        });
+
+        // Assert
+        let error = block_on(archive.read(chunk)).unwrap_err();
+        assert!(matches!(error, ArchiveError::UnsupportedVersion));
+    }
+
+    #[test]
+    fn archive_rejects_v1_magic() {
+        // Arrange
+        let temp_file = temp_file();
+        let mut archive = block_on(Archive::<u16>::new(&temp_file)).unwrap();
+        let chunk = RegionChunk::new(2, 3);
+        let data = Archive::compress(&123u16).unwrap();
+        block_on(archive.write(chunk, data)).unwrap();
+
+        // Act: overwrite the magic with the previous (v1) version.
+        let index = archive.header.get_index(chunk);
+        block_on(async {
+            use futures_lite::{AsyncSeekExt, AsyncWriteExt};
+
+            archive
+                .file_handler
+                .seek(std::io::SeekFrom::Start(index.seek_offset()))
+                .await
+                .unwrap();
+            archive
+                .file_handler
+                .write_all(&[0x01, 0x12, 0x23, 0x32, 0x34, 0x45, 0x00, 0x01])
                 .await
                 .unwrap();
             archive.file_handler.flush().await.unwrap();

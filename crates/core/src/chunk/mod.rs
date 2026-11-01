@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 mod storage;
 pub use storage::*;
 
+mod cache;
+pub use cache::*;
+
 mod column;
 mod impls;
 mod sub_chunk;
@@ -151,28 +154,28 @@ pub fn is_at_edge(voxel: ChunkVoxel) -> bool {
 }
 
 pub fn overlap_voxel(voxel: ChunkVoxel, dir: IVec2) -> (IVec2, ChunkVoxel) {
-    let voxel = IVec2::from(voxel) + dir;
+    let voxel_xz = IVec2::from(voxel) + dir;
 
     let overlapping_voxel = ChunkVoxel::new(
-        voxel.x.rem_euclid(Chunk::X_AXIS_SIZE as i32) as u8,
-        // y never change, since there is no chunk above or bellow
-        voxel.y as u8,
+        voxel_xz.x.rem_euclid(Chunk::X_AXIS_SIZE as i32) as u8,
+        // y never changes, since there is no chunk above or below
+        voxel.y,
         // since IVec2 has only (x, y), we have to use Y.
-        voxel.y.rem_euclid(Chunk::Z_AXIS_SIZE as i32) as u8,
+        voxel_xz.y.rem_euclid(Chunk::Z_AXIS_SIZE as i32) as u8,
     );
 
     let overlapping_dir = (
-        if voxel.x < 0 {
+        if voxel_xz.x < 0 {
             -1
-        } else if voxel.x >= Chunk::X_AXIS_SIZE as i32 {
+        } else if voxel_xz.x >= Chunk::X_AXIS_SIZE as i32 {
             1
         } else {
             0
         },
         // since IVec2 has only (x, y), we have to use Y.
-        if voxel.y < 0 {
+        if voxel_xz.y < 0 {
             -1
-        } else if voxel.y >= Chunk::Z_AXIS_SIZE as i32 {
+        } else if voxel_xz.y >= Chunk::Z_AXIS_SIZE as i32 {
             1
         } else {
             0
@@ -199,6 +202,16 @@ mod tests {
     //     );
     //     assert_eq!(Chunk::new(0, 0), super::to_chunk(Vec3::new(0.0, 0.0, 0.0)));
     // }
+
+    #[test]
+    fn overlap_voxel_preserves_y() {
+        let voxel = ChunkVoxel::new(0, 123, 0);
+
+        let (dir, overlapping) = overlap_voxel(voxel, IVec2::new(-1, 0));
+
+        assert_eq!(dir, IVec2::new(-1, 0));
+        assert_eq!(overlapping, ChunkVoxel::new(Chunk::X_END, 123, 0));
+    }
 
     #[test]
     fn voxels() {

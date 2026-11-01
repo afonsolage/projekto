@@ -10,13 +10,22 @@ use projekto_server::{
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let ChunkAsset {
-        kind,
-        light,
-        occlusion,
-        soft_light,
-        chunk,
-        ..
+        chunk, kind, light, ..
     } = setup();
+
+    let neighborhood = [Some(&kind); chunk::SIDE_COUNT];
+
+    let mut occlusion = ChunkStorage::default();
+    faces_occlusion(&kind, &mut occlusion, &neighborhood);
+
+    let mut soft_light = ChunkStorage::default();
+    projekto_server::light::smooth_lighting(
+        chunk,
+        &occlusion,
+        &mut soft_light,
+        |_| Some(&kind),
+        |_| Some(&light),
+    );
 
     println!("Kind: {kind:?}");
     println!("Light: {light:?}");
@@ -41,25 +50,23 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    let mut soft_light = Default::default();
+    let mut soft_light_bench = ChunkStorage::default();
     c.bench_function("faces light softening", |b| {
         b.iter(|| {
             projekto_server::light::smooth_lighting(
                 chunk,
                 &occlusion,
-                &mut soft_light,
+                &mut soft_light_bench,
                 |_| Some(&kind),
                 |_| Some(&light),
             );
         });
     });
 
-    let mut occlusion = ChunkStorage::default();
-    let neighborhood = [Some(&kind); chunk::SIDE_COUNT];
-
+    let mut occlusion_bench = ChunkStorage::default();
     c.bench_function("faces occlusion", |b| {
         b.iter(|| {
-            faces_occlusion(&kind, &mut occlusion, &neighborhood);
+            faces_occlusion(&kind, &mut occlusion_bench, &neighborhood);
         });
     });
 

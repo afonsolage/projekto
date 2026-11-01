@@ -4,7 +4,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use projekto_core::{
-    chunk::{self, ChunkStorage, ChunkStorageType},
+    chunk::{self, ChunkStorage, ChunkStorageCache, ChunkStorageType},
     coords::{Chunk, ChunkVoxel},
     voxel::{FacesOcclusion, FacesSoftLight, Kind, Light},
 };
@@ -103,8 +103,10 @@ fn report_memory() {
     let soft_light = |v: ChunkVoxel| FacesSoftLight::with_intensity(15 - (v.y % 16));
 
     let mut per_chunk = 0;
-    per_chunk += report_storage::<Kind>("kind", kind);
-    per_chunk += report_storage::<Light>("light", light);
+    let kind_bytes = report_storage::<Kind>("kind", kind);
+    per_chunk += kind_bytes;
+    let light_bytes = report_storage::<Light>("light", light);
+    per_chunk += light_bytes;
     per_chunk += report_storage::<FacesOcclusion>("occlusion", occlusion);
     per_chunk += report_storage::<FacesSoftLight>("soft_light", soft_light);
 
@@ -114,6 +116,66 @@ fn report_memory() {
         per_chunk,
         per_chunk * chunks
     );
+    println!();
+
+    report_cached_memory(kind_bytes, light_bytes, occlusion, soft_light, chunks);
+}
+
+fn report_cached_memory(
+    kind_bytes: isize,
+    light_bytes: isize,
+    occlusion: impl Fn(ChunkVoxel) -> FacesOcclusion,
+    soft_light: impl Fn(ChunkVoxel) -> FacesSoftLight,
+    chunks: isize,
+) {
+    const CACHE_CHUNKS: usize = 32;
+
+    let occlusion_cache = resident_bytes(|| {
+        let mut cache = ChunkStorageCache::<FacesOcclusion>::new(CACHE_CHUNKS);
+        for i in 0..CACHE_CHUNKS {
+            let chunk = Chunk::new(i as i32, 0);
+            let mut storage = ChunkStorage::default();
+            for voxel in chunk::voxels() {
+                storage.set(voxel, occlusion(voxel));
+            }
+            storage.pack();
+            cache.insert(chunk, storage);
+        }
+        cache
+    });
+
+    let soft_light_cache = resident_bytes(|| {
+        let mut cache = ChunkStorageCache::<FacesSoftLight>::new(CACHE_CHUNKS);
+        for i in 0..CACHE_CHUNKS {
+            let chunk = Chunk::new(i as i32, 0);
+            let mut storage = ChunkStorage::default();
+            for voxel in chunk::voxels() {
+                storage.set(voxel, soft_light(voxel));
+            }
+            storage.pack();
+            cache.insert(chunk, storage);
+        }
+        cache
+    });
+
+    let resident_per_chunk = kind_bytes + light_bytes;
+    let cache_bytes = occlusion_cache + soft_light_cache;
+    let total = resident_per_chunk * chunks + cache_bytes;
+
+    println!("Cached residency model (kind + light resident, derived layers on demand):");
+    println!(
+        "  {:<34} {:>10} B",
+        "kind + light per chunk", resident_per_chunk
+    );
+    println!(
+        "  {:<34} {:>10} B",
+        "occlusion cache (32 chunks)", occlusion_cache
+    );
+    println!(
+        "  {:<34} {:>10} B",
+        "soft_light cache (32 chunks)", soft_light_cache
+    );
+    println!("  {:<34} {:>10} B", "TOTAL radius 32 (incl. cache)", total);
     println!();
 }
 

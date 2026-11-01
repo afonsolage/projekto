@@ -114,13 +114,11 @@ The following plugins are used to organize the server's systems:
   the world.
   - [`propagate_light`](./crates/server/src/set/propagation.rs#L31): Propagates light based on
     `LightUpdate` events.
-- **[`MeshingPlugin`](./crates/server/src/set/meshing.rs#L11)**: Generates the chunk meshes.
-  - [`faces_occlusion`](./crates/server/src/set/meshing.rs#L30): Calculates the occlusion of chunk
-    faces.
-  - [`faces_light_softening`](./crates/server/src/set/meshing.rs#L73): Softens the light on chunk
-    faces.
-  - [`generate_vertices`](./crates/server/src/set/meshing.rs#L114): Generates the vertices for the
-    chunk meshes.
+- **[`MeshingPlugin`](./crates/server/src/set/meshing.rs#L13)**: Generates the chunk meshes.
+  - [`mark_dirty_chunks`](./crates/server/src/set/meshing.rs#L28): Invalidates the derived caches
+    and queues chunk meshes affected by `Kind` or `Light` changes.
+  - [`generate_vertices`](./crates/server/src/set/meshing.rs#L57): Computes occlusion and soft
+    light on demand, then generates the vertices for the chunk meshes.
 - **[`SendResponsesPlugin`](./crates/server/src/set/send_responses.rs#L11)**: Sends responses to
   clients.
   - [`notify_chunk_vertex_updated`](./crates/server/src/set/send_responses.rs#L24): Queues chunk
@@ -148,8 +146,7 @@ specific order:
     - `Propagation`:
       - `propagate_light` (`PropagationPlugin`)
     - `Meshing`:
-      - `faces_occlusion` (`MeshingPlugin`)
-      - `faces_light_softening` (`MeshingPlugin`)
+      - `mark_dirty_chunks` (`MeshingPlugin`)
       - `generate_vertices` (`MeshingPlugin`)
 3.  **`PostUpdate`**:
     - `SendResponses`:
