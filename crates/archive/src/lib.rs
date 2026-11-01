@@ -33,21 +33,24 @@ use projekto_core::coords::{Region, RegionChunk};
 use std::io::SeekFrom;
 use thiserror::Error;
 
+mod asset;
+pub use asset::ChunkAsset;
+
 mod server;
 pub use server::{ArchiveServer, ArchiveTask, MaintenanceResult};
 
 /// Size, in bytes, of each sector within the archive.
-const SECTOR_SIZE: usize = 4096;
+pub const SECTOR_SIZE: usize = 4096;
 /// Size, in bytes, of each index within the archive.
-const SECTOR_INDEX_SIZE: usize = 2 * 2; // 2 bytes, one for offset and another for sectors
+pub const SECTOR_INDEX_SIZE: usize = 2 * 2; // 2 bytes, one for offset and another for sectors
 /// Size, in bytes, of header section of the archive.
-const HEADER_SIZE: usize = SECTOR_INDEX_SIZE * Region::BUFFER_SIZE;
+pub const HEADER_SIZE: usize = SECTOR_INDEX_SIZE * Region::BUFFER_SIZE;
 
-const MAGIC_SIZE: usize = 8;
+pub const MAGIC_SIZE: usize = 8;
 /// Magic prefix written at the start of every asset; its trailing bytes encode the format version.
 ///
 /// Version 2 removed the derived occlusion and soft-light layers from `ChunkAsset`.
-const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x02];
+pub const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x02];
 
 /// Errors which can happens while using the archive crate.
 /// Check variants for description.

@@ -6,9 +6,10 @@ use bevy::{
 use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask, MaintenanceResult};
 use projekto_core::coords::Chunk;
 
+use projekto_archive::ChunkAsset;
+
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
-    asset::ChunkAsset,
     bundle::{
         CachedMesh, ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery,
         ChunkVertex,

@@ -7,11 +7,10 @@ use net::NetPlugin;
 pub mod light;
 pub mod meshing;
 
-mod asset;
 mod cache;
 
-pub use asset::ChunkAsset;
 pub use cache::*;
+pub use projekto_archive::ChunkAsset;
 
 pub mod debug;
 mod net;

@@ -1,0 +1,17 @@
+[package]
+name = "projekto_archive_cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+projekto_archive.workspace = true
+projekto_core.workspace = true
+
+futures-lite.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "projekto-archive"
+path = "src/main.rs"

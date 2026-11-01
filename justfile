@@ -19,6 +19,10 @@ ci:
 server *args:
     cargo run -p projekto_server {{args}}
 
+# Inspect region archives.
+archive *args:
+    cargo run -q -p projekto_archive_cli -- {{args}}
+
 # Cross-compile the client in WSL and run it natively on Windows.
 client-win *args:
     #!/usr/bin/env bash
