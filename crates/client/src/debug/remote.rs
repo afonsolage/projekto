@@ -3,13 +3,13 @@ use bevy::{
     remote::{BrpError, BrpResult, RemotePlugin, http::RemoteHttpPlugin},
 };
 use projekto_core::coords::Chunk;
-use projekto_debug::{ChunkDebug, DebugPin};
+use projekto_debug::{ChunkDebug, DebugPin, DebugViewConfig};
 use projekto_diagnostics::ProcessMemory;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{
-    chunks::{ReportRequest, spawn_pin},
+    chunks::{ReportRequest, chunk_at_screen_position, spawn_pin},
     memory::ServerMemory,
 };
 
@@ -30,6 +30,7 @@ impl Plugin for RemoteDebugPlugin {
             .with_method_main("projekto/unpin", unpin)
             .with_method_main("projekto/memory", memory)
             .with_method_main("projekto/player_landscape", player_landscape)
+            .with_method_main("projekto/chunk_at_screen", chunk_at_screen)
             .with_method_main("projekto/report", report);
 
         #[cfg(feature = "ai")]
@@ -55,6 +56,13 @@ struct PinParams {
     x: i32,
     z: i32,
     position: Option<[f32; 3]>,
+}
+
+#[derive(Deserialize)]
+struct ScreenChunkParams {
+    x: f32,
+    y: f32,
+    plane_y: Option<f32>,
 }
 
 fn parse<T: serde::de::DeserializeOwned>(params: Option<Value>) -> Result<T, BrpError> {
@@ -152,6 +160,34 @@ fn memory(
 
 fn player_landscape(_: In<Option<Value>>, landscape: Option<Res<PlayerLandscape>>) -> BrpResult {
     json(landscape.as_deref().copied())
+}
+
+fn chunk_at_screen(
+    In(params): In<Option<Value>>,
+    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    config: Res<DebugViewConfig>,
+) -> BrpResult {
+    let params: ScreenChunkParams = parse(params)?;
+    let Some((camera, transform)) = cameras.iter().find(|(camera, _)| camera.is_active) else {
+        return Err(BrpError {
+            code: -32001,
+            message: "no active Camera3d".to_string(),
+            data: None,
+        });
+    };
+
+    let plane_y = params.plane_y.unwrap_or(config.grid_height);
+    let Some(chunk) =
+        chunk_at_screen_position(camera, transform, Vec2::new(params.x, params.y), plane_y)
+    else {
+        return Err(BrpError {
+            code: -32602,
+            message: "screen position does not intersect the debug grid plane".to_string(),
+            data: None,
+        });
+    };
+
+    Ok(json!({ "x": chunk.x, "z": chunk.z, "plane_y": plane_y }))
 }
 
 fn report(_: In<Option<Value>>, mut request: ResMut<ReportRequest>) -> BrpResult {

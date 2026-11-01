@@ -12,8 +12,13 @@ These tools are only compiled for debug builds. The remote API is also gated beh
 - **F8** — place a pin on the hovered chunk.
 - **F9** — clear all pins.
 
-The bottom-left overlay shows the hovered chunk, its `ChunkDebug` summary and the pin count.
-Chunks without a mesh are drawn in red in the grid and labels.
+The bottom-left overlay shows the hovered chunk, its `ChunkDebug` summary, the camera chunk,
+the crosshair chunk and the pin count. Chunks without a mesh are drawn in red in the grid and
+labels.
+
+The grid and labels are world-space: F4 draws chunk boundary squares and vertical chunk-column
+edges, F5 draws `(x, z)` labels at chunk centres. The crosshair chunk is the chunk where the
+camera centre ray crosses the configured grid height.
 
 ## Debug reports
 
@@ -21,8 +26,8 @@ Chunks without a mesh are drawn in red in the grid and labels.
 launched through `just c`):
 
 - `screenshot.png` — the frame at capture time.
-- `report.json` — camera pose, hovered chunk, nearby `ChunkDebug` values, pins, client and
-  server memory.
+- `report.json` — camera pose, hovered and crosshair chunks, nearby `ChunkDebug` values, pins,
+  client and server memory.
 - `README.txt` — the commands below for inspecting the chunk in the archive.
 
 ## Chunk pins
@@ -99,6 +104,8 @@ Built-in BRP methods include `world.query`, `world.get_components`, `world.get_r
 - `projekto/unpin` — `{ "x": i32, "z": i32 }`
 - `projekto/memory`
 - `projekto/player_landscape`
+- `projekto/chunk_at_screen` — `{ "x": f32, "y": f32, "plane_y": f32? }` projects a screen point
+  onto the grid plane and returns its chunk
 - `projekto/report` — triggers a debug report and screenshot
 
 BRP can mutate the world. Never enable the feature in a release build or expose it outside
@@ -111,7 +118,7 @@ window:
 
 - windowless, one update per second;
 - renders the world to a 960x540 offscreen image;
-- grid and chunk labels enabled by default;
+- grid and world-space chunk labels enabled by default;
 - writes `debug_reports/ai/latest.png` every 5 seconds;
 - exposes BRP on `127.0.0.1:15722` and the render subapp on `15703`;
 - does not accept keyboard/mouse input.
