@@ -16,4 +16,7 @@ pub enum ServerMessage {
         pub chunk: Chunk,
         pub vertex: Vec<voxel::Vertex>,
     },
+    ChunkUnload {
+        pub chunk: Chunk,
+    },
 }

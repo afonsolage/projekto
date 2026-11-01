@@ -1,12 +1,11 @@
 use bevy::{
     camera::visibility::RenderLayers,
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    ecs::query::QueryFilter,
     platform::collections::HashMap,
     prelude::*,
     window::PresentMode,
 };
-use bundle::{ChunkLocal, ChunkVertex};
+use bundle::ChunkLocal;
 use controller::{
     camera_controller::CameraControllerPlugin,
     character_controller::{CharacterController, CharacterControllerPlugin},
@@ -77,11 +76,7 @@ impl Plugin for ClientPlugin {
                 set::SendInputPlugin,
             ))
             .add_systems(Startup, setup_material)
-            .add_systems(PreStartup, load_assets)
-            .add_systems(
-                Update,
-                (remove_unloaded_chunks.run_if(any_chunk::<Changed<ChunkVertex>>),),
-            );
+            .add_systems(PreStartup, load_assets);
     }
 }
 
@@ -174,10 +169,6 @@ struct ChunkBundle {
     transform: Transform,
 }
 
-fn any_chunk<T: QueryFilter>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
-    !q_changed_chunks.is_empty()
-}
-
 #[derive(Debug, Resource)]
 pub struct KindsAtlasRes {
     pub atlas: Handle<Image>,
@@ -204,21 +195,4 @@ fn setup_material(
     });
 
     commands.insert_resource(ChunkMaterialHandle(material));
-}
-
-fn remove_unloaded_chunks(
-    mut commands: Commands,
-    mut map: ResMut<ChunkMap>,
-    q_vertex: Query<&ChunkLocal, With<ChunkVertex>>,
-) {
-    let server_chunks = q_vertex.iter().map(|l| **l).collect::<Vec<_>>();
-
-    map.retain(|chunk, entity| {
-        let retain = server_chunks.contains(chunk);
-        if !retain {
-            trace!("[remove_unloaded_chunks] despawning chunk [{}]", chunk);
-            commands.entity(*entity).despawn();
-        }
-        retain
-    });
 }

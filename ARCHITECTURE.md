@@ -43,10 +43,12 @@ The following plugins are used to organize the client's systems:
     the server.
   - [`handle_messages`](./crates/client/src/net.rs#L91): Processes incoming messages from the
     server.
-- **[`MeshingPlugin`](./crates/client/src/set/meshing.rs#L14)**: Generates the chunk meshes.
-  - [`update_chunk_mesh`](./crates/client/src/set/meshing.rs#L36): Updates the mesh of a chunk when
+- **[`MeshingPlugin`](./crates/client/src/set/meshing.rs#L15)**: Generates the chunk meshes.
+  - [`update_chunk_mesh`](./crates/client/src/set/meshing.rs#L50): Updates the mesh of a chunk when
     new vertex data is received.
-  - [`despawn_chunks_on_server_disconnect`](./crates/client/src/set/meshing.rs#L25): Despawns all
+  - [`remove_chunk_mesh`](./crates/client/src/set/meshing.rs#L28): Despawns a chunk when the
+    server sends `ChunkUnload`.
+  - [`despawn_chunks_on_server_disconnect`](./crates/client/src/set/meshing.rs#L39): Despawns all
     chunks when the server disconnects.
 - **[`ReceiveMessagesPlugin`](./crates/client/src/set/receive_messages.rs#L3)**: This plugin is
   currently empty.
@@ -87,25 +89,27 @@ The following plugins are used to organize the server's systems:
 
 - **[`ChunkAssetPlugin`](./crates/server/src/asset.rs#L24)**: Manages the loading and generation of
   chunk assets.
-- **[`NetPlugin`](./crates/server/src/net.rs#L13)**: Handles client connections and messages.
-  - [`start_network_server`](./crates/server/src/net.rs#L36): Starts the network server.
-  - [`new_client_connected`](./crates/server/src/net.rs#L66): Handles new client connections.
-  - [`remove_disconnected_clients`](./crates/server/src/net.rs#L53): Removes disconnected clients.
-  - [`handle_messages`](./crates/server/src/net.rs#L78): Processes incoming messages from clients.
+- **[`NetPlugin`](./crates/server/src/net.rs#L15)**: Handles client connections and messages.
+  - [`start_network_server`](./crates/server/src/net.rs#L124): Starts the network server.
+  - [`new_client_connected`](./crates/server/src/net.rs#L160): Handles new client connections.
+  - [`remove_disconnected_clients`](./crates/server/src/net.rs#L141): Removes disconnected clients.
+  - [`handle_messages`](./crates/server/src/net.rs#L174): Processes incoming messages from clients.
+  - [`ClientSync`](./crates/server/src/net.rs#L50): Tracks sent chunks and pending updates/unloads
+    per client.
 - **[`ReceiveRequestsPlugin`](./crates/server/src/set/receive_requests.rs#L13)**: Handles requests
   from clients.
   - [`handle_landscape_update`](./crates/server/src/set/receive_requests.rs#L21): Handles the
     `LandscapeUpdate` message from clients.
 - **[`LandscapePlugin`](./crates/server/src/set/landscape.rs#L8)**: Manages the game world's
   landscape.
-  - [`update_landscape`](./crates/server/src/set/landscape.rs#L26): Updates the landscape based on
+  - [`update_landscape`](./crates/server/src/set/landscape.rs#L39): Updates the landscape based on
     the `Landscape` resource.
-- **[`ChunkManagementPlugin`](./crates/server/src/set/chunk_management.rs#L13)**: Manages the
+- **[`ChunkManagementPlugin`](./crates/server/src/set/chunk_management.rs#L15)**: Manages the
   loading, unloading, and spawning of chunks.
-  - [`chunks_unload`](./crates/server/src/set/chunk_management.rs#L43): Unloads chunks that are no
-    longer needed.
-  - [`chunks_load`](./crates/server/src/set/chunk_management.rs#L61): Loads new chunks.
-  - [`chunks_spawn`](./crates/server/src/set/chunk_management.rs#L76): Spawns new chunks.
+  - [`chunks_unload`](./crates/server/src/set/chunk_management.rs#L55): Unloads chunks that are no
+    longer needed and notifies clients.
+  - [`chunks_load`](./crates/server/src/set/chunk_management.rs#L102): Loads new chunks, dropping
+    results that left the landscape while loading.
 - **[`PropagationPlugin`](./crates/server/src/set/propagation.rs#L13)**: Propagates light through
   the world.
   - [`propagate_light`](./crates/server/src/set/propagation.rs#L31): Propagates light based on
@@ -117,10 +121,12 @@ The following plugins are used to organize the server's systems:
     faces.
   - [`generate_vertices`](./crates/server/src/set/meshing.rs#L114): Generates the vertices for the
     chunk meshes.
-- **[`SendResponsesPlugin`](./crates/server/src/set/send_responses.rs#L10)**: Sends responses to
+- **[`SendResponsesPlugin`](./crates/server/src/set/send_responses.rs#L11)**: Sends responses to
   clients.
-  - [`notify_chunk_vertex_updated`](./crates/server/src/set/send_responses.rs#L21): Notifies
-    clients when a chunk's vertices have been updated.
+  - [`notify_chunk_vertex_updated`](./crates/server/src/set/send_responses.rs#L24): Queues chunk
+    vertex updates for clients when the vertices change.
+  - [`resync_clients`](./crates/server/src/set/send_responses.rs#L54): Retries pending updates and
+    unloads that did not fit in a client's bounded channel.
 
 ### System Sets (WorldSet)
 
@@ -139,7 +145,6 @@ specific order:
     - `ChunkManagement`:
       - `chunks_unload` (`ChunkManagementPlugin`)
       - `chunks_load` (`ChunkManagementPlugin`)
-      - `chunks_spawn` (`ChunkManagementPlugin`)
     - `Propagation`:
       - `propagate_light` (`PropagationPlugin`)
     - `Meshing`:
@@ -149,6 +154,7 @@ specific order:
 3.  **`PostUpdate`**:
     - `SendResponses`:
       - `notify_chunk_vertex_updated` (`SendResponsesPlugin`)
+      - `resync_clients` (`SendResponsesPlugin`)
 
 ## `proto` Crate
 

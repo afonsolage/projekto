@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{platform::collections::HashSet, prelude::*};
 use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask};
 use projekto_core::coords::Chunk;
 
@@ -10,13 +10,18 @@ use crate::{
         ChunkMap, ChunkVertex,
     },
     genesis::{ChunkCreation, GenesisServer, GenesisTask},
+    net::{ClientSync, Clients},
 };
+
+use super::Landscape;
 
 pub struct ChunkManagementPlugin;
 
 impl Plugin for ChunkManagementPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkMap>()
+            .init_resource::<Clients>()
+            .init_resource::<ClientSync>()
             .add_message::<ChunkUnload>()
             .add_message::<ChunkLoad>()
             .add_message::<ChunkGen>()
@@ -51,6 +56,8 @@ fn init_servers(mut commands: Commands) {
 fn chunks_unload(
     mut commands: Commands,
     mut chunk_map: ResMut<ChunkMap>,
+    clients: Res<Clients>,
+    mut sync: ResMut<ClientSync>,
     mut reader: MessageReader<ChunkUnload>,
 ) {
     let mut count = 0;
@@ -58,6 +65,21 @@ fn chunks_unload(
     reader.read().for_each(|evt| {
         if let Some(entity) = chunk_map.remove(&evt.0) {
             commands.entity(entity).despawn();
+
+            for (id, client) in clients.iter() {
+                if !sync.remove_chunk(*id, evt.0) {
+                    continue;
+                }
+
+                if client
+                    .channel()
+                    .send(projekto_messages::ChunkUnload { chunk: evt.0 })
+                    .is_err()
+                {
+                    sync.queue_unload(*id, evt.0);
+                }
+            }
+
             count += 1;
         } else {
             let local = evt.0;
@@ -74,13 +96,27 @@ fn chunks_load(
     mut reader: MessageReader<ChunkLoad>,
     mut archive: ResMut<ArchiveServer<ChunkAsset>>,
     genesis: ResMut<GenesisServer>,
+    landscape: Option<Res<Landscape>>,
     mut load_tasks: Local<Vec<ArchiveTask<ChunkAsset>>>,
     mut gen_tasks: Local<Vec<GenesisTask>>,
+    mut loading: Local<HashSet<Chunk>>,
     mut map: ResMut<ChunkMap>,
     time: Res<Time>,
 ) -> Result {
+    let is_desired = |chunk: Chunk| landscape.as_ref().is_some_and(|l| l.contains(chunk));
+
     for &ChunkLoad(chunk) in reader.read() {
-        load_tasks.push(archive.load_chunk(chunk)?);
+        if map.0.contains_key(&chunk) || loading.contains(&chunk) {
+            continue;
+        }
+
+        match archive.load_chunk(chunk) {
+            Ok(task) => {
+                loading.insert(chunk);
+                load_tasks.push(task);
+            }
+            Err(e) => error!("Unable to request chunk ({chunk}). {e}"),
+        }
     }
 
     let mut loaded = 0;
@@ -88,24 +124,37 @@ fn chunks_load(
 
     load_tasks.retain_mut(|task| {
         if let Some(result) = task.try_get_result() {
+            let chunk = task.chunk();
+
             match result {
-                Ok(maybe_asset) => {
-                    if let Some(asset) = maybe_asset {
-                        let chunk = asset.chunk;
+                Ok(Some(asset)) => {
+                    loading.remove(&chunk);
+
+                    if is_desired(chunk) {
                         let entity = spawn_chunk(&mut commands, asset);
                         map.insert(chunk, entity);
 
                         loaded += 1;
-                    } else {
-                        let task = genesis.generate(task.chunk());
-                        gen_tasks.push(task);
                     }
                 }
-                Err(ArchiveError::UnsupportedVersion) => error!(
-                    "Chunk {} was saved with an unsupported archive format version. Delete or migrate archive/region before loading.",
-                    task.chunk()
-                ),
-                Err(e) => error!("Unable to load chunk ({}). {e}", task.chunk()),
+                Ok(None) => {
+                    // Keep the chunk in `loading` while genesis runs.
+                    if is_desired(chunk) {
+                        gen_tasks.push(genesis.generate(chunk));
+                    } else {
+                        loading.remove(&chunk);
+                    }
+                }
+                Err(ArchiveError::UnsupportedVersion) => {
+                    loading.remove(&chunk);
+                    error!(
+                        "Chunk {chunk} was saved with an unsupported archive format version. Delete or migrate archive/region before loading."
+                    );
+                }
+                Err(e) => {
+                    loading.remove(&chunk);
+                    error!("Unable to load chunk ({chunk}). {e}");
+                }
             }
             // remove task
             false
@@ -118,12 +167,16 @@ fn chunks_load(
     gen_tasks.retain_mut(|task| {
         if let Some(result) = task.try_get_result() {
             let chunk = task.chunk();
+            loading.remove(&chunk);
+
             match result {
                 Ok(creation) => {
-                    let entity = spawn_created_chunk(&mut commands, chunk, creation);
-                    map.insert(chunk, entity);
+                    if is_desired(chunk) {
+                        let entity = spawn_created_chunk(&mut commands, chunk, creation);
+                        map.insert(chunk, entity);
 
-                    generated += 1;
+                        generated += 1;
+                    }
                 }
                 Err(e) => error!("Unable to generate chunk ({chunk}). {e}"),
             }

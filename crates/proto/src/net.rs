@@ -55,7 +55,7 @@ async fn net_to_channel<S: MessageType, R: MessageType>(
             msg_type.deserialize_boxed(buffer)?
         };
 
-        channel.send_boxed(boxed)?;
+        channel.send_boxed_async(boxed).await?;
     }
 }
 
