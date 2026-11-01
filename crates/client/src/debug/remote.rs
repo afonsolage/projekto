@@ -27,7 +27,7 @@ impl Plugin for RemoteDebugPlugin {
                 .with_method_main("projekto/memory", memory)
                 .with_method_main("projekto/player_landscape", player_landscape)
                 .with_method_main("projekto/report", report),
-            RemoteHttpPlugin::default(),
+            RemoteHttpPlugin::default().with_port(15712),
         ));
     }
 }

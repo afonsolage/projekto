@@ -48,8 +48,12 @@ which is the signature of a rendering hole.
 The server and client expose the Bevy Remote Protocol over HTTP when built with the
 `remote-debug` feature. `just s` and `just c` enable it automatically.
 
-- Main app: `127.0.0.1:15702`
-- Render subapp: `127.0.0.1:15703`
+- Server main app: `127.0.0.1:15702`
+- Client main app: `127.0.0.1:15712`
+- Client render subapp: `127.0.0.1:15703`
+
+The client uses a different main port because WSL forwards Windows `localhost:15702` to the
+server running in WSL.
 
 From WSL the server is directly reachable:
 
@@ -66,10 +70,11 @@ curl -s http://127.0.0.1:15702 -H 'content-type: application/json' -d '{
 }'
 ```
 
-The Windows client listens on Windows localhost. Execute `curl.exe` through WSL to reach it:
+The Windows client listens on Windows localhost port 15712. Execute `curl.exe` through WSL to
+reach it:
 
 ```bash
-curl.exe -s http://127.0.0.1:15702 -H 'content-type: application/json' \
+curl.exe -s http://127.0.0.1:15712 -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"world.list_components"}'
 ```
 
