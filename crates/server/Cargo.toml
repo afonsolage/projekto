@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 readme = "README.md"
-default-run = "main"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
@@ -20,7 +19,6 @@ projekto_core.workspace = true
 projekto_proto.workspace = true
 projekto_messages.workspace = true
 projekto_archive.workspace = true
-projekto_diagnostics.workspace = true
 
 bevy.workspace = true
 
@@ -46,10 +44,6 @@ tracing-subscriber = "0.3"
 
 [lints]
 workspace = true
-
-[[bin]]
-name = "main"
-path = "bin/main.rs"
 
 [[example]]
 name = "server_bench"

@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use bevy::prelude::*;
+use bevy::{camera::visibility::RenderLayers, prelude::*};
 use projekto_diagnostics::{ProcessMemory, ProcessMemoryPlugin, format_bytes};
 use projekto_messages::DebugMemory;
 use projekto_proto::RegisterMessageHandler;
@@ -8,7 +8,7 @@ use projekto_proto::RegisterMessageHandler;
 const SERVER_REPORT_TIMEOUT_SECS: f32 = 3.0;
 const OVERLAY_REFRESH_SECS: f32 = 0.5;
 
-pub(crate) struct MemoryOverlayPlugin;
+pub struct MemoryOverlayPlugin;
 
 impl Plugin for MemoryOverlayPlugin {
     fn build(&self, app: &mut App) {
@@ -24,10 +24,10 @@ impl Plugin for MemoryOverlayPlugin {
 struct MemoryOverlay;
 
 #[derive(Resource, Default)]
-struct ServerMemory {
-    rss_bytes: u64,
-    peak_rss_bytes: u64,
-    last_report: Option<Instant>,
+pub(crate) struct ServerMemory {
+    pub(crate) rss_bytes: u64,
+    pub(crate) peak_rss_bytes: u64,
+    pub(crate) last_report: Option<Instant>,
 }
 
 fn spawn_overlay(mut commands: Commands) {
@@ -38,6 +38,9 @@ fn spawn_overlay(mut commands: Commands) {
             clear_color: ClearColorConfig::None,
             ..default()
         },
+        // UI is rendered independently of render layers; keep this camera out of the
+        // 3D gizmo layers so world labels are not drawn a second time in 2D.
+        RenderLayers::layer(3),
         IsDefaultUiCamera,
         Name::new("Memory Overlay Camera"),
     ));

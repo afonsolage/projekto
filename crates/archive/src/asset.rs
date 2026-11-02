@@ -1,8 +1,11 @@
-use bevy::prelude::*;
 use projekto_core::{chunk::ChunkStorage, coords::Chunk, voxel};
 use serde::{Deserialize, Serialize};
 
-#[derive(Asset, Component, Default, Debug, TypePath, Serialize, Deserialize)]
+/// Persisted chunk data.
+///
+/// This is the on-disk schema of the region archive. Changing the fields or their order
+/// requires bumping [`VERSION_MAGIC`](crate::VERSION_MAGIC).
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct ChunkAsset {
     pub chunk: Chunk,
     pub kind: ChunkStorage<voxel::Kind>,

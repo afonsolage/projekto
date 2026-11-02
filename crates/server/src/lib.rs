@@ -7,14 +7,12 @@ use net::NetPlugin;
 pub mod light;
 pub mod meshing;
 
-mod asset;
 mod cache;
 
-pub use asset::ChunkAsset;
 pub use cache::*;
+pub use projekto_archive::ChunkAsset;
 
-pub mod debug;
-mod net;
+pub mod net;
 
 pub mod genesis;
 
@@ -39,7 +37,6 @@ impl Plugin for WorldServerPlugin {
                     .chain(),
             )
             .configure_sets(PostUpdate, WorldSet::SendResponses)
-            .insert_resource(debug::Metrics::new())
             .add_plugins((
                 NetPlugin,
                 set::ReceiveRequestsPlugin,
@@ -50,9 +47,6 @@ impl Plugin for WorldServerPlugin {
                 set::MeshingPlugin,
                 set::SendResponsesPlugin,
             ));
-
-        #[cfg(debug_assertions)]
-        app.add_plugins(debug::MemoryReportPlugin);
     }
 }
 

@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// How often the process memory is sampled.
 pub const MEMORY_SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
@@ -11,7 +12,8 @@ const MIB: f64 = 1024.0 * 1024.0;
 const GIB: f64 = 1024.0 * MIB;
 
 /// Resident memory of the current process.
-#[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq, Reflect, Serialize, Deserialize)]
+#[reflect(Resource, Serialize, Deserialize)]
 pub struct ProcessMemory {
     /// Current resident set size, in bytes.
     pub rss_bytes: u64,
@@ -37,7 +39,8 @@ pub struct ProcessMemoryPlugin;
 
 impl Plugin for ProcessMemoryPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ProcessMemory>()
+        app.register_type::<ProcessMemory>()
+            .init_resource::<ProcessMemory>()
             .add_systems(Startup, sample_once)
             .add_systems(Update, sample_periodically);
     }

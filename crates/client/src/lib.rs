@@ -3,15 +3,13 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     platform::collections::HashMap,
     prelude::*,
-    window::PresentMode,
 };
-use bundle::ChunkLocal;
+
 use controller::{
     camera_controller::CameraControllerPlugin,
     character_controller::{CharacterController, CharacterControllerPlugin},
 };
-use debug::DebugPlugin;
-use material::ChunkMaterial;
+pub use material::ChunkMaterial;
 use net::ServerConnection;
 use projekto_camera::{
     CameraPlugin,
@@ -22,42 +20,29 @@ use projekto_core::{
     coords::Chunk,
     voxel::{self},
 };
-
 mod bundle;
 mod controller;
-mod debug;
-mod material;
+pub mod material;
 mod net;
 mod set;
 
+pub use bundle::ChunkLocal;
 pub use set::PlayerLandscape;
 
 pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
-        app
-            // This may cause problems later on. Ideally this setup should be done per image
-            .add_plugins((
-                DefaultPlugins
-                    .set(WindowPlugin {
-                        primary_window: Some(Window {
-                            present_mode: PresentMode::AutoNoVsync,
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    })
-                    .set(ImagePlugin::default_nearest()),
-                LogDiagnosticsPlugin::default(),
-                FrameTimeDiagnosticsPlugin::default(),
-            ))
-            .add_plugins((
-                CameraPlugin,
-                DebugPlugin,
-                CameraControllerPlugin,
-                CharacterControllerPlugin,
-            ))
-            .add_systems(Startup, setup_mockup_scene);
+        app.add_plugins((
+            LogDiagnosticsPlugin::default(),
+            FrameTimeDiagnosticsPlugin::default(),
+            CameraPlugin,
+            CameraControllerPlugin,
+            CharacterControllerPlugin,
+        ))
+        .add_systems(Startup, (setup_mockup_scene, setup_hold_esc_to_exit))
+        .add_systems(Update, hold_esc_to_exit)
+        .add_message::<ChunkMeshBuilt>();
 
         // World setup
         app.init_resource::<ChunkMap>()
@@ -77,6 +62,33 @@ impl Plugin for ClientPlugin {
             ))
             .add_systems(Startup, setup_material)
             .add_systems(PreStartup, load_assets);
+    }
+}
+
+const ESC_HOLD_TIMEOUT: f32 = 0.2;
+
+#[derive(Resource)]
+struct EscHolding(f32);
+
+fn setup_hold_esc_to_exit(mut commands: Commands) {
+    commands.insert_resource(EscHolding(0.0));
+}
+
+fn hold_esc_to_exit(
+    mut esc_holding: ResMut<EscHolding>,
+    time: Res<Time>,
+    input_keys: Res<ButtonInput<KeyCode>>,
+    mut exit_writer: MessageWriter<bevy::app::AppExit>,
+) {
+    if input_keys.pressed(KeyCode::Escape) {
+        esc_holding.0 += time.delta_secs();
+
+        if esc_holding.0 >= ESC_HOLD_TIMEOUT {
+            info!("Exiting app due to ESC holding...");
+            exit_writer.write(bevy::app::AppExit::Success);
+        }
+    } else {
+        esc_holding.0 = 0.0;
     }
 }
 
@@ -120,6 +132,7 @@ fn setup_mockup_scene(
                     is_active: false,
                     ..Default::default()
                 },
+                RenderLayers::from_layers(&[0]),
                 Name::new("FirstPersonCamera"),
                 FirstPersonCamera,
             ));
@@ -146,6 +159,15 @@ fn setup_mockup_scene(
     commands.spawn((PointLight::default(), Transform::from_xyz(4.0, 8.0, 4.0)));
 }
 
+#[derive(Message, Debug, Clone, Copy)]
+pub struct ChunkMeshBuilt {
+    pub entity: Entity,
+    pub chunk: Chunk,
+    pub vertex_count: u32,
+    pub top_y: f32,
+    pub center_y: f32,
+}
+
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum ClientSet {
     ReceiveMessages,
@@ -156,7 +178,7 @@ pub enum ClientSet {
 }
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkMap(HashMap<Chunk, Entity>);
+pub struct ChunkMap(HashMap<Chunk, Entity>);
 
 #[derive(Resource, Debug, Clone)]
 pub struct ChunkMaterialHandle(pub Handle<ChunkMaterial>);

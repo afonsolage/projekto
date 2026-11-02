@@ -3,12 +3,12 @@ use bevy::{
     prelude::*,
     tasks::{Task, block_on},
 };
+use projekto_archive::ChunkAsset;
 use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask, MaintenanceResult};
 use projekto_core::coords::Chunk;
 
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
-    asset::ChunkAsset,
     bundle::{
         CachedMesh, ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery,
         ChunkVertex,
@@ -297,24 +297,50 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
         vertex,
     } = asset;
 
-    commands
-        .spawn(ChunkBundle {
-            kind: ChunkKind(kind),
-            light: ChunkLight(light),
-            local: ChunkLocal(chunk),
-            vertex: ChunkVertex(vertex),
-        })
-        .insert(CachedMesh)
-        .id()
+    let suspect_hole = vertex.is_empty() && !kind.all(|kind| kind.is_none());
+
+    if suspect_hole {
+        warn!("chunk {chunk} was loaded with an empty mesh over solid terrain");
+    }
+
+    let mut entity = commands.spawn(ChunkBundle {
+        kind: ChunkKind(kind),
+        light: ChunkLight(light),
+        local: ChunkLocal(chunk),
+        vertex: ChunkVertex(vertex),
+    });
+
+    // An empty saved mesh over solid terrain is not a valid cache. Let the meshing
+    // pipeline rebuild it instead of trusting it forever.
+    if !suspect_hole {
+        entity.insert(CachedMesh);
+    }
+
+    entity.id()
 }
 
 fn queue_chunks_to_save(
-    q_chunks: Query<(&ChunkLocal, Ref<ChunkVertex>, Option<&CachedMesh>), Changed<ChunkVertex>>,
+    q_chunks: Query<
+        (
+            &ChunkLocal,
+            &ChunkKind,
+            Ref<ChunkVertex>,
+            Option<&CachedMesh>,
+        ),
+        Changed<ChunkVertex>,
+    >,
     mut pending: ResMut<PendingSaves>,
 ) {
-    for (ChunkLocal(chunk), vertex, cached) in &q_chunks {
+    for (ChunkLocal(chunk), kind, vertex, cached) in &q_chunks {
         // The archive already holds this mesh; only save it if it is rebuilt.
         if vertex.is_added() && cached.is_some() {
+            continue;
+        }
+
+        // A chunk starts with an empty vertex buffer before its first mesh, and an
+        // empty mesh over solid terrain is always a hole: every non-air chunk has at
+        // least one exposed face. Never persist that state; let the load path remesh it.
+        if vertex.0.is_empty() && !kind.0.all(|kind| kind.is_none()) {
             continue;
         }
 
@@ -327,6 +353,7 @@ fn queue_chunks_to_save(
 /// Initial meshing changes thousands of chunks; saving them immediately competes with meshing
 /// for the ECS thread and the archive workers. Deferring keeps the render path responsive while
 /// the archive catches up in the background.
+#[allow(clippy::too_many_arguments)]
 fn chunks_save(
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
     mut pending: ResMut<PendingSaves>,
@@ -437,3 +464,58 @@ fn chunks_save(
 //         );
 //     }
 // }
+
+#[cfg(test)]
+mod save_tests {
+    use projekto_core::{
+        chunk::ChunkStorage,
+        coords::{Chunk, ChunkVoxel},
+        voxel::{self, Kind},
+    };
+
+    use crate::bundle::{ChunkKind, ChunkLocal, ChunkVertex};
+
+    use super::*;
+
+    fn solid_kind() -> ChunkKind {
+        let mut kind = ChunkStorage::<Kind>::default();
+        kind.set(ChunkVoxel::new(0, 0, 0), Kind::id(3));
+        ChunkKind(kind)
+    }
+
+    fn app() -> App {
+        let mut app = App::new();
+        app.init_resource::<PendingSaves>()
+            .add_systems(Update, queue_chunks_to_save);
+        app
+    }
+
+    #[test]
+    fn does_not_save_unmeshed_empty_solid_chunk() {
+        let mut app = app();
+        let chunk = Chunk::new(0, 0);
+
+        app.world_mut()
+            .spawn((ChunkLocal(chunk), solid_kind(), ChunkVertex::default()));
+
+        app.update();
+
+        assert!(!app.world().resource::<PendingSaves>().0.contains(&chunk));
+    }
+
+    #[test]
+    fn saves_non_empty_chunk() {
+        let mut app = app();
+        let chunk = Chunk::new(0, 0);
+
+        app.world_mut().spawn((
+            ChunkLocal(chunk),
+            solid_kind(),
+            ChunkVertex(vec![voxel::Vertex::default()]),
+        ));
+
+        app.update();
+
+        assert!(app.world().resource::<PendingSaves>().0.contains(&chunk));
+    }
+}

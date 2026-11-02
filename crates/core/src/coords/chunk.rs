@@ -53,10 +53,10 @@ impl std::fmt::Display for Chunk {
 impl From<Vec3> for Chunk {
     /// Converts a point in the world to a chunk coordinate.
     ///
-    /// This handles negative coordinates, so (-1.2, -0.3) will point to (-1, 0).
+    /// This handles negative coordinates, so (-1.2, -0.3) will point to (-1, -1).
     fn from(world: Vec3) -> Self {
-        let x = world.x.floor() as i32;
-        let z = world.z.floor() as i32;
+        let x = (world.x / Chunk::X_AXIS_SIZE as f32).floor() as i32;
+        let z = (world.z / Chunk::Z_AXIS_SIZE as f32).floor() as i32;
         Self { x, z }
     }
 }
@@ -295,6 +295,21 @@ mod tests {
                 0.0,
                 Chunk::Z_AXIS_SIZE as f32 * 1.0
             )
+        );
+    }
+    #[test]
+    fn world_position_to_chunk() {
+        assert_eq!(Chunk::from(Vec3::new(0.0, 0.0, 0.0)), Chunk::new(0, 0));
+        assert_eq!(Chunk::from(Vec3::new(15.9, 0.0, 15.9)), Chunk::new(0, 0));
+        assert_eq!(Chunk::from(Vec3::new(16.0, 0.0, 16.0)), Chunk::new(1, 1));
+        assert_eq!(Chunk::from(Vec3::new(-0.1, 0.0, -0.1)), Chunk::new(-1, -1));
+        assert_eq!(
+            Chunk::from(Vec3::new(-16.0, 0.0, -16.0)),
+            Chunk::new(-1, -1)
+        );
+        assert_eq!(
+            Chunk::from(Vec3::new(-16.1, 0.0, -16.1)),
+            Chunk::new(-2, -2)
         );
     }
 }

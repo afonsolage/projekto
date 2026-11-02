@@ -61,6 +61,13 @@ jobs:
         uses: ./.github/actions/install-linux-deps
       - name: Run clippy
         run: cargo +${{ env.NIGHTLY_TOOLCHAIN }} clippy --workspace --all-targets -- -D warnings
+      - name: Check feature configurations
+        run: |
+          cargo +${{ env.NIGHTLY_TOOLCHAIN }} check -p projekto --bin client --features debug-tools
+          cargo +${{ env.NIGHTLY_TOOLCHAIN }} check -p projekto --bin ai-client --features debug-tools
+          cargo +${{ env.NIGHTLY_TOOLCHAIN }} check -p projekto --bin server --features debug-tools
+          cargo +${{ env.NIGHTLY_TOOLCHAIN }} check --release -p projekto --bin client
+          cargo +${{ env.NIGHTLY_TOOLCHAIN }} check --release -p projekto --bin server
 
   # Run cargo fmt --all -- --check
   format:

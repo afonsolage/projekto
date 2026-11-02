@@ -1,14 +1,14 @@
+use crate::{
+    DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
+    bundle::{CachedMesh, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery, ChunkVertex},
+    cache::sort_nearest_first,
+    light, meshing,
+};
 use bevy::prelude::*;
 use projekto_core::{
     chunk::{self, ChunkStorage},
     coords::Chunk,
     voxel,
-};
-
-use crate::{
-    DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
-    bundle::{CachedMesh, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery, ChunkVertex},
-    debug, light, meshing,
 };
 
 use super::Landscape;
@@ -85,14 +85,18 @@ fn generate_vertices(
     landscape: Option<Res<Landscape>>,
     q_chunks: ChunkQuery<(&ChunkKind, &ChunkLight)>,
     mut q_vertex: Query<&mut ChunkVertex>,
-    mut metrics: ResMut<debug::Metrics>,
 ) {
-    let chunks = std::mem::take(&mut dirty.0);
+    let center = landscape
+        .as_ref()
+        .map(|landscape| landscape.center)
+        .unwrap_or_default();
+    let mut chunks = std::mem::take(&mut dirty.0).into_iter().collect::<Vec<_>>();
+    // Work closest to the player first; the result is consumed nearest-first when streamed.
+    sort_nearest_first(&mut chunks, center);
+
     let mut count = 0;
     let mut deferred = 0;
     let mut map = [0; voxel::SIDE_COUNT];
-
-    let mut metric_data = debug::MetricData::new("generate_vertices");
 
     for chunk in chunks {
         // Meshing before the chunk's halo is loaded produces geometry that has to be rebuilt
@@ -109,8 +113,6 @@ fn generate_vertices(
         let Some(&entity) = chunk_map.0.get(&chunk) else {
             continue;
         };
-
-        metric_data.begin();
 
         let kind = &kind.0;
         let neighborhood = chunk::SIDES.map(|side| {
@@ -153,11 +155,8 @@ fn generate_vertices(
         let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
         std::mem::swap(&mut vertex, &mut chunk_vertex);
 
-        metric_data.end();
         count += 1;
     }
-
-    metrics.add(metric_data);
 
     if count > 0 || deferred > 0 {
         trace!(
@@ -171,10 +170,7 @@ mod tests {
     use bevy::app::ScheduleRunnerPlugin;
     use projekto_core::coords::{Chunk, ChunkVoxel};
 
-    use crate::{
-        bundle::{ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkVertex},
-        debug::Metrics,
-    };
+    use crate::bundle::{ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkVertex};
 
     use super::*;
 
@@ -182,7 +178,6 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .init_resource::<ChunkMap>()
-            .insert_resource(Metrics::new())
             .add_plugins(MeshingPlugin);
 
         let chunk = Chunk::new(0, 0);
@@ -220,7 +215,6 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .init_resource::<ChunkMap>()
-            .insert_resource(Metrics::new())
             .add_plugins(MeshingPlugin);
 
         let chunk = Chunk::new(0, 0);

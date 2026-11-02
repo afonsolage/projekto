@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
-use projekto_server::{WorldServerPlugin, debug, set::Landscape};
+use projekto_server::{WorldServerPlugin, set::Landscape};
 
 const TICK_EVERY_MILLIS: u64 = 50;
 
@@ -17,7 +17,6 @@ fn main() {
         WorldServerPlugin,
     ))
     .add_systems(PostStartup, set_landscape)
-    .add_systems(PostUpdate, print_metrics)
     .run();
 }
 
@@ -26,16 +25,4 @@ fn set_landscape(mut commands: Commands) {
         center: IVec2::ZERO,
         radius: 32,
     });
-}
-
-fn print_metrics(time: Res<Time>, metrics: Res<debug::Metrics>, mut last_run: Local<f64>) {
-    *last_run += time.elapsed_secs_f64();
-
-    if *last_run < 5.0 {
-        return;
-    }
-
-    *last_run = 0.0;
-
-    metrics.print();
 }
