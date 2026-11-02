@@ -4,7 +4,7 @@ use bevy::{pbr::MaterialPipelineKey, prelude::*};
 
 use bevy::{
     pbr::MaterialPipeline,
-    render::render_resource::{AsBindGroup, Face, VertexFormat},
+    render::render_resource::{AsBindGroup, Face, ShaderType, VertexFormat},
 };
 
 #[derive(Reflect, AsBindGroup, Asset, Debug, Clone)]
@@ -14,9 +14,16 @@ pub struct ChunkMaterial {
     #[sampler(1)]
     pub texture: Handle<Image>,
     #[uniform(2)]
-    pub tile_texture_size: f32,
+    pub data: ChunkMaterialData,
 
     pub show_back_faces: bool,
+}
+
+#[derive(Reflect, ShaderType, Debug, Clone)]
+pub struct ChunkMaterialData {
+    pub tile_texture_size: f32,
+    pub debug_chunk_grid: f32,
+    pub _padding: Vec2,
 }
 
 impl From<&ChunkMaterial> for bool {

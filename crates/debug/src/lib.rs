@@ -44,8 +44,10 @@ pub struct ChunkDebug {
     pub source: ChunkDebugSource,
     pub vertex_count: u32,
     pub face_count: u32,
-    /// Highest mesh vertex in chunk-local Y, used to drape debug grids over the surface.
+    /// Highest mesh vertex in chunk-local Y.
     pub top_y: f32,
+    /// Highest mesh vertex near the chunk centre, used to keep labels on the local surface.
+    pub center_y: f32,
     pub suspect_hole: bool,
     pub neighbors_loaded: u8,
     pub dirty: bool,
@@ -63,6 +65,7 @@ impl ChunkDebug {
             vertex_count: 0,
             face_count: 0,
             top_y: 0.0,
+            center_y: 0.0,
             suspect_hole: false,
             neighbors_loaded: 0,
             dirty: true,
@@ -117,6 +120,19 @@ impl Default for DebugViewConfig {
             grid_height: 224.0,
         }
     }
+}
+
+/// Returns the highest mesh vertex within two blocks of the chunk centre.
+pub fn center_height(positions: impl Iterator<Item = Vec3>) -> Option<f32> {
+    const CENTER: f32 = 8.0;
+    const RADIUS: f32 = 2.0;
+
+    positions
+        .filter(|position| {
+            (position.x - CENTER).abs() <= RADIUS && (position.z - CENTER).abs() <= RADIUS
+        })
+        .map(|position| position.y)
+        .reduce(f32::max)
 }
 
 /// Register every reflected debug type used by BRP.

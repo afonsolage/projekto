@@ -123,7 +123,7 @@ fn setup_mockup_scene(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(128.0, 256.0, 128.0).looking_at(Vec3::new(0.0, 128.0, 0.0), Vec3::Y),
-        RenderLayers::from_layers(&[0, 1]),
+        RenderLayers::from_layers(&[0, 1, 2]),
         FlyByCamera,
         Name::new("FlyByCamera"),
     ));
@@ -154,6 +154,7 @@ fn setup_mockup_scene(
                     is_active: false,
                     ..Default::default()
                 },
+                RenderLayers::from_layers(&[0, 2]),
                 Name::new("FirstPersonCamera"),
                 FirstPersonCamera,
             ));
@@ -224,7 +225,11 @@ fn setup_material(
 ) {
     let material = materials.add(ChunkMaterial {
         texture: kinds_res.atlas.clone(),
-        tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
+        data: crate::material::ChunkMaterialData {
+            tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
+            debug_chunk_grid: 0.0,
+            _padding: Vec2::ZERO,
+        },
         show_back_faces: false,
     });
 

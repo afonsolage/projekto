@@ -1,4 +1,4 @@
-use bevy::{platform::collections::HashSet, prelude::*};
+use bevy::{math::IVec2, platform::collections::HashSet, prelude::*};
 use projekto_core::{chunk::ChunkStorageCache, coords::Chunk, voxel};
 
 /// Number of derived chunk layers kept by the server's LRU caches.
@@ -47,6 +47,18 @@ pub fn affected_chunks(chunk: Chunk) -> impl Iterator<Item = Chunk> {
     (-1..=1).flat_map(move |dx| (-1..=1).map(move |dz| Chunk::new(chunk.x + dx, chunk.z + dz)))
 }
 
+/// Squared distance between a chunk and a landscape centre, used for nearest-first work.
+pub fn distance_sq(chunk: Chunk, center: IVec2) -> i64 {
+    let dx = chunk.x as i64 - center.x as i64;
+    let dz = chunk.z as i64 - center.y as i64;
+    dx * dx + dz * dz
+}
+
+/// Sorts chunks nearest-first for streaming and meshing work.
+pub fn sort_nearest_first(chunks: &mut [Chunk], center: IVec2) {
+    chunks.sort_by_key(|chunk| distance_sq(*chunk, center));
+}
+
 impl Default for DerivedCaches {
     fn default() -> Self {
         Self::new(DEFAULT_DERIVED_CACHE_CAPACITY)
@@ -56,3 +68,32 @@ impl Default for DerivedCaches {
 /// Chunks whose derived data and/or vertices must be rebuilt on the next meshing tick.
 #[derive(Resource, Default)]
 pub struct DirtyChunks(pub HashSet<Chunk>);
+
+#[cfg(test)]
+mod distance_tests {
+    use bevy::math::IVec2;
+
+    use super::*;
+
+    #[test]
+    fn sorts_nearest_first() {
+        let mut chunks = vec![
+            Chunk::new(2, 0),
+            Chunk::new(-1, 0),
+            Chunk::new(0, 0),
+            Chunk::new(1, 1),
+        ];
+
+        sort_nearest_first(&mut chunks, IVec2::ZERO);
+
+        assert_eq!(
+            chunks,
+            vec![
+                Chunk::new(0, 0),
+                Chunk::new(-1, 0),
+                Chunk::new(1, 1),
+                Chunk::new(2, 0),
+            ]
+        );
+    }
+}

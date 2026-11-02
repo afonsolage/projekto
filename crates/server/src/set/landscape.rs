@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use projekto_core::coords::Chunk;
 use serde::{Deserialize, Serialize};
 
-use crate::{WorldSet, bundle::ChunkMap};
+use crate::{WorldSet, bundle::ChunkMap, cache::sort_nearest_first};
 
 use super::{ChunkLoad, ChunkUnload};
 
@@ -45,8 +45,9 @@ fn update_landscape(
     mut unload_writer: MessageWriter<ChunkUnload>,
 ) {
     trace!("Updating landscape!");
+    let active_landscape = maybe_landscape.as_deref();
     let new_landscape_chunks = {
-        if let Some(landscape) = maybe_landscape {
+        if let Some(landscape) = active_landscape {
             let radius = landscape.radius as i32;
             let center = landscape.center;
             let mut chunks = (-radius..=radius)
@@ -57,12 +58,9 @@ fn update_landscape(
                 })
                 .collect::<Vec<_>>();
 
-            let center: Chunk = center.into();
-            chunks.sort_by(|a, b| {
-                let a_dist = (IVec2::from(*a) - IVec2::from(center)).length_squared();
-                let b_dist = (IVec2::from(*b) - IVec2::from(center)).length_squared();
-                a_dist.cmp(&b_dist)
-            });
+            // Request the closest chunks first. Archive workers are FIFO per region, so this
+            // also starts the near halo before the distant terrain.
+            sort_nearest_first(&mut chunks, center);
 
             chunks
         } else {
@@ -73,7 +71,7 @@ fn update_landscape(
     let mut unloaded = 0;
     chunk_map
         .keys()
-        .filter(|&c| !new_landscape_chunks.contains(c))
+        .filter(|&c| active_landscape.is_none_or(|landscape| !landscape.contains(*c)))
         .for_each(|&c| {
             unload_writer.write(ChunkUnload(c));
             unloaded += 1;

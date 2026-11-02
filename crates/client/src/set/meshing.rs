@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
 };
 use projekto_core::voxel;
-use projekto_debug::{ChunkDebug, ChunkDebugSource};
+use projekto_debug::{ChunkDebug, ChunkDebugSource, center_height};
 use projekto_messages::{ChunkUnload, ChunkVertex};
 use projekto_proto::RegisterMessageHandler;
 
@@ -62,6 +62,7 @@ fn update_chunk_mesh(
         .iter()
         .map(|vertex| vertex.position.y)
         .fold(f32::MIN, f32::max);
+    let center_y = center_height(vertex.iter().map(|vertex| vertex.position)).unwrap_or(top_y);
 
     let mesh_handler = Mesh3d(meshes.add(generate_mesh(&vertex)));
 
@@ -71,16 +72,19 @@ fn update_chunk_mesh(
         if let Ok(mut debug) = q_debug.get_mut(entity) {
             debug.set_mesh(vertex_count, false);
             debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
+            debug.center_y = if vertex_count == 0 { 0.0 } else { center_y };
         } else {
             let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Streamed);
             debug.set_mesh(vertex_count, false);
             debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
+            debug.center_y = if vertex_count == 0 { 0.0 } else { center_y };
             commands.entity(entity).insert(debug);
         }
     } else {
         let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Streamed);
         debug.set_mesh(vertex_count, false);
         debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
+        debug.center_y = if vertex_count == 0 { 0.0 } else { center_y };
 
         let entity = commands
             .spawn((

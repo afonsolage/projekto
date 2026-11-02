@@ -4,11 +4,12 @@ use projekto_core::{
     coords::Chunk,
     voxel,
 };
-use projekto_debug::ChunkDebug;
+use projekto_debug::{ChunkDebug, center_height};
 
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
     bundle::{CachedMesh, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery, ChunkVertex},
+    cache::sort_nearest_first,
     debug, light, meshing,
 };
 
@@ -114,7 +115,14 @@ fn generate_vertices(
     mut q_debug: Query<&mut ChunkDebug>,
     mut metrics: ResMut<debug::Metrics>,
 ) {
-    let chunks = std::mem::take(&mut dirty.0);
+    let center = landscape
+        .as_ref()
+        .map(|landscape| landscape.center)
+        .unwrap_or_default();
+    let mut chunks = std::mem::take(&mut dirty.0).into_iter().collect::<Vec<_>>();
+    // Work closest to the player first; the result is consumed nearest-first when streamed.
+    sort_nearest_first(&mut chunks, center);
+
     let mut count = 0;
     let mut deferred = 0;
     let mut map = [0; voxel::SIDE_COUNT];
@@ -190,6 +198,11 @@ fn generate_vertices(
             let suspect_hole = chunk_vertex.is_empty() && !kind.all(|kind| kind.is_none());
             debug.set_mesh(vertex_count, suspect_hole);
             debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
+            debug.center_y = if vertex_count == 0 {
+                0.0
+            } else {
+                center_height(chunk_vertex.0.iter().map(|vertex| vertex.position)).unwrap_or(top_y)
+            };
             debug.neighbors_loaded = neighbors_mask(chunk, &chunk_map);
 
             if suspect_hole {

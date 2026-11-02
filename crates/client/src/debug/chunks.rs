@@ -5,35 +5,29 @@ use std::{
 };
 
 use bevy::{
+    camera::visibility::RenderLayers,
     math::Isometry3d,
     picking::events::{PointerOut, PointerOver},
     prelude::*,
     render::view::screenshot::{Screenshot, save_to_disk},
 };
 use projekto_core::coords::Chunk;
-use projekto_debug::{ChunkDebug, DebugPin, DebugViewConfig, chunk_color, chunk_id};
+use projekto_debug::{ChunkDebug, DebugPin, DebugViewConfig, chunk_id};
 use projekto_diagnostics::ProcessMemory;
 use serde::Serialize;
 
-use crate::{ChunkMap, bundle::ChunkLocal, debug::memory::ServerMemory};
+use crate::{
+    ChunkMap, ChunkMaterialHandle, bundle::ChunkLocal, debug::memory::ServerMemory,
+    material::ChunkMaterial,
+};
 
-const GRID_RADIUS: i32 = 8;
 const LABEL_RADIUS: i32 = 3;
-const BOX_RADIUS: i32 = 3;
 const OVERLAY_REFRESH_SECS: f32 = 0.25;
 
 pub(crate) struct DebugWorldPlugin;
 
 impl Plugin for DebugWorldPlugin {
     fn build(&self, app: &mut App) {
-        if let Some(mut store) = app.world_mut().get_resource_mut::<GizmoConfigStore>()
-            && let Some((config, _)) = store.get_config_mut::<DefaultGizmoConfigGroup>()
-        {
-            // Draw through terrain so the debug grid and labels stay visible.
-            config.depth_bias = -1.0;
-            config.line.width = 3.0;
-        }
-
         #[cfg(not(feature = "ai"))]
         app.add_plugins(MeshPickingPlugin);
 
@@ -42,14 +36,14 @@ impl Plugin for DebugWorldPlugin {
             .init_resource::<ReportRequest>()
             .add_observer(on_pointer_over)
             .add_observer(on_pointer_out)
-            .add_systems(Startup, spawn_debug_overlay)
+            .add_systems(Startup, (configure_gizmos, spawn_debug_overlay))
             .add_systems(
                 Update,
                 (
                     toggle_debug_views,
                     pin_hovered_chunk,
                     request_report,
-                    draw_grid,
+                    sync_grid_material,
                     draw_labels,
                     draw_pins,
                     update_debug_overlay,
@@ -90,6 +84,18 @@ fn on_pointer_out(out: On<PointerOut>, mut hovered: ResMut<HoveredChunk>) {
     if hovered.entity == Some(out.event().entity) {
         hovered.entity = None;
         hovered.chunk = None;
+    }
+}
+
+fn configure_gizmos(mut store: ResMut<GizmoConfigStore>) {
+    if let Some((config, _)) = store.get_config_mut::<DefaultGizmoConfigGroup>() {
+        // Let terrain occlude world-space labels and pins instead of drawing them
+        // through hills and caves.
+        config.depth_bias = 0.0;
+        config.line.width = 3.0;
+        // The memory overlay uses a Camera2d. Keep gizmos out of that 2D pass;
+        // otherwise labels are also drawn once in screen space.
+        config.render_layers = RenderLayers::layer(2);
     }
 }
 
@@ -160,88 +166,18 @@ fn active_camera_transform(
         .map(|(_, transform)| (transform.translation(), transform.forward().as_vec3()))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn draw_grid(
-    mut gizmos: Gizmos,
+fn sync_grid_material(
     config: Res<DebugViewConfig>,
-    chunk_map: Res<ChunkMap>,
-    q_debug: Query<&ChunkDebug>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    gizmo_config: Res<GizmoConfigStore>,
-    mut logged: Local<bool>,
+    handle: Res<ChunkMaterialHandle>,
+    mut materials: ResMut<Assets<ChunkMaterial>>,
 ) {
-    if !config.show_grid {
-        return;
-    }
-
-    let Some((camera_position, _camera_forward)) = active_camera_transform(&cameras) else {
-        if !*logged {
-            warn!("draw_grid: no active Camera3d");
-            *logged = true;
-        }
+    let Some(mut material) = materials.get_mut(&handle.0) else {
         return;
     };
 
-    if !*logged {
-        let (settings, _) = gizmo_config.config::<DefaultGizmoConfigGroup>();
-        debug!(
-            "draw_grid: camera={camera_position:?} center={:?} loaded={} depth_bias={} width={}",
-            Chunk::from(camera_position),
-            chunk_map.len(),
-            settings.depth_bias,
-            settings.line.width,
-        );
-        *logged = true;
-    }
-
-    let center = Chunk::from(camera_position);
-
-    for dx in -GRID_RADIUS..=GRID_RADIUS {
-        for dz in -GRID_RADIUS..=GRID_RADIUS {
-            let chunk = Chunk::new(center.x + dx, center.z + dz);
-            let Some(&entity) = chunk_map.get(&chunk) else {
-                continue;
-            };
-            let Ok(debug) = q_debug.get(entity) else {
-                continue;
-            };
-            if debug.vertex_count == 0 {
-                continue;
-            }
-
-            let y = debug.top_y + 1.0;
-            let color = if debug.suspect_hole {
-                Color::srgb(1.0, 0.1, 0.1)
-            } else {
-                chunk_color(chunk_id(chunk.x, chunk.z)).with_alpha(0.75)
-            };
-
-            let x0 = chunk.x as f32 * Chunk::X_AXIS_SIZE as f32;
-            let z0 = chunk.z as f32 * Chunk::Z_AXIS_SIZE as f32;
-            let x1 = x0 + Chunk::X_AXIS_SIZE as f32;
-            let z1 = z0 + Chunk::Z_AXIS_SIZE as f32;
-
-            let a = Vec3::new(x0, y, z0);
-            let b = Vec3::new(x1, y, z0);
-            let c = Vec3::new(x1, y, z1);
-            let d = Vec3::new(x0, y, z1);
-
-            gizmos.line(a, b, color);
-            gizmos.line(b, c, color);
-            gizmos.line(c, d, color);
-            gizmos.line(d, a, color);
-
-            if dx.abs() <= BOX_RADIUS && dz.abs() <= BOX_RADIUS {
-                let post_color = color.with_alpha(0.35);
-                for (corner_x, corner_z) in [(x0, z0), (x1, z0), (x1, z1), (x0, z1)] {
-                    gizmos.line(
-                        Vec3::new(corner_x, y, corner_z),
-                        Vec3::new(corner_x, y + 4.0, corner_z),
-                        post_color,
-                    );
-                }
-            }
-        }
+    let debug_chunk_grid = if config.show_grid { 1.0 } else { 0.0 };
+    if material.data.debug_chunk_grid != debug_chunk_grid {
+        material.data.debug_chunk_grid = debug_chunk_grid;
     }
 }
 
@@ -310,23 +246,20 @@ fn draw_labels(
 
             let position = Vec3::new(
                 chunk.x as f32 * Chunk::X_AXIS_SIZE as f32 + Chunk::X_AXIS_SIZE as f32 / 2.0,
-                debug.top_y + 2.0,
+                debug.center_y + 1.5,
                 chunk.z as f32 * Chunk::Z_AXIS_SIZE as f32 + Chunk::Z_AXIS_SIZE as f32 / 2.0,
             );
             let direction = (camera_position - position).normalize_or_zero();
             let rotation = Quat::from_rotation_arc(Vec3::Z, direction);
-            let color = if debug.suspect_hole {
-                Color::srgb(1.0, 0.2, 0.2)
-            } else {
-                Color::WHITE
-            };
+            let distance = camera_position.distance(position);
+            let font_size = (distance / 32.0).clamp(0.3, 0.7);
 
             gizmos.text(
                 Isometry3d::new(position, rotation),
                 &format!("({}, {})", chunk.x, chunk.z),
-                0.7,
+                font_size,
                 Vec2::ZERO,
-                color,
+                Color::WHITE,
             );
         }
     }
@@ -529,7 +462,12 @@ fn capture_report(
     let crosshair = camera
         .logical_viewport_size()
         .and_then(|size| {
-            chunk_at_screen_position(camera, camera_transform, size / 2.0, config.grid_height)
+            chunk_at_screen_position(
+                camera,
+                camera_transform,
+                size / 2.0,
+                grid_y(&config, camera_position),
+            )
         })
         .and_then(|chunk| {
             q_debug

@@ -13,13 +13,13 @@ These tools are only compiled for debug builds. The remote API is also gated beh
 - **F9** — clear all pins.
 
 The bottom-left overlay shows the hovered chunk, its `ChunkDebug` summary, the camera chunk,
-the crosshair chunk and the pin count. Chunks without a mesh are drawn in red in the grid and
-labels.
+the crosshair chunk and the pin count.
 
-The grid and labels are world-space: F4 draws chunk boundary squares at each chunk's highest
-mesh vertex (draped over the terrain) plus short corner posts near the camera, and F5 draws
-`(x, z)` labels at chunk centres. The crosshair chunk is the chunk where the camera centre ray
-crosses the configured grid height, because a single screen ray has no surface depth.
+The grid and labels are world-space. F4 enables chunk boundary lines in the chunk shader: each
+fragment compares its world position with the 16-block chunk lattice, so the lines follow the
+actual terrain instead of a synthetic plane or per-chunk height. F5 draws `(x, z)` labels at
+chunk centres. The crosshair chunk is the chunk where the camera centre ray crosses the
+configured grid height, because a single screen ray has no surface depth.
 
 ## Debug reports
 

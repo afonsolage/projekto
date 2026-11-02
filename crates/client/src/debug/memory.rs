@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use bevy::prelude::*;
+use bevy::{camera::visibility::RenderLayers, prelude::*};
 use projekto_diagnostics::{ProcessMemory, ProcessMemoryPlugin, format_bytes};
 use projekto_messages::DebugMemory;
 use projekto_proto::RegisterMessageHandler;
@@ -38,6 +38,9 @@ fn spawn_overlay(mut commands: Commands) {
             clear_color: ClearColorConfig::None,
             ..default()
         },
+        // UI is rendered independently of render layers; keep this camera out of the
+        // 3D gizmo layers so world labels are not drawn a second time in 2D.
+        RenderLayers::layer(3),
         IsDefaultUiCamera,
         Name::new("Memory Overlay Camera"),
     ));

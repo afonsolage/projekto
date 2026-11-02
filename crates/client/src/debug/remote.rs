@@ -23,7 +23,7 @@ const CLIENT_BRP_PORT: u16 = if cfg!(feature = "ai") { 15722 } else { 15712 };
 
 impl Plugin for RemoteDebugPlugin {
     fn build(&self, app: &mut App) {
-        let mut remote = RemotePlugin::default()
+        let remote = RemotePlugin::default()
             .with_method_main("projekto/chunk_info", chunk_info)
             .with_method_main("projekto/pins", pins)
             .with_method_main("projekto/pin", pin)
@@ -35,9 +35,7 @@ impl Plugin for RemoteDebugPlugin {
             .with_method_main("projekto/report", report);
 
         #[cfg(feature = "ai")]
-        {
-            remote = remote.with_method_main("projekto/ai_snapshot", ai_snapshot);
-        }
+        let remote = remote.with_method_main("projekto/ai_snapshot", ai_snapshot);
 
         app.add_plugins((
             remote,

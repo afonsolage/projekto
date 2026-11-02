@@ -4,8 +4,11 @@ use projekto_core::coords::Chunk;
 use crate::{
     WorldSet,
     bundle::{ChunkLocal, ChunkVertex},
+    cache::sort_nearest_first,
     net::{ClientSync, Clients},
 };
+
+use super::Landscape;
 use projekto_messages as messages;
 
 pub(crate) struct SendResponsesPlugin;
@@ -55,6 +58,7 @@ fn resync_clients(
     clients: Res<Clients>,
     mut sync: ResMut<ClientSync>,
     q: Query<(&ChunkLocal, &ChunkVertex)>,
+    landscape: Option<Res<Landscape>>,
 ) {
     if clients.is_empty() {
         return;
@@ -70,6 +74,8 @@ fn resync_clients(
         HashMap::default()
     };
 
+    let center = landscape.as_ref().map(|landscape| landscape.center);
+
     for (id, client) in clients.iter() {
         for chunk in sync.pending_unloads(*id) {
             let sent = client
@@ -84,7 +90,14 @@ fn resync_clients(
             }
         }
 
-        for chunk in sync.pending_updates(*id) {
+        // The channel is bounded. Send the closest chunks first so holes near the player
+        // fill before distant terrain consumes the available send slots.
+        let mut updates = sync.pending_updates(*id);
+        if let Some(center) = center {
+            sort_nearest_first(&mut updates, center);
+        }
+
+        for chunk in updates {
             let Some(vertex) = vertices.get(&chunk) else {
                 // The chunk was unloaded before the update was delivered. If the client had
                 // already received it, it also needs the unload message.
