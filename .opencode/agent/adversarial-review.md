@@ -77,6 +77,8 @@ problem and try to find it. Prioritize correctness and runtime failure over styl
 ### Conventions and quality
 
 - Matches existing patterns and terminology; no leftover dead/commented code or debug logs.
+- New AI-generated documentation outside `docs/ai-generated/`, and unresolved `//@AI` review
+  markers.
 - Tests: does the change test real behavior (not just boilerplate)? Are existing tests updated?
   Do the tests fail for the right reason?
 - Performance claims on hot paths (meshing, light, storage) without evidence.
