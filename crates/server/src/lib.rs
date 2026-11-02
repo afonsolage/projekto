@@ -49,9 +49,6 @@ impl Plugin for WorldServerPlugin {
                 set::MeshingPlugin,
                 set::SendResponsesPlugin,
             ));
-
-        #[cfg(feature = "debug-tools")]
-        app.add_plugins(debug::DebugToolsPlugins);
     }
 }
 

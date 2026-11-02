@@ -12,8 +12,10 @@ The client and server expose their debug functionality as Bevy plugin groups:
 - `projekto_client::debug::DebugToolsPlugins`
 - `projekto_server::debug::DebugToolsPlugins`
 
-Add a group explicitly when the feature is enabled, or disable individual plugins with
-`PluginGroupBuilder::disable` (for example, keeping data/BRP while disabling the UI).
+The shipped binaries add the group once when `debug-tools` is enabled. If you compose your own
+app, add the group after the core client/server plugin; do not add a second copy. To disable
+the tooling, omit the group or build without the feature. Individual subplugins have ordering
+and resource dependencies on each other, so keep the group as the unit of enablement.
 
 ## Client hotkeys
 

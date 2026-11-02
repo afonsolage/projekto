@@ -67,9 +67,6 @@ impl Plugin for ClientPlugin {
         .add_systems(Startup, (setup_mockup_scene, setup_hold_esc_to_exit))
         .add_systems(Update, hold_esc_to_exit);
 
-        #[cfg(feature = "debug-tools")]
-        app.add_plugins(debug::DebugToolsPlugins);
-
         #[cfg(feature = "ai")]
         app.add_plugins((
             ScheduleRunnerPlugin::run_loop(Duration::from_secs(1)),

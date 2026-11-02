@@ -30,11 +30,13 @@ The following plugins are used to organize the client's systems:
     character based on keyboard input.
   - [`update_character_position`](./crates/client/src/controller/character_controller.rs#L115):
     Updates the character's position in the world.
-- **[`DebugPlugin`](./crates/client/src/debug/mod.rs#L3)**: Adds debugging functionalities.
-  - [`setup_hold_est_to_exit`](./crates/client/src/debug/mod.rs#L18): Initializes the `EscHolding`
-    resource.
-  - [`hold_esc_to_exit`](./crates/client/src/debug/mod.rs#L22): Exits the application when the `Esc`
-    key is held down.
+- **Debug plugins** (`crates/client/src/debug`, `debug-tools` feature): The client and server
+  expose `DebugToolsPlugins` plugin groups for chunk data, overlays, the debug grid and BRP.
+  The groups are added by the binaries; omit the group or feature to remove the tooling.
+- [`setup_hold_esc_to_exit`](./crates/client/src/lib.rs#L102): Initializes the `EscHolding`
+  resource.
+  - [`hold_esc_to_exit`](./crates/client/src/lib.rs#L106): Exits the application when the `Esc`
+  key is held down.
 - **[`NetPlugin`](./crates/client/src/net.rs#L14)**: Handles the connection to the server and
   incoming messages.
   - [`reconnect_to_server`](./crates/client/src/net.rs#L41): Tries to reconnect to the server if

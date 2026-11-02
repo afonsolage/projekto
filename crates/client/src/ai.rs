@@ -20,13 +20,11 @@ pub(crate) struct AiClientPlugin;
 
 impl Plugin for AiClientPlugin {
     fn build(&self, app: &mut App) {
-        if let Some(mut config) = app
+        let mut config = app
             .world_mut()
-            .get_resource_mut::<projekto_debug::DebugViewConfig>()
-        {
-            config.show_grid = true;
-            config.show_labels = true;
-        }
+            .get_resource_or_insert_with(projekto_debug::DebugViewConfig::default);
+        config.show_grid = true;
+        config.show_labels = true;
 
         app.init_resource::<AiSnapshot>()
             .add_systems(PostStartup, setup_render_target)

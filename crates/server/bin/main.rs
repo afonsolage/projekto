@@ -15,6 +15,10 @@ fn main() {
             TICK_EVERY_MILLIS,
         ))),
         WorldServerPlugin,
-    ))
-    .run();
+    ));
+
+    #[cfg(feature = "debug-tools")]
+    app.add_plugins(projekto_server::debug::DebugToolsPlugins);
+
+    app.run();
 }

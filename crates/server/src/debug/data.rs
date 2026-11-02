@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use projekto_debug::{ChunkDebug, ChunkDebugSource, center_height};
+use projekto_debug::{ChunkDebug, ChunkDebugSource, ChunkDebugState, center_height};
 
 use crate::{
     DirtyChunks,
@@ -77,7 +77,7 @@ fn refresh_debug(
     time: Res<Time>,
     chunk_map: Res<ChunkMap>,
     dirty: Res<DirtyChunks>,
-    mut q: Query<(&ChunkLocal, &mut ChunkDebug)>,
+    mut q: Query<(&ChunkLocal, &ChunkVertex, &ChunkKind, &mut ChunkDebug)>,
     mut timer: Local<Option<Timer>>,
 ) {
     let timer = timer.get_or_insert_with(|| Timer::from_seconds(0.5, TimerMode::Repeating));
@@ -85,7 +85,28 @@ fn refresh_debug(
         return;
     }
 
-    for (local, mut debug) in &mut q {
+    for (local, vertex, kind, mut debug) in &mut q {
+        if debug.state == ChunkDebugState::Loading && !dirty.0.contains(&local.0) {
+            let vertex_count = vertex.0.len() as u32;
+            let top_y = vertex
+                .0
+                .iter()
+                .map(|vertex| vertex.position.y)
+                .fold(f32::MIN, f32::max);
+            let center_y =
+                center_height(vertex.0.iter().map(|vertex| vertex.position)).unwrap_or(top_y);
+            let suspect_hole = vertex_count == 0 && !kind.0.all(|kind| kind.is_none());
+            debug.set_mesh(vertex_count, suspect_hole);
+            debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
+            debug.center_y = if vertex_count == 0 { 0.0 } else { center_y };
+            if suspect_hole {
+                warn!(
+                    "chunk ({}, {}) produced an empty mesh over solid terrain",
+                    local.0.x, local.0.z
+                );
+            }
+        }
+
         let mut mask = 0u8;
         let mut bit = 0u8;
 

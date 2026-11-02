@@ -23,6 +23,9 @@ check-release:
 
 # Check the debug-tools/remote-debug feature configuration.
 check-debug:
+    cargo check -p projekto_client --no-default-features --features debug-tools
+    cargo check -p projekto_client --features ai
+    cargo check -p projekto_server --features remote-debug
     cargo clippy -p projekto_client --features remote-debug --all-targets -- -D warnings
     cargo clippy -p projekto_server --features remote-debug --all-targets -- -D warnings
 
