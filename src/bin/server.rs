@@ -17,7 +17,7 @@ fn main() {
     ));
 
     #[cfg(feature = "debug-tools")]
-    app.add_plugins(projekto_debug::ServerDebugPlugins);
+    app.add_plugins(projekto_debug::ServerDebugPlugins::new(15702));
 
     app.run();
 }

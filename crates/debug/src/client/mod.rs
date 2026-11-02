@@ -18,10 +18,12 @@ pub use remote::RemoteDebugPlugin;
 
 /// Client debug plugins, composed as a normal Bevy plugin group.
 pub struct ClientDebugPlugins {
+    /// Port used by the client BRP server.
     pub remote_port: u16,
 }
 
 impl ClientDebugPlugins {
+    /// Creates the client debug plugin group with BRP on `remote_port`.
     pub fn new(remote_port: u16) -> Self {
         Self { remote_port }
     }
