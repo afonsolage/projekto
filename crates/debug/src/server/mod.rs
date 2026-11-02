@@ -4,19 +4,15 @@ pub use data::DebugDataPlugin;
 
 use bevy::app::{PluginGroup, PluginGroupBuilder};
 
-/// Debug-only plugins, composed as a normal Bevy plugin group.
-pub struct DebugToolsPlugins;
+/// Server debug plugins, composed as a normal Bevy plugin group.
+pub struct ServerDebugPlugins;
 
-impl PluginGroup for DebugToolsPlugins {
+impl PluginGroup for ServerDebugPlugins {
     fn build(self) -> PluginGroupBuilder {
-        let builder = PluginGroupBuilder::start::<Self>()
+        PluginGroupBuilder::start::<Self>()
             .add(DebugDataPlugin)
-            .add(MemoryReportPlugin);
-
-        #[cfg(feature = "remote-debug")]
-        let builder = builder.add(RemoteDebugPlugin);
-
-        builder
+            .add(MemoryReportPlugin)
+            .add(RemoteDebugPlugin)
     }
 }
 
@@ -27,7 +23,7 @@ mod memory_report {
     use projekto_diagnostics::{ProcessMemory, ProcessMemoryPlugin};
     use projekto_messages::DebugMemory;
 
-    use crate::{WorldSet, net::Clients};
+    use projekto_server::{WorldSet, net::Clients};
 
     pub struct MemoryReportPlugin;
 
@@ -61,11 +57,10 @@ mod memory_report {
     }
 }
 
-#[cfg(feature = "remote-debug")]
 pub use remote::RemoteDebugPlugin;
 
-#[cfg(feature = "remote-debug")]
 mod remote {
+    use crate::ChunkDebug;
     use bevy::{
         math::IVec3,
         prelude::*,
@@ -75,13 +70,12 @@ mod remote {
         coords::{Chunk, ChunkVoxel},
         voxel::Kind,
     };
-    use projekto_debug::ChunkDebug;
     use projekto_diagnostics::ProcessMemory;
     use serde::Deserialize;
     use serde::de::DeserializeOwned;
     use serde_json::{Value, json};
 
-    use crate::{
+    use projekto_server::{
         DerivedCaches, DirtyChunks, affected_chunks,
         bundle::{ChunkKind, ChunkMap},
         set::{Landscape, MAX_LANDSCAPE_RADIUS},

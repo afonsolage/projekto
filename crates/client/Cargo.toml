@@ -2,8 +2,6 @@
 name = "projekto_client"
 version = "0.1.0"
 edition = "2024"
-default-run = "client"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
@@ -16,30 +14,15 @@ dev = [
     "bevy/dynamic_linking",
 ]
 
-debug-tools = ["dep:projekto_debug", "dep:projekto_diagnostics", "dep:serde_json"]
-remote-debug = ["debug-tools", "bevy/bevy_remote"]
-
-# Windowless, low-fps client used for AI-driven diagnostics.
-ai = ["remote-debug"]
-
-
 [dependencies]
 projekto_core.workspace = true
 projekto_camera.workspace = true
 projekto_proto.workspace = true
 projekto_messages.workspace = true
-projekto_diagnostics = { workspace = true, optional = true }
-projekto_debug = { workspace = true, optional = true }
 
 bevy.workspace = true
 serde.workspace = true
-serde_json = { workspace = true, optional = true }
-
 futures-lite.workspace = true
 
 [lints]
 workspace = true
-
-[[bin]]
-name = "client"
-path = "src/main.rs"

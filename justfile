@@ -18,20 +18,19 @@ ci:
 
 # Check the release configuration without debug tooling.
 check-release:
-    ASSETS_PATH="$(pwd)/assets" cargo check --release -p projekto_client --no-default-features
-    cargo check --release -p projekto_server --no-default-features
+    ASSETS_PATH="$(pwd)/assets" cargo check --release -p projekto --bin client
+    cargo check --release -p projekto --bin server
 
-# Check the debug-tools/remote-debug feature configuration.
+# Check the debug-tools feature configuration.
 check-debug:
-    cargo check -p projekto_client --no-default-features --features debug-tools
-    cargo check -p projekto_client --features ai
-    cargo check -p projekto_server --features remote-debug
-    cargo clippy -p projekto_client --features remote-debug --all-targets -- -D warnings
-    cargo clippy -p projekto_server --features remote-debug --all-targets -- -D warnings
+    cargo check -p projekto --bin client --features debug-tools
+    cargo check -p projekto --bin ai-client --features debug-tools
+    cargo check -p projekto --bin server --features debug-tools
+    cargo clippy -p projekto --bins --features debug-tools -- -D warnings
 
 # Run the server on Linux.
 server *args:
-    cargo run -p projekto_server --features remote-debug {{args}}
+    cargo run -p projekto --bin server --features debug-tools {{args}}
 
 # Inspect region archives.
 archive *args:
@@ -42,13 +41,13 @@ ai-client *args:
     #!/usr/bin/env bash
     set -euo pipefail
     export ASSETS_PATH="$(wslpath -w assets)"
-    cargo xwin build --target {{win_target}} -p projekto_client --features ai {{args}}
+    cargo xwin build --target {{win_target}} -p projekto --bin ai-client --features debug-tools {{args}}
     cp -u "$(rustc --print sysroot)"/lib/rustlib/{{win_target}}/lib/std-*.dll {{win_dir}}/
     export BEVY_ASSET_ROOT="$(wslpath -w .)"
     export PROJEKTO_VIEW_RADIUS="${PROJEKTO_VIEW_RADIUS:-16}"
     export RUST_LOG="${RUST_LOG:-error,projekto=debug,projekto_client=debug}"
     export WSLENV="RUST_LOG:WGPU_BACKEND:BEVY_ASSET_ROOT:PROJEKTO_VIEW_RADIUS"
-    exec {{win_dir}}/client.exe
+    exec {{win_dir}}/ai-client.exe
 
 # Cross-compile the client in WSL and run it natively on Windows.
 client-win *args:
@@ -56,7 +55,7 @@ client-win *args:
     set -euo pipefail
     # `env!("ASSETS_PATH")` is baked in at compile time, so it must be a Windows path.
     export ASSETS_PATH="$(wslpath -w assets)"
-    cargo xwin build --target {{win_target}} -p projekto_client --features remote-debug {{args}}
+    cargo xwin build --target {{win_target}} -p projekto --bin client --features debug-tools {{args}}
     # `dynamic_linking` needs the toolchain's std DLL next to the executable.
     cp -u "$(rustc --print sysroot)"/lib/rustlib/{{win_target}}/lib/std-*.dll {{win_dir}}/
     export BEVY_ASSET_ROOT="$(wslpath -w .)"

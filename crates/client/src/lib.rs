@@ -5,17 +5,11 @@ use bevy::{
     prelude::*,
 };
 
-#[cfg(not(feature = "ai"))]
-use bevy::window::PresentMode;
-
-#[cfg(feature = "ai")]
-use bevy::{app::ScheduleRunnerPlugin, window::ExitCondition, winit::WinitPlugin};
-use bundle::ChunkLocal;
 use controller::{
     camera_controller::CameraControllerPlugin,
     character_controller::{CharacterController, CharacterControllerPlugin},
 };
-use material::ChunkMaterial;
+pub use material::ChunkMaterial;
 use net::ServerConnection;
 use projekto_camera::{
     CameraPlugin,
@@ -26,52 +20,29 @@ use projekto_core::{
     coords::Chunk,
     voxel::{self},
 };
-#[cfg(feature = "ai")]
-use std::time::Duration;
-
-#[cfg(feature = "ai")]
-pub(crate) mod ai;
-
 mod bundle;
 mod controller;
-#[cfg(feature = "debug-tools")]
-pub mod debug;
-mod material;
+pub mod material;
 mod net;
 mod set;
 
+pub use bundle::ChunkLocal;
 pub use set::PlayerLandscape;
 
 pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
-        // This may cause problems later on. Ideally this setup should be done per image
-        let default_plugins = DefaultPlugins
-            .set(window_plugin())
-            .set(ImagePlugin::default_nearest());
-
-        #[cfg(feature = "ai")]
-        let default_plugins = default_plugins.disable::<WinitPlugin>();
-
         app.add_plugins((
-            default_plugins,
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin::default(),
-        ))
-        .add_plugins((
             CameraPlugin,
             CameraControllerPlugin,
             CharacterControllerPlugin,
         ))
         .add_systems(Startup, (setup_mockup_scene, setup_hold_esc_to_exit))
-        .add_systems(Update, hold_esc_to_exit);
-
-        #[cfg(feature = "ai")]
-        app.add_plugins((
-            ScheduleRunnerPlugin::run_loop(Duration::from_secs(1)),
-            ai::AiClientPlugin,
-        ));
+        .add_systems(Update, hold_esc_to_exit)
+        .add_message::<ChunkMeshBuilt>();
 
         // World setup
         app.init_resource::<ChunkMap>()
@@ -121,48 +92,6 @@ fn hold_esc_to_exit(
     }
 }
 
-fn camera_render_layers() -> RenderLayers {
-    #[cfg(feature = "debug-tools")]
-    {
-        RenderLayers::from_layers(&[0, 1, 2])
-    }
-    #[cfg(not(feature = "debug-tools"))]
-    {
-        RenderLayers::from_layers(&[0, 1])
-    }
-}
-
-fn first_person_render_layers() -> RenderLayers {
-    #[cfg(feature = "debug-tools")]
-    {
-        RenderLayers::from_layers(&[0, 2])
-    }
-    #[cfg(not(feature = "debug-tools"))]
-    {
-        RenderLayers::from_layers(&[0])
-    }
-}
-
-#[cfg(not(feature = "ai"))]
-fn window_plugin() -> WindowPlugin {
-    WindowPlugin {
-        primary_window: Some(Window {
-            present_mode: PresentMode::AutoNoVsync,
-            ..Default::default()
-        }),
-        ..Default::default()
-    }
-}
-
-#[cfg(feature = "ai")]
-fn window_plugin() -> WindowPlugin {
-    WindowPlugin {
-        primary_window: None,
-        exit_condition: ExitCondition::DontExit,
-        ..Default::default()
-    }
-}
-
 fn setup_mockup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -172,7 +101,7 @@ fn setup_mockup_scene(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(128.0, 256.0, 128.0).looking_at(Vec3::new(0.0, 128.0, 0.0), Vec3::Y),
-        camera_render_layers(),
+        RenderLayers::from_layers(&[0, 1]),
         FlyByCamera,
         Name::new("FlyByCamera"),
     ));
@@ -203,7 +132,7 @@ fn setup_mockup_scene(
                     is_active: false,
                     ..Default::default()
                 },
-                first_person_render_layers(),
+                RenderLayers::from_layers(&[0]),
                 Name::new("FirstPersonCamera"),
                 FirstPersonCamera,
             ));
@@ -230,6 +159,15 @@ fn setup_mockup_scene(
     commands.spawn((PointLight::default(), Transform::from_xyz(4.0, 8.0, 4.0)));
 }
 
+#[derive(Message, Debug, Clone, Copy)]
+pub struct ChunkMeshBuilt {
+    pub entity: Entity,
+    pub chunk: Chunk,
+    pub vertex_count: u32,
+    pub top_y: f32,
+    pub center_y: f32,
+}
+
 #[derive(SystemSet, Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum ClientSet {
     ReceiveMessages,
@@ -240,7 +178,7 @@ pub enum ClientSet {
 }
 
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
-struct ChunkMap(HashMap<Chunk, Entity>);
+pub struct ChunkMap(HashMap<Chunk, Entity>);
 
 #[derive(Resource, Debug, Clone)]
 pub struct ChunkMaterialHandle(pub Handle<ChunkMaterial>);

@@ -16,13 +16,13 @@ const AI_WIDTH: u32 = 960;
 const AI_HEIGHT: u32 = 540;
 const SNAPSHOT_INTERVAL_SECS: f32 = 5.0;
 
-pub(crate) struct AiClientPlugin;
+pub struct AiClientPlugin;
 
 impl Plugin for AiClientPlugin {
     fn build(&self, app: &mut App) {
         let mut config = app
             .world_mut()
-            .get_resource_or_insert_with(projekto_debug::DebugViewConfig::default);
+            .get_resource_or_insert_with(crate::DebugViewConfig::default);
         config.show_grid = true;
         config.show_labels = true;
 

@@ -2,8 +2,8 @@ use bevy::{
     prelude::*,
     remote::{BrpError, BrpResult, RemotePlugin, http::RemoteHttpPlugin},
 };
+use projekto_client::PlayerLandscape;
 use projekto_core::coords::Chunk;
-use projekto_debug::{ChunkDebug, DebugPin, DebugViewConfig};
 use projekto_diagnostics::ProcessMemory;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -13,13 +13,17 @@ use super::{
     memory::ServerMemory,
 };
 
-use crate::PlayerLandscape;
-#[cfg(feature = "ai")]
-use crate::ai::AiSnapshot;
+use crate::{ChunkDebug, DebugPin, DebugViewConfig, ai::AiSnapshot};
 
-pub struct RemoteDebugPlugin;
+pub struct RemoteDebugPlugin {
+    port: u16,
+}
 
-const CLIENT_BRP_PORT: u16 = if cfg!(feature = "ai") { 15722 } else { 15712 };
+impl RemoteDebugPlugin {
+    pub fn new(port: u16) -> Self {
+        Self { port }
+    }
+}
 
 impl Plugin for RemoteDebugPlugin {
     fn build(&self, app: &mut App) {
@@ -34,13 +38,9 @@ impl Plugin for RemoteDebugPlugin {
             .with_method_main("projekto/set_camera", set_camera)
             .with_method_main("projekto/report", report);
 
-        #[cfg(feature = "ai")]
         let remote = remote.with_method_main("projekto/ai_snapshot", ai_snapshot);
 
-        app.add_plugins((
-            remote,
-            RemoteHttpPlugin::default().with_port(CLIENT_BRP_PORT),
-        ));
+        app.add_plugins((remote, RemoteHttpPlugin::default().with_port(self.port)));
     }
 }
 
@@ -223,8 +223,15 @@ fn report(_: In<Option<Value>>, mut request: ResMut<ReportRequest>) -> BrpResult
     Ok(json!({ "ok": true }))
 }
 
-#[cfg(feature = "ai")]
-fn ai_snapshot(_: In<Option<Value>>, mut request: ResMut<AiSnapshot>) -> BrpResult {
+fn ai_snapshot(_: In<Option<Value>>, mut request: Option<ResMut<AiSnapshot>>) -> BrpResult {
+    let Some(request) = request.as_mut() else {
+        return Err(BrpError {
+            code: -32001,
+            message: "AI snapshot is only available in the AI client".to_string(),
+            data: None,
+        });
+    };
+
     request.0 = true;
     Ok(json!({ "ok": true }))
 }

@@ -4,6 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::{ChunkDebug, DebugPin, DebugViewConfig, chunk_id, client::memory::ServerMemory};
 use bevy::{
     camera::visibility::RenderLayers,
     math::Isometry3d,
@@ -11,12 +12,10 @@ use bevy::{
     prelude::*,
     render::view::screenshot::{Screenshot, save_to_disk},
 };
+use projekto_client::{ChunkLocal, ChunkMap};
 use projekto_core::coords::Chunk;
-use projekto_debug::{ChunkDebug, DebugPin, DebugViewConfig, chunk_id};
 use projekto_diagnostics::ProcessMemory;
 use serde::Serialize;
-
-use crate::{ChunkMap, bundle::ChunkLocal, debug::memory::ServerMemory};
 
 const LABEL_RADIUS: i32 = 3;
 const OVERLAY_REFRESH_SECS: f32 = 0.25;
@@ -25,7 +24,6 @@ pub struct DebugUiPlugin;
 
 impl Plugin for DebugUiPlugin {
     fn build(&self, app: &mut App) {
-        #[cfg(not(feature = "ai"))]
         app.add_plugins(MeshPickingPlugin);
 
         app.init_resource::<DebugViewConfig>()
@@ -305,7 +303,7 @@ fn update_debug_overlay(
 
     let holes = q_debug
         .iter()
-        .filter(|debug| debug.state == projekto_debug::ChunkDebugState::Empty)
+        .filter(|debug| debug.state == crate::ChunkDebugState::Empty)
         .count();
 
     let chunk_line = hovered
@@ -320,7 +318,7 @@ fn update_debug_overlay(
                 debug.state,
                 debug.vertex_count,
                 debug.face_count,
-                debug.state == projekto_debug::ChunkDebugState::Failed
+                debug.state == crate::ChunkDebugState::Failed
             )
         })
         .unwrap_or_else(|| "Hover: --".to_string());

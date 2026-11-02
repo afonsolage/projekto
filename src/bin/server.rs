@@ -7,7 +7,6 @@ const TICK_EVERY_MILLIS: u64 = 50;
 
 fn main() {
     let mut app = App::new();
-
     app.add_plugins((
         LogPlugin::default(),
         AssetPlugin::default(),
@@ -18,7 +17,7 @@ fn main() {
     ));
 
     #[cfg(feature = "debug-tools")]
-    app.add_plugins(projekto_server::debug::DebugToolsPlugins);
+    app.add_plugins(projekto_debug::ServerDebugPlugins);
 
     app.run();
 }

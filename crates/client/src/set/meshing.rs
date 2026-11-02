@@ -8,8 +8,8 @@ use projekto_messages::{ChunkUnload, ChunkVertex};
 use projekto_proto::RegisterMessageHandler;
 
 use crate::{
-    ChunkBundle, ChunkMap, ChunkMaterialHandle, bundle::ChunkLocal, material::ChunkMaterial,
-    net::ServerDisconnected,
+    ChunkBundle, ChunkLocal, ChunkMap, ChunkMaterialHandle, ChunkMeshBuilt,
+    material::ChunkMaterial, net::ServerDisconnected,
 };
 
 pub(crate) struct MeshingPlugin;
@@ -53,13 +53,21 @@ fn update_chunk_mesh(
     mut map: ResMut<ChunkMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     material: Res<ChunkMaterialHandle>,
+    mut mesh_built: MessageWriter<ChunkMeshBuilt>,
 ) {
     let ChunkVertex { chunk, vertex } = vertex;
+    let vertex_count = vertex.len() as u32;
+    let top_y = vertex
+        .iter()
+        .map(|vertex| vertex.position.y)
+        .fold(f32::MIN, f32::max);
+    let center_y = center_height(vertex.iter().map(|vertex| vertex.position)).unwrap_or(top_y);
 
     let mesh_handler = Mesh3d(meshes.add(generate_mesh(&vertex)));
 
-    if let Some(&entity) = map.get(&chunk) {
+    let entity = if let Some(&entity) = map.get(&chunk) {
         commands.entity(entity).insert(mesh_handler);
+        entity
     } else {
         let entity = commands
             .spawn((ChunkBundle {
@@ -71,24 +79,37 @@ fn update_chunk_mesh(
             .insert(Name::new(format!("Client Chunk {chunk}")))
             .id();
         map.insert(chunk, entity);
-    }
+        entity
+    };
+
+    mesh_built.write(ChunkMeshBuilt {
+        entity,
+        chunk,
+        vertex_count,
+        top_y: if vertex_count == 0 { 0.0 } else { top_y },
+        center_y: if vertex_count == 0 { 0.0 } else { center_y },
+    });
 
     trace!("[update_chunk_mesh] chunk {chunk:?} mesh updated");
 }
 
-fn mesh_asset_usages() -> RenderAssetUsages {
-    #[cfg(feature = "debug-tools")]
-    {
-        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD
-    }
-    #[cfg(not(feature = "debug-tools"))]
-    {
-        RenderAssetUsages::RENDER_WORLD
-    }
+fn center_height(positions: impl Iterator<Item = Vec3>) -> Option<f32> {
+    const CENTER: f32 = 8.0;
+    const RADIUS: f32 = 2.0;
+
+    positions
+        .filter(|position| {
+            (position.x - CENTER).abs() <= RADIUS && (position.z - CENTER).abs() <= RADIUS
+        })
+        .map(|position| position.y)
+        .reduce(f32::max)
 }
 
 fn generate_mesh(vertices: &[voxel::Vertex]) -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, mesh_asset_usages());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
 
     let mut positions: Vec<[f32; 3]> = vec![];
     let mut normals: Vec<[f32; 3]> = vec![];

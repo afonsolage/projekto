@@ -30,9 +30,9 @@ The following plugins are used to organize the client's systems:
     character based on keyboard input.
   - [`update_character_position`](./crates/client/src/controller/character_controller.rs#L115):
     Updates the character's position in the world.
-- **Debug plugins** (`crates/client/src/debug`, `debug-tools` feature): The client and server
-  expose `DebugToolsPlugins` plugin groups for chunk data, overlays, the debug grid and BRP.
-  The groups are added by the binaries; omit the group or feature to remove the tooling.
+- **Debug plugins** (`crates/debug`, `debug-tools` feature): The debug crate exposes
+  `ClientDebugPlugins` and `ServerDebugPlugins` groups for chunk data, overlays, the debug grid
+  and BRP. The binary targets add the groups; omit the group or feature to remove the tooling.
 - [`setup_hold_esc_to_exit`](./crates/client/src/lib.rs#L102): Initializes the `EscHolding`
   resource.
   - [`hold_esc_to_exit`](./crates/client/src/lib.rs#L106): Exits the application when the `Esc`
@@ -232,18 +232,18 @@ app.add_message_handler(handle_my_message);
 
 ## Debug tooling
 
-Debug tooling is feature-gated: `debug-tools` enables the shared data and UI plugins,
-`remote-debug` adds BRP, and `ai` enables the windowless client. Normal release builds do not
-compile `projekto_debug` or collect chunk debug data. The client and server expose optional
-`DebugToolsPlugins` plugin groups.
+Debug tooling is feature-gated: `debug-tools` enables shared data, UI plugins and BRP, and the
+AI client is a separate binary that requires it. Normal release builds do not compile
+`projekto_debug` or collect chunk debug data. The binaries add the optional
+`ClientDebugPlugins`/`ServerDebugPlugins` groups.
 
-- **`projekto_debug`**: reflected, lightweight debug data shared by both binaries:
+- **`projekto_debug`**: debug data and client/server/AI plugins shared by the debug binaries:
   `ChunkDebug`, `DebugPin`, `DebugViewConfig`, stable chunk ids and chunk colours.
-- **Client debug overlay** (`crates/client/src/debug`): chunk grid and coordinate labels (F4/F5),
+- **Client debug overlay** (`crates/debug/src/client`): chunk grid and coordinate labels (F4/F5),
   hovered-chunk summary, world pins (F8/F9), the RAM overlay (F3) and debug report capture (F7).
   Reports contain a screenshot, camera/hovered/nearby chunk data, pins and memory.
-- **Remote API**: with the `remote-debug` feature, the server and client expose the Bevy Remote
-  Protocol over HTTP on `127.0.0.1:15702` (and `15703` for the render subapp). Custom methods
+- **Remote API**: with `debug-tools`, the server and client expose the Bevy Remote Protocol over
+  HTTP on `127.0.0.1:15702` (and `15703` for the render subapp). Custom methods
   cover chunk inspection, pins, reports and controlled mutations such as remesh, teleport and
   set-voxel.
 - **`projekto-archive` CLI**: `just archive info|list|holes|verify|dump` reads region archives

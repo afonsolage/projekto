@@ -1,21 +1,20 @@
 # Debug tools
 
-These tools are gated behind the `debug-tools` feature. `remote-debug` enables
-`debug-tools` plus the Bevy Remote Protocol, and `ai` enables `remote-debug` for the
-windowless client. The `just` recipes enable the relevant features; a normal release build
-does not compile `projekto_debug` or the debug data collection.
+These tools are gated behind the `debug-tools` feature, which also includes the Bevy Remote
+Protocol. A normal release build does not compile `projekto_debug` or the debug data
+collection. The AI client is a separate binary and requires `debug-tools`.
 
 ## Enabling and disabling
 
 The client and server expose their debug functionality as Bevy plugin groups:
 
-- `projekto_client::debug::DebugToolsPlugins`
-- `projekto_server::debug::DebugToolsPlugins`
+- `projekto_debug::ClientDebugPlugins`
+- `projekto_debug::ServerDebugPlugins`
 
-The shipped binaries add the group once when `debug-tools` is enabled. If you compose your own
-app, add the group after the core client/server plugin; do not add a second copy. To disable
-the tooling, omit the group or build without the feature. Individual subplugins have ordering
-and resource dependencies on each other, so keep the group as the unit of enablement.
+The shipped binaries add the appropriate group once when `debug-tools` is enabled. If you
+compose your own app, add the group after the core client/server plugin; do not add a second
+copy. To disable the tooling, omit the group or build without the feature. The group is the
+unit of enablement because its subplugins share resources and ordering constraints.
 
 ## Client hotkeys
 
@@ -66,9 +65,8 @@ which is the signature of a rendering hole.
 
 ## Remote API (BRP)
 
-The server and client expose the Bevy Remote Protocol over HTTP when built with the
-`remote-debug` feature. `just s` and `just c` enable it automatically; it implies
-`debug-tools`.
+The server and client expose the Bevy Remote Protocol over HTTP when built with
+`debug-tools`. `just s` and `just c` enable it automatically.
 
 - Server main app: `127.0.0.1:15702`
 - Client main app: `127.0.0.1:15712` (visible client) / `127.0.0.1:15722` (AI client)
@@ -132,8 +130,8 @@ localhost.
 
 ## AI client (`just cia`)
 
-`just cia` builds the same client with the `ai` feature (which implies `remote-debug` and
-`debug-tools`) and runs it on Windows without creating a window:
+`just cia` builds the separate `ai-client` binary with `debug-tools` and runs it on Windows
+without creating a window:
 
 - windowless, one update per second;
 - renders the world to a 960x540 offscreen image;

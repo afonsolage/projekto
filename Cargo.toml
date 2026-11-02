@@ -2,6 +2,7 @@
 name = "projekto"
 version = "0.1.0"
 edition = "2024"
+default-run = "client"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,9 +17,31 @@ root = "assets/shaders"
 [package.metadata.wgsl-analyzer.dependencies]
 bevy_pbr = { path = ".bevy/crates/bevy_pbr" }
 
+[features]
+debug-tools = ["dep:projekto_debug"]
+
+[dependencies]
+bevy.workspace = true
+projekto_client.workspace = true
+projekto_server.workspace = true
+projekto_debug = { workspace = true, optional = true }
+
+[[bin]]
+name = "client"
+path = "src/bin/client.rs"
+
+[[bin]]
+name = "ai-client"
+path = "src/bin/ai-client.rs"
+required-features = ["debug-tools"]
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
 [workspace]
 members = ["crates/*"]
-default-members = ["crates/client"]
+default-members = ["."]
 
 [workspace.dependencies]
 projekto_core = { path = "crates/core",features = ["auto_load_kinds_descs"]  }

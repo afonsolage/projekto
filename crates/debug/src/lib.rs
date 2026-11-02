@@ -3,6 +3,14 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub mod ai;
+pub mod client;
+pub mod server;
+
+pub use ai::AiClientPlugin;
+pub use client::ClientDebugPlugins;
+pub use server::ServerDebugPlugins;
+
 /// Stable chunk identifier derived from its coordinates.
 pub fn chunk_id(x: i32, z: i32) -> u64 {
     ((x as u32 as u64) << 32) | (z as u32 as u64)

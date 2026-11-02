@@ -8,9 +8,9 @@ use bevy::{
 };
 use projekto_core::voxel;
 
-use projekto_debug::DebugViewConfig;
+use projekto_client::{ChunkLocal, ChunkMaterial, ChunkMaterialHandle, KindsAtlasRes};
 
-use crate::{ChunkMaterialHandle, KindsAtlasRes, bundle::ChunkLocal, material::ChunkMaterial};
+use crate::DebugViewConfig;
 
 #[derive(Reflect, AsBindGroup, Asset, Debug, Clone)]
 #[bind_group_data(bool)]

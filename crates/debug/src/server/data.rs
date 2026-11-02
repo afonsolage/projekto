@@ -1,7 +1,7 @@
+use crate::{ChunkDebug, ChunkDebugSource, ChunkDebugState, center_height};
 use bevy::prelude::*;
-use projekto_debug::{ChunkDebug, ChunkDebugSource, ChunkDebugState, center_height};
 
-use crate::{
+use projekto_server::{
     DirtyChunks,
     bundle::{CachedMesh, ChunkKind, ChunkLocal, ChunkMap, ChunkVertex},
 };
@@ -11,7 +11,7 @@ pub struct DebugDataPlugin;
 
 impl Plugin for DebugDataPlugin {
     fn build(&self, app: &mut App) {
-        projekto_debug::register_types(app);
+        crate::register_types(app);
         app.add_systems(PostUpdate, (sync_debug, refresh_debug).chain());
     }
 }

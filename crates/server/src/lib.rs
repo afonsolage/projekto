@@ -12,9 +12,7 @@ mod cache;
 pub use cache::*;
 pub use projekto_archive::ChunkAsset;
 
-#[cfg(feature = "debug-tools")]
-pub mod debug;
-mod net;
+pub mod net;
 
 pub mod genesis;
 
