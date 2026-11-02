@@ -49,6 +49,38 @@ messages - must be reviewed and owned by a human before it lands. In particular:
 - **No duplication or padding.** Do not restate the same thing in prose, doc comments and
   inline comments at once, and do not explain what the code already says clearly.
 
+## AI-generated documentation
+
+New documentation files authored by AI are written under `docs/ai-generated/`, not at the
+repository root or directly in `docs/`. Keeping it in that subdirectory makes its provenance visible to
+readers. The usual review, disclosure and style rules still apply.
+
+AI may edit existing human-owned documents in place; this rule covers new documents. Do not
+move existing documents into `docs/ai-generated/` unless the author asks.
+
+## Review markers (`//@AI`)
+
+The author leaves review requests as a comment on the line above the code it refers to:
+
+```rust
+//@AI, <request>
+```
+
+When an AI finds one, it:
+
+1. reads the referenced code and its surrounding context;
+2. carries out the request (fix, refactor, answer, add a test, ...) following the project
+   conventions;
+3. reports what was done in the conversation;
+4. removes the `//@AI, ...` line once the request is fully addressed.
+
+Do not remove the marker if the request is ambiguous, cannot be completed or needs a decision
+from the author; explain the blocker and leave the comment in place.
+
+Before finishing a task, search the files touched for `//@AI`. For repository-wide work, run
+`rg -n '//@AI'` and address every marker or report the ones left unresolved. Only the author
+adds these markers; AI removes them and never leaves new ones behind.
+
 ## Posting PR comments and reviews
 
 `gh pr review` and `gh pr comment` create a new review or comment on every invocation. They are
