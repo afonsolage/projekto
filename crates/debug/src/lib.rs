@@ -44,6 +44,8 @@ pub struct ChunkDebug {
     pub source: ChunkDebugSource,
     pub vertex_count: u32,
     pub face_count: u32,
+    /// Highest mesh vertex in chunk-local Y, used to drape debug grids over the surface.
+    pub top_y: f32,
     pub suspect_hole: bool,
     pub neighbors_loaded: u8,
     pub dirty: bool,
@@ -60,6 +62,7 @@ impl ChunkDebug {
             source,
             vertex_count: 0,
             face_count: 0,
+            top_y: 0.0,
             suspect_hole: false,
             neighbors_loaded: 0,
             dirty: true,

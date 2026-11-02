@@ -58,6 +58,10 @@ fn update_chunk_mesh(
 ) {
     let ChunkVertex { chunk, vertex } = vertex;
     let vertex_count = vertex.len() as u32;
+    let top_y = vertex
+        .iter()
+        .map(|vertex| vertex.position.y)
+        .fold(f32::MIN, f32::max);
 
     let mesh_handler = Mesh3d(meshes.add(generate_mesh(&vertex)));
 
@@ -66,14 +70,17 @@ fn update_chunk_mesh(
 
         if let Ok(mut debug) = q_debug.get_mut(entity) {
             debug.set_mesh(vertex_count, false);
+            debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
         } else {
             let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Streamed);
             debug.set_mesh(vertex_count, false);
+            debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
             commands.entity(entity).insert(debug);
         }
     } else {
         let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Streamed);
         debug.set_mesh(vertex_count, false);
+        debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
 
         let entity = commands
             .spawn((

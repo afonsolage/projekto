@@ -182,8 +182,14 @@ fn generate_vertices(
 
         if let Ok(mut debug) = q_debug.get_mut(entity) {
             let vertex_count = chunk_vertex.0.len() as u32;
+            let top_y = chunk_vertex
+                .0
+                .iter()
+                .map(|vertex| vertex.position.y)
+                .fold(f32::MIN, f32::max);
             let suspect_hole = chunk_vertex.is_empty() && !kind.all(|kind| kind.is_none());
             debug.set_mesh(vertex_count, suspect_hole);
+            debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
             debug.neighbors_loaded = neighbors_mask(chunk, &chunk_map);
 
             if suspect_hole {

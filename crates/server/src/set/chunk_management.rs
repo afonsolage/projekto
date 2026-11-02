@@ -306,9 +306,14 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
     } = asset;
 
     let vertex_count = vertex.len() as u32;
+    let top_y = vertex
+        .iter()
+        .map(|vertex| vertex.position.y)
+        .fold(f32::MIN, f32::max);
     let suspect_hole = vertex.is_empty() && !kind.all(|kind| kind.is_none());
     let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Archive);
     debug.set_mesh(vertex_count, suspect_hole);
+    debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
     debug.saved = true;
 
     if suspect_hole {

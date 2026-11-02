@@ -195,24 +195,25 @@ fn draw_grid(
     }
 
     let center = Chunk::from(camera_position);
-    let y = grid_y(&config, camera_position);
 
     for dx in -GRID_RADIUS..=GRID_RADIUS {
         for dz in -GRID_RADIUS..=GRID_RADIUS {
             let chunk = Chunk::new(center.x + dx, center.z + dz);
-            if !chunk_map.contains_key(&chunk) {
+            let Some(&entity) = chunk_map.get(&chunk) else {
+                continue;
+            };
+            let Ok(debug) = q_debug.get(entity) else {
+                continue;
+            };
+            if debug.vertex_count == 0 {
                 continue;
             }
 
-            let color = chunk_color(chunk_id(chunk.x, chunk.z));
-            let color = if chunk_map
-                .get(&chunk)
-                .and_then(|entity| q_debug.get(*entity).ok())
-                .is_some_and(|debug| debug.vertex_count == 0)
-            {
+            let y = debug.top_y + 1.0;
+            let color = if debug.suspect_hole {
                 Color::srgb(1.0, 0.1, 0.1)
             } else {
-                color.with_alpha(0.75)
+                chunk_color(chunk_id(chunk.x, chunk.z)).with_alpha(0.75)
             };
 
             let x0 = chunk.x as f32 * Chunk::X_AXIS_SIZE as f32;
@@ -293,28 +294,28 @@ fn draw_labels(
     };
 
     let center = Chunk::from(camera_position);
-    let y = grid_y(&config, camera_position) + 1.0;
 
     for dx in -LABEL_RADIUS..=LABEL_RADIUS {
         for dz in -LABEL_RADIUS..=LABEL_RADIUS {
             let chunk = Chunk::new(center.x + dx, center.z + dz);
-            if !chunk_map.contains_key(&chunk) {
+            let Some(&entity) = chunk_map.get(&chunk) else {
+                continue;
+            };
+            let Ok(debug) = q_debug.get(entity) else {
+                continue;
+            };
+            if debug.vertex_count == 0 {
                 continue;
             }
 
-            let hole = chunk_map
-                .get(&chunk)
-                .and_then(|entity| q_debug.get(*entity).ok())
-                .is_some_and(|debug| debug.vertex_count == 0);
-
             let position = Vec3::new(
                 chunk.x as f32 * Chunk::X_AXIS_SIZE as f32 + Chunk::X_AXIS_SIZE as f32 / 2.0,
-                y,
+                debug.top_y + 2.0,
                 chunk.z as f32 * Chunk::Z_AXIS_SIZE as f32 + Chunk::Z_AXIS_SIZE as f32 / 2.0,
             );
             let direction = (camera_position - position).normalize_or_zero();
             let rotation = Quat::from_rotation_arc(Vec3::Z, direction);
-            let color = if hole {
+            let color = if debug.suspect_hole {
                 Color::srgb(1.0, 0.2, 0.2)
             } else {
                 Color::WHITE

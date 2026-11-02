@@ -16,10 +16,10 @@ The bottom-left overlay shows the hovered chunk, its `ChunkDebug` summary, the c
 the crosshair chunk and the pin count. Chunks without a mesh are drawn in red in the grid and
 labels.
 
-The grid and labels are world-space: F4 draws chunk boundary squares plus short corner posts
-near the camera, F5 draws `(x, z)` labels at chunk centres. The grid plane follows below the
-camera, so it never floats in the sky. The crosshair chunk is the chunk where the camera centre
-ray crosses that plane.
+The grid and labels are world-space: F4 draws chunk boundary squares at each chunk's highest
+mesh vertex (draped over the terrain) plus short corner posts near the camera, and F5 draws
+`(x, z)` labels at chunk centres. The crosshair chunk is the chunk where the camera centre ray
+crosses the configured grid height, because a single screen ray has no surface depth.
 
 ## Debug reports
 
