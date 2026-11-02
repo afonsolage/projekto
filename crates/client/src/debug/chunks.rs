@@ -16,17 +16,14 @@ use projekto_debug::{ChunkDebug, DebugPin, DebugViewConfig, chunk_id};
 use projekto_diagnostics::ProcessMemory;
 use serde::Serialize;
 
-use crate::{
-    ChunkMap, ChunkMaterialHandle, bundle::ChunkLocal, debug::memory::ServerMemory,
-    material::ChunkMaterial,
-};
+use crate::{ChunkMap, bundle::ChunkLocal, debug::memory::ServerMemory};
 
 const LABEL_RADIUS: i32 = 3;
 const OVERLAY_REFRESH_SECS: f32 = 0.25;
 
-pub(crate) struct DebugWorldPlugin;
+pub struct DebugUiPlugin;
 
-impl Plugin for DebugWorldPlugin {
+impl Plugin for DebugUiPlugin {
     fn build(&self, app: &mut App) {
         #[cfg(not(feature = "ai"))]
         app.add_plugins(MeshPickingPlugin);
@@ -43,7 +40,6 @@ impl Plugin for DebugWorldPlugin {
                     toggle_debug_views,
                     pin_hovered_chunk,
                     request_report,
-                    sync_grid_material,
                     draw_labels,
                     draw_pins,
                     update_debug_overlay,
@@ -164,21 +160,6 @@ fn active_camera_transform(
         .iter()
         .find(|(camera, _)| camera.is_active)
         .map(|(_, transform)| (transform.translation(), transform.forward().as_vec3()))
-}
-
-fn sync_grid_material(
-    config: Res<DebugViewConfig>,
-    handle: Res<ChunkMaterialHandle>,
-    mut materials: ResMut<Assets<ChunkMaterial>>,
-) {
-    let Some(mut material) = materials.get_mut(&handle.0) else {
-        return;
-    };
-
-    let debug_chunk_grid = if config.show_grid { 1.0 } else { 0.0 };
-    if material.data.debug_chunk_grid != debug_chunk_grid {
-        material.data.debug_chunk_grid = debug_chunk_grid;
-    }
 }
 
 fn draw_pins(mut gizmos: Gizmos, config: Res<DebugViewConfig>, pins: Query<&DebugPin>) {
@@ -339,7 +320,7 @@ fn update_debug_overlay(
                 debug.state,
                 debug.vertex_count,
                 debug.face_count,
-                debug.suspect_hole
+                debug.state == projekto_debug::ChunkDebugState::Failed
             )
         })
         .unwrap_or_else(|| "Hover: --".to_string());

@@ -12,6 +12,7 @@ mod cache;
 pub use cache::*;
 pub use projekto_archive::ChunkAsset;
 
+#[cfg(feature = "debug-tools")]
 pub mod debug;
 mod net;
 
@@ -26,8 +27,6 @@ pub struct WorldServerPlugin;
 
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
-        projekto_debug::register_types(app);
-
         app.configure_sets(PreUpdate, WorldSet::ReceiveRequests)
             .configure_sets(
                 Update,
@@ -40,7 +39,6 @@ impl Plugin for WorldServerPlugin {
                     .chain(),
             )
             .configure_sets(PostUpdate, WorldSet::SendResponses)
-            .insert_resource(debug::Metrics::new())
             .add_plugins((
                 NetPlugin,
                 set::ReceiveRequestsPlugin,
@@ -52,11 +50,8 @@ impl Plugin for WorldServerPlugin {
                 set::SendResponsesPlugin,
             ));
 
-        #[cfg(debug_assertions)]
-        app.add_plugins(debug::MemoryReportPlugin);
-
-        #[cfg(all(debug_assertions, feature = "remote-debug", not(test)))]
-        app.add_plugins(debug::RemoteDebugPlugin);
+        #[cfg(feature = "debug-tools")]
+        app.add_plugins(debug::DebugToolsPlugins);
     }
 }
 

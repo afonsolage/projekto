@@ -230,6 +230,11 @@ app.add_message_handler(handle_my_message);
 
 ## Debug tooling
 
+Debug tooling is feature-gated: `debug-tools` enables the shared data and UI plugins,
+`remote-debug` adds BRP, and `ai` enables the windowless client. Normal release builds do not
+compile `projekto_debug` or collect chunk debug data. The client and server expose optional
+`DebugToolsPlugins` plugin groups.
+
 - **`projekto_debug`**: reflected, lightweight debug data shared by both binaries:
   `ChunkDebug`, `DebugPin`, `DebugViewConfig`, stable chunk ids and chunk colours.
 - **Client debug overlay** (`crates/client/src/debug`): chunk grid and coordinate labels (F4/F5),

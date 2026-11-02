@@ -1,7 +1,19 @@
 # Debug tools
 
-These tools are only compiled for debug builds. The remote API is also gated behind the
-`remote-debug` feature, which the `just` recipes enable.
+These tools are gated behind the `debug-tools` feature. `remote-debug` enables
+`debug-tools` plus the Bevy Remote Protocol, and `ai` enables `remote-debug` for the
+windowless client. The `just` recipes enable the relevant features; a normal release build
+does not compile `projekto_debug` or the debug data collection.
+
+## Enabling and disabling
+
+The client and server expose their debug functionality as Bevy plugin groups:
+
+- `projekto_client::debug::DebugToolsPlugins`
+- `projekto_server::debug::DebugToolsPlugins`
+
+Add a group explicitly when the feature is enabled, or disable individual plugins with
+`PluginGroupBuilder::disable` (for example, keeping data/BRP while disabling the UI).
 
 ## Client hotkeys
 
@@ -15,10 +27,11 @@ These tools are only compiled for debug builds. The remote API is also gated beh
 The bottom-left overlay shows the hovered chunk, its `ChunkDebug` summary, the camera chunk,
 the crosshair chunk and the pin count.
 
-The grid and labels are world-space. F4 enables chunk boundary lines in the chunk shader: each
-fragment compares its world position with the 16-block chunk lattice, so the lines follow the
-actual terrain instead of a synthetic plane or per-chunk height. F5 draws `(x, z)` labels at
-chunk centres. The crosshair chunk is the chunk where the camera centre ray crosses the
+The grid and labels are world-space. F4 enables chunk boundary lines in the debug chunk
+material: each fragment compares its world position with the 16-block chunk lattice, so the
+lines follow the actual terrain instead of a synthetic plane or per-chunk height. The
+production chunk material does not contain the debug shader branch. F5 draws `(x, z)` labels
+at chunk centres. The crosshair chunk is the chunk where the camera centre ray crosses the
 configured grid height, because a single screen ray has no surface depth.
 
 ## Debug reports
@@ -52,7 +65,8 @@ which is the signature of a rendering hole.
 ## Remote API (BRP)
 
 The server and client expose the Bevy Remote Protocol over HTTP when built with the
-`remote-debug` feature. `just s` and `just c` enable it automatically.
+`remote-debug` feature. `just s` and `just c` enable it automatically; it implies
+`debug-tools`.
 
 - Server main app: `127.0.0.1:15702`
 - Client main app: `127.0.0.1:15712` (visible client) / `127.0.0.1:15722` (AI client)
@@ -116,8 +130,8 @@ localhost.
 
 ## AI client (`just cia`)
 
-`just cia` builds the same client with the `ai` feature and runs it on Windows without creating a
-window:
+`just cia` builds the same client with the `ai` feature (which implies `remote-debug` and
+`debug-tools`) and runs it on Windows without creating a window:
 
 - windowless, one update per second;
 - renders the world to a 960x540 offscreen image;

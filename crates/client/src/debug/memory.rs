@@ -8,7 +8,7 @@ use projekto_proto::RegisterMessageHandler;
 const SERVER_REPORT_TIMEOUT_SECS: f32 = 3.0;
 const OVERLAY_REFRESH_SECS: f32 = 0.5;
 
-pub(crate) struct MemoryOverlayPlugin;
+pub struct MemoryOverlayPlugin;
 
 impl Plugin for MemoryOverlayPlugin {
     fn build(&self, app: &mut App) {

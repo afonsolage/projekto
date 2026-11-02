@@ -16,7 +16,8 @@ dev = [
     "bevy/dynamic_linking",
 ]
 
-remote-debug = ["bevy/bevy_remote"]
+debug-tools = ["dep:projekto_debug", "dep:projekto_diagnostics", "dep:serde_json"]
+remote-debug = ["debug-tools", "bevy/bevy_remote"]
 
 # Windowless, low-fps client used for AI-driven diagnostics.
 ai = ["remote-debug"]
@@ -27,12 +28,12 @@ projekto_core.workspace = true
 projekto_camera.workspace = true
 projekto_proto.workspace = true
 projekto_messages.workspace = true
-projekto_diagnostics.workspace = true
-projekto_debug.workspace = true
+projekto_diagnostics = { workspace = true, optional = true }
+projekto_debug = { workspace = true, optional = true }
 
 bevy.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, optional = true }
 
 futures-lite.workspace = true
 

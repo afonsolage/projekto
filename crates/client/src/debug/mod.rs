@@ -1,57 +1,33 @@
-use bevy::{app::AppExit, prelude::*};
+use bevy::app::{PluginGroup, PluginGroupBuilder};
 
-#[cfg(debug_assertions)]
 mod chunks;
-#[cfg(debug_assertions)]
+mod data;
+mod grid;
 mod memory;
-#[cfg(all(debug_assertions, feature = "remote-debug"))]
+#[cfg(feature = "remote-debug")]
 mod remote;
 
-pub struct DebugPlugin;
+pub use chunks::DebugUiPlugin;
+pub use data::DebugDataPlugin;
+pub use grid::DebugGridPlugin;
+pub use memory::MemoryOverlayPlugin;
+#[cfg(feature = "remote-debug")]
+pub use remote::RemoteDebugPlugin;
 
-impl Plugin for DebugPlugin {
-    fn build(&self, app: &mut App) {
-        #[cfg(debug_assertions)]
-        app.add_plugins((memory::MemoryOverlayPlugin, chunks::DebugWorldPlugin));
+/// Debug-only plugins, composed as a normal Bevy plugin group.
+pub struct DebugToolsPlugins;
 
-        #[cfg(all(debug_assertions, feature = "remote-debug"))]
-        app.add_plugins(remote::RemoteDebugPlugin);
+impl PluginGroup for DebugToolsPlugins {
+    fn build(self) -> PluginGroupBuilder {
+        let builder = PluginGroupBuilder::start::<Self>()
+            .add(DebugDataPlugin)
+            .add(MemoryOverlayPlugin)
+            .add(DebugUiPlugin)
+            .add(DebugGridPlugin);
 
-        projekto_debug::register_types(app);
+        #[cfg(feature = "remote-debug")]
+        let builder = builder.add(RemoteDebugPlugin);
 
-        app.add_systems(Startup, setup_hold_est_to_exit)
-            // .add_system(slow_down_fps)
-            .add_systems(Update, hold_esc_to_exit);
+        builder
     }
 }
-
-const ESC_HOLD_TIMEOUT: f32 = 0.2;
-
-#[derive(Resource)]
-struct EscHolding(f32);
-
-fn setup_hold_est_to_exit(mut commands: Commands) {
-    commands.insert_resource(EscHolding(0.0));
-}
-
-fn hold_esc_to_exit(
-    mut esc_holding: ResMut<EscHolding>,
-    time: Res<Time>,
-    input_keys: Res<ButtonInput<KeyCode>>,
-    mut exit_writer: MessageWriter<AppExit>,
-) {
-    if input_keys.pressed(KeyCode::Escape) {
-        esc_holding.0 += time.delta_secs();
-
-        if esc_holding.0 >= ESC_HOLD_TIMEOUT {
-            info!("Exiting app due to ESC holding...");
-            exit_writer.write(AppExit::Success);
-        }
-    } else {
-        esc_holding.0 = 0.0;
-    }
-}
-
-// fn slow_down_fps() {
-//     std::thread::sleep(std::time::Duration::from_millis(200));
-// }

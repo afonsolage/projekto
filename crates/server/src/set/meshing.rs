@@ -1,16 +1,14 @@
+use crate::{
+    DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
+    bundle::{CachedMesh, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery, ChunkVertex},
+    cache::sort_nearest_first,
+    light, meshing,
+};
 use bevy::prelude::*;
 use projekto_core::{
     chunk::{self, ChunkStorage},
     coords::Chunk,
     voxel,
-};
-use projekto_debug::{ChunkDebug, center_height};
-
-use crate::{
-    DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
-    bundle::{CachedMesh, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery, ChunkVertex},
-    cache::sort_nearest_first,
-    debug, light, meshing,
 };
 
 use super::Landscape;
@@ -72,30 +70,6 @@ fn mark_dirty_chunks(
     }
 }
 
-fn neighbors_mask(chunk: Chunk, chunk_map: &ChunkMap) -> u8 {
-    let mut mask = 0u8;
-    let mut bit = 0u8;
-
-    for dx in -1..=1 {
-        for dz in -1..=1 {
-            if dx == 0 && dz == 0 {
-                continue;
-            }
-
-            if chunk_map
-                .0
-                .contains_key(&Chunk::new(chunk.x + dx, chunk.z + dz))
-            {
-                mask |= 1 << bit;
-            }
-
-            bit += 1;
-        }
-    }
-
-    mask
-}
-
 fn neighbors_ready(chunk: Chunk, chunk_map: &ChunkMap, landscape: Option<&Landscape>) -> bool {
     affected_chunks(chunk).all(|neighbor| {
         neighbor == chunk
@@ -104,7 +78,6 @@ fn neighbors_ready(chunk: Chunk, chunk_map: &ChunkMap, landscape: Option<&Landsc
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn generate_vertices(
     mut dirty: ResMut<DirtyChunks>,
     mut caches: ResMut<DerivedCaches>,
@@ -112,8 +85,6 @@ fn generate_vertices(
     landscape: Option<Res<Landscape>>,
     q_chunks: ChunkQuery<(&ChunkKind, &ChunkLight)>,
     mut q_vertex: Query<&mut ChunkVertex>,
-    mut q_debug: Query<&mut ChunkDebug>,
-    mut metrics: ResMut<debug::Metrics>,
 ) {
     let center = landscape
         .as_ref()
@@ -126,8 +97,6 @@ fn generate_vertices(
     let mut count = 0;
     let mut deferred = 0;
     let mut map = [0; voxel::SIDE_COUNT];
-
-    let mut metric_data = debug::MetricData::new("generate_vertices");
 
     for chunk in chunks {
         // Meshing before the chunk's halo is loaded produces geometry that has to be rebuilt
@@ -144,8 +113,6 @@ fn generate_vertices(
         let Some(&entity) = chunk_map.0.get(&chunk) else {
             continue;
         };
-
-        metric_data.begin();
 
         let kind = &kind.0;
         let neighborhood = chunk::SIDES.map(|side| {
@@ -188,33 +155,8 @@ fn generate_vertices(
         let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
         std::mem::swap(&mut vertex, &mut chunk_vertex);
 
-        if let Ok(mut debug) = q_debug.get_mut(entity) {
-            let vertex_count = chunk_vertex.0.len() as u32;
-            let top_y = chunk_vertex
-                .0
-                .iter()
-                .map(|vertex| vertex.position.y)
-                .fold(f32::MIN, f32::max);
-            let suspect_hole = chunk_vertex.is_empty() && !kind.all(|kind| kind.is_none());
-            debug.set_mesh(vertex_count, suspect_hole);
-            debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
-            debug.center_y = if vertex_count == 0 {
-                0.0
-            } else {
-                center_height(chunk_vertex.0.iter().map(|vertex| vertex.position)).unwrap_or(top_y)
-            };
-            debug.neighbors_loaded = neighbors_mask(chunk, &chunk_map);
-
-            if suspect_hole {
-                warn!("chunk {chunk} produced an empty mesh over solid terrain");
-            }
-        }
-
-        metric_data.end();
         count += 1;
     }
-
-    metrics.add(metric_data);
 
     if count > 0 || deferred > 0 {
         trace!(
@@ -228,10 +170,7 @@ mod tests {
     use bevy::app::ScheduleRunnerPlugin;
     use projekto_core::coords::{Chunk, ChunkVoxel};
 
-    use crate::{
-        bundle::{ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkVertex},
-        debug::Metrics,
-    };
+    use crate::bundle::{ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkVertex};
 
     use super::*;
 
@@ -239,7 +178,6 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .init_resource::<ChunkMap>()
-            .insert_resource(Metrics::new())
             .add_plugins(MeshingPlugin);
 
         let chunk = Chunk::new(0, 0);
@@ -277,7 +215,6 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
             .init_resource::<ChunkMap>()
-            .insert_resource(Metrics::new())
             .add_plugins(MeshingPlugin);
 
         let chunk = Chunk::new(0, 0);

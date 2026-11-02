@@ -3,11 +3,9 @@ use bevy::{
     prelude::*,
     tasks::{Task, block_on},
 };
+use projekto_archive::ChunkAsset;
 use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask, MaintenanceResult};
 use projekto_core::coords::Chunk;
-use projekto_debug::{ChunkDebug, ChunkDebugSource, center_height};
-
-use projekto_archive::ChunkAsset;
 
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
@@ -51,7 +49,6 @@ impl Plugin for ChunkManagementPlugin {
                     queue_chunks_to_save,
                     chunks_save,
                     archive_maintenance,
-                    refresh_chunk_debug,
                 )
                     .chain()
                     .in_set(WorldSet::ChunkManagement),
@@ -287,11 +284,6 @@ fn spawn_created_chunk(commands: &mut Commands, chunk: Chunk, creation: ChunkCre
             light: ChunkLight(light),
             ..Default::default()
         })
-        .insert(ChunkDebug::new(
-            chunk.x,
-            chunk.z,
-            ChunkDebugSource::Generated,
-        ))
         .id()
 
     // TODO: save chunk
@@ -305,22 +297,7 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
         vertex,
     } = asset;
 
-    let vertex_count = vertex.len() as u32;
-    let top_y = vertex
-        .iter()
-        .map(|vertex| vertex.position.y)
-        .fold(f32::MIN, f32::max);
     let suspect_hole = vertex.is_empty() && !kind.all(|kind| kind.is_none());
-    let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Archive);
-    debug.set_mesh(vertex_count, suspect_hole);
-    debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
-    debug.center_y = if vertex_count == 0 {
-        0.0
-    } else {
-        center_height(vertex.iter().map(|vertex| vertex.position)).unwrap_or(top_y)
-    };
-    debug.saved = true;
-    debug.dirty = suspect_hole;
 
     if suspect_hole {
         warn!("chunk {chunk} was loaded with an empty mesh over solid terrain");
@@ -332,7 +309,6 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
         local: ChunkLocal(chunk),
         vertex: ChunkVertex(vertex),
     });
-    entity.insert(debug);
 
     // An empty saved mesh over solid terrain is not a valid cache. Let the meshing
     // pipeline rebuild it instead of trusting it forever.
@@ -341,41 +317,6 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
     }
 
     entity.id()
-}
-
-fn refresh_chunk_debug(
-    time: Res<Time>,
-    chunk_map: Res<ChunkMap>,
-    dirty: Res<DirtyChunks>,
-    mut q_debug: Query<(&ChunkLocal, &mut ChunkDebug)>,
-    mut timer: Local<Option<Timer>>,
-) {
-    let timer = timer.get_or_insert_with(|| Timer::from_seconds(0.5, TimerMode::Repeating));
-    if !timer.tick(time.delta()).just_finished() {
-        return;
-    }
-
-    for (ChunkLocal(chunk), mut debug) in &mut q_debug {
-        let mut mask = 0u8;
-        let mut bit = 0u8;
-
-        for dx in -1..=1 {
-            for dz in -1..=1 {
-                if dx == 0 && dz == 0 {
-                    continue;
-                }
-
-                if chunk_map.contains_key(&Chunk::new(chunk.x + dx, chunk.z + dz)) {
-                    mask |= 1 << bit;
-                }
-
-                bit += 1;
-            }
-        }
-
-        debug.neighbors_loaded = mask;
-        debug.dirty = dirty.0.contains(chunk);
-    }
 }
 
 fn queue_chunks_to_save(
@@ -417,8 +358,6 @@ fn chunks_save(
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
     mut pending: ResMut<PendingSaves>,
     chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex)>,
-    chunk_map: Res<ChunkMap>,
-    mut q_debug: Query<&mut ChunkDebug>,
     time: Res<Time>,
     mut timer: Local<Option<Timer>>,
 ) {
@@ -445,11 +384,6 @@ fn chunks_save(
                 vertex: vertex.0.clone(),
             };
             let _task = archive_server.save_chunk(*chunk, asset);
-            if let Some(&entity) = chunk_map.0.get(chunk)
-                && let Ok(mut debug) = q_debug.get_mut(entity)
-            {
-                debug.mark_saved();
-            }
             saved += 1;
         }
 
@@ -549,12 +483,6 @@ mod save_tests {
         ChunkKind(kind)
     }
 
-    fn debug(dirty: bool) -> ChunkDebug {
-        let mut debug = ChunkDebug::new(0, 0, ChunkDebugSource::Generated);
-        debug.dirty = dirty;
-        debug
-    }
-
     fn app() -> App {
         let mut app = App::new();
         app.init_resource::<PendingSaves>()
@@ -567,29 +495,8 @@ mod save_tests {
         let mut app = app();
         let chunk = Chunk::new(0, 0);
 
-        app.world_mut().spawn((
-            ChunkLocal(chunk),
-            solid_kind(),
-            ChunkVertex::default(),
-            debug(true),
-        ));
-
-        app.update();
-
-        assert!(!app.world().resource::<PendingSaves>().0.contains(&chunk));
-    }
-
-    #[test]
-    fn does_not_save_empty_solid_chunk_even_after_meshing() {
-        let mut app = app();
-        let chunk = Chunk::new(0, 0);
-
-        app.world_mut().spawn((
-            ChunkLocal(chunk),
-            solid_kind(),
-            ChunkVertex::default(),
-            debug(false),
-        ));
+        app.world_mut()
+            .spawn((ChunkLocal(chunk), solid_kind(), ChunkVertex::default()));
 
         app.update();
 
@@ -605,7 +512,6 @@ mod save_tests {
             ChunkLocal(chunk),
             solid_kind(),
             ChunkVertex(vec![voxel::Vertex::default()]),
-            debug(true),
         ));
 
         app.update();

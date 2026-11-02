@@ -10,26 +10,40 @@ pub fn chunk_id(x: i32, z: i32) -> u64 {
 
 /// Deterministic colour for a chunk, useful for screenshots.
 pub fn chunk_color(id: u64) -> Color {
+    // The golden-ratio odd multiplier (`floor(2^64 / φ)`) mixes neighbouring
+    // chunk ids into unrelated high bits, so adjacent chunks get distinct hues.
     let hash = id.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    // Take a 16-bit slice from the well-mixed high bits, normalize it to
+    // `0.0..=1.0` and map it to the hue circle in degrees.
     let hue = ((hash >> 40) & 0xFFFF) as f32 / 65_535.0 * 360.0;
     Color::hsl(hue, 0.7, 0.55)
 }
 
+/// Mesh lifecycle of a chunk, as tracked for the debug overlay.
 #[derive(Reflect, Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ChunkDebugState {
+    /// Chunk data is still being generated or loaded.
     #[default]
     Loading,
+    /// The chunk mesh is being built.
     Meshing,
+    /// The chunk has a non-empty mesh.
     Ready,
+    /// The chunk produced no mesh.
     Empty,
+    /// The chunk could not be loaded or meshed.
     Failed,
 }
 
+/// Where a chunk's data came from.
 #[derive(Reflect, Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ChunkDebugSource {
+    /// Generated from noise on the server.
     #[default]
     Generated,
+    /// Loaded from the chunk archive.
     Archive,
+    /// Received from the server by the client.
     Streamed,
 }
 
@@ -48,13 +62,12 @@ pub struct ChunkDebug {
     pub top_y: f32,
     /// Highest mesh vertex near the chunk centre, used to keep labels on the local surface.
     pub center_y: f32,
-    pub suspect_hole: bool,
     pub neighbors_loaded: u8,
     pub dirty: bool,
-    pub saved: bool,
 }
 
 impl ChunkDebug {
+    /// Creates a debug summary for the chunk at (`x`, `z`) in the `Loading` state.
     pub fn new(x: i32, z: i32, source: ChunkDebugSource) -> Self {
         Self {
             id: chunk_id(x, z),
@@ -66,27 +79,24 @@ impl ChunkDebug {
             face_count: 0,
             top_y: 0.0,
             center_y: 0.0,
-            suspect_hole: false,
             neighbors_loaded: 0,
             dirty: true,
-            saved: false,
         }
     }
 
+    /// Records the mesh result and moves the chunk to `Empty`, `Ready` or `Failed`.
+    /// A zero-vertex mesh over solid terrain is reported as `Failed`.
     pub fn set_mesh(&mut self, vertex_count: u32, suspect_hole: bool) {
         self.vertex_count = vertex_count;
         self.face_count = vertex_count / 4;
-        self.suspect_hole = suspect_hole;
-        self.state = if vertex_count == 0 {
+        self.state = if suspect_hole {
+            ChunkDebugState::Failed
+        } else if vertex_count == 0 {
             ChunkDebugState::Empty
         } else {
             ChunkDebugState::Ready
         };
         self.dirty = false;
-    }
-
-    pub fn mark_saved(&mut self) {
-        self.saved = true;
     }
 }
 
@@ -108,6 +118,7 @@ pub struct DebugViewConfig {
     pub show_grid: bool,
     pub show_labels: bool,
     pub show_pins: bool,
+    /// World-space Y of the chunk grid plane, clamped below the camera at draw time.
     pub grid_height: f32,
 }
 
@@ -117,6 +128,9 @@ impl Default for DebugViewConfig {
             show_grid: false,
             show_labels: false,
             show_pins: true,
+            // Fixed default near the terrain surface (generated surfaces sit
+            // roughly between Y=150 and Y=250) so the grid starts on land
+            // instead of following the camera. `grid_y` still clamps it.
             grid_height: 224.0,
         }
     }
@@ -124,6 +138,9 @@ impl Default for DebugViewConfig {
 
 /// Returns the highest mesh vertex within two blocks of the chunk centre.
 pub fn center_height(positions: impl Iterator<Item = Vec3>) -> Option<f32> {
+    // Chunks are 16 voxels wide on X/Z, so the centre is at 8.0. A two-block
+    // radius keeps the label on the local surface without sampling spikes that
+    // may exist elsewhere in the chunk.
     const CENTER: f32 = 8.0;
     const RADIUS: f32 = 2.0;
 
@@ -156,11 +173,10 @@ mod tests {
     }
 
     #[test]
-    fn empty_mesh_on_solid_chunk_is_suspect() {
+    fn empty_mesh_on_solid_chunk_fails() {
         let mut debug = ChunkDebug::new(1, 2, ChunkDebugSource::Archive);
         debug.set_mesh(0, true);
-        assert_eq!(debug.state, ChunkDebugState::Empty);
-        assert!(debug.suspect_hole);
+        assert_eq!(debug.state, ChunkDebugState::Failed);
     }
 
     #[test]

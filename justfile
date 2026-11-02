@@ -16,6 +16,16 @@ ci:
     cargo test --workspace
     cargo udeps
 
+# Check the release configuration without debug tooling.
+check-release:
+    ASSETS_PATH="$(pwd)/assets" cargo check --release -p projekto_client --no-default-features
+    cargo check --release -p projekto_server --no-default-features
+
+# Check the debug-tools/remote-debug feature configuration.
+check-debug:
+    cargo clippy -p projekto_client --features remote-debug --all-targets -- -D warnings
+    cargo clippy -p projekto_server --features remote-debug --all-targets -- -D warnings
+
 # Run the server on Linux.
 server *args:
     cargo run -p projekto_server --features remote-debug {{args}}

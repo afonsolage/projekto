@@ -15,7 +15,6 @@ use controller::{
     camera_controller::CameraControllerPlugin,
     character_controller::{CharacterController, CharacterControllerPlugin},
 };
-use debug::DebugPlugin;
 use material::ChunkMaterial;
 use net::ServerConnection;
 use projekto_camera::{
@@ -35,7 +34,8 @@ pub(crate) mod ai;
 
 mod bundle;
 mod controller;
-mod debug;
+#[cfg(feature = "debug-tools")]
+pub mod debug;
 mod material;
 mod net;
 mod set;
@@ -61,11 +61,14 @@ impl Plugin for ClientPlugin {
         ))
         .add_plugins((
             CameraPlugin,
-            DebugPlugin,
             CameraControllerPlugin,
             CharacterControllerPlugin,
         ))
-        .add_systems(Startup, setup_mockup_scene);
+        .add_systems(Startup, (setup_mockup_scene, setup_hold_esc_to_exit))
+        .add_systems(Update, hold_esc_to_exit);
+
+        #[cfg(feature = "debug-tools")]
+        app.add_plugins(debug::DebugToolsPlugins);
 
         #[cfg(feature = "ai")]
         app.add_plugins((
@@ -91,6 +94,55 @@ impl Plugin for ClientPlugin {
             ))
             .add_systems(Startup, setup_material)
             .add_systems(PreStartup, load_assets);
+    }
+}
+
+const ESC_HOLD_TIMEOUT: f32 = 0.2;
+
+#[derive(Resource)]
+struct EscHolding(f32);
+
+fn setup_hold_esc_to_exit(mut commands: Commands) {
+    commands.insert_resource(EscHolding(0.0));
+}
+
+fn hold_esc_to_exit(
+    mut esc_holding: ResMut<EscHolding>,
+    time: Res<Time>,
+    input_keys: Res<ButtonInput<KeyCode>>,
+    mut exit_writer: MessageWriter<bevy::app::AppExit>,
+) {
+    if input_keys.pressed(KeyCode::Escape) {
+        esc_holding.0 += time.delta_secs();
+
+        if esc_holding.0 >= ESC_HOLD_TIMEOUT {
+            info!("Exiting app due to ESC holding...");
+            exit_writer.write(bevy::app::AppExit::Success);
+        }
+    } else {
+        esc_holding.0 = 0.0;
+    }
+}
+
+fn camera_render_layers() -> RenderLayers {
+    #[cfg(feature = "debug-tools")]
+    {
+        RenderLayers::from_layers(&[0, 1, 2])
+    }
+    #[cfg(not(feature = "debug-tools"))]
+    {
+        RenderLayers::from_layers(&[0, 1])
+    }
+}
+
+fn first_person_render_layers() -> RenderLayers {
+    #[cfg(feature = "debug-tools")]
+    {
+        RenderLayers::from_layers(&[0, 2])
+    }
+    #[cfg(not(feature = "debug-tools"))]
+    {
+        RenderLayers::from_layers(&[0])
     }
 }
 
@@ -123,7 +175,7 @@ fn setup_mockup_scene(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(128.0, 256.0, 128.0).looking_at(Vec3::new(0.0, 128.0, 0.0), Vec3::Y),
-        RenderLayers::from_layers(&[0, 1, 2]),
+        camera_render_layers(),
         FlyByCamera,
         Name::new("FlyByCamera"),
     ));
@@ -154,7 +206,7 @@ fn setup_mockup_scene(
                     is_active: false,
                     ..Default::default()
                 },
-                RenderLayers::from_layers(&[0, 2]),
+                first_person_render_layers(),
                 Name::new("FirstPersonCamera"),
                 FirstPersonCamera,
             ));
@@ -225,11 +277,7 @@ fn setup_material(
 ) {
     let material = materials.add(ChunkMaterial {
         texture: kinds_res.atlas.clone(),
-        data: crate::material::ChunkMaterialData {
-            tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
-            debug_chunk_grid: 0.0,
-            _padding: Vec2::ZERO,
-        },
+        tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
         show_back_faces: false,
     });
 

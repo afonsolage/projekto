@@ -4,7 +4,6 @@ use bevy::{
     prelude::*,
 };
 use projekto_core::voxel;
-use projekto_debug::{ChunkDebug, ChunkDebugSource, center_height};
 use projekto_messages::{ChunkUnload, ChunkVertex};
 use projekto_proto::RegisterMessageHandler;
 
@@ -54,48 +53,21 @@ fn update_chunk_mesh(
     mut map: ResMut<ChunkMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     material: Res<ChunkMaterialHandle>,
-    mut q_debug: Query<&mut ChunkDebug>,
 ) {
     let ChunkVertex { chunk, vertex } = vertex;
-    let vertex_count = vertex.len() as u32;
-    let top_y = vertex
-        .iter()
-        .map(|vertex| vertex.position.y)
-        .fold(f32::MIN, f32::max);
-    let center_y = center_height(vertex.iter().map(|vertex| vertex.position)).unwrap_or(top_y);
 
     let mesh_handler = Mesh3d(meshes.add(generate_mesh(&vertex)));
 
     if let Some(&entity) = map.get(&chunk) {
         commands.entity(entity).insert(mesh_handler);
-
-        if let Ok(mut debug) = q_debug.get_mut(entity) {
-            debug.set_mesh(vertex_count, false);
-            debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
-            debug.center_y = if vertex_count == 0 { 0.0 } else { center_y };
-        } else {
-            let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Streamed);
-            debug.set_mesh(vertex_count, false);
-            debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
-            debug.center_y = if vertex_count == 0 { 0.0 } else { center_y };
-            commands.entity(entity).insert(debug);
-        }
     } else {
-        let mut debug = ChunkDebug::new(chunk.x, chunk.z, ChunkDebugSource::Streamed);
-        debug.set_mesh(vertex_count, false);
-        debug.top_y = if vertex_count == 0 { 0.0 } else { top_y };
-        debug.center_y = if vertex_count == 0 { 0.0 } else { center_y };
-
         let entity = commands
-            .spawn((
-                ChunkBundle {
-                    chunk: ChunkLocal(chunk),
-                    mesh: mesh_handler,
-                    material: MeshMaterial3d(material.0.clone()),
-                    transform: Transform::from_translation(chunk.into()),
-                },
-                debug,
-            ))
+            .spawn((ChunkBundle {
+                chunk: ChunkLocal(chunk),
+                mesh: mesh_handler,
+                material: MeshMaterial3d(material.0.clone()),
+                transform: Transform::from_translation(chunk.into()),
+            },))
             .insert(Name::new(format!("Client Chunk {chunk}")))
             .id();
         map.insert(chunk, entity);
@@ -104,11 +76,19 @@ fn update_chunk_mesh(
     trace!("[update_chunk_mesh] chunk {chunk:?} mesh updated");
 }
 
+fn mesh_asset_usages() -> RenderAssetUsages {
+    #[cfg(feature = "debug-tools")]
+    {
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD
+    }
+    #[cfg(not(feature = "debug-tools"))]
+    {
+        RenderAssetUsages::RENDER_WORLD
+    }
+}
+
 fn generate_mesh(vertices: &[voxel::Vertex]) -> Mesh {
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::RENDER_WORLD,
-    );
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, mesh_asset_usages());
 
     let mut positions: Vec<[f32; 3]> = vec![];
     let mut normals: Vec<[f32; 3]> = vec![];

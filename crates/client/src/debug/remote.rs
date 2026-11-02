@@ -17,7 +17,7 @@ use crate::PlayerLandscape;
 #[cfg(feature = "ai")]
 use crate::ai::AiSnapshot;
 
-pub(crate) struct RemoteDebugPlugin;
+pub struct RemoteDebugPlugin;
 
 const CLIENT_BRP_PORT: u16 = if cfg!(feature = "ai") { 15722 } else { 15712 };
 
