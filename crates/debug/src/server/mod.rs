@@ -5,14 +5,24 @@ pub use data::DebugDataPlugin;
 use bevy::app::{PluginGroup, PluginGroupBuilder};
 
 /// Server debug plugins, composed as a normal Bevy plugin group.
-pub struct ServerDebugPlugins;
+pub struct ServerDebugPlugins {
+    /// Port used by the server BRP HTTP endpoint.
+    pub remote_port: u16,
+}
+
+impl ServerDebugPlugins {
+    /// Creates the server debug plugin group with BRP on `remote_port`.
+    pub fn new(remote_port: u16) -> Self {
+        Self { remote_port }
+    }
+}
 
 impl PluginGroup for ServerDebugPlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add(DebugDataPlugin)
             .add(MemoryReportPlugin)
-            .add(RemoteDebugPlugin)
+            .add(RemoteDebugPlugin::new(self.remote_port))
     }
 }
 
@@ -81,7 +91,17 @@ mod remote {
         set::{Landscape, MAX_LANDSCAPE_RADIUS},
     };
 
-    pub struct RemoteDebugPlugin;
+    /// Server BRP plugin with an explicit HTTP port.
+    pub struct RemoteDebugPlugin {
+        port: u16,
+    }
+
+    impl RemoteDebugPlugin {
+        /// Creates the BRP plugin for `port`.
+        pub fn new(port: u16) -> Self {
+            Self { port }
+        }
+    }
 
     impl Plugin for RemoteDebugPlugin {
         fn build(&self, app: &mut App) {
@@ -94,7 +114,7 @@ mod remote {
                     .with_method_main("projekto/remesh", remesh)
                     .with_method_main("projekto/teleport", teleport)
                     .with_method_main("projekto/set_voxel", set_voxel),
-                RemoteHttpPlugin::default(),
+                RemoteHttpPlugin::default().with_port(self.port),
             ));
         }
     }
