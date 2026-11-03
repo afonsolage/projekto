@@ -20,6 +20,10 @@ pub struct ChunkLocal(pub Chunk);
 #[derive(Component, Default, Debug, Clone, Deref, DerefMut)]
 pub struct ChunkVertex(pub Vec<voxel::Vertex>);
 
+/// Voxel/mesh detail level for a chunk. `0` is full resolution; higher values are coarser.
+#[derive(Component, Default, Debug, Clone, Copy, PartialEq, Eq, Deref, DerefMut)]
+pub struct ChunkLod(pub u8);
+
 /// The chunk was loaded with a mesh saved by a previous session.
 ///
 /// Its vertices can be used as-is; only real changes (light propagation, editing) should force

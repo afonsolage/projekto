@@ -10,7 +10,7 @@ use projekto_core::coords::Chunk;
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
     bundle::{
-        CachedMesh, ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery,
+        CachedMesh, ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkLod, ChunkMap, ChunkQuery,
         ChunkVertex,
     },
     genesis::{ChunkCreation, GenesisServer, GenesisTask},
@@ -278,12 +278,15 @@ fn chunks_load(
 fn spawn_created_chunk(commands: &mut Commands, chunk: Chunk, creation: ChunkCreation) -> Entity {
     let ChunkCreation { kind, light } = creation;
     commands
-        .spawn(ChunkBundle {
-            local: ChunkLocal(chunk),
-            kind: ChunkKind(kind),
-            light: ChunkLight(light),
-            ..Default::default()
-        })
+        .spawn((
+            ChunkBundle {
+                local: ChunkLocal(chunk),
+                kind: ChunkKind(kind),
+                light: ChunkLight(light),
+                ..Default::default()
+            },
+            ChunkLod(0),
+        ))
         .id()
 
     // TODO: save chunk
@@ -295,6 +298,7 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
         kind,
         light,
         vertex,
+        lod,
     } = asset;
 
     let suspect_hole = vertex.is_empty() && !kind.all(|kind| kind.is_none());
@@ -316,6 +320,7 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
         entity.insert(CachedMesh);
     }
 
+    entity.insert(ChunkLod(lod));
     entity.id()
 }
 
@@ -357,7 +362,7 @@ fn queue_chunks_to_save(
 fn chunks_save(
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
     mut pending: ResMut<PendingSaves>,
-    chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex)>,
+    chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex, &ChunkLod)>,
     time: Res<Time>,
     mut timer: Local<Option<Timer>>,
 ) {
@@ -376,12 +381,13 @@ fn chunks_save(
     let mut handled = Vec::with_capacity(SAVE_BATCH_SIZE);
 
     for chunk in pending.0.iter().take(SAVE_BATCH_SIZE) {
-        if let Some((kind, light, vertex)) = chunks.get_chunk(*chunk) {
+        if let Some((kind, light, vertex, lod)) = chunks.get_chunk(*chunk) {
             let asset = ChunkAsset {
                 chunk: *chunk,
                 kind: kind.0.clone(),
                 light: light.0.clone(),
                 vertex: vertex.0.clone(),
+                lod: lod.0,
             };
             let _task = archive_server.save_chunk(*chunk, asset);
             saved += 1;

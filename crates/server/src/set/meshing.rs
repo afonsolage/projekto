@@ -1,6 +1,8 @@
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
-    bundle::{CachedMesh, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkQuery, ChunkVertex},
+    bundle::{
+        CachedMesh, ChunkKind, ChunkLight, ChunkLocal, ChunkLod, ChunkMap, ChunkQuery, ChunkVertex,
+    },
     cache::sort_nearest_first,
     light, meshing,
 };
@@ -21,10 +23,58 @@ impl Plugin for MeshingPlugin {
             .init_resource::<DirtyChunks>()
             .add_systems(
                 Update,
-                (mark_dirty_chunks, generate_vertices)
+                (update_chunk_lods, mark_dirty_chunks, generate_vertices)
                     .chain()
                     .in_set(WorldSet::Meshing),
             );
+    }
+}
+
+/// Chunks inside this square keep full-resolution meshes; chunks outside use a coarser LOD.
+pub const LOD_FULL_RADIUS: i32 = 8;
+
+fn desired_lod(chunk: Chunk, center: bevy::math::IVec2) -> u8 {
+    let dx = (chunk.x - center.x).abs();
+    let dz = (chunk.z - center.y).abs();
+
+    if dx <= LOD_FULL_RADIUS && dz <= LOD_FULL_RADIUS {
+        0
+    } else {
+        1
+    }
+}
+
+fn update_chunk_lods(
+    mut commands: Commands,
+    landscape: Option<Res<Landscape>>,
+    mut dirty: ResMut<DirtyChunks>,
+    q: Query<(Entity, &ChunkLocal, Option<&ChunkLod>, Option<&CachedMesh>)>,
+) {
+    let Some(landscape) = landscape else {
+        return;
+    };
+
+    for (entity, ChunkLocal(chunk), lod, cached) in &q {
+        let desired = desired_lod(*chunk, landscape.center);
+
+        match lod {
+            Some(lod) if lod.0 == desired => {}
+            Some(_) => {
+                commands.entity(entity).insert(ChunkLod(desired));
+                commands.entity(entity).remove::<CachedMesh>();
+                dirty.0.insert(*chunk);
+            }
+            None => {
+                commands.entity(entity).insert(ChunkLod(desired));
+
+                if desired != 0 {
+                    if cached.is_some() {
+                        commands.entity(entity).remove::<CachedMesh>();
+                    }
+                    dirty.0.insert(*chunk);
+                }
+            }
+        }
     }
 }
 
@@ -107,7 +157,7 @@ fn generate_vertices(
             continue;
         }
 
-        let Some((kind, _light)) = q_chunks.get_chunk(chunk) else {
+        let Some((kind, light)) = q_chunks.get_chunk(chunk) else {
             continue;
         };
         let Some(&entity) = chunk_map.0.get(&chunk) else {
@@ -115,44 +165,54 @@ fn generate_vertices(
         };
 
         let kind = &kind.0;
+
+        let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
+        let lod = landscape
+            .as_ref()
+            .map(|landscape| desired_lod(chunk, landscape.center))
+            .unwrap_or(0);
+
         let neighborhood = chunk::SIDES.map(|side| {
             q_chunks
                 .get_chunk(chunk.neighbor(side.dir()))
                 .map(|(kind, _)| &kind.0)
         });
 
-        let DerivedCaches {
-            occlusion: occlusion_cache,
-            soft_light: soft_light_cache,
-        } = &mut *caches;
-
-        let occlusion = occlusion_cache.get_or_insert_with(chunk, || {
-            let mut occlusion = ChunkStorage::default();
-            meshing::faces_occlusion(kind, &mut occlusion, &neighborhood);
-            occlusion
-        });
-
-        let mut vertex = if occlusion.all(|occ| occ.is_fully_occluded()) {
-            Vec::new()
+        let mut vertex = if lod > 0 {
+            meshing::lod::generate_coarse_vertices(kind, &light.0, &neighborhood, lod)
         } else {
-            let soft_light = soft_light_cache.get_or_insert_with(chunk, || {
-                let mut soft_light = ChunkStorage::default();
-                light::smooth_lighting(
-                    chunk,
-                    occlusion,
-                    &mut soft_light,
-                    |chunk| q_chunks.get_chunk(chunk).map(|(kind, _)| &kind.0),
-                    |chunk| q_chunks.get_chunk(chunk).map(|(_, light)| &light.0),
-                );
-                soft_light
+            let DerivedCaches {
+                occlusion: occlusion_cache,
+                soft_light: soft_light_cache,
+            } = &mut *caches;
+
+            let occlusion = occlusion_cache.get_or_insert_with(chunk, || {
+                let mut occlusion = ChunkStorage::default();
+                meshing::faces_occlusion(kind, &mut occlusion, &neighborhood);
+                occlusion
             });
 
-            let faces = meshing::generate_faces(kind, occlusion, soft_light);
-            faces.iter().for_each(|face| map[face.side.index()] += 1);
-            meshing::generate_vertices(&faces)
+            if occlusion.all(|occ| occ.is_fully_occluded()) {
+                Vec::new()
+            } else {
+                let soft_light = soft_light_cache.get_or_insert_with(chunk, || {
+                    let mut soft_light = ChunkStorage::default();
+                    light::smooth_lighting(
+                        chunk,
+                        occlusion,
+                        &mut soft_light,
+                        |chunk| q_chunks.get_chunk(chunk).map(|(kind, _)| &kind.0),
+                        |chunk| q_chunks.get_chunk(chunk).map(|(_, light)| &light.0),
+                    );
+                    soft_light
+                });
+
+                let faces = meshing::generate_faces(kind, occlusion, soft_light);
+                faces.iter().for_each(|face| map[face.side.index()] += 1);
+                meshing::generate_vertices(&faces)
+            }
         };
 
-        let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
         std::mem::swap(&mut vertex, &mut chunk_vertex);
 
         count += 1;
@@ -173,6 +233,54 @@ mod tests {
     use crate::bundle::{ChunkBundle, ChunkKind, ChunkLight, ChunkLocal, ChunkMap, ChunkVertex};
 
     use super::*;
+
+    #[test]
+    fn distant_chunk_is_coarsened_and_cached_mesh_is_dropped() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .init_resource::<ChunkMap>()
+            .insert_resource(super::Landscape {
+                center: bevy::math::IVec2::ZERO,
+                radius: 16,
+            })
+            .add_plugins(MeshingPlugin);
+
+        let chunk = Chunk::new(9, 0);
+        let entity = app
+            .world_mut()
+            .spawn((
+                ChunkBundle {
+                    kind: ChunkKind(solid_kind()),
+                    light: ChunkLight(ChunkStorage::default()),
+                    local: ChunkLocal(chunk),
+                    vertex: ChunkVertex::default(),
+                },
+                ChunkLod(0),
+                CachedMesh,
+            ))
+            .id();
+
+        app.world_mut()
+            .resource_mut::<ChunkMap>()
+            .0
+            .insert(chunk, entity);
+
+        app.update();
+
+        assert_eq!(app.world().get::<ChunkLod>(entity).unwrap().0, 1);
+        assert!(app.world().get::<CachedMesh>(entity).is_none());
+    }
+
+    #[test]
+    fn lod_is_full_near_the_center_and_coarse_outside() {
+        let center = bevy::math::IVec2::new(8, 8);
+
+        assert_eq!(desired_lod(Chunk::new(8, 8), center), 0);
+        assert_eq!(desired_lod(Chunk::new(0, 0), center), 0);
+        assert_eq!(desired_lod(Chunk::new(16, 16), center), 0);
+        assert_eq!(desired_lod(Chunk::new(17, 8), center), 1);
+        assert_eq!(desired_lod(Chunk::new(8, 17), center), 1);
+    }
 
     fn app_with_chunk() -> (App, Entity, Chunk) {
         let mut app = App::new();

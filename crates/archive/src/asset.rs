@@ -11,6 +11,7 @@ pub struct ChunkAsset {
     pub kind: ChunkStorage<voxel::Kind>,
     pub light: ChunkStorage<voxel::Light>,
     pub vertex: Vec<voxel::Vertex>,
+    pub lod: u8,
 }
 
 #[cfg(test)]
@@ -32,6 +33,7 @@ mod tests {
         assert_eq!(asset.kind, serde_asset.kind);
         assert_eq!(asset.light, serde_asset.light);
         assert_eq!(asset.vertex, serde_asset.vertex);
+        assert_eq!(asset.lod, serde_asset.lod);
     }
 
     #[test]
@@ -52,6 +54,7 @@ mod tests {
             kind,
             light,
             vertex: Vec::new(),
+            lod: 0,
         };
 
         let bytes = bincode::serde::encode_to_vec(&asset, bincode::config::standard()).unwrap();
@@ -62,5 +65,6 @@ mod tests {
         assert_eq!(asset.kind, serde_asset.kind);
         assert_eq!(asset.light, serde_asset.light);
         assert_eq!(asset.vertex, serde_asset.vertex);
+        assert_eq!(asset.lod, serde_asset.lod);
     }
 }

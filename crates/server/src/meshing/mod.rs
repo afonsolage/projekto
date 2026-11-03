@@ -7,6 +7,7 @@ use projekto_core::{
 };
 
 pub mod greedy;
+pub mod lod;
 
 // v3               v2
 // +-----------+
