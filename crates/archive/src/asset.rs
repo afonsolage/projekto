@@ -1,6 +1,9 @@
 use projekto_core::{chunk::ChunkStorage, coords::Chunk, voxel};
 use serde::{Deserialize, Serialize};
 
+/// Bumped whenever the generated mesh representation changes, so cached meshes are remeshed.
+pub const CHUNK_MESH_VERSION: u8 = 2;
+
 /// Persisted chunk data.
 ///
 /// This is the on-disk schema of the region archive. Changing the fields or their order
@@ -12,6 +15,7 @@ pub struct ChunkAsset {
     pub light: ChunkStorage<voxel::Light>,
     pub vertex: Vec<voxel::Vertex>,
     pub lod: u8,
+    pub mesh_version: u8,
 }
 
 #[cfg(test)]
@@ -22,6 +26,7 @@ mod tests {
     fn asset_serde() {
         let asset = ChunkAsset {
             lod: 1,
+            mesh_version: CHUNK_MESH_VERSION,
             ..Default::default()
         };
 
@@ -37,6 +42,7 @@ mod tests {
         assert_eq!(asset.light, serde_asset.light);
         assert_eq!(asset.vertex, serde_asset.vertex);
         assert_eq!(asset.lod, serde_asset.lod);
+        assert_eq!(asset.mesh_version, serde_asset.mesh_version);
     }
 
     #[test]
@@ -58,6 +64,7 @@ mod tests {
             light,
             vertex: Vec::new(),
             lod: 0,
+            mesh_version: CHUNK_MESH_VERSION,
         };
 
         let bytes = bincode::serde::encode_to_vec(&asset, bincode::config::standard()).unwrap();

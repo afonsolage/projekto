@@ -34,7 +34,7 @@ use std::io::SeekFrom;
 use thiserror::Error;
 
 mod asset;
-pub use asset::ChunkAsset;
+pub use asset::{CHUNK_MESH_VERSION, ChunkAsset};
 
 mod server;
 pub use server::{ArchiveServer, ArchiveTask, MaintenanceResult};

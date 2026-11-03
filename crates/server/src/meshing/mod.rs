@@ -163,11 +163,11 @@ pub fn faces_occlusion_with_lod(
 
                                 match neighbor_lods[chunk_side as usize] {
                                     Some(lod) if lod > 0 => {
-                                        let factor = 1i32 << lod.min(4);
+                                        let scale = lod::LodScale::for_lod(lod);
                                         let base = IVec3::new(
-                                            (neighbor_chunk_voxel.x as i32 / factor) * factor,
-                                            (neighbor_chunk_voxel.y as i32 / factor) * factor,
-                                            (neighbor_chunk_voxel.z as i32 / factor) * factor,
+                                            (neighbor_chunk_voxel.x as i32 / scale.x) * scale.x,
+                                            (neighbor_chunk_voxel.y as i32 / scale.y) * scale.y,
+                                            (neighbor_chunk_voxel.z as i32 / scale.z) * scale.z,
                                         );
 
                                         lod::block_solid(
@@ -175,7 +175,7 @@ pub fn faces_occlusion_with_lod(
                                             base.x,
                                             base.y,
                                             base.z,
-                                            factor,
+                                            scale,
                                         )
                                     }
                                     _ => !neighbor_kind.get(neighbor_chunk_voxel).is_none(),
@@ -240,14 +240,12 @@ mod test {
         kind.set(ChunkVoxel::new(15, 10, 0), voxel::Kind::id(1));
 
         let mut neighbor = ChunkStorage::<voxel::Kind>::default();
-        for y in 10..=11 {
-            for x in 0..=1 {
-                for z in 0..=1 {
-                    neighbor.set(ChunkVoxel::new(x, y, z), voxel::Kind::id(1));
-                }
+        for x in 0..=1 {
+            for z in 0..=1 {
+                neighbor.set(ChunkVoxel::new(x, 10, z), voxel::Kind::id(1));
             }
         }
-        neighbor.set(ChunkVoxel::new(1, 11, 1), voxel::Kind::none());
+        neighbor.set(ChunkVoxel::new(1, 10, 1), voxel::Kind::none());
 
         let mut occlusion = ChunkStorage::<voxel::FacesOcclusion>::default();
         let neighborhood = [Some(&neighbor), None, None, None];
@@ -266,11 +264,9 @@ mod test {
             "a partially air coarse neighbour must keep the full-detail seam face visible"
         );
 
-        for y in 10..=11 {
-            for x in 0..=1 {
-                for z in 0..=1 {
-                    neighbor.set(ChunkVoxel::new(x, y, z), voxel::Kind::id(1));
-                }
+        for x in 0..=1 {
+            for z in 0..=1 {
+                neighbor.set(ChunkVoxel::new(x, 10, z), voxel::Kind::id(1));
             }
         }
 

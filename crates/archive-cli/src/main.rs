@@ -569,7 +569,7 @@ impl ChunkReport {
             vertices: asset.vertex.len(),
             solid_voxels,
             surface_voxels,
-            suspicious: asset.vertex.is_empty() && surface_voxels > 0,
+            suspicious: asset.lod == 0 && asset.vertex.is_empty() && surface_voxels > 0,
         }
     }
 }
@@ -639,6 +639,10 @@ mod tests {
         let mut with_vertex = solid_asset();
         with_vertex.vertex.push(Default::default());
         assert!(!ChunkReport::new(chunk, &with_vertex).suspicious);
+
+        let mut coarse_empty = solid_asset();
+        coarse_empty.lod = 1;
+        assert!(!ChunkReport::new(chunk, &coarse_empty).suspicious);
     }
 
     #[test]
