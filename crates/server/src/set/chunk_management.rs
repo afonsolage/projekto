@@ -5,7 +5,7 @@ use bevy::{
 };
 use projekto_archive::{ArchiveError, ArchiveServer, ArchiveTask, MaintenanceResult};
 use projekto_archive::{CHUNK_MESH_VERSION, ChunkAsset};
-use projekto_core::coords::Chunk;
+use projekto_core::{chunk, coords::Chunk};
 
 use crate::{
     DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
@@ -17,7 +17,7 @@ use crate::{
     net::{ClientSync, Clients},
 };
 
-use super::Landscape;
+use super::{Landscape, meshing::desired_lod};
 
 /// Chunks whose latest vertices still need to be persisted.
 #[derive(Resource, Default)]
@@ -212,7 +212,7 @@ fn chunks_load(
                         let entity = spawn_chunk(&mut commands, asset);
                         map.insert(chunk, entity);
 
-                        if stale_mesh {
+                        if stale_mesh || needs_seam_remesh(chunk, landscape.as_deref()) {
                             dirty.0.insert(chunk);
                         }
 
@@ -228,10 +228,15 @@ fn chunks_load(
                     }
                 }
                 Err(ArchiveError::UnsupportedVersion) => {
-                    loading.remove(&chunk);
-                    error!(
-                        "Chunk {chunk} was saved with an unsupported archive format version. Delete or migrate archive/region before loading."
+                    warn!(
+                        "Chunk {chunk} was saved with an unsupported archive format version; regenerating it."
                     );
+
+                    if is_desired(chunk) {
+                        gen_tasks.push(genesis.generate(chunk));
+                    } else {
+                        loading.remove(&chunk);
+                    }
                 }
                 Err(ArchiveError::Decode(err)) => {
                     warn!("Chunk {chunk} could not be decoded ({err}); regenerating it.");
@@ -288,6 +293,17 @@ fn chunks_load(
     }
 
     Ok(())
+}
+
+fn needs_seam_remesh(chunk: Chunk, landscape: Option<&Landscape>) -> bool {
+    let Some(landscape) = landscape else {
+        return false;
+    };
+
+    desired_lod(chunk, landscape.center) == 0
+        && chunk::SIDES
+            .iter()
+            .any(|side| desired_lod(chunk.neighbor(side.dir()), landscape.center) > 0)
 }
 
 fn spawn_created_chunk(commands: &mut Commands, chunk: Chunk, creation: ChunkCreation) -> Entity {
@@ -411,6 +427,8 @@ fn chunks_save(
     for chunk in candidates {
         if let Some((kind, light, vertex, lod)) = chunks.get_chunk(chunk) {
             let Some(lod) = lod else {
+                warn!("chunk {chunk} has no ChunkLod component; dropping its pending save");
+                handled.push(chunk);
                 continue;
             };
 

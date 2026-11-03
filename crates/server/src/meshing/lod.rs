@@ -165,7 +165,8 @@ fn cell_index(x: i32, y: i32, z: i32, nx: i32, nz: i32) -> usize {
 fn sample_cell(kind: &ChunkStorage<Kind>, cell: IVec3, scale: LodScale) -> Option<CoarseCell> {
     let base = cell * IVec3::new(scale.x, scale.y, scale.z);
     let mut top: Option<(i32, Kind)> = None;
-    let mut counts: Vec<(Kind, u32)> = Vec::new();
+    let mut counts = [(Kind::default(), 0u32); 8];
+    let mut count_len = 0;
 
     for dy in 0..scale.y {
         for dz in 0..scale.z {
@@ -186,20 +187,24 @@ fn sample_cell(kind: &ChunkStorage<Kind>, cell: IVec3, scale: LodScale) -> Optio
                     top = Some((y, kind));
                 }
 
-                if let Some((_, count)) = counts.iter_mut().find(|(entry, _)| *entry == kind) {
+                if let Some((_, count)) = counts[..count_len]
+                    .iter_mut()
+                    .find(|(entry, _)| *entry == kind)
+                {
                     *count += 1;
-                } else {
-                    counts.push((kind, 1));
+                } else if count_len < counts.len() {
+                    counts[count_len] = (kind, 1);
+                    count_len += 1;
                 }
             }
         }
     }
 
     let (_, top_kind) = top?;
-    let side_kind = counts
-        .into_iter()
+    let side_kind = counts[..count_len]
+        .iter()
         .max_by_key(|(_, count)| *count)
-        .map(|(kind, _)| kind)
+        .map(|(kind, _)| *kind)
         .unwrap_or(top_kind);
 
     Some(CoarseCell {
@@ -233,7 +238,7 @@ fn face_light(
     }
 
     if neighbor.y < 0 {
-        return 0;
+        return Light::MAX_NATURAL_INTENSITY;
     }
 
     if neighbor.y >= ny {
