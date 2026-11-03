@@ -300,10 +300,14 @@ fn needs_seam_remesh(chunk: Chunk, landscape: Option<&Landscape>) -> bool {
         return false;
     };
 
-    desired_lod(chunk, landscape.center) == 0
-        && chunk::SIDES
-            .iter()
-            .any(|side| desired_lod(chunk.neighbor(side.dir()), landscape.center) > 0)
+    let center = landscape.center;
+
+    chunk::SIDES.iter().any(|side| {
+        let neighbor = chunk.neighbor(side.dir());
+
+        !landscape.contains(neighbor)
+            || (desired_lod(chunk, center) == 0 && desired_lod(neighbor, center) > 0)
+    })
 }
 
 fn spawn_created_chunk(commands: &mut Commands, chunk: Chunk, creation: ChunkCreation) -> Entity {
@@ -557,6 +561,13 @@ mod save_tests {
         assert!(needs_seam_remesh(Chunk::new(8, 0), Some(&landscape)));
         assert!(!needs_seam_remesh(Chunk::new(0, 0), Some(&landscape)));
         assert!(!needs_seam_remesh(Chunk::new(8, 0), None));
+
+        let small = Landscape {
+            center: bevy::math::IVec2::ZERO,
+            radius: 4,
+        };
+        assert!(needs_seam_remesh(Chunk::new(4, 0), Some(&small)));
+        assert!(needs_seam_remesh(Chunk::new(-4, 0), Some(&small)));
     }
 
     #[test]

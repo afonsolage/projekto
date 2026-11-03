@@ -2,7 +2,8 @@
 //!
 //! The coarse grid downsamples horizontally (x/z) but keeps the full vertical resolution. A
 //! coarse cell is solid only when every full-resolution voxel in its block is non-air. Any air
-//! pocket therefore stays open, and one-voxel-thick horizontal overhangs remain visible.
+//! pocket therefore stays open, and horizontal overhangs spanning a coarse cell remain visible.
+//! Solid features narrower than a coarse cell can still simplify away at LOD.
 
 use bevy::math::{IVec3, Vec2, Vec3};
 use projekto_core::{
@@ -53,10 +54,11 @@ pub fn generate_coarse_vertices(
     let nz = Chunk::Z_AXIS_SIZE as i32 / scale.z;
 
     let mut cells = vec![None; (nx * ny * nz) as usize];
+    let mut counts = Vec::new();
     for cy in 0..ny {
         for cz in 0..nz {
             for cx in 0..nx {
-                let cell = sample_cell(kind, IVec3::new(cx, cy, cz), scale);
+                let cell = sample_cell(kind, IVec3::new(cx, cy, cz), scale, &mut counts);
                 cells[cell_index(cx, cy, cz, nx, nz)] = cell;
             }
         }
@@ -162,11 +164,15 @@ fn cell_index(x: i32, y: i32, z: i32, nx: i32, nz: i32) -> usize {
     ((y * nz + z) * nx + x) as usize
 }
 
-fn sample_cell(kind: &ChunkStorage<Kind>, cell: IVec3, scale: LodScale) -> Option<CoarseCell> {
+fn sample_cell(
+    kind: &ChunkStorage<Kind>,
+    cell: IVec3,
+    scale: LodScale,
+    counts: &mut Vec<(Kind, u32)>,
+) -> Option<CoarseCell> {
     let base = cell * IVec3::new(scale.x, scale.y, scale.z);
     let mut top: Option<(i32, Kind)> = None;
-    let mut counts = [(Kind::default(), 0u32); 8];
-    let mut count_len = 0;
+    counts.clear();
 
     for dy in 0..scale.y {
         for dz in 0..scale.z {
@@ -187,21 +193,17 @@ fn sample_cell(kind: &ChunkStorage<Kind>, cell: IVec3, scale: LodScale) -> Optio
                     top = Some((y, kind));
                 }
 
-                if let Some((_, count)) = counts[..count_len]
-                    .iter_mut()
-                    .find(|(entry, _)| *entry == kind)
-                {
+                if let Some((_, count)) = counts.iter_mut().find(|(entry, _)| *entry == kind) {
                     *count += 1;
-                } else if count_len < counts.len() {
-                    counts[count_len] = (kind, 1);
-                    count_len += 1;
+                } else {
+                    counts.push((kind, 1));
                 }
             }
         }
     }
 
     let (_, top_kind) = top?;
-    let side_kind = counts[..count_len]
+    let side_kind = counts
         .iter()
         .max_by_key(|(_, count)| *count)
         .map(|(kind, _)| *kind)
@@ -414,7 +416,10 @@ mod tests {
         kind.set(ChunkVoxel::new(0, 0, 0), Kind::none());
 
         assert!(
-            sample_cell(&kind, IVec3::new(0, 0, 0), scale()).is_none(),
+            {
+                let mut counts = Vec::new();
+                sample_cell(&kind, IVec3::new(0, 0, 0), scale(), &mut counts).is_none()
+            },
             "any air in a coarse cell must keep a cave visible"
         );
     }
@@ -424,8 +429,14 @@ mod tests {
         let mut kind = ChunkStorage::<Kind>::default();
         block(&mut kind, 2, 3);
 
-        assert!(sample_cell(&kind, IVec3::new(0, 2, 0), scale()).is_some());
-        assert!(sample_cell(&kind, IVec3::new(0, 1, 0), scale()).is_none());
+        assert!({
+            let mut counts = Vec::new();
+            sample_cell(&kind, IVec3::new(0, 2, 0), scale(), &mut counts).is_some()
+        });
+        assert!({
+            let mut counts = Vec::new();
+            sample_cell(&kind, IVec3::new(0, 1, 0), scale(), &mut counts).is_none()
+        });
     }
 
     #[test]
@@ -437,7 +448,10 @@ mod tests {
             }
         }
 
-        assert!(sample_cell(&kind, IVec3::new(0, 2, 0), scale()).is_some());
+        assert!({
+            let mut counts = Vec::new();
+            sample_cell(&kind, IVec3::new(0, 2, 0), scale(), &mut counts).is_some()
+        });
 
         let light = ChunkStorage::<Light>::default();
         let vertices = generate_coarse_vertices(
