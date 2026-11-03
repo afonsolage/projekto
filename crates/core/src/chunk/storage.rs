@@ -1,10 +1,6 @@
 #![allow(unused)]
 use crate::{
-    chunk::{
-        self, Chunk,
-        column::ChunkColumnStorage,
-        sub_chunk::{self, ChunkPack, SubChunkStorage},
-    },
+    chunk::{self, Chunk, column::ChunkColumnStorage, sub_chunk::SubChunkStorage},
     coords::ChunkVoxel,
     voxel::{self},
 };
@@ -14,57 +10,108 @@ use serde::{Deserialize, Serialize};
 pub trait ChunkStorageType:
     Clone + Copy + core::fmt::Debug + Default + PartialEq + Eq + PartialOrd + std::hash::Hash
 {
+    /// Whether this value type is stored in sparse 16³ sections instead of 16×256×16 columns.
+    const USE_SECTIONS: bool = false;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-// pub struct ChunkStorage<T>(SubChunkStorage<T>);
-pub struct ChunkStorage<T>(ChunkColumnStorage<T>);
+enum StorageInner<T> {
+    Column(ChunkColumnStorage<T>),
+    Section(SubChunkStorage<T>),
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(
+    try_from = "StorageInner<T>",
+    bound(deserialize = "T: ChunkStorageType + serde::Deserialize<'de>")
+)]
+pub struct ChunkStorage<T>(StorageInner<T>);
+
+impl<T: ChunkStorageType> TryFrom<StorageInner<T>> for ChunkStorage<T> {
+    type Error = String;
+
+    fn try_from(inner: StorageInner<T>) -> Result<Self, Self::Error> {
+        match (&inner, T::USE_SECTIONS) {
+            (StorageInner::Section(_), true) | (StorageInner::Column(_), false) => Ok(Self(inner)),
+            _ => Err("storage backend does not match its value type".to_string()),
+        }
+    }
+}
 
 impl<T: ChunkStorageType> std::fmt::Debug for ChunkStorage<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        match &self.0 {
+            StorageInner::Column(storage) => storage.fmt(f),
+            StorageInner::Section(storage) => storage.fmt(f),
+        }
     }
 }
 
 impl<T: ChunkStorageType> PartialEq for ChunkStorage<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        match (&self.0, &other.0) {
+            (StorageInner::Column(a), StorageInner::Column(b)) => a == b,
+            (StorageInner::Section(a), StorageInner::Section(b)) => a == b,
+            _ => false,
+        }
     }
 }
 
 impl<T: ChunkStorageType> std::default::Default for ChunkStorage<T> {
     fn default() -> Self {
-        Self(Default::default())
+        if T::USE_SECTIONS {
+            Self(StorageInner::Section(Default::default()))
+        } else {
+            Self(StorageInner::Column(Default::default()))
+        }
     }
 }
 
 impl<T: ChunkStorageType> ChunkStorage<T> {
     pub fn get(&self, voxel: ChunkVoxel) -> T {
-        self.0.get(voxel)
+        match &self.0 {
+            StorageInner::Column(storage) => storage.get(voxel),
+            StorageInner::Section(storage) => storage.get(voxel),
+        }
     }
 
     pub fn set(&mut self, voxel: ChunkVoxel, value: T) {
-        self.0.set(voxel, value);
+        match &mut self.0 {
+            StorageInner::Column(storage) => storage.set(voxel, value),
+            StorageInner::Section(storage) => storage.set(voxel, value),
+        }
     }
 
     pub fn is_default(&self) -> bool {
-        self.0.is_default()
+        match &self.0 {
+            StorageInner::Column(storage) => storage.is_default(),
+            StorageInner::Section(storage) => storage.is_default(),
+        }
     }
 
     /// Sets every voxel to `value` in bulk.
     pub fn fill(&mut self, value: T) {
-        self.0.fill(value);
+        match &mut self.0 {
+            StorageInner::Column(storage) => storage.fill(value),
+            StorageInner::Section(storage) => storage.fill(value),
+        }
     }
 
     pub fn pack(&mut self) {
-        self.0.pack();
+        match &mut self.0 {
+            StorageInner::Column(storage) => storage.pack(),
+            StorageInner::Section(storage) => storage.pack(),
+        }
     }
 
-    pub fn all<F>(&self, mut f: F) -> bool
+    pub fn all<F>(&self, f: F) -> bool
     where
         F: FnMut(&T) -> bool + Copy,
     {
-        self.0.all(f)
+        match &self.0 {
+            StorageInner::Column(storage) => storage.all(f),
+            StorageInner::Section(storage) => storage.all(f),
+        }
     }
 }
 
@@ -98,7 +145,7 @@ impl ChunkStorage<voxel::Light> {
 
 #[cfg(test)]
 mod tests {
-    use crate::voxel::Kind;
+    use crate::voxel::{self, Kind};
 
     use super::*;
 
@@ -122,5 +169,70 @@ mod tests {
                 "Voxel {v} should have value {value}"
             );
         });
+    }
+
+    #[test]
+    fn backend_is_selected_per_value_type() {
+        assert!(matches!(
+            ChunkStorage::<Kind>::default().0,
+            StorageInner::Section(_)
+        ));
+        assert!(matches!(
+            ChunkStorage::<voxel::Light>::default().0,
+            StorageInner::Section(_)
+        ));
+        assert!(matches!(
+            ChunkStorage::<voxel::FacesOcclusion>::default().0,
+            StorageInner::Column(_)
+        ));
+        assert!(matches!(
+            ChunkStorage::<voxel::FacesSoftLight>::default().0,
+            StorageInner::Column(_)
+        ));
+        assert!(matches!(
+            ChunkStorage::<u16>::default().0,
+            StorageInner::Column(_)
+        ));
+        assert!(matches!(
+            ChunkStorage::<(u16, u8)>::default().0,
+            StorageInner::Column(_)
+        ));
+    }
+
+    #[test]
+    fn section_fill() {
+        let mut storage = ChunkStorage::<Kind>::default();
+        storage.fill(Kind::id(1));
+
+        assert!(storage.all(|value| *value == Kind::id(1)));
+    }
+
+    #[test]
+    fn deserialization_rejects_backend_mismatch() {
+        let bytes = bincode::serde::encode_to_vec(
+            ChunkStorage::<Kind>(StorageInner::Column(Default::default())),
+            bincode::config::standard(),
+        )
+        .unwrap();
+        assert!(
+            bincode::serde::decode_from_slice::<ChunkStorage<Kind>, _>(
+                &bytes,
+                bincode::config::standard()
+            )
+            .is_err()
+        );
+
+        let bytes = bincode::serde::encode_to_vec(
+            ChunkStorage::<voxel::FacesSoftLight>(StorageInner::Section(Default::default())),
+            bincode::config::standard(),
+        )
+        .unwrap();
+        assert!(
+            bincode::serde::decode_from_slice::<ChunkStorage<voxel::FacesSoftLight>, _>(
+                &bytes,
+                bincode::config::standard()
+            )
+            .is_err()
+        );
     }
 }

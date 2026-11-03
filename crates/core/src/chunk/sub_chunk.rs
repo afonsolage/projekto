@@ -24,9 +24,9 @@ pub(crate) struct PackVoxel {
 impl PackVoxel {
     pub fn new(x: u8, y: u8, z: u8) -> Self {
         Self {
-            x: x & 0x07,
-            y: y & 0x07,
-            z: z & 0x07,
+            x: x & (pack_consts::X_AXIS_SIZE - 1) as u8,
+            y: y & (pack_consts::Y_AXIS_SIZE - 1) as u8,
+            z: z & (pack_consts::Z_AXIS_SIZE - 1) as u8,
         }
     }
 
@@ -56,7 +56,31 @@ impl From<ChunkVoxel> for PackVoxel {
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "RawSubChunkStorage<T>")]
 pub(crate) struct SubChunkStorage<T>(Vec<ChunkPack<T>>);
+
+#[derive(Deserialize)]
+struct RawSubChunkStorage<T>(Vec<ChunkPack<T>>);
+
+impl<T> TryFrom<RawSubChunkStorage<T>> for SubChunkStorage<T> {
+    type Error = String;
+
+    fn try_from(raw: RawSubChunkStorage<T>) -> Result<Self, Self::Error> {
+        let expected = (Chunk::X_AXIS_SIZE / pack_consts::X_AXIS_SIZE)
+            * (Chunk::Y_AXIS_SIZE / pack_consts::Y_AXIS_SIZE)
+            * (Chunk::Z_AXIS_SIZE / pack_consts::Z_AXIS_SIZE);
+
+        if raw.0.len() != expected {
+            return Err(format!(
+                "section storage must have {} sections, got {}",
+                expected,
+                raw.0.len()
+            ));
+        }
+
+        Ok(Self(raw.0))
+    }
+}
 
 impl<T> SubChunkStorage<T> {
     const SUB_CHUNKS_X: usize = Chunk::X_AXIS_SIZE / pack_consts::X_AXIS_SIZE;
@@ -144,6 +168,10 @@ where
             .all(|pack| matches!(pack, ChunkPack::Single(_)))
     }
 
+    pub fn fill(&mut self, value: T) {
+        self.0.fill(ChunkPack::Single(value));
+    }
+
     pub fn pack(&mut self) {
         self.0.iter_mut().for_each(|p| p.pack());
     }
@@ -157,9 +185,35 @@ where
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "RawVoxelStatePallet<T>")]
 struct VoxelStatePallet<T> {
     pallet: Vec<T>,
     dirty: bool,
+}
+
+#[derive(Deserialize)]
+struct RawVoxelStatePallet<T> {
+    pallet: Vec<T>,
+    dirty: bool,
+}
+
+impl<T> TryFrom<RawVoxelStatePallet<T>> for VoxelStatePallet<T> {
+    type Error = String;
+
+    fn try_from(raw: RawVoxelStatePallet<T>) -> Result<Self, Self::Error> {
+        if raw.pallet.len() > u8::MAX as usize {
+            return Err(format!(
+                "a section pallet cannot have more than {} entries, got {}",
+                u8::MAX,
+                raw.pallet.len()
+            ));
+        }
+
+        Ok(Self {
+            pallet: raw.pallet,
+            dirty: raw.dirty,
+        })
+    }
 }
 
 impl<T> VoxelStatePallet<T>
@@ -211,16 +265,141 @@ impl<T> Deref for VoxelStatePallet<T> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deref, DerefMut, Serialize, Deserialize)]
-#[repr(transparent)]
-pub(crate) struct PackIndices(pub(crate) Vec<u8>);
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "RawPackIndices")]
+struct PackIndices {
+    bits: u8,
+    buffer: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+struct RawPackIndices {
+    bits: u8,
+    buffer: Vec<u8>,
+}
+
+impl TryFrom<RawPackIndices> for PackIndices {
+    type Error = String;
+
+    fn try_from(raw: RawPackIndices) -> Result<Self, Self::Error> {
+        if !(1..=8).contains(&raw.bits) {
+            return Err(format!(
+                "section indices bits must be between 1 and 8, got {}",
+                raw.bits
+            ));
+        }
+
+        let expected = (pack_consts::BUFFER_SIZE * raw.bits as usize).div_ceil(8);
+        if raw.buffer.len() != expected {
+            return Err(format!(
+                "section indices for {} bits must have {} bytes, got {}",
+                raw.bits,
+                expected,
+                raw.buffer.len()
+            ));
+        }
+
+        Ok(Self {
+            bits: raw.bits,
+            buffer: raw.buffer,
+        })
+    }
+}
+
+impl PackIndices {
+    fn new(pallet_len: usize) -> Self {
+        let bits = (pallet_len as f32).log2().ceil().max(1.0) as u8;
+        let buffer_size = (pack_consts::BUFFER_SIZE * bits as usize).div_ceil(8);
+        Self {
+            bits,
+            buffer: vec![0; buffer_size],
+        }
+    }
+
+    fn from_values(values: &[u8], pallet_len: usize) -> Self {
+        let mut indices = Self::new(pallet_len);
+        for (index, value) in values.iter().enumerate() {
+            indices.set(index, *value);
+        }
+        indices
+    }
+
+    fn get(&self, index: usize) -> u8 {
+        let bit = index * self.bits as usize;
+        let byte = bit / 8;
+        let offset = bit % 8;
+
+        let lo = self.buffer[byte] as u16;
+        let hi = self.buffer.get(byte + 1).copied().unwrap_or(0) as u16;
+        let word = lo | (hi << 8);
+
+        let mask = (1u16 << self.bits as u16) - 1;
+        ((word >> offset) & mask) as u8
+    }
+
+    fn set(&mut self, index: usize, value: u8) {
+        let bit = index * self.bits as usize;
+        let byte = bit / 8;
+        let offset = bit % 8;
+
+        let lo = self.buffer[byte] as u16;
+        let hi = self.buffer.get(byte + 1).copied().unwrap_or(0) as u16;
+        let word = lo | (hi << 8);
+
+        let mask = (1u16 << self.bits as u16) - 1;
+        let cleared = word & !(mask << offset);
+        let new_word = cleared | ((value as u16 & mask) << offset);
+
+        self.buffer[byte] = new_word as u8;
+        if byte + 1 < self.buffer.len() {
+            self.buffer[byte + 1] = (new_word >> 8) as u8;
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = u8> + '_ {
+        (0..pack_consts::BUFFER_SIZE).map(|index| self.get(index))
+    }
+
+    fn needs_to_grow(&self, new_size: u8) -> bool {
+        new_size as u16 > 1 << self.bits as u16
+    }
+
+    fn grow(&mut self, new_size: u8) {
+        let mut new_indices = Self::new(new_size as usize);
+        for (index, value) in self.iter().enumerate() {
+            new_indices.set(index, value);
+        }
+        *self = new_indices;
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Deref, DerefMut, Serialize, Deserialize)]
+#[serde(try_from = "RawDenseBuffer<T>")]
 #[repr(transparent)]
 pub(crate) struct DenseBuffer<T>(pub(crate) Vec<T>);
 
+#[derive(Deserialize)]
+struct RawDenseBuffer<T>(Vec<T>);
+
+impl<T> TryFrom<RawDenseBuffer<T>> for DenseBuffer<T> {
+    type Error = String;
+
+    fn try_from(raw: RawDenseBuffer<T>) -> Result<Self, Self::Error> {
+        if raw.0.len() != pack_consts::BUFFER_SIZE {
+            return Err(format!(
+                "section dense buffer must have {} entries, got {}",
+                pack_consts::BUFFER_SIZE,
+                raw.0.len()
+            ));
+        }
+
+        Ok(Self(raw.0))
+    }
+}
+
 #[allow(private_interfaces)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "RawChunkPack<T>")]
 pub(crate) enum ChunkPack<T> {
     Single(T),
     Pallet {
@@ -230,10 +409,44 @@ pub(crate) enum ChunkPack<T> {
     Dense(DenseBuffer<T>),
 }
 
+#[derive(Deserialize)]
+enum RawChunkPack<T> {
+    Single(T),
+    Pallet {
+        pallet: VoxelStatePallet<T>,
+        indices: PackIndices,
+    },
+    Dense(DenseBuffer<T>),
+}
+
+impl<T> TryFrom<RawChunkPack<T>> for ChunkPack<T> {
+    type Error = String;
+
+    fn try_from(raw: RawChunkPack<T>) -> Result<Self, Self::Error> {
+        match raw {
+            RawChunkPack::Single(value) => Ok(ChunkPack::Single(value)),
+            RawChunkPack::Pallet { pallet, indices } => {
+                for index in indices.iter() {
+                    if index as usize >= pallet.len() {
+                        return Err(format!(
+                            "section pallet index {} is out of bounds for {} entries",
+                            index,
+                            pallet.len()
+                        ));
+                    }
+                }
+
+                Ok(ChunkPack::Pallet { pallet, indices })
+            }
+            RawChunkPack::Dense(voxels) => Ok(ChunkPack::Dense(voxels)),
+        }
+    }
+}
+
 pub(crate) mod pack_consts {
-    pub(super) const X_AXIS_SIZE: usize = 8;
-    pub(super) const Y_AXIS_SIZE: usize = 8;
-    pub(super) const Z_AXIS_SIZE: usize = 8;
+    pub(super) const X_AXIS_SIZE: usize = 16;
+    pub(super) const Y_AXIS_SIZE: usize = 16;
+    pub(super) const Z_AXIS_SIZE: usize = 16;
 
     pub(super) const X_END: i32 = (X_AXIS_SIZE - 1) as i32;
     pub(super) const Y_END: i32 = (Y_AXIS_SIZE - 1) as i32;
@@ -266,7 +479,7 @@ where
     fn new_pallet() -> Self {
         Self::Pallet {
             pallet: VoxelStatePallet::default(),
-            indices: PackIndices(vec![0; pack_consts::BUFFER_SIZE]),
+            indices: PackIndices::new(0),
         }
     }
 
@@ -283,7 +496,7 @@ where
     pub(crate) fn get(&self, voxel: PackVoxel) -> T {
         match &self {
             ChunkPack::Single(value) => *value,
-            ChunkPack::Pallet { pallet, indices } => pallet[indices[voxel.to_index()] as usize],
+            ChunkPack::Pallet { pallet, indices } => pallet[indices.get(voxel.to_index()) as usize],
             ChunkPack::Dense(voxels) => voxels[voxel.to_index()],
         }
     }
@@ -304,7 +517,10 @@ where
             } => {
                 if pallet.len() < u8::MAX as usize || pallet_clean_up(&mut pallet, &mut indices) {
                     let pallet_index = pallet.find_or_add(value);
-                    indices[voxel.to_index()] = pallet_index;
+                    if indices.needs_to_grow(pallet_index + 1) {
+                        indices.grow(pallet_index + 1);
+                    }
+                    indices.set(voxel.to_index(), pallet_index);
                     ChunkPack::Pallet { pallet, indices }
                 } else {
                     let mut dense = pallet_to_dense(pallet, indices);
@@ -369,7 +585,7 @@ where
                 if !pallet.dirty {
                     pallet.iter().all(f)
                 } else {
-                    indices.0.iter().all(|idx| f(&pallet[*idx as usize]))
+                    indices.iter().all(|idx| f(&pallet[idx as usize]))
                 }
             }
             ChunkPack::Dense(dense_buffer) => dense_buffer.iter().all(f),
@@ -385,15 +601,15 @@ where
     pallet.dirty = true;
 
     // init indices point to existing voxel state on pallet
-    let mut indices = PackIndices(vec![0; pack_consts::BUFFER_SIZE]);
+    let mut indices = PackIndices::new(2);
 
     // the new voxel state voxel and the second on the pallet
-    indices[new_voxel.to_index()] = 1;
+    indices.set(new_voxel.to_index(), 1);
 
     ChunkPack::Pallet { pallet, indices }
 }
 
-fn pallet_clean_up<T>(pallet: &mut VoxelStatePallet<T>, indices: &mut [u8]) -> bool
+fn pallet_clean_up<T>(pallet: &mut VoxelStatePallet<T>, indices: &mut PackIndices) -> bool
 where
     T: ChunkStorageType,
 {
@@ -402,17 +618,18 @@ where
     }
     pallet.dirty = false;
 
-    let mut new_indices = [0u8; pack_consts::BUFFER_SIZE];
+    let mut new_values = Vec::with_capacity(pack_consts::BUFFER_SIZE);
     let mut new_pallet = VoxelStatePallet::empty();
 
     for i in 0..pack_consts::BUFFER_SIZE {
-        let new_idx = new_pallet.find_or_add(pallet[indices[i] as usize]);
-        new_indices[i] = new_idx;
+        let new_idx = new_pallet.find_or_add(pallet[indices.get(i) as usize]);
+        new_values.push(new_idx);
     }
 
     if new_pallet.len() < pallet.len() {
         std::mem::swap(pallet, &mut new_pallet);
-        indices.copy_from_slice(&new_indices);
+        pallet.dirty = false;
+        *indices = PackIndices::from_values(&new_values, pallet.len());
         true
     } else {
         false
@@ -426,7 +643,7 @@ where
     let mut voxels = DenseBuffer(vec![Default::default(); pack_consts::BUFFER_SIZE]);
 
     for i in 0..pack_consts::BUFFER_SIZE {
-        voxels[i] = pallet[indices[i] as usize];
+        voxels[i] = pallet[indices.get(i) as usize];
     }
 
     ChunkPack::Dense(voxels)
@@ -438,11 +655,14 @@ where
 {
     let mut pallet = VoxelStatePallet::empty();
 
-    let mut indices = PackIndices(vec![0; pack_consts::BUFFER_SIZE]);
+    let mut indices = PackIndices::new(0);
 
     voxels.iter().enumerate().for_each(|(i, value)| {
         let pallet_index = pallet.find_or_add(*value);
-        indices[i] = pallet_index;
+        if indices.needs_to_grow(pallet_index + 1) {
+            indices.grow(pallet_index + 1);
+        }
+        indices.set(i, pallet_index);
     });
 
     ChunkPack::Pallet { pallet, indices }
@@ -463,8 +683,8 @@ mod tests {
 
         // Assert
         assert_eq!(first, PackVoxel::new(0, 0, 0));
-        assert_eq!(y_end, PackVoxel::new(0, 7, 0));
-        assert_eq!(last, PackVoxel::new(7, 7, 7));
+        assert_eq!(y_end, PackVoxel::new(0, Y_END as u8, 0));
+        assert_eq!(last, PackVoxel::new(X_END as u8, Y_END as u8, Z_END as u8));
     }
 
     #[test]
@@ -473,8 +693,8 @@ mod tests {
 
         // Act
         let first = PackVoxel::new(0, 0, 0).to_index();
-        let y_end = PackVoxel::new(0, 7, 0).to_index();
-        let last = PackVoxel::new(7, 7, 7).to_index();
+        let y_end = PackVoxel::new(0, Y_END as u8, 0).to_index();
+        let last = PackVoxel::new(X_END as u8, Y_END as u8, Z_END as u8).to_index();
 
         // Assert
         assert_eq!(first, 0);
@@ -747,7 +967,7 @@ mod tests {
 
         let mut pallet = ChunkPack::Pallet {
             pallet: VoxelStatePallet::new(vec![state]),
-            indices: PackIndices(vec![0; BUFFER_SIZE]),
+            indices: PackIndices::new(0),
         };
 
         // Act
@@ -771,7 +991,7 @@ mod tests {
 
         let mut pallet = ChunkPack::Pallet {
             pallet,
-            indices: PackIndices(vec![0; BUFFER_SIZE]),
+            indices: PackIndices::new(0),
         };
 
         // Act
@@ -832,5 +1052,137 @@ mod tests {
             let v = (i % 255) as u8;
             assert_eq!(dense.get(PackVoxel::from_index(i)), v);
         }
+    }
+
+    fn encode<T: serde::Serialize>(value: &T) -> Vec<u8> {
+        bincode::serde::encode_to_vec(value, bincode::config::standard()).unwrap()
+    }
+
+    fn decode<T: serde::de::DeserializeOwned>(
+        bytes: &[u8],
+    ) -> Result<T, bincode::error::DecodeError> {
+        bincode::serde::decode_from_slice(bytes, bincode::config::standard())
+            .map(|(value, _)| value)
+    }
+
+    #[test]
+    fn pack_indices_serde_rejects_wrong_len() {
+        let invalid = PackIndices {
+            bits: 1,
+            buffer: vec![0; (BUFFER_SIZE / 8) + 1],
+        };
+        assert!(decode::<PackIndices>(&encode(&invalid)).is_err());
+
+        let invalid = PackIndices {
+            bits: 1,
+            buffer: Vec::new(),
+        };
+        assert!(decode::<PackIndices>(&encode(&invalid)).is_err());
+    }
+
+    #[test]
+    fn dense_buffer_serde_rejects_wrong_len() {
+        assert!(
+            decode::<DenseBuffer<u8>>(&encode(&DenseBuffer(vec![0; BUFFER_SIZE + 1]))).is_err()
+        );
+        assert!(decode::<DenseBuffer<u8>>(&encode(&DenseBuffer::<u8>(Vec::new()))).is_err());
+    }
+
+    #[test]
+    fn voxel_state_pallet_serde_rejects_too_many_entries() {
+        let invalid = VoxelStatePallet {
+            pallet: vec![0u16; u8::MAX as usize + 1],
+            dirty: false,
+        };
+
+        assert!(decode::<VoxelStatePallet<u16>>(&encode(&invalid)).is_err());
+    }
+
+    #[test]
+    fn pack_indices_serde_round_trip_all_bits() {
+        for bits in 1..=8u8 {
+            let pallet_len = (1usize << (bits - 1)) + 1;
+            let max = ((1u16 << bits) - 1) as u8;
+
+            let mut indices = PackIndices::new(pallet_len);
+            indices.set(0, max);
+            indices.set(7, max);
+            indices.set(8, max.saturating_sub(1));
+            indices.set(pack_consts::BUFFER_SIZE - 1, max);
+
+            let decoded: PackIndices = decode(&encode(&indices)).unwrap();
+
+            assert_eq!(decoded.get(0), max);
+            assert_eq!(decoded.get(7), max);
+            assert_eq!(decoded.get(8), max.saturating_sub(1));
+            assert_eq!(decoded.get(pack_consts::BUFFER_SIZE - 1), max);
+        }
+    }
+
+    #[test]
+    fn pack_indices_serde_rejects_invalid_bits() {
+        let invalid = PackIndices {
+            bits: 0,
+            buffer: Vec::new(),
+        };
+        assert!(decode::<PackIndices>(&encode(&invalid)).is_err());
+
+        let invalid = PackIndices {
+            bits: 9,
+            buffer: Vec::new(),
+        };
+        assert!(decode::<PackIndices>(&encode(&invalid)).is_err());
+    }
+
+    #[test]
+    fn chunk_pack_serde_round_trip_max_palette() {
+        let pack = ChunkPack::Pallet {
+            pallet: VoxelStatePallet::new((0..255).collect::<Vec<u16>>()),
+            indices: PackIndices::new(255),
+        };
+
+        let decoded: ChunkPack<u16> = decode(&encode(&pack)).unwrap();
+
+        match decoded {
+            ChunkPack::Pallet { pallet, indices } => {
+                assert_eq!(pallet.len(), 255);
+                assert_eq!(indices.get(0), 0);
+            }
+            _ => panic!("expected pallet"),
+        }
+    }
+
+    #[test]
+    fn chunk_pack_serde_rejects_out_of_bounds_index() {
+        let mut indices = PackIndices::new(3);
+        for i in 0..BUFFER_SIZE {
+            indices.set(i, 2);
+        }
+        let invalid = ChunkPack::Pallet {
+            pallet: VoxelStatePallet::new(vec![1u16, 2]),
+            indices,
+        };
+
+        assert!(decode::<ChunkPack<u16>>(&encode(&invalid)).is_err());
+    }
+
+    #[test]
+    fn sub_chunk_storage_serde_rejects_wrong_section_count() {
+        let invalid = SubChunkStorage(vec![ChunkPack::Single(0u16)]);
+
+        assert!(decode::<SubChunkStorage<u16>>(&encode(&invalid)).is_err());
+    }
+
+    #[test]
+    fn sub_chunk_storage_serde_round_trip() {
+        let mut storage = SubChunkStorage::<u16>::default();
+        storage.set(ChunkVoxel::new(0, 0, 0), 1);
+        storage.set(ChunkVoxel::new(15, 255, 15), 2);
+        storage.pack();
+
+        let decoded: SubChunkStorage<u16> = decode(&encode(&storage)).unwrap();
+
+        assert_eq!(decoded.get(ChunkVoxel::new(0, 0, 0)), 1);
+        assert_eq!(decoded.get(ChunkVoxel::new(15, 255, 15)), 2);
     }
 }

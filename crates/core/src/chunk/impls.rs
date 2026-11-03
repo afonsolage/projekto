@@ -5,8 +5,12 @@ impl ChunkStorageType for u16 {}
 impl ChunkStorageType for u32 {}
 impl ChunkStorageType for u64 {}
 impl ChunkStorageType for u128 {}
-impl ChunkStorageType for voxel::Kind {}
-impl ChunkStorageType for voxel::Light {}
+impl ChunkStorageType for voxel::Kind {
+    const USE_SECTIONS: bool = true;
+}
+impl ChunkStorageType for voxel::Light {
+    const USE_SECTIONS: bool = true;
+}
 impl ChunkStorageType for voxel::FacesOcclusion {}
 impl ChunkStorageType for voxel::FacesSoftLight {}
 
