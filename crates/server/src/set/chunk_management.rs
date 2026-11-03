@@ -548,6 +548,18 @@ mod save_tests {
     }
 
     #[test]
+    fn full_chunk_next_to_coarse_neighbour_needs_seam_remesh() {
+        let landscape = Landscape {
+            center: bevy::math::IVec2::ZERO,
+            radius: 32,
+        };
+
+        assert!(needs_seam_remesh(Chunk::new(8, 0), Some(&landscape)));
+        assert!(!needs_seam_remesh(Chunk::new(0, 0), Some(&landscape)));
+        assert!(!needs_seam_remesh(Chunk::new(8, 0), None));
+    }
+
+    #[test]
     fn does_not_save_unmeshed_empty_solid_chunk() {
         let mut app = app();
         let chunk = Chunk::new(0, 0);
