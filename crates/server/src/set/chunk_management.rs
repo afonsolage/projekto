@@ -376,8 +376,7 @@ fn queue_chunks_to_save(
 fn chunks_save(
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
     mut pending: ResMut<PendingSaves>,
-    chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex)>,
-    landscape: Option<Res<Landscape>>,
+    chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex, &ChunkLod)>,
     dirty: Res<DirtyChunks>,
     time: Res<Time>,
     mut timer: Local<Option<Timer>>,
@@ -401,18 +400,13 @@ fn chunks_save(
             continue;
         }
 
-        if let Some((kind, light, vertex)) = chunks.get_chunk(*chunk) {
-            let lod = landscape
-                .as_ref()
-                .map(|landscape| desired_lod(*chunk, landscape.center))
-                .unwrap_or(0);
-
+        if let Some((kind, light, vertex, lod)) = chunks.get_chunk(*chunk) {
             let asset = ChunkAsset {
                 chunk: *chunk,
                 kind: kind.0.clone(),
                 light: light.0.clone(),
                 vertex: vertex.0.clone(),
-                lod,
+                lod: lod.0,
             };
             let _task = archive_server.save_chunk(*chunk, asset);
             saved += 1;

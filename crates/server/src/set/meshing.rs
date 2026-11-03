@@ -143,7 +143,7 @@ fn generate_vertices(
     chunk_map: Res<ChunkMap>,
     landscape: Option<Res<Landscape>>,
     q_chunks: ChunkQuery<(&ChunkKind, &ChunkLight)>,
-    mut q_vertex: Query<&mut ChunkVertex>,
+    mut q_vertex: Query<(&mut ChunkVertex, Option<&mut ChunkLod>)>,
 ) {
     let center = landscape
         .as_ref()
@@ -175,11 +175,15 @@ fn generate_vertices(
 
         let kind = &kind.0;
 
-        let mut chunk_vertex = q_vertex.get_mut(entity).expect("Entity must exists");
+        let (mut chunk_vertex, chunk_lod) = q_vertex.get_mut(entity).expect("Entity must exists");
         let lod = landscape
             .as_ref()
             .map(|landscape| desired_lod(chunk, landscape.center))
             .unwrap_or(0);
+
+        if let Some(mut chunk_lod) = chunk_lod {
+            chunk_lod.0 = lod;
+        }
 
         let neighborhood = chunk::SIDES.map(|side| {
             q_chunks
@@ -296,6 +300,11 @@ mod tests {
 
         assert_eq!(app.world().get::<ChunkLod>(entity).unwrap().0, 1);
         assert!(app.world().get::<CachedMesh>(entity).is_none());
+
+        app.world_mut().resource_mut::<super::Landscape>().center = bevy::math::IVec2::new(9, 0);
+        app.update();
+
+        assert_eq!(app.world().get::<ChunkLod>(entity).unwrap().0, 0);
     }
 
     #[test]
