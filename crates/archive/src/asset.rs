@@ -20,7 +20,10 @@ mod tests {
 
     #[test]
     fn asset_serde() {
-        let asset = ChunkAsset::default();
+        let asset = ChunkAsset {
+            lod: 1,
+            ..Default::default()
+        };
 
         let bytes = bincode::serde::encode_to_vec(&asset, bincode::config::standard()).unwrap();
 

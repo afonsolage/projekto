@@ -17,7 +17,7 @@ use crate::{
     net::{ClientSync, Clients},
 };
 
-use super::Landscape;
+use super::{Landscape, meshing::desired_lod};
 
 /// Chunks whose latest vertices still need to be persisted.
 #[derive(Resource, Default)]
@@ -227,6 +227,14 @@ fn chunks_load(
                         "Chunk {chunk} was saved with an unsupported archive format version. Delete or migrate archive/region before loading."
                     );
                 }
+                Err(ArchiveError::Decode(err)) => {
+                    loading.remove(&chunk);
+                    warn!("Chunk {chunk} could not be decoded ({err}); regenerating it.");
+
+                    if is_desired(chunk) {
+                        gen_tasks.push(genesis.generate(chunk));
+                    }
+                }
                 Err(e) => {
                     loading.remove(&chunk);
                     error!("Unable to load chunk ({chunk}). {e}");
@@ -301,7 +309,7 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
         lod,
     } = asset;
 
-    let suspect_hole = vertex.is_empty() && !kind.all(|kind| kind.is_none());
+    let suspect_hole = lod == 0 && vertex.is_empty() && !kind.all(|kind| kind.is_none());
 
     if suspect_hole {
         warn!("chunk {chunk} was loaded with an empty mesh over solid terrain");
@@ -334,6 +342,7 @@ fn queue_chunks_to_save(
         ),
         Changed<ChunkVertex>,
     >,
+    landscape: Option<Res<Landscape>>,
     mut pending: ResMut<PendingSaves>,
 ) {
     for (ChunkLocal(chunk), kind, vertex, cached) in &q_chunks {
@@ -342,10 +351,15 @@ fn queue_chunks_to_save(
             continue;
         }
 
-        // A chunk starts with an empty vertex buffer before its first mesh, and an
-        // empty mesh over solid terrain is always a hole: every non-air chunk has at
-        // least one exposed face. Never persist that state; let the load path remesh it.
-        if vertex.0.is_empty() && !kind.0.all(|kind| kind.is_none()) {
+        let lod = landscape
+            .as_ref()
+            .map(|landscape| desired_lod(*chunk, landscape.center))
+            .unwrap_or(0);
+
+        // A full-detail chunk starts with an empty vertex buffer before its first mesh, and an
+        // empty mesh over solid terrain is always a hole. Coarse chunks may legitimately be
+        // empty when every coarse cell contains some air.
+        if lod == 0 && vertex.0.is_empty() && !kind.0.all(|kind| kind.is_none()) {
             continue;
         }
 
@@ -362,7 +376,9 @@ fn queue_chunks_to_save(
 fn chunks_save(
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
     mut pending: ResMut<PendingSaves>,
-    chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex, &ChunkLod)>,
+    chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex)>,
+    landscape: Option<Res<Landscape>>,
+    dirty: Res<DirtyChunks>,
     time: Res<Time>,
     mut timer: Local<Option<Timer>>,
 ) {
@@ -381,13 +397,22 @@ fn chunks_save(
     let mut handled = Vec::with_capacity(SAVE_BATCH_SIZE);
 
     for chunk in pending.0.iter().take(SAVE_BATCH_SIZE) {
-        if let Some((kind, light, vertex, lod)) = chunks.get_chunk(*chunk) {
+        if dirty.0.contains(chunk) {
+            continue;
+        }
+
+        if let Some((kind, light, vertex)) = chunks.get_chunk(*chunk) {
+            let lod = landscape
+                .as_ref()
+                .map(|landscape| desired_lod(*chunk, landscape.center))
+                .unwrap_or(0);
+
             let asset = ChunkAsset {
                 chunk: *chunk,
                 kind: kind.0.clone(),
                 light: light.0.clone(),
                 vertex: vertex.0.clone(),
-                lod: lod.0,
+                lod,
             };
             let _task = archive_server.save_chunk(*chunk, asset);
             saved += 1;

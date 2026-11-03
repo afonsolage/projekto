@@ -33,7 +33,7 @@ impl Plugin for MeshingPlugin {
 /// Chunks inside this square keep full-resolution meshes; chunks outside use a coarser LOD.
 pub const LOD_FULL_RADIUS: i32 = 8;
 
-fn desired_lod(chunk: Chunk, center: bevy::math::IVec2) -> u8 {
+pub(crate) fn desired_lod(chunk: Chunk, center: bevy::math::IVec2) -> u8 {
     let dx = (chunk.x - center.x).abs();
     let dz = (chunk.z - center.y).abs();
 
@@ -48,6 +48,7 @@ fn update_chunk_lods(
     mut commands: Commands,
     landscape: Option<Res<Landscape>>,
     mut dirty: ResMut<DirtyChunks>,
+    mut caches: ResMut<DerivedCaches>,
     q: Query<(Entity, &ChunkLocal, Option<&ChunkLod>, Option<&CachedMesh>)>,
 ) {
     let Some(landscape) = landscape else {
@@ -62,7 +63,11 @@ fn update_chunk_lods(
             Some(_) => {
                 commands.entity(entity).insert(ChunkLod(desired));
                 commands.entity(entity).remove::<CachedMesh>();
-                dirty.0.insert(*chunk);
+
+                for affected in affected_chunks(*chunk) {
+                    dirty.0.insert(affected);
+                    caches.invalidate(affected);
+                }
             }
             None => {
                 commands.entity(entity).insert(ChunkLod(desired));
@@ -71,7 +76,11 @@ fn update_chunk_lods(
                     if cached.is_some() {
                         commands.entity(entity).remove::<CachedMesh>();
                     }
-                    dirty.0.insert(*chunk);
+
+                    for affected in affected_chunks(*chunk) {
+                        dirty.0.insert(affected);
+                        caches.invalidate(affected);
+                    }
                 }
             }
         }
@@ -177,9 +186,22 @@ fn generate_vertices(
                 .get_chunk(chunk.neighbor(side.dir()))
                 .map(|(kind, _)| &kind.0)
         });
+        let neighborhood_light = chunk::SIDES.map(|side| {
+            q_chunks
+                .get_chunk(chunk.neighbor(side.dir()))
+                .map(|(_, light)| &light.0)
+        });
+        let neighborhood_lod =
+            chunk::SIDES.map(|side| Some(desired_lod(chunk.neighbor(side.dir()), center)));
 
         let mut vertex = if lod > 0 {
-            meshing::lod::generate_coarse_vertices(kind, &light.0, &neighborhood, lod)
+            meshing::lod::generate_coarse_vertices(
+                kind,
+                &light.0,
+                &neighborhood,
+                &neighborhood_light,
+                lod,
+            )
         } else {
             let DerivedCaches {
                 occlusion: occlusion_cache,
@@ -188,7 +210,12 @@ fn generate_vertices(
 
             let occlusion = occlusion_cache.get_or_insert_with(chunk, || {
                 let mut occlusion = ChunkStorage::default();
-                meshing::faces_occlusion(kind, &mut occlusion, &neighborhood);
+                meshing::faces_occlusion_with_lod(
+                    kind,
+                    &mut occlusion,
+                    &neighborhood,
+                    &neighborhood_lod,
+                );
                 occlusion
             });
 
