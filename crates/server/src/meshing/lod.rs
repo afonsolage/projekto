@@ -15,8 +15,13 @@ use projekto_core::{
 use super::{VERTICES, VERTICES_INDICES};
 use crate::light;
 
+/// Converts a voxel light intensity in `0..=15` to the normalized shader range.
 const LIGHT_FRACTION: f32 = (Light::MAX_NATURAL_INTENSITY as f32).recip();
 
+/// Downsample factors for a coarse chunk, measured in full-resolution voxels per coarse cell.
+///
+/// Horizontal axes are downsampled while `y` stays at one voxel, so horizontal overhangs keep
+/// their full vertical detail.
 #[derive(Clone, Copy)]
 pub(super) struct LodScale {
     pub(super) x: i32,
@@ -25,6 +30,10 @@ pub(super) struct LodScale {
 }
 
 impl LodScale {
+    /// Returns the per-axis scale for `lod`.
+    ///
+    /// LOD 1 uses 2×2 horizontal cells, LOD 2 uses 4×4, and so on. The horizontal factor is
+    /// capped at 16 because a chunk is only 16 voxels wide.
     pub(super) fn for_lod(lod: u8) -> Self {
         let horizontal = 1i32 << lod.min(4);
         Self {
@@ -33,6 +42,16 @@ impl LodScale {
             z: horizontal,
         }
     }
+}
+
+/// Immutable chunk/grid context shared by the coarse face culling and lighting helpers.
+struct CoarseView<'a> {
+    scale: LodScale,
+    nx: i32,
+    ny: i32,
+    nz: i32,
+    neighborhood: &'a [Option<&'a ChunkStorage<Kind>>; chunk::SIDE_COUNT],
+    neighborhood_light: &'a [Option<&'a ChunkStorage<Light>>; chunk::SIDE_COUNT],
 }
 
 #[derive(Clone, Copy)]
@@ -58,7 +77,16 @@ pub fn generate_coarse_vertices<'a>(
     let nx = Chunk::X_AXIS_SIZE as i32 / scale.x;
     let ny = Chunk::Y_AXIS_SIZE as i32 / scale.y;
     let nz = Chunk::Z_AXIS_SIZE as i32 / scale.z;
+    let view = CoarseView {
+        scale,
+        nx,
+        ny,
+        nz,
+        neighborhood,
+        neighborhood_light,
+    };
 
+    // Highest non-air Y per full-resolution column, used to tell surface air from caves.
     let mut top_solid = [[-1i16; Chunk::Z_AXIS_SIZE]; Chunk::X_AXIS_SIZE];
     for (x, column) in top_solid.iter_mut().enumerate() {
         for (z, height) in column.iter_mut().enumerate() {
@@ -72,13 +100,15 @@ pub fn generate_coarse_vertices<'a>(
         }
     }
 
-    let mut cells = vec![None; (nx * ny * nz) as usize];
+    let cell_len = (nx * ny * nz) as usize;
+    let mut cells = vec![None; cell_len];
     let mut counts = Vec::new();
     for cy in 0..ny {
         for cz in 0..nz {
             for cx in 0..nx {
                 let cell =
                     sample_cell(kind, IVec3::new(cx, cy, cz), scale, &top_solid, &mut counts);
+
                 cells[cell_index(cx, cy, cz, nx, nz)] = cell;
             }
         }
@@ -98,16 +128,7 @@ pub fn generate_coarse_vertices<'a>(
                 let base = IVec3::new(cx * scale.x, cy * scale.y, cz * scale.z);
 
                 for side in voxel::SIDES {
-                    if neighbor_solid(
-                        IVec3::new(cx, cy, cz),
-                        side,
-                        scale,
-                        nx,
-                        ny,
-                        nz,
-                        &cells,
-                        neighborhood,
-                    ) {
+                    if neighbor_solid(&view, &cells, IVec3::new(cx, cy, cz), side) {
                         continue;
                     }
 
@@ -156,18 +177,8 @@ pub fn generate_coarse_vertices<'a>(
                         get_light,
                     );
                     let light_values = light::soft_vertex_light(&neighbors, side);
-                    let ambient = face_ambient_light(
-                        kind,
-                        light,
-                        IVec3::new(cx, cy, cz),
-                        side,
-                        scale,
-                        nx,
-                        ny,
-                        nz,
-                        neighborhood_light,
-                        neighborhood,
-                    ) as f32;
+                    let ambient =
+                        face_ambient_light(kind, light, &view, IVec3::new(cx, cy, cz), side) as f32;
                     let floor = ambient * 0.5;
 
                     for i in 0..4 {
@@ -191,6 +202,11 @@ fn cell_index(x: i32, y: i32, z: i32, nx: i32, nz: i32) -> usize {
     ((y * nz + z) * nx + x) as usize
 }
 
+/// Samples the full-resolution block behind one coarse cell.
+///
+/// Returns `None` for air cells. Air with solid above it belongs to a cave or overhang and stays
+/// open; a mixed cell open to the sky is treated as solid so the coarse surface has no pits.
+/// The returned cell carries the top/side render kinds and the voxel used for light sampling.
 fn sample_cell(
     kind: &ChunkStorage<Kind>,
     cell: IVec3,
@@ -249,18 +265,16 @@ fn sample_cell(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Returns the brightest air light in the block in front of a coarse face.
+///
+/// This is used as an ambient floor so a face cannot go completely black when the representative
+/// voxel's soft-light sample is fully occluded.
 fn face_ambient_light(
     kind: &ChunkStorage<Kind>,
     light: &ChunkStorage<Light>,
+    view: &CoarseView,
     cell: IVec3,
     side: voxel::Side,
-    scale: LodScale,
-    nx: i32,
-    ny: i32,
-    nz: i32,
-    neighborhood_light: &[Option<&ChunkStorage<Light>>; chunk::SIDE_COUNT],
-    neighborhood: &[Option<&ChunkStorage<Kind>>; chunk::SIDE_COUNT],
 ) -> u8 {
     let mut neighbor = cell;
 
@@ -273,18 +287,18 @@ fn face_ambient_light(
         voxel::Side::Back => neighbor.z -= 1,
     }
 
-    if neighbor.y < 0 || neighbor.y >= ny {
+    if neighbor.y < 0 || neighbor.y >= view.ny {
         return Light::MAX_NATURAL_INTENSITY;
     }
 
-    if neighbor.x >= 0 && neighbor.x < nx && neighbor.z >= 0 && neighbor.z < nz {
+    if neighbor.x >= 0 && neighbor.x < view.nx && neighbor.z >= 0 && neighbor.z < view.nz {
         return block_air_light(
             kind,
             light,
-            neighbor.x * scale.x,
-            neighbor.y * scale.y,
-            neighbor.z * scale.z,
-            scale,
+            neighbor.x * view.scale.x,
+            neighbor.y * view.scale.y,
+            neighbor.z * view.scale.z,
+            view.scale,
         );
     }
 
@@ -292,29 +306,29 @@ fn face_ambient_light(
         return Light::MAX_NATURAL_INTENSITY;
     };
     let (Some(neighbor_kind), Some(neighbor_light)) = (
-        neighborhood[chunk_side as usize],
-        neighborhood_light[chunk_side as usize],
+        view.neighborhood[chunk_side as usize],
+        view.neighborhood_light[chunk_side as usize],
     ) else {
         return Light::MAX_NATURAL_INTENSITY;
     };
 
     let (x0, y0, z0) = match side {
-        voxel::Side::Right => (0, neighbor.y * scale.y, neighbor.z * scale.z),
+        voxel::Side::Right => (0, neighbor.y * view.scale.y, neighbor.z * view.scale.z),
         voxel::Side::Left => (
-            Chunk::X_AXIS_SIZE as i32 - scale.x,
-            neighbor.y * scale.y,
-            neighbor.z * scale.z,
+            Chunk::X_AXIS_SIZE as i32 - view.scale.x,
+            neighbor.y * view.scale.y,
+            neighbor.z * view.scale.z,
         ),
-        voxel::Side::Front => (neighbor.x * scale.x, neighbor.y * scale.y, 0),
+        voxel::Side::Front => (neighbor.x * view.scale.x, neighbor.y * view.scale.y, 0),
         voxel::Side::Back => (
-            neighbor.x * scale.x,
-            neighbor.y * scale.y,
-            Chunk::Z_AXIS_SIZE as i32 - scale.z,
+            neighbor.x * view.scale.x,
+            neighbor.y * view.scale.y,
+            Chunk::Z_AXIS_SIZE as i32 - view.scale.z,
         ),
         _ => unreachable!(),
     };
 
-    block_air_light(neighbor_kind, neighbor_light, x0, y0, z0, scale)
+    block_air_light(neighbor_kind, neighbor_light, x0, y0, z0, view.scale)
 }
 
 fn block_air_light(
@@ -342,16 +356,12 @@ fn block_air_light(
     max
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Returns whether the coarse cell adjacent to `cell` on `side` is solid.
 fn neighbor_solid(
+    view: &CoarseView,
+    cells: &[Option<CoarseCell>],
     cell: IVec3,
     side: voxel::Side,
-    scale: LodScale,
-    nx: i32,
-    ny: i32,
-    nz: i32,
-    cells: &[Option<CoarseCell>],
-    neighborhood: &[Option<&ChunkStorage<Kind>>; chunk::SIDE_COUNT],
 ) -> bool {
     let mut neighbor = cell;
 
@@ -364,38 +374,38 @@ fn neighbor_solid(
         voxel::Side::Back => neighbor.z -= 1,
     }
 
-    if neighbor.y < 0 || neighbor.y >= ny {
+    if neighbor.y < 0 || neighbor.y >= view.ny {
         return false;
     }
 
-    if neighbor.x >= 0 && neighbor.x < nx && neighbor.z >= 0 && neighbor.z < nz {
-        return cells[cell_index(neighbor.x, neighbor.y, neighbor.z, nx, nz)].is_some();
+    if neighbor.x >= 0 && neighbor.x < view.nx && neighbor.z >= 0 && neighbor.z < view.nz {
+        return cells[cell_index(neighbor.x, neighbor.y, neighbor.z, view.nx, view.nz)].is_some();
     }
 
     let Some(chunk_side) = ChunkSide::from_voxel_side(side) else {
         return false;
     };
-    let Some(neighbor_kind) = neighborhood[chunk_side as usize] else {
+    let Some(neighbor_kind) = view.neighborhood[chunk_side as usize] else {
         return false;
     };
 
     let (x0, y0, z0) = match side {
-        voxel::Side::Right => (0, neighbor.y * scale.y, neighbor.z * scale.z),
+        voxel::Side::Right => (0, neighbor.y * view.scale.y, neighbor.z * view.scale.z),
         voxel::Side::Left => (
-            Chunk::X_AXIS_SIZE as i32 - scale.x,
-            neighbor.y * scale.y,
-            neighbor.z * scale.z,
+            Chunk::X_AXIS_SIZE as i32 - view.scale.x,
+            neighbor.y * view.scale.y,
+            neighbor.z * view.scale.z,
         ),
-        voxel::Side::Front => (neighbor.x * scale.x, neighbor.y * scale.y, 0),
+        voxel::Side::Front => (neighbor.x * view.scale.x, neighbor.y * view.scale.y, 0),
         voxel::Side::Back => (
-            neighbor.x * scale.x,
-            neighbor.y * scale.y,
-            Chunk::Z_AXIS_SIZE as i32 - scale.z,
+            neighbor.x * view.scale.x,
+            neighbor.y * view.scale.y,
+            Chunk::Z_AXIS_SIZE as i32 - view.scale.z,
         ),
         _ => return false,
     };
 
-    block_solid(neighbor_kind, x0, y0, z0, scale)
+    block_solid(neighbor_kind, x0, y0, z0, view.scale)
 }
 
 pub(super) fn block_solid(
