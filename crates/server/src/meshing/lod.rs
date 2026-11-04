@@ -43,10 +43,13 @@ struct CoarseCell {
 }
 
 /// Builds a coarse mesh for a chunk at `lod > 0`.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_coarse_vertices<'a>(
     chunk: Chunk,
     kind: &ChunkStorage<Kind>,
+    light: &ChunkStorage<Light>,
     neighborhood: &[Option<&ChunkStorage<Kind>>; chunk::SIDE_COUNT],
+    neighborhood_light: &[Option<&ChunkStorage<Light>>; chunk::SIDE_COUNT],
     get_kind: impl GetChunkStorage<'a, Kind>,
     get_light: impl GetChunkStorage<'a, Light>,
     lod: u8,
@@ -153,7 +156,18 @@ pub fn generate_coarse_vertices<'a>(
                         get_light,
                     );
                     let light_values = light::soft_vertex_light(&neighbors, side);
-                    let ambient = neighbors.iter().flatten().copied().max().unwrap_or(0) as f32;
+                    let ambient = face_ambient_light(
+                        kind,
+                        light,
+                        IVec3::new(cx, cy, cz),
+                        side,
+                        scale,
+                        nx,
+                        ny,
+                        nz,
+                        neighborhood_light,
+                        neighborhood,
+                    ) as f32;
                     let floor = ambient * 0.5;
 
                     for i in 0..4 {
@@ -233,6 +247,99 @@ fn sample_cell(
         side_kind,
         representative,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn face_ambient_light(
+    kind: &ChunkStorage<Kind>,
+    light: &ChunkStorage<Light>,
+    cell: IVec3,
+    side: voxel::Side,
+    scale: LodScale,
+    nx: i32,
+    ny: i32,
+    nz: i32,
+    neighborhood_light: &[Option<&ChunkStorage<Light>>; chunk::SIDE_COUNT],
+    neighborhood: &[Option<&ChunkStorage<Kind>>; chunk::SIDE_COUNT],
+) -> u8 {
+    let mut neighbor = cell;
+
+    match side {
+        voxel::Side::Right => neighbor.x += 1,
+        voxel::Side::Left => neighbor.x -= 1,
+        voxel::Side::Up => neighbor.y += 1,
+        voxel::Side::Down => neighbor.y -= 1,
+        voxel::Side::Front => neighbor.z += 1,
+        voxel::Side::Back => neighbor.z -= 1,
+    }
+
+    if neighbor.y < 0 || neighbor.y >= ny {
+        return Light::MAX_NATURAL_INTENSITY;
+    }
+
+    if neighbor.x >= 0 && neighbor.x < nx && neighbor.z >= 0 && neighbor.z < nz {
+        return block_air_light(
+            kind,
+            light,
+            neighbor.x * scale.x,
+            neighbor.y * scale.y,
+            neighbor.z * scale.z,
+            scale,
+        );
+    }
+
+    let Some(chunk_side) = ChunkSide::from_voxel_side(side) else {
+        return Light::MAX_NATURAL_INTENSITY;
+    };
+    let (Some(neighbor_kind), Some(neighbor_light)) = (
+        neighborhood[chunk_side as usize],
+        neighborhood_light[chunk_side as usize],
+    ) else {
+        return Light::MAX_NATURAL_INTENSITY;
+    };
+
+    let (x0, y0, z0) = match side {
+        voxel::Side::Right => (0, neighbor.y * scale.y, neighbor.z * scale.z),
+        voxel::Side::Left => (
+            Chunk::X_AXIS_SIZE as i32 - scale.x,
+            neighbor.y * scale.y,
+            neighbor.z * scale.z,
+        ),
+        voxel::Side::Front => (neighbor.x * scale.x, neighbor.y * scale.y, 0),
+        voxel::Side::Back => (
+            neighbor.x * scale.x,
+            neighbor.y * scale.y,
+            Chunk::Z_AXIS_SIZE as i32 - scale.z,
+        ),
+        _ => unreachable!(),
+    };
+
+    block_air_light(neighbor_kind, neighbor_light, x0, y0, z0, scale)
+}
+
+fn block_air_light(
+    kind: &ChunkStorage<Kind>,
+    light: &ChunkStorage<Light>,
+    x0: i32,
+    y0: i32,
+    z0: i32,
+    scale: LodScale,
+) -> u8 {
+    let mut max = 0;
+
+    for dy in 0..scale.y {
+        for dz in 0..scale.z {
+            for dx in 0..scale.x {
+                let voxel = ChunkVoxel::new((x0 + dx) as u8, (y0 + dy) as u8, (z0 + dz) as u8);
+
+                if kind.get(voxel).is_none() {
+                    max = max.max(light.get(voxel).get_greater_intensity());
+                }
+            }
+        }
+    }
+
+    max
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -425,6 +532,8 @@ mod tests {
         let vertices = generate_coarse_vertices(
             Chunk::new(0, 0),
             &kind,
+            &light,
+            &[None; chunk::SIDE_COUNT],
             &[None; chunk::SIDE_COUNT],
             |_| Some(&kind),
             |_| Some(&light),
@@ -449,7 +558,9 @@ mod tests {
         let vertices = generate_coarse_vertices(
             Chunk::new(0, 0),
             &kind,
+            &light,
             &neighborhood,
+            &[None; chunk::SIDE_COUNT],
             |_| Some(&kind),
             |_| Some(&light),
             1,
@@ -474,7 +585,9 @@ mod tests {
         let vertices = generate_coarse_vertices(
             Chunk::new(0, 0),
             &kind,
+            &light,
             &neighborhood,
+            &[None; chunk::SIDE_COUNT],
             |_| Some(&kind),
             |_| Some(&light),
             1,
@@ -514,6 +627,8 @@ mod tests {
             generate_coarse_vertices(
                 Chunk::new(0, 0),
                 kind,
+                light,
+                &[None; chunk::SIDE_COUNT],
                 &[None; chunk::SIDE_COUNT],
                 |_| Some(kind),
                 |_| Some(light),
@@ -555,6 +670,8 @@ mod tests {
         let vertices = generate_coarse_vertices(
             Chunk::new(0, 0),
             &kind,
+            &light,
+            &[None; chunk::SIDE_COUNT],
             &[None; chunk::SIDE_COUNT],
             |_| Some(&kind),
             |_| Some(&light),

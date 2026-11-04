@@ -2,7 +2,7 @@ use projekto_core::{chunk::ChunkStorage, coords::Chunk, voxel};
 use serde::{Deserialize, Serialize};
 
 /// Bumped whenever the generated mesh representation changes, so cached meshes are remeshed.
-pub const CHUNK_MESH_VERSION: u8 = 5;
+pub const CHUNK_MESH_VERSION: u8 = 6;
 
 /// Persisted chunk data.
 ///
