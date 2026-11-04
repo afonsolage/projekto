@@ -558,9 +558,9 @@ mod save_tests {
             radius: 32,
         };
 
-        assert!(needs_seam_remesh(Chunk::new(8, 0), Some(&landscape)));
+        assert!(needs_seam_remesh(Chunk::new(16, 0), Some(&landscape)));
         assert!(!needs_seam_remesh(Chunk::new(0, 0), Some(&landscape)));
-        assert!(!needs_seam_remesh(Chunk::new(8, 0), None));
+        assert!(!needs_seam_remesh(Chunk::new(16, 0), None));
 
         let small = Landscape {
             center: bevy::math::IVec2::ZERO,

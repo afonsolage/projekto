@@ -56,12 +56,26 @@ pub fn generate_coarse_vertices<'a>(
     let ny = Chunk::Y_AXIS_SIZE as i32 / scale.y;
     let nz = Chunk::Z_AXIS_SIZE as i32 / scale.z;
 
+    let mut top_solid = [[-1i16; Chunk::Z_AXIS_SIZE]; Chunk::X_AXIS_SIZE];
+    for (x, column) in top_solid.iter_mut().enumerate() {
+        for (z, height) in column.iter_mut().enumerate() {
+            for y in (0..Chunk::Y_AXIS_SIZE).rev() {
+                let voxel = ChunkVoxel::new(x as u8, y as u8, z as u8);
+                if !kind.get(voxel).is_none() {
+                    *height = y as i16;
+                    break;
+                }
+            }
+        }
+    }
+
     let mut cells = vec![None; (nx * ny * nz) as usize];
     let mut counts = Vec::new();
     for cy in 0..ny {
         for cz in 0..nz {
             for cx in 0..nx {
-                let cell = sample_cell(kind, IVec3::new(cx, cy, cz), scale, &mut counts);
+                let cell =
+                    sample_cell(kind, IVec3::new(cx, cy, cz), scale, &top_solid, &mut counts);
                 cells[cell_index(cx, cy, cz, nx, nz)] = cell;
             }
         }
@@ -139,6 +153,8 @@ pub fn generate_coarse_vertices<'a>(
                         get_light,
                     );
                     let light_values = light::soft_vertex_light(&neighbors, side);
+                    let ambient = neighbors.iter().flatten().copied().max().unwrap_or(0) as f32;
+                    let floor = ambient * 0.5;
 
                     for i in 0..4 {
                         vertices.push(voxel::Vertex {
@@ -146,7 +162,7 @@ pub fn generate_coarse_vertices<'a>(
                             normal,
                             uv: tile_uv[i],
                             tile_coord_start,
-                            light: Vec3::splat(light_values[i] * LIGHT_FRACTION),
+                            light: Vec3::splat(light_values[i].max(floor) * LIGHT_FRACTION),
                         });
                     }
                 }
@@ -165,6 +181,7 @@ fn sample_cell(
     kind: &ChunkStorage<Kind>,
     cell: IVec3,
     scale: LodScale,
+    top_solid: &[[i16; Chunk::Z_AXIS_SIZE]; Chunk::X_AXIS_SIZE],
     counts: &mut Vec<(Kind, u32)>,
 ) -> Option<CoarseCell> {
     let base = cell * IVec3::new(scale.x, scale.y, scale.z);
@@ -180,12 +197,17 @@ fn sample_cell(
                     (base.z + dz) as u8,
                 );
                 let kind = kind.get(voxel);
+                let y = base.y + dy;
 
                 if kind.is_none() {
-                    return None;
+                    // Air with solid above it is a cave or overhang: keep it open. Air that is
+                    // open to the sky is part of a surface cell and gets filled below.
+                    if top_solid[voxel.x as usize][voxel.z as usize] > y as i16 {
+                        return None;
+                    }
+                    continue;
                 }
 
-                let y = base.y + dy;
                 if top.is_none_or(|(top_y, _, _)| y > top_y) {
                     top = Some((y, kind, voxel));
                 }
@@ -299,6 +321,24 @@ mod tests {
         LodScale::for_lod(1)
     }
 
+    fn top_solid(kind: &ChunkStorage<Kind>) -> [[i16; Chunk::Z_AXIS_SIZE]; Chunk::X_AXIS_SIZE] {
+        let mut top = [[-1i16; Chunk::Z_AXIS_SIZE]; Chunk::X_AXIS_SIZE];
+        for (x, column) in top.iter_mut().enumerate() {
+            for (z, height) in column.iter_mut().enumerate() {
+                for y in (0..Chunk::Y_AXIS_SIZE).rev() {
+                    if !kind
+                        .get(ChunkVoxel::new(x as u8, y as u8, z as u8))
+                        .is_none()
+                    {
+                        *height = y as i16;
+                        break;
+                    }
+                }
+            }
+        }
+        top
+    }
+
     fn block(kind: &mut ChunkStorage<Kind>, y0: u8, y1: u8) {
         for y in y0..=y1 {
             for z in 0..2 {
@@ -318,7 +358,14 @@ mod tests {
         assert!(
             {
                 let mut counts = Vec::new();
-                sample_cell(&kind, IVec3::new(0, 0, 0), scale(), &mut counts).is_none()
+                sample_cell(
+                    &kind,
+                    IVec3::new(0, 0, 0),
+                    scale(),
+                    &top_solid(&kind),
+                    &mut counts,
+                )
+                .is_none()
             },
             "any air in a coarse cell must keep a cave visible"
         );
@@ -331,11 +378,25 @@ mod tests {
 
         assert!({
             let mut counts = Vec::new();
-            sample_cell(&kind, IVec3::new(0, 2, 0), scale(), &mut counts).is_some()
+            sample_cell(
+                &kind,
+                IVec3::new(0, 2, 0),
+                scale(),
+                &top_solid(&kind),
+                &mut counts,
+            )
+            .is_some()
         });
         assert!({
             let mut counts = Vec::new();
-            sample_cell(&kind, IVec3::new(0, 1, 0), scale(), &mut counts).is_none()
+            sample_cell(
+                &kind,
+                IVec3::new(0, 1, 0),
+                scale(),
+                &top_solid(&kind),
+                &mut counts,
+            )
+            .is_none()
         });
     }
 
@@ -350,7 +411,14 @@ mod tests {
 
         assert!({
             let mut counts = Vec::new();
-            sample_cell(&kind, IVec3::new(0, 2, 0), scale(), &mut counts).is_some()
+            sample_cell(
+                &kind,
+                IVec3::new(0, 2, 0),
+                scale(),
+                &top_solid(&kind),
+                &mut counts,
+            )
+            .is_some()
         });
 
         let light = ChunkStorage::<Light>::default();

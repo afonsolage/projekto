@@ -31,7 +31,7 @@ impl Plugin for MeshingPlugin {
 }
 
 /// Chunks inside this square keep full-resolution meshes; chunks outside use a coarser LOD.
-pub const LOD_FULL_RADIUS: i32 = 8;
+pub const LOD_FULL_RADIUS: i32 = 16;
 
 pub(crate) fn desired_lod(chunk: Chunk, center: bevy::math::IVec2) -> u8 {
     let dx = (chunk.x - center.x).abs();
@@ -272,7 +272,7 @@ mod tests {
             })
             .add_plugins(MeshingPlugin);
 
-        let chunk = Chunk::new(9, 0);
+        let chunk = Chunk::new(17, 0);
         let entity = app
             .world_mut()
             .spawn((
@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(app.world().get::<ChunkLod>(entity).unwrap().0, 1);
         assert!(app.world().get::<CachedMesh>(entity).is_none());
 
-        app.world_mut().resource_mut::<super::Landscape>().center = bevy::math::IVec2::new(9, 0);
+        app.world_mut().resource_mut::<super::Landscape>().center = bevy::math::IVec2::new(17, 0);
         app.update();
 
         assert_eq!(app.world().get::<ChunkLod>(entity).unwrap().0, 0);
@@ -309,9 +309,9 @@ mod tests {
 
         assert_eq!(desired_lod(Chunk::new(8, 8), center), 0);
         assert_eq!(desired_lod(Chunk::new(0, 0), center), 0);
-        assert_eq!(desired_lod(Chunk::new(16, 16), center), 0);
-        assert_eq!(desired_lod(Chunk::new(17, 8), center), 1);
-        assert_eq!(desired_lod(Chunk::new(8, 17), center), 1);
+        assert_eq!(desired_lod(Chunk::new(24, 8), center), 0);
+        assert_eq!(desired_lod(Chunk::new(25, 8), center), 1);
+        assert_eq!(desired_lod(Chunk::new(8, 25), center), 1);
     }
 
     fn app_with_chunk() -> (App, Entity, Chunk) {

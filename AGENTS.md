@@ -97,6 +97,13 @@ the result back, not by re-running them.
   /repos/{owner}/{repo}/pulls/{number}/reviews/{id}` only removes *pending* reviews. A duplicate
   can only be minimized (`minimizeComment`), not removed, so prevention is the only reliable fix.
 
+## Visual validation with `just cia`
+
+For any rendering, meshing, lighting or client-visible change, run `just cia` and inspect
+`debug_reports/ai/latest.png` before calling the change done. The saved screenshot is the primary
+visual check; logs and passing tests are not enough on their own. Move the camera through loaded
+and newly loaded chunks when the change affects streaming or LOD.
+
 ## CI checks before review
 
 This repository runs GitHub Actions on every PR, on a pinned nightly toolchain (see
