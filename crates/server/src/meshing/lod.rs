@@ -7,12 +7,13 @@
 
 use bevy::math::{IVec3, Vec2, Vec3};
 use projekto_core::{
-    chunk::{self, ChunkSide, ChunkStorage},
+    chunk::{self, ChunkSide, ChunkStorage, GetChunkStorage},
     coords::{Chunk, ChunkVoxel},
     voxel::{self, Kind, Light},
 };
 
 use super::{VERTICES, VERTICES_INDICES};
+use crate::light;
 
 const LIGHT_FRACTION: f32 = (Light::MAX_NATURAL_INTENSITY as f32).recip();
 
@@ -38,14 +39,16 @@ impl LodScale {
 struct CoarseCell {
     top_kind: Kind,
     side_kind: Kind,
+    representative: ChunkVoxel,
 }
 
 /// Builds a coarse mesh for a chunk at `lod > 0`.
-pub fn generate_coarse_vertices(
+pub fn generate_coarse_vertices<'a>(
+    chunk: Chunk,
     kind: &ChunkStorage<Kind>,
-    light: &ChunkStorage<Light>,
     neighborhood: &[Option<&ChunkStorage<Kind>>; chunk::SIDE_COUNT],
-    neighborhood_light: &[Option<&ChunkStorage<Light>>; chunk::SIDE_COUNT],
+    get_kind: impl GetChunkStorage<'a, Kind>,
+    get_light: impl GetChunkStorage<'a, Light>,
     lod: u8,
 ) -> Vec<voxel::Vertex> {
     let scale = LodScale::for_lod(lod);
@@ -129,19 +132,13 @@ pub fn generate_coarse_vertices(
                     ];
 
                     let normal = side.normal();
-                    let intensity = face_light(
-                        kind,
-                        light,
-                        IVec3::new(cx, cy, cz),
-                        side,
-                        scale,
-                        nx,
-                        ny,
-                        nz,
-                        neighborhood,
-                        neighborhood_light,
+                    let neighbors = light::gather_neighborhood_light(
+                        chunk,
+                        cell.representative,
+                        get_kind,
+                        get_light,
                     );
-                    let face_light = Vec3::splat(intensity as f32 * LIGHT_FRACTION);
+                    let light_values = light::soft_vertex_light(&neighbors, side);
 
                     for i in 0..4 {
                         vertices.push(voxel::Vertex {
@@ -149,7 +146,7 @@ pub fn generate_coarse_vertices(
                             normal,
                             uv: tile_uv[i],
                             tile_coord_start,
-                            light: face_light,
+                            light: Vec3::splat(light_values[i] * LIGHT_FRACTION),
                         });
                     }
                 }
@@ -171,7 +168,7 @@ fn sample_cell(
     counts: &mut Vec<(Kind, u32)>,
 ) -> Option<CoarseCell> {
     let base = cell * IVec3::new(scale.x, scale.y, scale.z);
-    let mut top: Option<(i32, Kind)> = None;
+    let mut top: Option<(i32, Kind, ChunkVoxel)> = None;
     counts.clear();
 
     for dy in 0..scale.y {
@@ -189,8 +186,8 @@ fn sample_cell(
                 }
 
                 let y = base.y + dy;
-                if top.is_none_or(|(top_y, _)| y > top_y) {
-                    top = Some((y, kind));
+                if top.is_none_or(|(top_y, _, _)| y > top_y) {
+                    top = Some((y, kind, voxel));
                 }
 
                 if let Some((_, count)) = counts.iter_mut().find(|(entry, _)| *entry == kind) {
@@ -202,7 +199,7 @@ fn sample_cell(
         }
     }
 
-    let (_, top_kind) = top?;
+    let (_, top_kind, representative) = top?;
     let side_kind = counts
         .iter()
         .max_by_key(|(_, count)| *count)
@@ -212,80 +209,8 @@ fn sample_cell(
     Some(CoarseCell {
         top_kind,
         side_kind,
+        representative,
     })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn face_light(
-    kind: &ChunkStorage<Kind>,
-    light: &ChunkStorage<Light>,
-    cell: IVec3,
-    side: voxel::Side,
-    scale: LodScale,
-    nx: i32,
-    ny: i32,
-    nz: i32,
-    neighborhood: &[Option<&ChunkStorage<Kind>>; chunk::SIDE_COUNT],
-    neighborhood_light: &[Option<&ChunkStorage<Light>>; chunk::SIDE_COUNT],
-) -> u8 {
-    let mut neighbor = cell;
-
-    match side {
-        voxel::Side::Right => neighbor.x += 1,
-        voxel::Side::Left => neighbor.x -= 1,
-        voxel::Side::Up => neighbor.y += 1,
-        voxel::Side::Down => neighbor.y -= 1,
-        voxel::Side::Front => neighbor.z += 1,
-        voxel::Side::Back => neighbor.z -= 1,
-    }
-
-    if neighbor.y < 0 {
-        return Light::MAX_NATURAL_INTENSITY;
-    }
-
-    if neighbor.y >= ny {
-        return Light::MAX_NATURAL_INTENSITY;
-    }
-
-    if neighbor.x >= 0 && neighbor.x < nx && neighbor.z >= 0 && neighbor.z < nz {
-        return block_air_light(
-            kind,
-            light,
-            neighbor.x * scale.x,
-            neighbor.y * scale.y,
-            neighbor.z * scale.z,
-            scale,
-        );
-    }
-
-    let Some(chunk_side) = ChunkSide::from_voxel_side(side) else {
-        return Light::MAX_NATURAL_INTENSITY;
-    };
-
-    let (Some(neighbor_kind), Some(neighbor_light)) = (
-        neighborhood[chunk_side as usize],
-        neighborhood_light[chunk_side as usize],
-    ) else {
-        return Light::MAX_NATURAL_INTENSITY;
-    };
-
-    let (x0, y0, z0) = match side {
-        voxel::Side::Right => (0, neighbor.y * scale.y, neighbor.z * scale.z),
-        voxel::Side::Left => (
-            Chunk::X_AXIS_SIZE as i32 - scale.x,
-            neighbor.y * scale.y,
-            neighbor.z * scale.z,
-        ),
-        voxel::Side::Front => (neighbor.x * scale.x, neighbor.y * scale.y, 0),
-        voxel::Side::Back => (
-            neighbor.x * scale.x,
-            neighbor.y * scale.y,
-            Chunk::Z_AXIS_SIZE as i32 - scale.z,
-        ),
-        _ => unreachable!(),
-    };
-
-    block_air_light(neighbor_kind, neighbor_light, x0, y0, z0, scale)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -366,31 +291,6 @@ pub(super) fn block_solid(
     true
 }
 
-fn block_air_light(
-    kind: &ChunkStorage<Kind>,
-    light: &ChunkStorage<Light>,
-    x0: i32,
-    y0: i32,
-    z0: i32,
-    scale: LodScale,
-) -> u8 {
-    let mut max = 0;
-
-    for dy in 0..scale.y {
-        for dz in 0..scale.z {
-            for dx in 0..scale.x {
-                let voxel = ChunkVoxel::new((x0 + dx) as u8, (y0 + dy) as u8, (z0 + dz) as u8);
-
-                if kind.get(voxel).is_none() {
-                    max = max.max(light.get(voxel).get_greater_intensity());
-                }
-            }
-        }
-    }
-
-    max
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,10 +355,11 @@ mod tests {
 
         let light = ChunkStorage::<Light>::default();
         let vertices = generate_coarse_vertices(
+            Chunk::new(0, 0),
             &kind,
-            &light,
             &[None; chunk::SIDE_COUNT],
-            &[None; chunk::SIDE_COUNT],
+            |_| Some(&kind),
+            |_| Some(&light),
             1,
         );
 
@@ -477,8 +378,14 @@ mod tests {
         let light = ChunkStorage::<Light>::default();
         let neighborhood = [None; chunk::SIDE_COUNT];
 
-        let vertices =
-            generate_coarse_vertices(&kind, &light, &neighborhood, &[None; chunk::SIDE_COUNT], 1);
+        let vertices = generate_coarse_vertices(
+            Chunk::new(0, 0),
+            &kind,
+            &neighborhood,
+            |_| Some(&kind),
+            |_| Some(&light),
+            1,
+        );
         assert!(
             vertices
                 .iter()
@@ -496,13 +403,66 @@ mod tests {
         let light = ChunkStorage::<Light>::default();
         let neighborhood = [Some(&neighbor); chunk::SIDE_COUNT];
 
-        let vertices =
-            generate_coarse_vertices(&kind, &light, &neighborhood, &[None; chunk::SIDE_COUNT], 1);
+        let vertices = generate_coarse_vertices(
+            Chunk::new(0, 0),
+            &kind,
+            &neighborhood,
+            |_| Some(&kind),
+            |_| Some(&light),
+            1,
+        );
         assert!(
             !vertices
                 .iter()
                 .any(|vertex| vertex.normal == voxel::Side::Right.normal()),
             "faces against a solid neighbor chunk must be culled"
+        );
+    }
+
+    #[test]
+    fn coarse_light_contains_ambient_occlusion() {
+        let mut open_kind = ChunkStorage::<Kind>::default();
+        block(&mut open_kind, 0, 0);
+        let mut occluded_kind = open_kind.clone();
+        occluded_kind.set(ChunkVoxel::new(1, 1, 0), Kind::id(1));
+
+        let mut open_light = ChunkStorage::<Light>::default();
+        let mut occluded_light = open_light.clone();
+        for y in 1..=2 {
+            for z in 0..2 {
+                for x in 0..2 {
+                    let voxel = ChunkVoxel::new(x, y, z);
+                    if open_kind.get(voxel).is_none() {
+                        open_light.set(voxel, Light::natural(15));
+                    }
+                    if occluded_kind.get(voxel).is_none() {
+                        occluded_light.set(voxel, Light::natural(15));
+                    }
+                }
+            }
+        }
+
+        let min_up = |kind: &ChunkStorage<Kind>, light: &ChunkStorage<Light>| {
+            generate_coarse_vertices(
+                Chunk::new(0, 0),
+                kind,
+                &[None; chunk::SIDE_COUNT],
+                |_| Some(kind),
+                |_| Some(light),
+                1,
+            )
+            .iter()
+            .filter(|vertex| vertex.normal == voxel::Side::Up.normal())
+            .map(|vertex| vertex.light.x)
+            .fold(f32::MAX, f32::min)
+        };
+
+        let open = min_up(&open_kind, &open_light);
+        let occluded = min_up(&occluded_kind, &occluded_light);
+
+        assert!(
+            occluded < open,
+            "an opaque neighbour must darken a coarse face corner ({occluded} < {open})"
         );
     }
 
@@ -525,10 +485,11 @@ mod tests {
         }
 
         let vertices = generate_coarse_vertices(
+            Chunk::new(0, 0),
             &kind,
-            &light,
             &[None; chunk::SIDE_COUNT],
-            &[None; chunk::SIDE_COUNT],
+            |_| Some(&kind),
+            |_| Some(&light),
             1,
         );
 

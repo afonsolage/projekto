@@ -166,7 +166,7 @@ fn generate_vertices(
             continue;
         }
 
-        let Some((kind, light)) = q_chunks.get_chunk(chunk) else {
+        let Some((kind, _light)) = q_chunks.get_chunk(chunk) else {
             continue;
         };
         let Some(&entity) = chunk_map.0.get(&chunk) else {
@@ -190,20 +190,16 @@ fn generate_vertices(
                 .get_chunk(chunk.neighbor(side.dir()))
                 .map(|(kind, _)| &kind.0)
         });
-        let neighborhood_light = chunk::SIDES.map(|side| {
-            q_chunks
-                .get_chunk(chunk.neighbor(side.dir()))
-                .map(|(_, light)| &light.0)
-        });
         let neighborhood_lod =
             chunk::SIDES.map(|side| Some(desired_lod(chunk.neighbor(side.dir()), center)));
 
         let mut vertex = if lod > 0 {
             meshing::lod::generate_coarse_vertices(
+                chunk,
                 kind,
-                &light.0,
                 &neighborhood,
-                &neighborhood_light,
+                |chunk| q_chunks.get_chunk(chunk).map(|(kind, _)| &kind.0),
+                |chunk| q_chunks.get_chunk(chunk).map(|(_, light)| &light.0),
                 lod,
             )
         } else {
