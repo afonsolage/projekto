@@ -34,7 +34,7 @@ use std::io::SeekFrom;
 use thiserror::Error;
 
 mod asset;
-pub use asset::ChunkAsset;
+pub use asset::{CHUNK_MESH_VERSION, ChunkAsset};
 
 mod server;
 pub use server::{ArchiveServer, ArchiveTask, MaintenanceResult};
@@ -50,7 +50,8 @@ pub const MAGIC_SIZE: usize = 8;
 /// Magic prefix written at the start of every asset; its trailing bytes encode the format version.
 ///
 /// Version 2 removed the derived occlusion and soft-light layers from `ChunkAsset`.
-pub const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x02];
+/// Version 3 added the mesh LOD and mesher version to `ChunkAsset`.
+pub const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x03];
 
 /// Errors which can happens while using the archive crate.
 /// Check variants for description.

@@ -18,6 +18,7 @@ root = "assets/shaders"
 bevy_pbr = { path = ".bevy/crates/bevy_pbr" }
 
 [features]
+default = ["debug-tools"]
 debug-tools = ["dep:projekto_debug"]
 
 [dependencies]

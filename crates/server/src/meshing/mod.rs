@@ -7,6 +7,7 @@ use projekto_core::{
 };
 
 pub mod greedy;
+pub mod lod;
 
 // v3               v2
 // +-----------+
@@ -111,6 +112,22 @@ pub fn faces_occlusion(
     faces_occlusion: &mut ChunkStorage<voxel::FacesOcclusion>,
     neighboorhood: &[Option<&ChunkStorage<voxel::Kind>>; chunk::SIDE_COUNT],
 ) {
+    faces_occlusion_with_lod(
+        kind,
+        faces_occlusion,
+        neighboorhood,
+        &[None; chunk::SIDE_COUNT],
+    );
+}
+
+/// Like [`faces_occlusion`], but culls faces against a coarse neighbour using the same
+/// conservative 3D cell rule as the coarse mesher. This keeps the full/coarse seam closed.
+pub fn faces_occlusion_with_lod(
+    kind: &ChunkStorage<voxel::Kind>,
+    faces_occlusion: &mut ChunkStorage<voxel::FacesOcclusion>,
+    neighboorhood: &[Option<&ChunkStorage<voxel::Kind>>; chunk::SIDE_COUNT],
+    neighbor_lods: &[Option<u8>; chunk::SIDE_COUNT],
+) {
     const DIM: IVec3 = IVec3::new(
         Chunk::X_AXIS_SIZE as i32,
         Chunk::Y_AXIS_SIZE as i32,
@@ -134,22 +151,40 @@ pub fn faces_occlusion(
                         .fold(FacesOcclusion::default(), |mut faces, &side| {
                             let neighbor = IVec3::from(voxel) + side.dir();
 
-                            let neighbor_kind =
-                                if let Some(neighbor) = ChunkVoxel::try_from(neighbor) {
-                                    kind.get(neighbor)
-                                } else if let Some(chunk_side) = ChunkSide::from_voxel_side(side)
-                                    && let Some(neighbor_kind) = neighboorhood[chunk_side as usize]
-                                {
-                                    let neighbor_chunk_voxel = math::euclid_rem(neighbor, DIM);
-                                    let neighbor_chunk_voxel =
-                                        ChunkVoxel::try_from(neighbor_chunk_voxel)
-                                            .expect("Should be a valid voxel");
-                                    neighbor_kind.get(neighbor_chunk_voxel)
-                                } else {
-                                    return faces;
-                                };
+                            let occluded = if let Some(neighbor) = ChunkVoxel::try_from(neighbor) {
+                                !kind.get(neighbor).is_none()
+                            } else if let Some(chunk_side) = ChunkSide::from_voxel_side(side)
+                                && let Some(neighbor_kind) = neighboorhood[chunk_side as usize]
+                            {
+                                let neighbor_chunk_voxel = math::euclid_rem(neighbor, DIM);
+                                let neighbor_chunk_voxel =
+                                    ChunkVoxel::try_from(neighbor_chunk_voxel)
+                                        .expect("Should be a valid voxel");
 
-                            faces.set(side, !neighbor_kind.is_none());
+                                match neighbor_lods[chunk_side as usize] {
+                                    Some(lod) if lod > 0 => {
+                                        let scale = lod::LodScale::for_lod(lod);
+                                        let base = IVec3::new(
+                                            (neighbor_chunk_voxel.x as i32 / scale.x) * scale.x,
+                                            (neighbor_chunk_voxel.y as i32 / scale.y) * scale.y,
+                                            (neighbor_chunk_voxel.z as i32 / scale.z) * scale.z,
+                                        );
+
+                                        lod::block_solid(
+                                            neighbor_kind,
+                                            base.x,
+                                            base.y,
+                                            base.z,
+                                            scale,
+                                        )
+                                    }
+                                    _ => !neighbor_kind.get(neighbor_chunk_voxel).is_none(),
+                                }
+                            } else {
+                                return faces;
+                            };
+
+                            faces.set(side, occluded);
                             faces
                         });
 
@@ -198,6 +233,59 @@ pub fn generate_faces(
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn full_face_is_visible_against_partially_air_coarse_neighbor() {
+        let mut kind = ChunkStorage::<voxel::Kind>::default();
+        kind.set(ChunkVoxel::new(15, 10, 0), voxel::Kind::id(1));
+
+        let mut neighbor = ChunkStorage::<voxel::Kind>::default();
+        for x in 0..=1 {
+            for z in 0..=1 {
+                neighbor.set(ChunkVoxel::new(x, 10, z), voxel::Kind::id(1));
+            }
+        }
+        neighbor.set(ChunkVoxel::new(1, 10, 1), voxel::Kind::none());
+
+        let mut occlusion = ChunkStorage::<voxel::FacesOcclusion>::default();
+        let neighborhood = [Some(&neighbor), None, None, None];
+
+        faces_occlusion_with_lod(
+            &kind,
+            &mut occlusion,
+            &neighborhood,
+            &[Some(1), None, None, None],
+        );
+
+        assert!(
+            !occlusion
+                .get(ChunkVoxel::new(15, 10, 0))
+                .is_occluded(voxel::Side::Right),
+            "a partially air coarse neighbour must keep the full-detail seam face visible"
+        );
+
+        for x in 0..=1 {
+            for z in 0..=1 {
+                neighbor.set(ChunkVoxel::new(x, 10, z), voxel::Kind::id(1));
+            }
+        }
+
+        let neighborhood = [Some(&neighbor), None, None, None];
+
+        faces_occlusion_with_lod(
+            &kind,
+            &mut occlusion,
+            &neighborhood,
+            &[Some(1), None, None, None],
+        );
+
+        assert!(
+            occlusion
+                .get(ChunkVoxel::new(15, 10, 0))
+                .is_occluded(voxel::Side::Right),
+            "a fully solid coarse neighbour must cull the seam face"
+        );
+    }
 
     #[test]
     fn faces_occlusion_empty_chunk() {
