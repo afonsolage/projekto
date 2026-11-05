@@ -57,6 +57,14 @@ path = "examples/check_single_chunk.rs"
 name = "sample_chunks"
 path = "examples/sample_chunks.rs"
 
+[[example]]
+name = "terrain_map"
+path = "examples/terrain_map.rs"
+
 [[bench]]
 name = "meshing"
+harness = false
+
+[[bench]]
+name = "genesis"
 harness = false

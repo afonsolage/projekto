@@ -24,6 +24,10 @@ terrain-walk *args:
 terrain-stress *args:
     PROJEKTO_TERRAIN_TEST_SPEED=20 PROJEKTO_TERRAIN_TEST_WALK_CHUNKS=750 cargo test -p projekto_server --test terrain_walk -- --ignored --nocapture {{args}}
 
+# Render a top-down height map, surface map and vertical slice of the generated terrain.
+terrain-map *args:
+    cargo run -q -p projekto_server --example terrain_map -- {{args}}
+
 # Check the release configuration without debug tooling.
 check-release:
     ASSETS_PATH="$(pwd)/assets" cargo check --release -p projekto --bin client
