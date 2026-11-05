@@ -112,6 +112,8 @@ workspace = true
 
 [profile.dev.package."*"]
 opt-level = 3
+# Debug info of optimized dependencies is of little use and makes up much of `target/`.
+debug = false
 
 [[example]]
 name = "orbit_cam"

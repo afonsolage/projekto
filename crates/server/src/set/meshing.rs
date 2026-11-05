@@ -11,6 +11,7 @@ use crate::{
     cache::sort_nearest_first,
     light, meshing,
 };
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on};
 use projekto_core::{
@@ -44,25 +45,34 @@ pub const MESH_MAX_IN_FLIGHT: usize = 32;
 /// Maximum number of worker tasks admitted per update.
 pub const MESH_MAX_SPAWNS: usize = 16;
 
+/// In-flight mesh generation tasks, keyed by the chunk each one meshes.
+///
+/// Meshing runs on [`AsyncComputeTaskPool`], so this resource is the only link between a worker
+/// and the ECS: [`generate_vertices`] polls it, applies finished results and drops stale ones.
+/// Tasks are bounded so a large batch of dirty chunks cannot saturate the pool.
 #[derive(Resource, Default)]
 pub struct MeshTasks {
     in_flight: HashMap<Chunk, Task<FullMeshOutput>>,
 }
 
 impl MeshTasks {
+    /// Returns `true` while a mesh for `chunk` is being generated.
     pub fn is_pending(&self, chunk: Chunk) -> bool {
         self.in_flight.contains_key(&chunk)
     }
 
+    /// Iterates over the chunks with a mesh in flight.
     pub fn pending(&self) -> impl Iterator<Item = Chunk> + '_ {
         self.in_flight.keys().copied()
     }
 
+    /// Cancels the task for `chunk`, returning `true` if there was one.
     pub fn cancel(&mut self, chunk: Chunk) -> bool {
         self.in_flight.remove(&chunk).is_some()
     }
 }
 
+/// Mesh generated on a worker thread, waiting to be applied by [`generate_vertices`].
 struct FullMeshOutput {
     lod: u8,
     vertex: Vec<voxel::Vertex>,
@@ -82,6 +92,13 @@ pub const LOD_HYSTERESIS: i32 = 2;
 /// Maximum number of LOD transitions applied per update, to avoid a visibility dip.
 pub const LOD_UPDATES_PER_FRAME: usize = 8;
 
+/// Returns the LOD a chunk should use when it has no [`ChunkLod`] yet, or when nothing constrains
+/// it: full detail (LOD 0) inside the [`LOD_FULL_RADIUS`] square around `center`, coarse (LOD 1)
+/// outside it.
+///
+/// The coarse mesher supports any LOD level ([`meshing::lod::LodScale`] grows the horizontal cell
+/// with the level), but streaming only distinguishes near from far, so this returns either 0 or
+/// 1. More rings would need a per-ring radius table here and in [`next_lod`].
 pub(crate) fn desired_lod(chunk: Chunk, center: bevy::math::IVec2) -> u8 {
     let dx = (chunk.x - center.x).abs();
     let dz = (chunk.z - center.y).abs();
@@ -93,6 +110,13 @@ pub(crate) fn desired_lod(chunk: Chunk, center: bevy::math::IVec2) -> u8 {
     }
 }
 
+/// Returns the LOD `chunk` should transition to, given its `current` LOD.
+///
+/// Same two-level split as [`desired_lod`], plus hysteresis: a chunk already at LOD 0 keeps full
+/// detail until it is [`LOD_HYSTERESIS`] chunks past the full radius. Without that band a chunk
+/// oscillating around the boundary would be remeshed on every move, and a chunk about to leave
+/// the landscape would be remeshed to coarse right before being unloaded. Demotion to LOD 1 is
+/// deliberately not sticky: a coarse chunk inside the full radius is promoted immediately.
 pub fn next_lod(current: u8, chunk: Chunk, center: bevy::math::IVec2) -> u8 {
     let margin = if current == 0 { LOD_HYSTERESIS } else { 0 };
     let dx = (chunk.x - center.x).abs();
@@ -105,6 +129,12 @@ pub fn next_lod(current: u8, chunk: Chunk, center: bevy::math::IVec2) -> u8 {
     }
 }
 
+/// Applies LOD transitions for chunks whose [`ChunkLod`] no longer matches [`next_lod`].
+///
+/// Every transition changes the mesh at the seam with the neighbors, so the chunk and its
+/// horizontal neighbors are marked dirty and their derived caches dropped. At most
+/// [`LOD_UPDATES_PER_FRAME`] transitions are applied per update: demoting many chunks at once
+/// leaves them briefly empty, which shows up as a visibility dip while walking.
 fn update_chunk_lods(
     mut commands: Commands,
     landscape: Option<Res<Landscape>>,
@@ -131,34 +161,33 @@ fn update_chunk_lods(
         }
         changed += 1;
 
-        match lod {
-            Some(_) => {
-                commands.entity(entity).insert(ChunkLod(desired));
-                commands.entity(entity).remove::<CachedMesh>();
+        commands.entity(entity).insert(ChunkLod(desired));
 
-                for affected in adjacent_chunks(*chunk) {
-                    dirty.0.insert(affected);
-                    caches.invalidate(affected);
-                }
-            }
-            None => {
-                commands.entity(entity).insert(ChunkLod(desired));
+        // A chunk without a LOD component is adopting a coarse mesh it never had, which only
+        // affects its neighbors when it lands on LOD 1. Every other transition changes the seam.
+        let seams_changed = lod.is_some() || desired > 0;
 
-                if desired != 0 {
-                    if cached.is_some() {
-                        commands.entity(entity).remove::<CachedMesh>();
-                    }
+        if lod.is_some() || cached.is_some() {
+            commands.entity(entity).remove::<CachedMesh>();
+        }
 
-                    for affected in adjacent_chunks(*chunk) {
-                        dirty.0.insert(affected);
-                        caches.invalidate(affected);
-                    }
-                }
+        if seams_changed {
+            // Mark neighbor chunks as dirty, since they may need to be updated.
+            for affected in adjacent_chunks(*chunk) {
+                dirty.0.insert(affected);
+                caches.invalidate(affected);
             }
         }
     }
 }
 
+/// Marks chunks dirty when their [`ChunkKind`] or [`ChunkLight`] changed.
+///
+/// Kind changes dirty the nine surrounding chunks and drop both derived caches; a chunk's
+/// geometry depends on its neighbors' voxels. Light changes dirty the same nine chunks but keep
+/// the occlusion cache, which only depends on kinds. Chunks that arrive with a [`CachedMesh`] are
+/// skipped: their neighbors were archived with the same world, so the saved seams are already
+/// correct.
 fn mark_dirty_chunks(
     q_kind_changed: Query<(&ChunkLocal, Ref<ChunkKind>, Option<&CachedMesh>), Changed<ChunkKind>>,
     q_light_changed: Query<
@@ -209,21 +238,60 @@ fn neighbors_ready(chunk: Chunk, chunk_map: &ChunkMap, landscape: Option<&Landsc
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Read-only view of the chunk data meshing needs.
+///
+/// Grouping these into one [`SystemParam`] keeps [`generate_vertices`] within a readable argument
+/// count and gives the lookups a place to live: a chunk's [`ChunkLod`] falls back to
+/// [`desired_lod`] when the component is not there yet, and a missing [`Landscape`] treats every
+/// chunk as full detail.
+#[derive(SystemParam)]
+struct ChunkView<'w, 's> {
+    chunk_map: Res<'w, ChunkMap>,
+    landscape: Option<Res<'w, Landscape>>,
+    q_chunks: ChunkQuery<'w, 's, (&'static ChunkKind, &'static ChunkLight)>,
+    q_vertex: Query<'w, 's, (&'static mut ChunkVertex, Option<&'static mut ChunkLod>)>,
+}
+
+impl ChunkView<'_, '_> {
+    /// Chunk closest-first ordering key: the landscape center, or the origin without one.
+    fn center(&self) -> bevy::math::IVec2 {
+        self.landscape
+            .as_ref()
+            .map(|landscape| landscape.center)
+            .unwrap_or_default()
+    }
+
+    /// Returns the LOD attached to `entity`, or the level it should adopt if it has none.
+    fn lod_of(&self, chunk: Chunk, entity: Entity) -> u8 {
+        self.q_vertex
+            .get(entity)
+            .ok()
+            .and_then(|(_, lod)| lod.map(|lod| lod.0))
+            .unwrap_or_else(|| {
+                self.landscape
+                    .as_ref()
+                    .map(|landscape| desired_lod(chunk, landscape.center))
+                    .unwrap_or(0)
+            })
+    }
+}
+
+/// Applies finished meshes and queues new ones on the async compute pool.
+///
+/// The system does not mesh anything itself. Each update it imports completed
+/// [`MeshTasks`] results, discarding those whose chunk was re-dirtied or whose LOD no longer
+/// matches, then admits up to [`MESH_MAX_SPAWNS`] new tasks while fewer than
+/// [`MESH_MAX_IN_FLIGHT`] are running. Candidates are sorted nearest-first and alternated between
+/// full and coarse so the player's immediate surroundings are not starved by either kind.
+/// Chunks whose halo is not loaded stay dirty until their neighbors arrive.
 fn generate_vertices(
     mut dirty: ResMut<DirtyChunks>,
     mut caches: ResMut<DerivedCaches>,
-    chunk_map: Res<ChunkMap>,
-    landscape: Option<Res<Landscape>>,
-    q_chunks: ChunkQuery<(&ChunkKind, &ChunkLight)>,
-    mut q_vertex: Query<(&mut ChunkVertex, Option<&mut ChunkLod>)>,
+    mut view: ChunkView,
     mut tasks: ResMut<MeshTasks>,
     mut stats: ResMut<TerrainStats>,
 ) {
-    let center = landscape
-        .as_ref()
-        .map(|landscape| landscape.center)
-        .unwrap_or_default();
+    let center = view.center();
 
     let completed = tasks
         .in_flight
@@ -239,7 +307,7 @@ fn generate_vertices(
             .expect("completed task must be in flight");
         let output = block_on(task);
 
-        let Some(&entity) = chunk_map.0.get(&chunk) else {
+        let Some(&entity) = view.chunk_map.0.get(&chunk) else {
             continue;
         };
 
@@ -247,7 +315,8 @@ fn generate_vertices(
             continue;
         }
 
-        let current_lod = q_vertex
+        let current_lod = view
+            .q_vertex
             .get(entity)
             .ok()
             .and_then(|(_, lod)| lod.map(|lod| lod.0));
@@ -257,7 +326,7 @@ fn generate_vertices(
             continue;
         }
 
-        let (mut vertex, chunk_lod) = q_vertex.get_mut(entity).expect("Entity must exists");
+        let (mut vertex, chunk_lod) = view.q_vertex.get_mut(entity).expect("Entity must exists");
         vertex.0 = output.vertex;
         if let Some(mut chunk_lod) = chunk_lod {
             chunk_lod.0 = output.lod;
@@ -282,9 +351,9 @@ fn generate_vertices(
     let mut deferred = 0;
 
     for chunk in chunks {
-        if !chunk_map.0.contains_key(&chunk) {
+        let Some(&entity) = view.chunk_map.0.get(&chunk) else {
             continue;
-        }
+        };
 
         if tasks.in_flight.contains_key(&chunk) {
             dirty.0.insert(chunk);
@@ -293,29 +362,13 @@ fn generate_vertices(
 
         // Meshing before the chunk's halo is loaded produces geometry that has to be rebuilt
         // when the neighbors arrive. Waiting for the halo removes those redundant passes.
-        if !neighbors_ready(chunk, &chunk_map, landscape.as_deref()) {
+        if !neighbors_ready(chunk, &view.chunk_map, view.landscape.as_deref()) {
             dirty.0.insert(chunk);
             deferred += 1;
             continue;
         }
 
-        let lod = chunk_map
-            .0
-            .get(&chunk)
-            .and_then(|entity| {
-                q_vertex
-                    .get(*entity)
-                    .ok()
-                    .and_then(|(_, lod)| lod.map(|lod| lod.0))
-            })
-            .unwrap_or_else(|| {
-                landscape
-                    .as_ref()
-                    .map(|landscape| desired_lod(chunk, landscape.center))
-                    .unwrap_or(0)
-            });
-
-        if lod == 0 {
+        if view.lod_of(chunk, entity) == 0 {
             full_candidates.push(chunk);
         } else {
             coarse_candidates.push(chunk);
@@ -338,28 +391,19 @@ fn generate_vertices(
             break;
         };
 
-        let Some((kind, light)) = q_chunks.get_chunk(chunk) else {
+        let Some((kind, light)) = view.q_chunks.get_chunk(chunk) else {
             continue;
         };
-        let Some(&entity) = chunk_map.0.get(&chunk) else {
+        let Some(&entity) = view.chunk_map.0.get(&chunk) else {
             continue;
         };
 
-        let lod = q_vertex
-            .get(entity)
-            .ok()
-            .and_then(|(_, lod)| lod.map(|lod| lod.0))
-            .unwrap_or_else(|| {
-                landscape
-                    .as_ref()
-                    .map(|landscape| desired_lod(chunk, landscape.center))
-                    .unwrap_or(0)
-            });
+        let lod = view.lod_of(chunk, entity);
 
         let neighbors = affected_chunks(chunk)
             .filter(|neighbor| *neighbor != chunk)
             .filter_map(|neighbor| {
-                q_chunks
+                view.q_chunks
                     .get_chunk(neighbor)
                     .map(|(kind, light)| (neighbor, kind.0.clone(), light.0.clone()))
             })
@@ -375,12 +419,11 @@ fn generate_vertices(
             let cached_soft_light = caches.soft_light.get(chunk).cloned();
             let neighbor_lods = chunk::SIDES.map(|side| {
                 let neighbor = chunk.neighbor(side.dir());
-                chunk_map.0.get(&neighbor).and_then(|entity| {
-                    q_vertex
-                        .get(*entity)
-                        .ok()
-                        .and_then(|(_, lod)| lod.map(|lod| lod.0))
-                })
+                let entity = view.chunk_map.0.get(&neighbor)?;
+                view.q_vertex
+                    .get(*entity)
+                    .ok()
+                    .and_then(|(_, lod)| lod.map(|lod| lod.0))
             });
             let kind = kind.0.clone();
             let light = light.0.clone();
