@@ -21,6 +21,14 @@ rustflags = ["-Zshare-generics=n"]
 #[profile.dev]
 #debug = 1
 
+# Build dependencies once for the whole workspace: without this, every `-p`/`--bin`/`--workspace`
+# combination in the justfile resolves different Bevy features and compiles another copy of it.
+[unstable]
+feature-unification = true
+
+[resolver]
+feature-unification = "workspace"
+
 [env]
 RUST_LOG = "error,projekto=debug,projekto_server=trace,projekto_client=trace"
 ASSETS_PATH = { value = "assets", relative = true }

@@ -74,8 +74,15 @@ When an AI finds one, it:
 3. reports what was done in the conversation;
 4. removes the `//@AI, ...` line once the request is fully addressed.
 
+A marker is not always a change request. When it asks a question (`//@AI, why does this skip the
+despawn?`) or challenges the code, answer it in the conversation and remove the marker; leave the
+code as it is unless the answer shows it is wrong. Do not invent a change to "resolve" a question,
+and do not assume the marker is asking for one. When the intent is genuinely unclear, ask the
+author.
+
 Do not remove the marker if the request is ambiguous, cannot be completed or needs a decision
-from the author; explain the blocker and leave the comment in place.
+from the author; explain the blocker and leave the comment in place. For a question, that means
+leaving the marker while you need more information to answer it.
 
 Before finishing a task, search the files touched for `//@AI`. For repository-wide work, run
 `rg -n '//@AI'` and address every marker or report the ones left unresolved. Only the author
