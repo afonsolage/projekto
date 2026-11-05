@@ -100,9 +100,7 @@ impl TerrainGenerator {
 
     pub(crate) fn generate(&self, chunk: Chunk, kind: &mut ChunkStorage<Kind>) {
         let origin: Vec3 = chunk.into();
-        let band = self.config.caves.band;
-        let y_min = (self.config.min_height - band).max(0);
-        let y_max = (self.config.max_height + band + 1).min(Chunk::Y_AXIS_SIZE as i32);
+        let (y_min, y_max) = self.lattice_bounds();
 
         let overhang = self
             .overhang
@@ -167,6 +165,23 @@ impl TerrainGenerator {
         kind.pack();
     }
 
+    /// Vertical range the 3D lattices must cover.
+    ///
+    /// The overhang field moves the surface by up to `overhang_strength`, so the sampling
+    /// margin is the larger of `band` and the strength. Without this, a small `band` clamps the
+    /// field over the top or bottom of the moved surface.
+    fn lattice_bounds(&self) -> (i32, i32) {
+        let margin = self
+            .config
+            .caves
+            .band
+            .max(self.config.caves.overhang_strength.ceil() as i32);
+        let y_min = (self.config.min_height - margin).max(0);
+        let y_max = (self.config.max_height + margin + 1).min(Chunk::Y_AXIS_SIZE as i32);
+
+        (y_min, y_max)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn is_solid(
         &self,
@@ -228,7 +243,8 @@ impl Lattice {
         let z0 = origin.z as i32;
         let nx = Chunk::X_AXIS_SIZE as i32 / cell_xz + 1;
         let nz = Chunk::Z_AXIS_SIZE as i32 / cell_xz + 1;
-        let ny = ((y_max - y0) / cell_y + 1).max(2);
+        // `i32::div_ceil` is still unstable on the pinned toolchain.
+        let ny = ((y_max - y0 + cell_y - 1) / cell_y + 1).max(2);
 
         let mut values = Vec::with_capacity((nx * ny * nz) as usize);
 
@@ -326,21 +342,30 @@ mod tests {
     }
 
     #[test]
-    fn height_stays_within_configured_bounds() {
+    fn height_stays_within_configured_bounds_and_varies() {
         let generator = generator(42);
         let min = generator.config().min_height as f32;
         let max = generator.config().max_height as f32;
+        let mut sampled_min = f32::MAX;
+        let mut sampled_max = f32::MIN;
 
         for step in 0..2048 {
             let x = (step % 64) as f32 * 17.0 - 512.0;
             let z = (step / 64) as f32 * 17.0 - 512.0;
             let height = generator.height(x, z);
+            sampled_min = sampled_min.min(height);
+            sampled_max = sampled_max.max(height);
 
             assert!(
                 (min..=max).contains(&height),
                 "height {height} outside {min}..={max} at ({x}, {z})"
             );
         }
+
+        assert!(
+            sampled_max - sampled_min > 5.0,
+            "height field is nearly constant: {sampled_min}..{sampled_max}"
+        );
     }
 
     #[test]
@@ -460,40 +485,64 @@ mod tests {
     }
 
     #[test]
-    fn lattice_is_continuous_across_a_chunk_border() {
+    fn lattice_is_continuous_across_chunk_borders() {
         let generator = generator(42);
         let field = generator
             .overhang
             .as_ref()
             .expect("default config enables caves");
         let config = &generator.config().caves;
+        let (y_min, y_max) = generator.lattice_bounds();
 
-        let left = Lattice::new(
-            field,
-            Chunk::new(0, 0).into(),
-            0,
-            Chunk::Y_AXIS_SIZE as i32,
-            config,
-        );
-        let right = Lattice::new(
-            field,
-            Chunk::new(1, 0).into(),
-            0,
-            Chunk::Y_AXIS_SIZE as i32,
-            config,
-        );
+        // (left chunk, right chunk, shared world x, shared world z)
+        let cases = [
+            (Chunk::new(0, 0), Chunk::new(1, 0), 16.0, 8.0),
+            (Chunk::new(0, 0), Chunk::new(0, 1), 8.0, 16.0),
+            (Chunk::new(-1, 0), Chunk::new(0, 0), 0.0, 8.0),
+            (Chunk::new(0, -1), Chunk::new(0, 0), 8.0, 0.0),
+        ];
 
-        for step in 0..32 {
-            let y = step as f32 * 7.0 + 1.0;
-            let z = 8.0;
-            let a = left.sample(Chunk::X_AXIS_SIZE as f32, y, z);
-            let b = right.sample(0.0, y, z);
+        for (left_chunk, right_chunk, x, z) in cases {
+            let left = Lattice::new(field, left_chunk.into(), y_min, y_max, config);
+            let right = Lattice::new(field, right_chunk.into(), y_min, y_max, config);
 
-            assert!(
-                (a - b).abs() < 1e-5,
-                "lattice differs at the border: {a} != {b}"
-            );
+            for step in 0..32 {
+                let y = step as f32 * 7.0 + 1.0;
+                let a = left.sample(x, y, z);
+                let b = right.sample(x, y, z);
+
+                assert!(
+                    (a - b).abs() < 1e-5,
+                    "lattice differs at {left_chunk:?}/{right_chunk:?} border: {a} != {b}"
+                );
+            }
         }
+    }
+
+    #[test]
+    fn lattice_covers_the_overhang_range() {
+        let mut config = WorldGenConfig::load_default();
+        config.caves.band = 0;
+        config.caves.overhang_strength = 24.0;
+        config.max_height = 200;
+        let generator = TerrainGenerator::new(config);
+        let (y_min, y_max) = generator.lattice_bounds();
+        let field = generator.overhang.as_ref().expect("caves are enabled");
+        let config = &generator.config().caves;
+        let lattice = Lattice::new(field, Chunk::new(0, 0).into(), y_min, y_max, config);
+
+        let bottom = lattice.origin[1];
+        let top = bottom + (lattice.size[1] as i32 - 1) * lattice.cell[1] as i32;
+
+        assert!(
+            bottom <= y_min,
+            "lattice bottom {bottom} does not cover {y_min}"
+        );
+        assert!(top >= y_max, "lattice top {top} does not cover {y_max}");
+        assert!(
+            y_max >= 200 + 24,
+            "lattice bounds do not include the overhang lift: {y_max}"
+        );
     }
 
     #[test]

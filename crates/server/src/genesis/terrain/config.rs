@@ -11,8 +11,8 @@ use thiserror::Error;
 pub struct WorldGenConfig {
     /// Seed for every noise field. Changing it changes the whole world.
     pub seed: u64,
-    /// Y coordinate of the future water level. The terrain floor stays above it until water
-    /// rendering lands.
+    /// Y coordinate reserved for the future water level. `min_height` must stay above it until
+    /// water rendering lands.
     pub sea_level: i32,
     /// Lowest generated surface height.
     pub min_height: i32,
@@ -85,7 +85,8 @@ pub struct CaveConfig {
     pub cavern: FieldConfig,
     /// Voxels where the cavern field is above this value become air.
     pub cavern_threshold: f32,
-    /// Vertical distance around the surface where 3D fields are sampled.
+    /// Vertical margin around the height range where 3D fields are sampled. The generated
+    /// margin is at least the overhang strength, so a small band cannot clip lifted peaks.
     pub band: i32,
     /// Horizontal lattice stride. Must divide the chunk width.
     pub cell_xz: u8,
@@ -165,6 +166,12 @@ impl WorldGenConfig {
                 self.sea_level
             )));
         }
+        if self.min_height <= self.sea_level {
+            return Err(invalid(format!(
+                "min_height ({}) must be above sea_level ({}) until water rendering lands",
+                self.min_height, self.sea_level
+            )));
+        }
 
         validate_field("fields.continentalness", &self.fields.continentalness)?;
         validate_field("fields.erosion", &self.fields.erosion)?;
@@ -198,8 +205,16 @@ impl WorldGenConfig {
             ("surface.steep", &self.surface.steep),
             ("surface.deep", &self.surface.deep),
         ] {
-            if Kind::from_name(name).is_none() {
-                return Err(invalid(format!("{field} references unknown kind {name:?}")));
+            match Kind::from_name(name) {
+                None => {
+                    return Err(invalid(format!("{field} references unknown kind {name:?}")));
+                }
+                Some(kind) if kind.is_none() => {
+                    return Err(invalid(format!(
+                        "{field} must not use the empty kind {name:?}"
+                    )));
+                }
+                Some(_) => {}
             }
         }
 
@@ -320,6 +335,22 @@ mod tests {
     fn rejects_unknown_surface_kind() {
         let mut config = WorldGenConfig::load_default();
         config.surface.top = "NotAKind".to_string();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_empty_surface_kind() {
+        let mut config = WorldGenConfig::load_default();
+        config.surface.deep = "None".to_string();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_sea_level_at_or_above_the_floor() {
+        let mut config = WorldGenConfig::load_default();
+        config.sea_level = config.min_height;
 
         assert!(config.validate().is_err());
     }

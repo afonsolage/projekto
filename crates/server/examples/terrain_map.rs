@@ -102,20 +102,21 @@ fn top_down(
     let mut min = i32::MAX;
     let mut max = i32::MIN;
 
-    for (index, (x, z)) in (0..width)
-        .flat_map(|x| (0..width).map(move |z| (x, z)))
-        .enumerate()
-    {
-        let world_x = x as i32 - radius * X_SIZE as i32;
-        let world_z = z as i32 - radius * X_SIZE as i32;
-        let Some(top) = top_voxel(chunks, world_x, world_z) else {
-            continue;
-        };
+    for x in 0..width {
+        for z in 0..width {
+            let world_x = x as i32 - radius * X_SIZE as i32;
+            let world_z = z as i32 - radius * X_SIZE as i32;
+            let Some(top) = top_voxel(chunks, world_x, world_z) else {
+                continue;
+            };
 
-        height[index] = top.y;
-        surface[index] = kind_color(top.kind);
-        min = min.min(top.y as i32);
-        max = max.max(top.y as i32);
+            // Row-major with x as the column, matching the vertical slice.
+            let index = z * width + x;
+            height[index] = top.y;
+            surface[index] = kind_color(top.kind);
+            min = min.min(top.y as i32);
+            max = max.max(top.y as i32);
+        }
     }
 
     (height, surface, min, max)

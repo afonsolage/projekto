@@ -53,6 +53,10 @@ fn main() {
     }
 
     let elapsed = started.elapsed();
+    assert!(
+        !results.is_empty(),
+        "no chunks were generated; PROJEKTO_GENESIS_BENCH_CHUNKS must be positive"
+    );
     let per_chunk = elapsed / results.len() as u32;
     let stats = collect_stats(&results);
 
