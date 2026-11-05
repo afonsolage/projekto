@@ -17,15 +17,24 @@ use crate::{
     material::ChunkMaterial, net::ServerDisconnected,
 };
 
-const MESH_APPLY_BUDGET: Duration = Duration::from_millis(6);
 const MAX_PENDING_CHUNK_MESHES: usize = 8192;
 const MAX_PENDING_CHUNK_VERTICES: usize = 2_000_000;
+
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct MeshApplyBudget(pub Duration);
+
+impl Default for MeshApplyBudget {
+    fn default() -> Self {
+        Self(Duration::from_millis(6))
+    }
+}
 
 pub(crate) struct MeshingPlugin;
 
 impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PendingChunkMeshes>()
+            .init_resource::<MeshApplyBudget>()
             .set_message_handler(queue_chunk_mesh)
             .add_message_handler(remove_chunk_mesh)
             .add_systems(
@@ -119,6 +128,7 @@ fn apply_chunk_meshes(
     mut map: ResMut<ChunkMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     material: Res<ChunkMaterialHandle>,
+    budget: Res<MeshApplyBudget>,
     mut mesh_built: MessageWriter<ChunkMeshBuilt>,
 ) {
     if pending.len() == 0 {
@@ -138,7 +148,7 @@ fn apply_chunk_meshes(
             &mut mesh_built,
         );
 
-        if started.elapsed() >= MESH_APPLY_BUDGET {
+        if started.elapsed() >= budget.0 {
             break;
         }
     }

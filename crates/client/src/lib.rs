@@ -27,7 +27,7 @@ mod net;
 mod set;
 
 pub use bundle::ChunkLocal;
-pub use set::PlayerLandscape;
+pub use set::{MeshApplyBudget, PlayerLandscape};
 
 pub struct ClientPlugin;
 
