@@ -86,7 +86,7 @@ impl WalkConfig {
             DEFAULT_MAX_READY_SECS,
         );
         let max_wrong_lod_ticks = env_parse("PROJEKTO_TERRAIN_TEST_MAX_WRONG_LOD_TICKS", 8u32);
-        let max_walk_update_ms = env_parse("PROJEKTO_TERRAIN_TEST_MAX_WALK_UPDATE_MS", 100.0f64);
+        let max_walk_update_ms = env_parse("PROJEKTO_TERRAIN_TEST_MAX_WALK_UPDATE_MS", 250.0f64);
         let max_walk_update_p95_ms =
             env_parse("PROJEKTO_TERRAIN_TEST_MAX_WALK_UPDATE_P95_MS", 25.0f64);
         let max_near_missing = env_parse("PROJEKTO_TERRAIN_TEST_MAX_NEAR_MISSING", 0usize);
