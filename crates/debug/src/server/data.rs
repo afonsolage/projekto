@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use projekto_server::{
     DirtyChunks,
     bundle::{CachedMesh, ChunkKind, ChunkLocal, ChunkMap, ChunkVertex},
+    set::MeshTasks,
 };
 
 /// Collects chunk lifecycle data only when the debug-tools feature is enabled.
@@ -77,6 +78,7 @@ fn refresh_debug(
     time: Res<Time>,
     chunk_map: Res<ChunkMap>,
     dirty: Res<DirtyChunks>,
+    tasks: Option<Res<MeshTasks>>,
     mut q: Query<(&ChunkLocal, &ChunkVertex, &ChunkKind, &mut ChunkDebug)>,
     mut timer: Local<Option<Timer>>,
 ) {
@@ -86,7 +88,12 @@ fn refresh_debug(
     }
 
     for (local, vertex, kind, mut debug) in &mut q {
-        if debug.state == ChunkDebugState::Loading && !dirty.0.contains(&local.0) {
+        if debug.state == ChunkDebugState::Loading
+            && !dirty.0.contains(&local.0)
+            && !tasks
+                .as_ref()
+                .is_some_and(|tasks| tasks.is_pending(local.0))
+        {
             let vertex_count = vertex.0.len() as u32;
             let top_y = vertex
                 .0

@@ -16,6 +16,14 @@ ci:
     cargo test --workspace
     cargo udeps
 
+# Run the manual terrain streaming, meshing and LOD walk benchmark.
+terrain-walk *args:
+    cargo test -p projekto_server --test terrain_walk -- --ignored --nocapture {{args}}
+
+# Run the 10-minute, double-speed terrain streaming stress test.
+terrain-stress *args:
+    PROJEKTO_TERRAIN_TEST_SPEED=20 PROJEKTO_TERRAIN_TEST_WALK_CHUNKS=750 cargo test -p projekto_server --test terrain_walk -- --ignored --nocapture {{args}}
+
 # Check the release configuration without debug tooling.
 check-release:
     ASSETS_PATH="$(pwd)/assets" cargo check --release -p projekto --bin client

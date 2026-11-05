@@ -182,6 +182,29 @@ where
     {
         self.0.iter().all(|pack| pack.all(f))
     }
+
+    /// Returns the value of a uniform horizontal layer, or `None` when it is mixed.
+    pub fn layer_uniform(&self, y: usize) -> Option<T> {
+        if y >= Chunk::Y_AXIS_SIZE {
+            return None;
+        }
+
+        let y_u8 = y as u8;
+        let voxel = ChunkVoxel::new(0, y_u8, 0);
+
+        if let ChunkPack::Single(value) = &self.0[Self::get_pack_index(voxel)] {
+            return Some(*value);
+        }
+
+        let first = self.get(voxel);
+
+        (0..Chunk::X_AXIS_SIZE)
+            .all(|x| {
+                (0..Chunk::Z_AXIS_SIZE)
+                    .all(|z| self.get(ChunkVoxel::new(x as u8, y_u8, z as u8)) == first)
+            })
+            .then_some(first)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

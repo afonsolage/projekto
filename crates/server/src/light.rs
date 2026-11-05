@@ -89,6 +89,35 @@ pub fn gather_neighborhood_light<'a>(
     get_kind: impl GetChunkStorage<'a, voxel::Kind>,
     get_light: impl GetChunkStorage<'a, voxel::Light>,
 ) -> [Option<u8>; NEIGHBOR_COUNT] {
+    gather_neighborhood_light_mask(chunk, voxel, u32::MAX, get_kind, get_light)
+}
+
+/// Returns a bitmask of the neighbor slots needed to light the exposed faces of `voxel`.
+pub fn neighbor_mask_for_sides(occlusion: voxel::FacesOcclusion) -> u32 {
+    let mut mask = 0;
+
+    for side in voxel::SIDES {
+        if occlusion.is_occluded(side) {
+            continue;
+        }
+
+        for indices in &NEIGHBOR_VERTEX_LOOKUP[side as usize] {
+            for &neighbor in indices {
+                mask |= 1 << neighbor;
+            }
+        }
+    }
+
+    mask
+}
+
+pub fn gather_neighborhood_light_mask<'a>(
+    chunk: Chunk,
+    voxel: ChunkVoxel,
+    needed: u32,
+    get_kind: impl GetChunkStorage<'a, voxel::Kind>,
+    get_light: impl GetChunkStorage<'a, voxel::Light>,
+) -> [Option<u8>; NEIGHBOR_COUNT] {
     let mut neighborhood = [Default::default(); NEIGHBOR_COUNT];
 
     let light = get_light(chunk).expect("base chunk must exists");
@@ -103,6 +132,13 @@ pub fn gather_neighborhood_light<'a>(
                 let dir = IVec3::new(x, y, z);
 
                 if dir == IVec3::ZERO {
+                    continue;
+                }
+
+                let index = i;
+                i += 1;
+
+                if needed & (1 << index) == 0 {
                     continue;
                 }
 
@@ -142,8 +178,7 @@ pub fn gather_neighborhood_light<'a>(
                     }
                 };
 
-                neighborhood[i] = intensity;
-                i += 1;
+                neighborhood[index] = intensity;
             }
         }
     }
@@ -193,39 +228,72 @@ pub fn smooth_lighting<'a>(
     get_kind: impl GetChunkStorage<'a, voxel::Kind>,
     get_light: impl GetChunkStorage<'a, voxel::Light>,
 ) {
+    smooth_lighting_skipping(
+        chunk,
+        occlusion,
+        soft_light,
+        get_kind,
+        get_light,
+        &[crate::meshing::LayerCoverage::Full; Chunk::Y_AXIS_SIZE],
+    );
+}
+
+pub fn smooth_lighting_skipping<'a>(
+    chunk: Chunk,
+    occlusion: &ChunkStorage<voxel::FacesOcclusion>,
+    soft_light: &mut ChunkStorage<voxel::FacesSoftLight>,
+    get_kind: impl GetChunkStorage<'a, voxel::Kind>,
+    get_light: impl GetChunkStorage<'a, voxel::Light>,
+    coverage: &[crate::meshing::LayerCoverage; Chunk::Y_AXIS_SIZE],
+) {
     let kind = get_kind(chunk).expect("Chunk must exists");
     let light = get_light(chunk).expect("Chunk must exists");
 
-    chunk::voxels().for_each(|voxel| {
-        let voxel_kind = kind.get(voxel);
-        if voxel_kind.is_none() {
-            return;
-        }
-
-        let occlusion = occlusion.get(voxel);
-        if occlusion.is_fully_occluded() {
-            return;
-        }
-
-        let faces_soft_light = if kind.get(voxel).is_light_emitter() {
-            let intensity = light.get(voxel).get_greater_intensity();
-            voxel::FacesSoftLight::with_intensity(intensity)
-        } else {
-            let neighbors = gather_neighborhood_light(chunk, voxel, get_kind, get_light); //50%
-
-            let faces_soft_light = voxel::SIDES.map(|side| {
-                if !occlusion.is_occluded(side) {
-                    soft_vertex_light(&neighbors, side) //25%
-                } else {
-                    Default::default()
-                }
-            });
-
-            voxel::FacesSoftLight::new(faces_soft_light)
+    for (y, layer) in coverage.iter().copied().enumerate() {
+        let boundary = match layer {
+            crate::meshing::LayerCoverage::Skip => continue,
+            crate::meshing::LayerCoverage::Boundary(boundary) => Some(boundary),
+            crate::meshing::LayerCoverage::Full => None,
         };
 
-        soft_light.set(voxel, faces_soft_light);
-    });
+        chunk::voxels_in_layer(y).for_each(|voxel| {
+            if let Some(boundary) = boundary
+                && !crate::meshing::is_boundary_voxel(voxel, boundary)
+            {
+                return;
+            }
+            let voxel_kind = kind.get(voxel);
+            if voxel_kind.is_none() {
+                return;
+            }
+
+            let occlusion = occlusion.get(voxel);
+            if occlusion.is_fully_occluded() {
+                return;
+            }
+
+            let faces_soft_light = if kind.get(voxel).is_light_emitter() {
+                let intensity = light.get(voxel).get_greater_intensity();
+                voxel::FacesSoftLight::with_intensity(intensity)
+            } else {
+                let needed = neighbor_mask_for_sides(occlusion);
+                let neighbors =
+                    gather_neighborhood_light_mask(chunk, voxel, needed, get_kind, get_light); //50%
+
+                let faces_soft_light = voxel::SIDES.map(|side| {
+                    if !occlusion.is_occluded(side) {
+                        soft_vertex_light(&neighbors, side) //25%
+                    } else {
+                        Default::default()
+                    }
+                });
+
+                voxel::FacesSoftLight::new(faces_soft_light)
+            };
+
+            soft_light.set(voxel, faces_soft_light);
+        });
+    }
 }
 
 fn calc_propagated_intensity(ty: LightTy, side: voxel::Side, intensity: u8) -> u8 {

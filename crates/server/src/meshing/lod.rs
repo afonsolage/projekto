@@ -386,7 +386,9 @@ fn neighbor_solid(
         return false;
     };
     let Some(neighbor_kind) = view.neighborhood[chunk_side as usize] else {
-        return false;
+        // Missing neighbors are the outer landscape frontier. Treat them as solid so the
+        // coarse mesh does not generate a full-height wall at the edge.
+        return true;
     };
 
     let (x0, y0, z0) = match side {

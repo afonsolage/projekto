@@ -1,5 +1,5 @@
 use bevy::{math::IVec2, platform::collections::HashSet, prelude::*};
-use projekto_core::{chunk::ChunkStorageCache, coords::Chunk, voxel};
+use projekto_core::{chunk, chunk::ChunkStorageCache, coords::Chunk, voxel};
 
 /// Number of derived chunk layers kept by the server's LRU caches.
 pub const DEFAULT_DERIVED_CACHE_CAPACITY: usize =
@@ -39,6 +39,19 @@ impl DerivedCaches {
 }
 
 // @TODO: Add unit tests for this.
+/// Returns `chunk` and its four direct horizontal neighbors.
+///
+/// Geometry seams only exist on shared faces. Diagonal chunks can affect corner soft light,
+/// but they do not share a face with `chunk`, so dirtying them for an LOD or seam change only
+/// produces redundant remeshes.
+pub fn adjacent_chunks(chunk: Chunk) -> impl Iterator<Item = Chunk> {
+    std::iter::once(chunk).chain(
+        chunk::SIDES
+            .iter()
+            .map(move |side| chunk.neighbor(side.dir())),
+    )
+}
+
 /// Returns `chunk` and its eight surrounding chunks.
 ///
 /// Soft light samples diagonal chunks at voxel corners, so a change in any of the eight

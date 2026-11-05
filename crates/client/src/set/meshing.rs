@@ -1,3 +1,8 @@
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
+
 use bevy::{
     asset::RenderAssetUsages,
     mesh::{Indices, PrimitiveTopology},
@@ -8,28 +13,87 @@ use projekto_messages::{ChunkUnload, ChunkVertex};
 use projekto_proto::RegisterMessageHandler;
 
 use crate::{
-    ChunkBundle, ChunkLocal, ChunkMap, ChunkMaterialHandle, ChunkMeshBuilt,
+    ChunkBundle, ChunkLocal, ChunkMap, ChunkMaterialHandle, ChunkMeshBuilt, ClientSet,
     material::ChunkMaterial, net::ServerDisconnected,
 };
+
+const MESH_APPLY_BUDGET: Duration = Duration::from_millis(6);
+const MAX_PENDING_CHUNK_MESHES: usize = 8192;
+const MAX_PENDING_CHUNK_VERTICES: usize = 2_000_000;
 
 pub(crate) struct MeshingPlugin;
 
 impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
-        app.set_message_handler(update_chunk_mesh)
+        app.init_resource::<PendingChunkMeshes>()
+            .set_message_handler(queue_chunk_mesh)
             .add_message_handler(remove_chunk_mesh)
             .add_systems(
                 Update,
-                despawn_chunks_on_server_disconnect.run_if(on_message::<ServerDisconnected>),
+                (
+                    apply_chunk_meshes.in_set(ClientSet::Meshing),
+                    despawn_chunks_on_server_disconnect.run_if(on_message::<ServerDisconnected>),
+                ),
             );
     }
+}
+
+#[derive(Resource, Default)]
+pub(crate) struct PendingChunkMeshes {
+    queue: VecDeque<ChunkVertex>,
+    vertices: usize,
+}
+
+impl PendingChunkMeshes {
+    fn push(&mut self, vertex: ChunkVertex) {
+        if let Some(index) = self
+            .queue
+            .iter()
+            .position(|queued| queued.chunk == vertex.chunk)
+            && let Some(previous) = self.queue.remove(index)
+        {
+            self.vertices -= previous.vertex.len();
+        }
+
+        self.vertices += vertex.vertex.len();
+        self.queue.push_back(vertex);
+
+        while self.queue.len() > MAX_PENDING_CHUNK_MESHES
+            || (self.vertices > MAX_PENDING_CHUNK_VERTICES && self.queue.len() > 1)
+        {
+            if let Some(previous) = self.queue.pop_front() {
+                self.vertices -= previous.vertex.len();
+            }
+        }
+    }
+
+    fn remove_chunk(&mut self, chunk: projekto_core::coords::Chunk) {
+        self.queue.retain(|queued| queued.chunk != chunk);
+        self.vertices = self.queue.iter().map(|queued| queued.vertex.len()).sum();
+    }
+
+    fn clear(&mut self) {
+        self.queue.clear();
+        self.vertices = 0;
+    }
+
+    fn len(&self) -> usize {
+        self.queue.len()
+    }
+}
+
+fn queue_chunk_mesh(In(vertex): In<ChunkVertex>, mut pending: ResMut<PendingChunkMeshes>) {
+    pending.push(vertex);
 }
 
 fn remove_chunk_mesh(
     In(ChunkUnload { chunk }): In<ChunkUnload>,
     mut commands: Commands,
     mut map: ResMut<ChunkMap>,
+    mut pending: ResMut<PendingChunkMeshes>,
 ) {
+    pending.remove_chunk(chunk);
+
     if let Some(entity) = map.remove(&chunk) {
         commands.entity(entity).despawn();
         trace!("[remove_chunk_mesh] chunk {chunk:?} despawned");
@@ -38,22 +102,55 @@ fn remove_chunk_mesh(
 
 fn despawn_chunks_on_server_disconnect(
     mut map: ResMut<ChunkMap>,
+    mut pending: ResMut<PendingChunkMeshes>,
     mut reader: MessageReader<ServerDisconnected>,
     mut commands: Commands,
 ) {
     reader.clear();
+    pending.clear();
     for (_, entity) in map.drain() {
         commands.entity(entity).despawn();
     }
 }
 
-fn update_chunk_mesh(
-    In(vertex): In<ChunkVertex>,
+fn apply_chunk_meshes(
+    mut pending: ResMut<PendingChunkMeshes>,
     mut commands: Commands,
     mut map: ResMut<ChunkMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     material: Res<ChunkMaterialHandle>,
     mut mesh_built: MessageWriter<ChunkMeshBuilt>,
+) {
+    if pending.len() == 0 {
+        return;
+    }
+
+    let started = Instant::now();
+
+    while let Some(vertex) = pending.queue.pop_front() {
+        pending.vertices -= vertex.vertex.len();
+        apply_chunk_mesh(
+            vertex,
+            &mut commands,
+            &mut map,
+            &mut meshes,
+            &material,
+            &mut mesh_built,
+        );
+
+        if started.elapsed() >= MESH_APPLY_BUDGET {
+            break;
+        }
+    }
+}
+
+fn apply_chunk_mesh(
+    vertex: ChunkVertex,
+    commands: &mut Commands,
+    map: &mut ChunkMap,
+    meshes: &mut Assets<Mesh>,
+    material: &ChunkMaterialHandle,
+    mesh_built: &mut MessageWriter<ChunkMeshBuilt>,
 ) {
     let ChunkVertex { chunk, vertex } = vertex;
     let vertex_count = vertex.len() as u32;
@@ -90,7 +187,7 @@ fn update_chunk_mesh(
         center_y: if vertex_count == 0 { 0.0 } else { center_y },
     });
 
-    trace!("[update_chunk_mesh] chunk {chunk:?} mesh updated");
+    trace!("[apply_chunk_mesh] chunk {chunk:?} mesh updated");
 }
 
 fn center_height(positions: impl Iterator<Item = Vec3>) -> Option<f32> {
@@ -182,7 +279,8 @@ mod tests {
     fn chunk_unload_despawns_entity_and_removes_map_entry() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-            .init_resource::<ChunkMap>();
+            .init_resource::<ChunkMap>()
+            .init_resource::<PendingChunkMeshes>();
         app.add_message_handler(remove_chunk_mesh);
 
         let chunk = Chunk::new(1, -2);
@@ -190,6 +288,12 @@ mod tests {
         app.world_mut()
             .resource_mut::<ChunkMap>()
             .insert(chunk, entity);
+        app.world_mut()
+            .resource_mut::<PendingChunkMeshes>()
+            .push(ChunkVertex {
+                chunk,
+                vertex: Vec::new(),
+            });
 
         app.world_mut()
             .run_handlers::<ChunkUnload>(ClientId::default(), Box::new(ChunkUnload { chunk }));
@@ -197,5 +301,22 @@ mod tests {
 
         assert!(!app.world().resource::<ChunkMap>().contains_key(&chunk));
         assert!(app.world().get_entity(entity).is_err());
+        assert!(app.world().resource::<PendingChunkMeshes>().len() == 0);
+    }
+
+    #[test]
+    fn queued_meshes_coalesce_by_chunk() {
+        let chunk = Chunk::new(2, 3);
+        let mut pending = PendingChunkMeshes::default();
+
+        for _ in 0..3 {
+            pending.push(ChunkVertex {
+                chunk,
+                vertex: Vec::new(),
+            });
+        }
+
+        assert_eq!(pending.len(), 1, "only the newest mesh per chunk is kept");
+        assert_eq!(pending.queue.front().unwrap().chunk, chunk);
     }
 }

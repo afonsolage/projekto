@@ -1,7 +1,11 @@
 use std::time::Duration;
 
-use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
-use projekto_server::WorldServerPlugin;
+use bevy::{
+    app::{ScheduleRunnerPlugin, TaskPoolPlugin},
+    log::LogPlugin,
+    prelude::*,
+};
+use projekto_server::{WorldServerPlugin, server_task_pool_options};
 
 const TICK_EVERY_MILLIS: u64 = 50;
 
@@ -10,9 +14,13 @@ fn main() {
     app.add_plugins((
         LogPlugin::default(),
         AssetPlugin::default(),
-        MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(
-            TICK_EVERY_MILLIS,
-        ))),
+        MinimalPlugins
+            .set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(
+                TICK_EVERY_MILLIS,
+            )))
+            .set(TaskPoolPlugin {
+                task_pool_options: server_task_pool_options(),
+            }),
         WorldServerPlugin,
     ));
 

@@ -1,6 +1,4 @@
-use std::time::Duration;
-
-use bevy::{prelude::*, time::common_conditions::on_timer};
+use bevy::prelude::*;
 use net::NetPlugin;
 
 // pub mod app;
@@ -19,7 +17,17 @@ pub mod genesis;
 pub mod bundle;
 pub mod set;
 
-const MESHING_TICK_MS: u64 = 500;
+/// Task pool options tuned for the server: give meshing most of the available threads.
+pub fn server_task_pool_options() -> bevy::app::TaskPoolOptions {
+    let mut options = bevy::app::TaskPoolOptions::default();
+    let parallelism = std::thread::available_parallelism()
+        .map(|threads| threads.get())
+        .unwrap_or(1);
+
+    options.async_compute.max_threads = parallelism.saturating_sub(2).max(1);
+    options.async_compute.percent = 1.0;
+    options
+}
 
 pub struct WorldServerPlugin;
 
@@ -32,7 +40,7 @@ impl Plugin for WorldServerPlugin {
                     WorldSet::LandscapeUpdate,
                     WorldSet::ChunkManagement,
                     WorldSet::Propagation,
-                    WorldSet::Meshing.run_if(on_timer(Duration::from_millis(MESHING_TICK_MS))),
+                    WorldSet::Meshing,
                 )
                     .chain(),
             )
