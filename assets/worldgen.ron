@@ -1,0 +1,56 @@
+// World generation settings. Loaded at server startup; invalid values fail fast.
+// Height is base_height(continentalness) + peaks_and_valleys * relief_amplitude(erosion)
+// + detail * detail_strength, clamped to min_height..max_height.
+(
+    seed: 42,
+    sea_level: 64,
+    min_height: 70,
+    max_height: 240,
+    // Fractal simplex fields. Frequency is in cells per block.
+    fields: (
+        continentalness: (frequency: 0.0025, octaves: 4, gain: 0.5, lacunarity: 2.0),
+        erosion: (frequency: 0.004, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        weirdness: (frequency: 0.008, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        detail: (frequency: 0.06, octaves: 2, gain: 0.5, lacunarity: 2.0),
+    ),
+    // Maps continentalness (-1..1) to base elevation.
+    base_height: (
+        points: [
+            (-1.0, 100.0),
+            (-0.4, 110.0),
+            (0.0, 125.0),
+            (0.4, 148.0),
+            (0.75, 168.0),
+            (1.0, 190.0),
+        ],
+    ),
+    // Maps erosion (-1..1) to the peaks-and-valleys amplitude.
+    relief_amplitude: (
+        points: [
+            (-1.0, 30.0),
+            (-0.3, 22.0),
+            (0.3, 16.0),
+            (1.0, 10.0),
+        ],
+    ),
+    detail_strength: 0.6,
+    surface: (
+        max_slope: 1.8,
+        top: "Grass",
+        subsurface: "Dirt",
+        subsurface_depth: 3,
+        steep: "Rock",
+        deep: "Rock",
+    ),
+    // 3D fields are sampled on a coarse lattice and interpolated per voxel.
+    caves: (
+        enabled: true,
+        overhang: (frequency: 0.008, octaves: 2, gain: 0.5, lacunarity: 2.0),
+        overhang_strength: 6.0,
+        cavern: (frequency: 0.02, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        cavern_threshold: 0.32,
+        band: 56,
+        cell_xz: 4,
+        cell_y: 8,
+    ),
+)

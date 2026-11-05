@@ -69,7 +69,10 @@ fn generate(radius: i32, threads: usize) -> HashMap<Chunk, ChunkCreation> {
         .flat_map(|x| (-radius..=radius).map(move |z| Chunk::new(x, z)))
         .collect();
 
-    let mut tasks: Vec<_> = requested.iter().map(|&chunk| server.generate(chunk)).collect();
+    let mut tasks: Vec<_> = requested
+        .iter()
+        .map(|&chunk| server.generate(chunk))
+        .collect();
     let mut chunks = HashMap::with_capacity(requested.len());
 
     while !tasks.is_empty() {
@@ -142,8 +145,15 @@ struct TopVoxel {
     kind: Kind,
 }
 
-fn top_voxel(chunks: &HashMap<Chunk, ChunkCreation>, world_x: i32, world_z: i32) -> Option<TopVoxel> {
-    let chunk = Chunk::new(world_x.div_euclid(X_SIZE as i32), world_z.div_euclid(X_SIZE as i32));
+fn top_voxel(
+    chunks: &HashMap<Chunk, ChunkCreation>,
+    world_x: i32,
+    world_z: i32,
+) -> Option<TopVoxel> {
+    let chunk = Chunk::new(
+        world_x.div_euclid(X_SIZE as i32),
+        world_z.div_euclid(X_SIZE as i32),
+    );
     let local_x = world_x.rem_euclid(X_SIZE as i32) as u8;
     let local_z = world_z.rem_euclid(X_SIZE as i32) as u8;
     let creation = chunks.get(&chunk)?;
@@ -156,7 +166,10 @@ fn top_voxel(chunks: &HashMap<Chunk, ChunkCreation>, world_x: i32, world_z: i32)
 }
 
 fn kind_at(chunks: &HashMap<Chunk, ChunkCreation>, world_x: i32, y: u8, world_z: i32) -> Kind {
-    let chunk = Chunk::new(world_x.div_euclid(X_SIZE as i32), world_z.div_euclid(X_SIZE as i32));
+    let chunk = Chunk::new(
+        world_x.div_euclid(X_SIZE as i32),
+        world_z.div_euclid(X_SIZE as i32),
+    );
     let local_x = world_x.rem_euclid(X_SIZE as i32) as u8;
     let local_z = world_z.rem_euclid(X_SIZE as i32) as u8;
 

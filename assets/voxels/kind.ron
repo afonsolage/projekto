@@ -9,7 +9,6 @@
             id: 0,
             sides: None,
             light: None,
-            source: None,
         ),
         (
             name: "Dirt",
@@ -22,10 +21,6 @@
                 )
             ),
             light: Opaque,
-            source: Genesis
-            (
-                height: 1,
-            )
         ),
         (
             name: "Grass",
@@ -58,10 +53,6 @@
                 ),
             ),
             light: Opaque,
-            source: Genesis
-            (
-                height: 0,
-            )
         ),
         (
             name: "Rock",
@@ -74,10 +65,6 @@
                 )
             ),
             light: Opaque,
-            source: Genesis
-            (
-                height: 3,
-            )
         ),
         (
             name: "Lamp",
@@ -90,7 +77,6 @@
                 )
             ),
             light: Emitter(10),
-            source: None,
         ),
     ]
 )

@@ -34,6 +34,7 @@ async-lock.workspace = true
 
 # genesis
 bracket-noise = "0.8.7"
+ron = "0.10"
 
 [dev-dependencies]
 rand.workspace = true

@@ -32,7 +32,10 @@ fn main() {
     let server = GenesisServer::new(threads);
 
     let started = Instant::now();
-    let mut tasks: Vec<_> = requested.iter().map(|&chunk| server.generate(chunk)).collect();
+    let mut tasks: Vec<_> = requested
+        .iter()
+        .map(|&chunk| server.generate(chunk))
+        .collect();
     let mut results = Vec::with_capacity(requested.len());
 
     while !tasks.is_empty() {
