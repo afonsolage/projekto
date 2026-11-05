@@ -113,6 +113,15 @@ impl<T: ChunkStorageType> ChunkStorage<T> {
             StorageInner::Section(storage) => storage.all(f),
         }
     }
+
+    /// Returns the value of a uniform horizontal layer, or `None` when it is mixed or the
+    /// storage backend is column-based.
+    pub fn layer_uniform(&self, y: usize) -> Option<T> {
+        match &self.0 {
+            StorageInner::Column(_) => None,
+            StorageInner::Section(storage) => storage.layer_uniform(y),
+        }
+    }
 }
 
 pub trait GetChunkStorage<'a, T: ChunkStorageType + 'a>:

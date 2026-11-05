@@ -66,6 +66,13 @@ mod zip;
 
 pub const SIDE_COUNT: usize = 4;
 
+/// Iterates the voxels of one horizontal layer.
+pub fn voxels_in_layer(y: usize) -> impl Iterator<Item = ChunkVoxel> {
+    (0..Chunk::X_AXIS_SIZE).flat_map(move |x| {
+        (0..Chunk::Z_AXIS_SIZE).map(move |z| ChunkVoxel::new(x as u8, y as u8, z as u8))
+    })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash, Default, Serialize, Deserialize)]
 pub enum ChunkSide {
     #[default]

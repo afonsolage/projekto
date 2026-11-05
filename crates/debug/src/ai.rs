@@ -1,6 +1,6 @@
 //! Windowless, low-fps client used by AI-driven diagnostics.
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::Duration};
 
 use bevy::{
     asset::RenderAssetUsages,
@@ -26,7 +26,8 @@ impl Plugin for AiClientPlugin {
         config.show_grid = true;
         config.show_labels = true;
 
-        app.init_resource::<AiSnapshot>()
+        app.insert_resource(projekto_client::MeshApplyBudget(Duration::from_secs(5)))
+            .init_resource::<AiSnapshot>()
             .add_systems(PostStartup, setup_render_target)
             .add_systems(Update, (queue_periodic_snapshot, capture_snapshot).chain());
     }

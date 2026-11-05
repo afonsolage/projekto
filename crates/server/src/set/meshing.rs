@@ -1,5 +1,10 @@
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
+
 use crate::{
-    DerivedCaches, DirtyChunks, WorldSet, affected_chunks,
+    DerivedCaches, DirtyChunks, WorldSet, adjacent_chunks, affected_chunks,
     bundle::{
         CachedMesh, ChunkKind, ChunkLight, ChunkLocal, ChunkLod, ChunkMap, ChunkQuery, ChunkVertex,
     },
@@ -7,13 +12,14 @@ use crate::{
     light, meshing,
 };
 use bevy::prelude::*;
+use bevy::tasks::{AsyncComputeTaskPool, Task, block_on};
 use projekto_core::{
     chunk::{self, ChunkStorage},
     coords::Chunk,
     voxel,
 };
 
-use super::Landscape;
+use super::{Landscape, TerrainStats};
 
 pub struct MeshingPlugin;
 
@@ -21,6 +27,8 @@ impl Plugin for MeshingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DerivedCaches>()
             .init_resource::<DirtyChunks>()
+            .init_resource::<MeshTasks>()
+            .init_resource::<TerrainStats>()
             .add_systems(
                 Update,
                 (update_chunk_lods, mark_dirty_chunks, generate_vertices)
@@ -30,14 +38,67 @@ impl Plugin for MeshingPlugin {
     }
 }
 
+/// Maximum number of meshes generated concurrently on worker threads.
+pub const MESH_MAX_IN_FLIGHT: usize = 32;
+
+/// Maximum number of worker tasks admitted per update.
+pub const MESH_MAX_SPAWNS: usize = 16;
+
+#[derive(Resource, Default)]
+pub struct MeshTasks {
+    in_flight: HashMap<Chunk, Task<FullMeshOutput>>,
+}
+
+impl MeshTasks {
+    pub fn is_pending(&self, chunk: Chunk) -> bool {
+        self.in_flight.contains_key(&chunk)
+    }
+
+    pub fn pending(&self) -> impl Iterator<Item = Chunk> + '_ {
+        self.in_flight.keys().copied()
+    }
+
+    pub fn cancel(&mut self, chunk: Chunk) -> bool {
+        self.in_flight.remove(&chunk).is_some()
+    }
+}
+
+struct FullMeshOutput {
+    lod: u8,
+    vertex: Vec<voxel::Vertex>,
+    occlusion: ChunkStorage<voxel::FacesOcclusion>,
+    soft_light: ChunkStorage<voxel::FacesSoftLight>,
+    elapsed: Duration,
+}
+
 /// Chunks inside this square keep full-resolution meshes; chunks outside use a coarser LOD.
 pub const LOD_FULL_RADIUS: i32 = 16;
+
+/// Extra distance, in chunks, that a full-detail chunk keeps full detail before it is demoted.
+///
+/// This prevents a chunk from being remeshed to coarse right before it leaves the landscape.
+pub const LOD_HYSTERESIS: i32 = 2;
+
+/// Maximum number of LOD transitions applied per update, to avoid a visibility dip.
+pub const LOD_UPDATES_PER_FRAME: usize = 8;
 
 pub(crate) fn desired_lod(chunk: Chunk, center: bevy::math::IVec2) -> u8 {
     let dx = (chunk.x - center.x).abs();
     let dz = (chunk.z - center.y).abs();
 
     if dx <= LOD_FULL_RADIUS && dz <= LOD_FULL_RADIUS {
+        0
+    } else {
+        1
+    }
+}
+
+pub fn next_lod(current: u8, chunk: Chunk, center: bevy::math::IVec2) -> u8 {
+    let margin = if current == 0 { LOD_HYSTERESIS } else { 0 };
+    let dx = (chunk.x - center.x).abs();
+    let dz = (chunk.z - center.y).abs();
+
+    if dx <= LOD_FULL_RADIUS + margin && dz <= LOD_FULL_RADIUS + margin {
         0
     } else {
         1
@@ -54,17 +115,28 @@ fn update_chunk_lods(
     let Some(landscape) = landscape else {
         return;
     };
+    let mut changed = 0;
 
     for (entity, ChunkLocal(chunk), lod, cached) in &q {
-        let desired = desired_lod(*chunk, landscape.center);
+        let desired = lod.map_or_else(
+            || desired_lod(*chunk, landscape.center),
+            |lod| next_lod(lod.0, *chunk, landscape.center),
+        );
+
+        if lod.map(|lod| lod.0) == Some(desired) {
+            continue;
+        }
+        if changed >= LOD_UPDATES_PER_FRAME {
+            break;
+        }
+        changed += 1;
 
         match lod {
-            Some(lod) if lod.0 == desired => {}
             Some(_) => {
                 commands.entity(entity).insert(ChunkLod(desired));
                 commands.entity(entity).remove::<CachedMesh>();
 
-                for affected in affected_chunks(*chunk) {
+                for affected in adjacent_chunks(*chunk) {
                     dirty.0.insert(affected);
                     caches.invalidate(affected);
                 }
@@ -77,7 +149,7 @@ fn update_chunk_lods(
                         commands.entity(entity).remove::<CachedMesh>();
                     }
 
-                    for affected in affected_chunks(*chunk) {
+                    for affected in adjacent_chunks(*chunk) {
                         dirty.0.insert(affected);
                         caches.invalidate(affected);
                     }
@@ -137,6 +209,7 @@ fn neighbors_ready(chunk: Chunk, chunk_map: &ChunkMap, landscape: Option<&Landsc
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_vertices(
     mut dirty: ResMut<DirtyChunks>,
     mut caches: ResMut<DerivedCaches>,
@@ -144,20 +217,80 @@ fn generate_vertices(
     landscape: Option<Res<Landscape>>,
     q_chunks: ChunkQuery<(&ChunkKind, &ChunkLight)>,
     mut q_vertex: Query<(&mut ChunkVertex, Option<&mut ChunkLod>)>,
+    mut tasks: ResMut<MeshTasks>,
+    mut stats: ResMut<TerrainStats>,
 ) {
     let center = landscape
         .as_ref()
         .map(|landscape| landscape.center)
         .unwrap_or_default();
+
+    let completed = tasks
+        .in_flight
+        .iter()
+        .filter(|(_, task)| task.is_finished())
+        .map(|(chunk, _)| *chunk)
+        .collect::<Vec<_>>();
+
+    for chunk in completed {
+        let task = tasks
+            .in_flight
+            .remove(&chunk)
+            .expect("completed task must be in flight");
+        let output = block_on(task);
+
+        let Some(&entity) = chunk_map.0.get(&chunk) else {
+            continue;
+        };
+
+        if dirty.0.contains(&chunk) {
+            continue;
+        }
+
+        let current_lod = q_vertex
+            .get(entity)
+            .ok()
+            .and_then(|(_, lod)| lod.map(|lod| lod.0));
+
+        if current_lod.is_some_and(|current| current != output.lod) {
+            dirty.0.insert(chunk);
+            continue;
+        }
+
+        let (mut vertex, chunk_lod) = q_vertex.get_mut(entity).expect("Entity must exists");
+        vertex.0 = output.vertex;
+        if let Some(mut chunk_lod) = chunk_lod {
+            chunk_lod.0 = output.lod;
+        }
+
+        if output.lod == 0 {
+            stats.meshed_full += 1;
+            caches.occlusion.insert(chunk, output.occlusion);
+            caches.soft_light.insert(chunk, output.soft_light);
+        } else {
+            stats.meshed_coarse += 1;
+        }
+        stats.mesh_nanos += output.elapsed.as_nanos() as u64;
+    }
+
     let mut chunks = std::mem::take(&mut dirty.0).into_iter().collect::<Vec<_>>();
     // Work closest to the player first; the result is consumed nearest-first when streamed.
     sort_nearest_first(&mut chunks, center);
 
-    let mut count = 0;
+    let mut full_candidates = Vec::new();
+    let mut coarse_candidates = Vec::new();
     let mut deferred = 0;
-    let mut map = [0; voxel::SIDE_COUNT];
 
     for chunk in chunks {
+        if !chunk_map.0.contains_key(&chunk) {
+            continue;
+        }
+
+        if tasks.in_flight.contains_key(&chunk) {
+            dirty.0.insert(chunk);
+            continue;
+        }
+
         // Meshing before the chunk's halo is loaded produces geometry that has to be rebuilt
         // when the neighbors arrive. Waiting for the halo removes those redundant passes.
         if !neighbors_ready(chunk, &chunk_map, landscape.as_deref()) {
@@ -166,6 +299,45 @@ fn generate_vertices(
             continue;
         }
 
+        let lod = chunk_map
+            .0
+            .get(&chunk)
+            .and_then(|entity| {
+                q_vertex
+                    .get(*entity)
+                    .ok()
+                    .and_then(|(_, lod)| lod.map(|lod| lod.0))
+            })
+            .unwrap_or_else(|| {
+                landscape
+                    .as_ref()
+                    .map(|landscape| desired_lod(chunk, landscape.center))
+                    .unwrap_or(0)
+            });
+
+        if lod == 0 {
+            full_candidates.push(chunk);
+        } else {
+            coarse_candidates.push(chunk);
+        }
+    }
+
+    let mut spawned = 0;
+    let mut full_iter = full_candidates.into_iter();
+    let mut coarse_iter = coarse_candidates.into_iter();
+    let mut prefer_full = true;
+
+    while spawned < MESH_MAX_SPAWNS && tasks.in_flight.len() < MESH_MAX_IN_FLIGHT {
+        let chunk = if prefer_full {
+            full_iter.next().or_else(|| coarse_iter.next())
+        } else {
+            coarse_iter.next().or_else(|| full_iter.next())
+        };
+
+        let Some(chunk) = chunk else {
+            break;
+        };
+
         let Some((kind, light)) = q_chunks.get_chunk(chunk) else {
             continue;
         };
@@ -173,89 +345,209 @@ fn generate_vertices(
             continue;
         };
 
-        let kind = &kind.0;
-
-        let (mut chunk_vertex, chunk_lod) = q_vertex.get_mut(entity).expect("Entity must exists");
-        let lod = landscape
-            .as_ref()
-            .map(|landscape| desired_lod(chunk, landscape.center))
-            .unwrap_or(0);
-
-        if let Some(mut chunk_lod) = chunk_lod {
-            chunk_lod.0 = lod;
-        }
-
-        let neighborhood = chunk::SIDES.map(|side| {
-            q_chunks
-                .get_chunk(chunk.neighbor(side.dir()))
-                .map(|(kind, _)| &kind.0)
-        });
-        let neighborhood_light = chunk::SIDES.map(|side| {
-            q_chunks
-                .get_chunk(chunk.neighbor(side.dir()))
-                .map(|(_, light)| &light.0)
-        });
-        let neighborhood_lod =
-            chunk::SIDES.map(|side| Some(desired_lod(chunk.neighbor(side.dir()), center)));
-
-        let mut vertex = if lod > 0 {
-            meshing::lod::generate_coarse_vertices(
-                chunk,
-                kind,
-                &light.0,
-                &neighborhood,
-                &neighborhood_light,
-                |chunk| q_chunks.get_chunk(chunk).map(|(kind, _)| &kind.0),
-                |chunk| q_chunks.get_chunk(chunk).map(|(_, light)| &light.0),
-                lod,
-            )
-        } else {
-            let DerivedCaches {
-                occlusion: occlusion_cache,
-                soft_light: soft_light_cache,
-            } = &mut *caches;
-
-            let occlusion = occlusion_cache.get_or_insert_with(chunk, || {
-                let mut occlusion = ChunkStorage::default();
-                meshing::faces_occlusion_with_lod(
-                    kind,
-                    &mut occlusion,
-                    &neighborhood,
-                    &neighborhood_lod,
-                );
-                occlusion
+        let lod = q_vertex
+            .get(entity)
+            .ok()
+            .and_then(|(_, lod)| lod.map(|lod| lod.0))
+            .unwrap_or_else(|| {
+                landscape
+                    .as_ref()
+                    .map(|landscape| desired_lod(chunk, landscape.center))
+                    .unwrap_or(0)
             });
 
-            if occlusion.all(|occ| occ.is_fully_occluded()) {
-                Vec::new()
-            } else {
-                let soft_light = soft_light_cache.get_or_insert_with(chunk, || {
-                    let mut soft_light = ChunkStorage::default();
-                    light::smooth_lighting(
-                        chunk,
-                        occlusion,
-                        &mut soft_light,
-                        |chunk| q_chunks.get_chunk(chunk).map(|(kind, _)| &kind.0),
-                        |chunk| q_chunks.get_chunk(chunk).map(|(_, light)| &light.0),
-                    );
-                    soft_light
-                });
+        let neighbors = affected_chunks(chunk)
+            .filter(|neighbor| *neighbor != chunk)
+            .filter_map(|neighbor| {
+                q_chunks
+                    .get_chunk(neighbor)
+                    .map(|(kind, light)| (neighbor, kind.0.clone(), light.0.clone()))
+            })
+            .collect::<Vec<_>>();
 
-                let faces = meshing::generate_faces(kind, occlusion, soft_light);
-                faces.iter().for_each(|face| map[face.side.index()] += 1);
-                meshing::generate_vertices(&faces)
-            }
+        let task = if lod > 0 {
+            let kind = kind.0.clone();
+            let light = light.0.clone();
+            AsyncComputeTaskPool::get()
+                .spawn(async move { compute_coarse_mesh(chunk, kind, light, neighbors, lod) })
+        } else {
+            let cached_occlusion = caches.occlusion.get(chunk).cloned();
+            let cached_soft_light = caches.soft_light.get(chunk).cloned();
+            let neighbor_lods = chunk::SIDES.map(|side| {
+                let neighbor = chunk.neighbor(side.dir());
+                chunk_map.0.get(&neighbor).and_then(|entity| {
+                    q_vertex
+                        .get(*entity)
+                        .ok()
+                        .and_then(|(_, lod)| lod.map(|lod| lod.0))
+                })
+            });
+            let kind = kind.0.clone();
+            let light = light.0.clone();
+
+            AsyncComputeTaskPool::get().spawn(async move {
+                compute_full_mesh(
+                    chunk,
+                    kind,
+                    light,
+                    neighbors,
+                    neighbor_lods,
+                    cached_occlusion,
+                    cached_soft_light,
+                )
+            })
         };
 
-        std::mem::swap(&mut vertex, &mut chunk_vertex);
-
-        count += 1;
+        tasks.in_flight.insert(chunk, task);
+        spawned += 1;
+        prefer_full = !prefer_full;
     }
 
-    if count > 0 || deferred > 0 {
-        trace!(
-            "[generate_vertices] {count} chunks vertices generated, {deferred} waiting for halo. {map:?}"
+    dirty.0.extend(full_iter);
+    dirty.0.extend(coarse_iter);
+
+    if spawned > 0 || deferred > 0 {
+        trace!("[generate_vertices] {spawned} meshes queued, {deferred} waiting for halo.");
+    }
+}
+
+fn compute_coarse_mesh(
+    chunk: Chunk,
+    kind: ChunkStorage<voxel::Kind>,
+    light: ChunkStorage<voxel::Light>,
+    neighbors: Vec<(Chunk, ChunkStorage<voxel::Kind>, ChunkStorage<voxel::Light>)>,
+    lod: u8,
+) -> FullMeshOutput {
+    let started = Instant::now();
+    let neighborhood = chunk::SIDES.map(|side| {
+        let neighbor = chunk.neighbor(side.dir());
+        neighbors
+            .iter()
+            .find_map(|(chunk, kind, _)| (*chunk == neighbor).then_some(kind))
+    });
+    let neighborhood_light = chunk::SIDES.map(|side| {
+        let neighbor = chunk.neighbor(side.dir());
+        neighbors
+            .iter()
+            .find_map(|(chunk, _, light)| (*chunk == neighbor).then_some(light))
+    });
+
+    let vertex = meshing::lod::generate_coarse_vertices(
+        chunk,
+        &kind,
+        &light,
+        &neighborhood,
+        &neighborhood_light,
+        |target| {
+            if target == chunk {
+                Some(&kind)
+            } else {
+                neighbors
+                    .iter()
+                    .find_map(|(neighbor, kind, _)| (*neighbor == target).then_some(kind))
+            }
+        },
+        |target| {
+            if target == chunk {
+                Some(&light)
+            } else {
+                neighbors
+                    .iter()
+                    .find_map(|(neighbor, _, light)| (*neighbor == target).then_some(light))
+            }
+        },
+        lod,
+    );
+
+    FullMeshOutput {
+        lod,
+        vertex,
+        occlusion: ChunkStorage::default(),
+        soft_light: ChunkStorage::default(),
+        elapsed: started.elapsed(),
+    }
+}
+
+fn compute_full_mesh(
+    chunk: Chunk,
+    kind: ChunkStorage<voxel::Kind>,
+    light: ChunkStorage<voxel::Light>,
+    neighbors: Vec<(Chunk, ChunkStorage<voxel::Kind>, ChunkStorage<voxel::Light>)>,
+    neighbor_lods: [Option<u8>; chunk::SIDE_COUNT],
+    cached_occlusion: Option<ChunkStorage<voxel::FacesOcclusion>>,
+    cached_soft_light: Option<ChunkStorage<voxel::FacesSoftLight>>,
+) -> FullMeshOutput {
+    let started = Instant::now();
+    let neighborhood = chunk::SIDES.map(|side| {
+        let neighbor = chunk.neighbor(side.dir());
+        neighbors
+            .iter()
+            .find_map(|(chunk, kind, _)| (*chunk == neighbor).then_some(kind))
+    });
+
+    let coverage = meshing::layer_coverage(&kind, &neighborhood);
+    let occlusion = cached_occlusion.unwrap_or_else(|| {
+        let mut occlusion = ChunkStorage::default();
+        meshing::faces_occlusion_with_lod_skipping(
+            &kind,
+            &mut occlusion,
+            &neighborhood,
+            &neighbor_lods,
+            &coverage,
         );
+        occlusion
+    });
+
+    let fully_occluded = occlusion.all(|occ| occ.is_fully_occluded());
+    let coverage = (!fully_occluded).then_some(coverage);
+
+    let soft_light = if fully_occluded {
+        cached_soft_light.unwrap_or_default()
+    } else {
+        cached_soft_light.unwrap_or_else(|| {
+            let mut soft_light = ChunkStorage::default();
+            light::smooth_lighting_skipping(
+                chunk,
+                &occlusion,
+                &mut soft_light,
+                |target| {
+                    if target == chunk {
+                        Some(&kind)
+                    } else {
+                        neighbors
+                            .iter()
+                            .find_map(|(neighbor, kind, _)| (*neighbor == target).then_some(kind))
+                    }
+                },
+                |target| {
+                    if target == chunk {
+                        Some(&light)
+                    } else {
+                        neighbors
+                            .iter()
+                            .find_map(|(neighbor, _, light)| (*neighbor == target).then_some(light))
+                    }
+                },
+                coverage.as_ref().expect("non-empty mesh needs coverage"),
+            );
+            soft_light
+        })
+    };
+
+    let vertex = if fully_occluded {
+        Vec::new()
+    } else {
+        let coverage = coverage.as_ref().expect("non-empty mesh needs coverage");
+        let faces = meshing::generate_faces_skipping(&kind, &occlusion, &soft_light, coverage);
+        meshing::generate_vertices(&faces)
+    };
+
+    FullMeshOutput {
+        lod: 0,
+        vertex,
+        occlusion,
+        soft_light,
+        elapsed: started.elapsed(),
     }
 }
 
@@ -279,7 +571,7 @@ mod tests {
             })
             .add_plugins(MeshingPlugin);
 
-        let chunk = Chunk::new(17, 0);
+        let chunk = Chunk::new(19, 0);
         let entity = app
             .world_mut()
             .spawn((
@@ -304,7 +596,7 @@ mod tests {
         assert_eq!(app.world().get::<ChunkLod>(entity).unwrap().0, 1);
         assert!(app.world().get::<CachedMesh>(entity).is_none());
 
-        app.world_mut().resource_mut::<super::Landscape>().center = bevy::math::IVec2::new(17, 0);
+        app.world_mut().resource_mut::<super::Landscape>().center = bevy::math::IVec2::new(19, 0);
         app.update();
 
         assert_eq!(app.world().get::<ChunkLod>(entity).unwrap().0, 0);
@@ -357,6 +649,20 @@ mod tests {
         kind
     }
 
+    fn settle_meshing(app: &mut App) {
+        for _ in 0..2000 {
+            app.update();
+            if app.world().resource::<MeshTasks>().in_flight.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(
+            app.world().resource::<MeshTasks>().in_flight.is_empty(),
+            "meshing tasks did not finish"
+        );
+    }
+
     #[test]
     fn cached_mesh_is_not_rebuilt_on_spawn() {
         let mut app = App::new();
@@ -400,7 +706,7 @@ mod tests {
     fn meshing_populates_derived_cache_and_vertices() {
         let (mut app, entity, chunk) = app_with_chunk();
 
-        app.update();
+        settle_meshing(&mut app);
 
         let vertex = app.world().get::<ChunkVertex>(entity).unwrap();
         assert!(!vertex.0.is_empty(), "chunk should generate vertices");
@@ -415,7 +721,7 @@ mod tests {
     #[test]
     fn kind_change_invalidates_and_recomputes_derived_cache() {
         let (mut app, entity, chunk) = app_with_chunk();
-        app.update();
+        settle_meshing(&mut app);
 
         let initial_misses = app
             .world()
@@ -430,7 +736,7 @@ mod tests {
             .0
             .set(ChunkVoxel::new(1, 0, 0), voxel::Kind::id(1));
 
-        app.update();
+        settle_meshing(&mut app);
 
         let caches = app.world().resource::<DerivedCaches>();
         assert!(caches.occlusion.contains(chunk));
@@ -462,7 +768,7 @@ mod tests {
             .0
             .insert(chunk_b, entity_b);
 
-        app.update();
+        settle_meshing(&mut app);
 
         let initial_misses = app
             .world()
@@ -478,7 +784,7 @@ mod tests {
             .0
             .set(ChunkVoxel::new(1, 0, 0), voxel::Kind::id(1));
 
-        app.update();
+        settle_meshing(&mut app);
 
         let caches = app.world().resource::<DerivedCaches>();
         assert!(
@@ -495,7 +801,7 @@ mod tests {
     #[test]
     fn light_change_reuses_cached_occlusion() {
         let (mut app, entity, _chunk) = app_with_chunk();
-        app.update();
+        settle_meshing(&mut app);
 
         let initial_occlusion = app.world().resource::<DerivedCaches>().occlusion.stats();
         let initial_soft_light = app.world().resource::<DerivedCaches>().soft_light.stats();
@@ -510,7 +816,7 @@ mod tests {
                 voxel::Light::MAX_NATURAL_INTENSITY,
             );
 
-        app.update();
+        settle_meshing(&mut app);
 
         let caches = app.world().resource::<DerivedCaches>();
         assert_eq!(
@@ -550,7 +856,7 @@ mod tests {
             .0
             .insert(chunk_b, entity_b);
 
-        app.update();
+        settle_meshing(&mut app);
 
         let initial_misses = app
             .world()
@@ -566,7 +872,7 @@ mod tests {
             .0
             .set(ChunkVoxel::new(1, 0, 0), voxel::Kind::id(1));
 
-        app.update();
+        settle_meshing(&mut app);
 
         let caches = app.world().resource::<DerivedCaches>();
         assert!(

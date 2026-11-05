@@ -17,14 +17,29 @@ use crate::{
     net::{ClientSync, Clients},
 };
 
-use super::{Landscape, meshing::desired_lod};
+use super::{
+    Landscape, MeshTasks,
+    meshing::{desired_lod, next_lod},
+};
 
 /// Chunks whose latest vertices still need to be persisted.
 #[derive(Resource, Default)]
 pub struct PendingSaves(HashSet<Chunk>);
 
-const SAVE_INTERVAL_SECS: f32 = 0.5;
-const SAVE_BATCH_SIZE: usize = 32;
+/// Counters describing the streaming and persistence work performed by the server.
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct TerrainStats {
+    pub generated: u64,
+    pub archive_loaded: u64,
+    pub unloaded: u64,
+    pub saved: u64,
+    pub meshed_full: u64,
+    pub meshed_coarse: u64,
+    pub mesh_nanos: u64,
+}
+
+const SAVE_INTERVAL_SECS: f32 = 0.25;
+const SAVE_BATCH_SIZE: usize = 64;
 const MAINTENANCE_INTERVAL_SECS: f32 = 2.0;
 
 pub struct ChunkManagementPlugin;
@@ -35,6 +50,7 @@ impl Plugin for ChunkManagementPlugin {
             .init_resource::<DerivedCaches>()
             .init_resource::<DirtyChunks>()
             .init_resource::<PendingSaves>()
+            .init_resource::<TerrainStats>()
             .init_resource::<Clients>()
             .init_resource::<ClientSync>()
             .add_message::<ChunkUnload>()
@@ -67,7 +83,18 @@ pub struct ChunkGen(pub Chunk);
 
 fn init_servers(mut commands: Commands) {
     commands.insert_resource(ArchiveServer::<ChunkAsset>::new("archive/region/"));
-    commands.insert_resource(GenesisServer::new(1));
+
+    let threads = std::env::var("PROJEKTO_GENESIS_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|threads| threads.get())
+                .unwrap_or(1)
+        })
+        .clamp(1, 32);
+
+    commands.insert_resource(GenesisServer::new(threads));
 }
 
 /// Periodically flushes the archive headers.
@@ -123,8 +150,10 @@ fn chunks_unload(
     mut caches: ResMut<DerivedCaches>,
     mut dirty: ResMut<DirtyChunks>,
     mut pending_saves: ResMut<PendingSaves>,
+    mut stats: ResMut<TerrainStats>,
     clients: Res<Clients>,
     mut sync: ResMut<ClientSync>,
+    mut meshing: Option<ResMut<MeshTasks>>,
     mut reader: MessageReader<ChunkUnload>,
 ) {
     let mut count = 0;
@@ -132,6 +161,10 @@ fn chunks_unload(
     reader.read().for_each(|evt| {
         if let Some(entity) = chunk_map.remove(&evt.0) {
             commands.entity(entity).despawn();
+
+            if let Some(meshing) = meshing.as_mut() {
+                meshing.cancel(evt.0);
+            }
 
             for (id, client) in clients.iter() {
                 if !sync.remove_chunk(*id, evt.0) {
@@ -150,6 +183,7 @@ fn chunks_unload(
             caches.invalidate(evt.0);
             dirty.0.remove(&evt.0);
             pending_saves.0.remove(&evt.0);
+            stats.unloaded += 1;
 
             for neighbor in affected_chunks(evt.0).filter(|&chunk| chunk != evt.0) {
                 caches.invalidate(neighbor);
@@ -178,6 +212,7 @@ fn chunks_load(
     mut loading: Local<HashSet<Chunk>>,
     mut map: ResMut<ChunkMap>,
     mut dirty: ResMut<DirtyChunks>,
+    mut stats: ResMut<TerrainStats>,
     time: Res<Time>,
 ) -> Result {
     let is_desired = |chunk: Chunk| landscape.as_ref().is_some_and(|l| l.contains(chunk));
@@ -208,11 +243,24 @@ fn chunks_load(
                     loading.remove(&chunk);
 
                     if is_desired(chunk) && !map.0.contains_key(&chunk) {
+                        let saved_lod = asset.lod;
+                        let desired_lod = landscape
+                            .as_ref()
+                            .map(|landscape| next_lod(saved_lod, chunk, landscape.center))
+                            .unwrap_or(saved_lod);
+                        let lod_changed = saved_lod != desired_lod;
                         let stale_mesh = asset.mesh_version != CHUNK_MESH_VERSION;
-                        let entity = spawn_chunk(&mut commands, asset);
+                        let suspect_hole =
+                            asset.vertex.is_empty() && !asset.kind.all(|kind| kind.is_none());
+                        let entity = spawn_chunk(&mut commands, asset, desired_lod);
                         map.insert(chunk, entity);
+                        stats.archive_loaded += 1;
 
-                        if stale_mesh || needs_seam_remesh(chunk, landscape.as_deref()) {
+                        if suspect_hole
+                            || stale_mesh
+                            || lod_changed
+                            || needs_seam_remesh(chunk, landscape.as_deref())
+                        {
                             dirty.0.insert(chunk);
                         }
 
@@ -268,8 +316,15 @@ fn chunks_load(
             match result {
                 Ok(creation) => {
                     if is_desired(chunk) && !map.0.contains_key(&chunk) {
-                        let entity = spawn_created_chunk(&mut commands, chunk, creation);
+                        let desired_lod = landscape
+                            .as_ref()
+                            .map(|landscape| desired_lod(chunk, landscape.center))
+                            .unwrap_or(0);
+                        let entity =
+                            spawn_created_chunk(&mut commands, chunk, creation, desired_lod);
                         map.insert(chunk, entity);
+                        dirty.0.insert(chunk);
+                        stats.generated += 1;
 
                         generated += 1;
                     }
@@ -310,7 +365,12 @@ fn needs_seam_remesh(chunk: Chunk, landscape: Option<&Landscape>) -> bool {
     })
 }
 
-fn spawn_created_chunk(commands: &mut Commands, chunk: Chunk, creation: ChunkCreation) -> Entity {
+fn spawn_created_chunk(
+    commands: &mut Commands,
+    chunk: Chunk,
+    creation: ChunkCreation,
+    lod: u8,
+) -> Entity {
     let ChunkCreation { kind, light } = creation;
     commands
         .spawn((
@@ -320,14 +380,14 @@ fn spawn_created_chunk(commands: &mut Commands, chunk: Chunk, creation: ChunkCre
                 light: ChunkLight(light),
                 ..Default::default()
             },
-            ChunkLod(0),
+            ChunkLod(lod),
         ))
         .id()
 
     // TODO: save chunk
 }
 
-fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
+fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset, desired_lod: u8) -> Entity {
     let ChunkAsset {
         chunk,
         kind,
@@ -337,7 +397,7 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
         mesh_version,
     } = asset;
 
-    let suspect_hole = lod == 0 && vertex.is_empty() && !kind.all(|kind| kind.is_none());
+    let suspect_hole = vertex.is_empty() && !kind.all(|kind| kind.is_none());
 
     if suspect_hole {
         warn!("chunk {chunk} was loaded with an empty mesh over solid terrain");
@@ -352,11 +412,11 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset) -> Entity {
 
     // An empty saved mesh over solid terrain is not a valid cache. Let the meshing
     // pipeline rebuild it instead of trusting it forever.
-    if !suspect_hole && mesh_version == CHUNK_MESH_VERSION {
+    if !suspect_hole && mesh_version == CHUNK_MESH_VERSION && lod == desired_lod {
         entity.insert(CachedMesh);
     }
 
-    entity.insert(ChunkLod(lod));
+    entity.insert(ChunkLod(desired_lod));
     entity.id()
 }
 
@@ -381,6 +441,13 @@ fn queue_chunks_to_save(
 
         let lod = lod.map(|lod| lod.0).unwrap_or(0);
 
+        // A generated chunk starts with an empty buffer before its first mesh. Do not persist
+        // that placeholder; a real empty mesh is also not worth caching because it can be
+        // regenerated from the chunk data.
+        if vertex.0.is_empty() && cached.is_none() {
+            continue;
+        }
+
         // A full-detail chunk starts with an empty vertex buffer before its first mesh, and an
         // empty mesh over solid terrain is always a hole. Coarse chunks may legitimately be
         // empty when every coarse cell contains some air.
@@ -401,8 +468,16 @@ fn queue_chunks_to_save(
 fn chunks_save(
     mut archive_server: ResMut<ArchiveServer<ChunkAsset>>,
     mut pending: ResMut<PendingSaves>,
-    chunks: ChunkQuery<(&ChunkKind, &ChunkLight, &ChunkVertex, Option<&ChunkLod>)>,
+    chunks: ChunkQuery<(
+        &ChunkKind,
+        &ChunkLight,
+        &ChunkVertex,
+        Option<&ChunkLod>,
+        Option<&CachedMesh>,
+    )>,
     dirty: Res<DirtyChunks>,
+    meshing: Option<Res<MeshTasks>>,
+    mut stats: ResMut<TerrainStats>,
     time: Res<Time>,
     mut timer: Local<Option<Timer>>,
 ) {
@@ -424,17 +499,27 @@ fn chunks_save(
         .0
         .iter()
         .filter(|chunk| !dirty.0.contains(*chunk))
+        .filter(|chunk| {
+            !meshing
+                .as_ref()
+                .is_some_and(|tasks| tasks.is_pending(**chunk))
+        })
         .take(SAVE_BATCH_SIZE)
         .copied()
         .collect::<Vec<_>>();
 
     for chunk in candidates {
-        if let Some((kind, light, vertex, lod)) = chunks.get_chunk(chunk) {
+        if let Some((kind, light, vertex, lod, cached)) = chunks.get_chunk(chunk) {
             let Some(lod) = lod else {
                 warn!("chunk {chunk} has no ChunkLod component; dropping its pending save");
                 handled.push(chunk);
                 continue;
             };
+
+            if vertex.0.is_empty() && cached.is_none() {
+                handled.push(chunk);
+                continue;
+            }
 
             let asset = ChunkAsset {
                 chunk,
@@ -454,6 +539,8 @@ fn chunks_save(
     for chunk in handled {
         pending.0.remove(&chunk);
     }
+
+    stats.saved += saved as u64;
 
     if saved > 0 {
         trace!("[chunks_save] saved {saved} chunks.",);
@@ -534,7 +621,7 @@ mod save_tests {
         voxel::{self, Kind},
     };
 
-    use crate::bundle::{ChunkKind, ChunkLocal, ChunkVertex};
+    use crate::bundle::{ChunkKind, ChunkLocal, ChunkLod, ChunkVertex};
 
     use super::*;
 
@@ -577,6 +664,23 @@ mod save_tests {
 
         app.world_mut()
             .spawn((ChunkLocal(chunk), solid_kind(), ChunkVertex::default()));
+
+        app.update();
+
+        assert!(!app.world().resource::<PendingSaves>().0.contains(&chunk));
+    }
+
+    #[test]
+    fn does_not_save_unmeshed_empty_coarse_chunk() {
+        let mut app = app();
+        let chunk = Chunk::new(0, 0);
+
+        app.world_mut().spawn((
+            ChunkLocal(chunk),
+            solid_kind(),
+            ChunkVertex::default(),
+            ChunkLod(1),
+        ));
 
         app.update();
 
