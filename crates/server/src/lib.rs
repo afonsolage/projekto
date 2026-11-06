@@ -39,6 +39,7 @@ impl Plugin for WorldServerPlugin {
                 (
                     WorldSet::LandscapeUpdate,
                     WorldSet::ChunkManagement,
+                    WorldSet::ChunkInitialization,
                     WorldSet::Propagation,
                     WorldSet::Meshing,
                 )
@@ -50,7 +51,7 @@ impl Plugin for WorldServerPlugin {
                 set::ReceiveRequestsPlugin,
                 set::LandscapePlugin,
                 set::ChunkManagementPlugin,
-                // set::ChunkInitializationPlugin,
+                set::ChunkInitializationPlugin,
                 set::PropagationPlugin,
                 set::MeshingPlugin,
                 set::SendResponsesPlugin,

@@ -51,7 +51,8 @@ pub const MAGIC_SIZE: usize = 8;
 ///
 /// Version 2 removed the derived occlusion and soft-light layers from `ChunkAsset`.
 /// Version 3 added the mesh LOD and mesher version to `ChunkAsset`.
-pub const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x03];
+/// Version 4 changes the generated world (sea-level terrain, surface kinds and caves).
+pub const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x04];
 
 /// Errors which can happens while using the archive crate.
 /// Check variants for description.

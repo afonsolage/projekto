@@ -153,14 +153,24 @@ pub fn gather_neighborhood_light_mask<'a>(
                     } else {
                         Some(intensity)
                     }
-                } else if y != 0 {
-                    // There is no chunk above or below
+                } else if side_voxel.y < 0 {
+                    // There is no world below y = 0; do not treat it as open sky.
+                    None
+                } else if side_voxel.y >= Chunk::Y_AXIS_SIZE as i32 {
+                    // Above the chunk is open sky.
                     Some(voxel::Light::MAX_NATURAL_INTENSITY)
                 } else {
-                    let (dir, neighbor_voxel) =
+                    // x/z are outside the chunk. Keep the y offset: diagonal neighbours above
+                    // and below the current voxel belong to the same neighbour chunk column.
+                    let (neighbor_dir, neighbor_voxel) =
                         chunk::overlap_voxel(voxel, IVec2::new(dir.x, dir.z));
+                    let neighbor_voxel = ChunkVoxel::new(
+                        neighbor_voxel.x,
+                        (voxel.y as i32 + dir.y) as u8,
+                        neighbor_voxel.z,
+                    );
 
-                    let neighbor_chunk = chunk.neighbor(dir);
+                    let neighbor_chunk = chunk.neighbor(neighbor_dir);
 
                     if let Some(kind) = get_kind(neighbor_chunk)
                         && let Some(light) = get_light(neighbor_chunk)
@@ -174,7 +184,9 @@ pub fn gather_neighborhood_light_mask<'a>(
                             Some(intensity)
                         }
                     } else {
-                        Some(voxel::Light::MAX_NATURAL_INTENSITY)
+                        // A missing neighbour must not be treated as open sky: that raises the
+                        // soft light on every boundary vertex and leaves a bright seam.
+                        None
                     }
                 };
 
@@ -296,6 +308,72 @@ pub fn smooth_lighting_skipping<'a>(
     }
 }
 
+/// Light a chunk sends into the neighbour on `side`.
+///
+/// The returned voxels already use the neighbour's local coordinates and have the horizontal
+/// decrement applied. Opaque source and target voxels are skipped, as is zero light.
+pub fn border_transfer(
+    from_kind: &ChunkStorage<voxel::Kind>,
+    from_light: &ChunkStorage<voxel::Light>,
+    to_kind: &ChunkStorage<voxel::Kind>,
+    side: ChunkSide,
+    light_ty: LightTy,
+) -> Vec<(ChunkVoxel, u8)> {
+    let voxel_side = match side {
+        ChunkSide::Right => voxel::Side::Right,
+        ChunkSide::Left => voxel::Side::Left,
+        ChunkSide::Front => voxel::Side::Front,
+        ChunkSide::Back => voxel::Side::Back,
+    };
+    let cross_end = match side {
+        ChunkSide::Right | ChunkSide::Left => Chunk::Z_END,
+        ChunkSide::Front | ChunkSide::Back => Chunk::X_END,
+    };
+
+    let mut transferred = Vec::with_capacity(Chunk::X_AXIS_SIZE * Chunk::Y_AXIS_SIZE);
+
+    for y in 0..=Chunk::Y_END {
+        for cross in 0..=cross_end {
+            let (from, target) = match side {
+                ChunkSide::Right => (
+                    ChunkVoxel::new(Chunk::X_END, y, cross),
+                    ChunkVoxel::new(0, y, cross),
+                ),
+                ChunkSide::Left => (
+                    ChunkVoxel::new(0, y, cross),
+                    ChunkVoxel::new(Chunk::X_END, y, cross),
+                ),
+                ChunkSide::Front => (
+                    ChunkVoxel::new(cross, y, Chunk::Z_END),
+                    ChunkVoxel::new(cross, y, 0),
+                ),
+                ChunkSide::Back => (
+                    ChunkVoxel::new(cross, y, 0),
+                    ChunkVoxel::new(cross, y, Chunk::Z_END),
+                ),
+            };
+
+            if from_kind.get(from).is_opaque() || to_kind.get(target).is_opaque() {
+                continue;
+            }
+
+            let value = from_light.get(from).get(light_ty);
+            if value == 0 {
+                continue;
+            }
+
+            let intensity = calc_propagated_intensity(light_ty, voxel_side, value);
+            if intensity == 0 {
+                continue;
+            }
+
+            transferred.push((target, intensity));
+        }
+    }
+
+    transferred
+}
+
 fn calc_propagated_intensity(ty: LightTy, side: voxel::Side, intensity: u8) -> u8 {
     if side == voxel::Side::Down
         && ty == LightTy::Natural
@@ -386,6 +464,95 @@ mod test {
     use bevy::platform::collections::HashMap;
 
     use super::*;
+
+    #[test]
+    fn opaque_neighbour_darkens_vertex_light() {
+        let open = [Some(voxel::Light::MAX_NATURAL_INTENSITY); NEIGHBOR_COUNT];
+        let mut occluded = open;
+        for index in NEIGHBOR_VERTEX_LOOKUP[voxel::Side::Up as usize][0] {
+            occluded[index] = None;
+        }
+
+        let open_light = soft_vertex_light(&open, voxel::Side::Up)[0];
+        let occluded_light = soft_vertex_light(&occluded, voxel::Side::Up)[0];
+
+        assert!(
+            occluded_light < open_light,
+            "opaque neighbours must darken a vertex ({occluded_light} < {open_light})"
+        );
+    }
+
+    #[test]
+    fn missing_neighbour_is_not_open_sky() {
+        let chunk = Chunk::default();
+        let kind = ChunkStorage::<voxel::Kind>::default();
+        let light = ChunkStorage::<voxel::Light>::default();
+        let get_kind = |target: Chunk| (target == chunk).then_some(&kind);
+        let get_light = |target: Chunk| (target == chunk).then_some(&light);
+
+        let neighbors = super::gather_neighborhood_light(
+            chunk,
+            ChunkVoxel::new(0, 100, 8),
+            get_kind,
+            get_light,
+        );
+
+        assert!(
+            neighbors.iter().any(Option::is_none),
+            "the missing -x neighbour should be None"
+        );
+        assert!(
+            neighbors
+                .iter()
+                .all(|neighbor| *neighbor != Some(voxel::Light::MAX_NATURAL_INTENSITY)),
+            "no missing neighbour may contribute full sky light"
+        );
+    }
+
+    #[test]
+    fn border_transfer_decrements_and_remaps() {
+        let mut light = ChunkStorage::<voxel::Light>::default();
+        light.set_type(ChunkVoxel::new(Chunk::X_END, 5, 3), LightTy::Natural, 15);
+        light.set_type(ChunkVoxel::new(0, 6, 4), LightTy::Natural, 15);
+        light.set_type(ChunkVoxel::new(7, 7, Chunk::Z_END), LightTy::Natural, 15);
+        light.set_type(ChunkVoxel::new(8, 8, 0), LightTy::Natural, 15);
+
+        let air = ChunkStorage::<voxel::Kind>::default();
+
+        assert_eq!(
+            border_transfer(&air, &light, &air, ChunkSide::Right, LightTy::Natural),
+            vec![(ChunkVoxel::new(0, 5, 3), 14)]
+        );
+        assert_eq!(
+            border_transfer(&air, &light, &air, ChunkSide::Left, LightTy::Natural),
+            vec![(ChunkVoxel::new(Chunk::X_END, 6, 4), 14)]
+        );
+        assert_eq!(
+            border_transfer(&air, &light, &air, ChunkSide::Front, LightTy::Natural),
+            vec![(ChunkVoxel::new(7, 7, 0), 14)]
+        );
+        assert_eq!(
+            border_transfer(&air, &light, &air, ChunkSide::Back, LightTy::Natural),
+            vec![(ChunkVoxel::new(8, 8, Chunk::Z_END), 14)]
+        );
+    }
+
+    #[test]
+    fn border_transfer_skips_opaque_voxels() {
+        let mut light = ChunkStorage::<voxel::Light>::default();
+        light.set_type(ChunkVoxel::new(Chunk::X_END, 5, 3), LightTy::Natural, 15);
+        light.set_type(ChunkVoxel::new(Chunk::X_END, 6, 3), LightTy::Natural, 15);
+
+        let mut opaque = ChunkStorage::<voxel::Kind>::default();
+        opaque.set(ChunkVoxel::new(Chunk::X_END, 5, 3), voxel::Kind::id(1));
+        opaque.set(ChunkVoxel::new(0, 6, 3), voxel::Kind::id(1));
+
+        // The source voxel at y=5 and the target voxel at y=6 are opaque, so nothing crosses.
+        assert!(
+            border_transfer(&opaque, &light, &opaque, ChunkSide::Right, LightTy::Natural)
+                .is_empty()
+        );
+    }
 
     #[test]
     fn propagate_empty_chunk() {

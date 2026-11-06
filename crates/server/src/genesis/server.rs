@@ -12,7 +12,7 @@ use projekto_core::{
 //?
 use thiserror::Error;
 
-use crate::genesis::noise::Noise;
+use crate::genesis::terrain::{TerrainGenerator, WorldGenConfig};
 
 #[derive(Debug, Error)]
 pub enum GenesisError {}
@@ -37,23 +37,31 @@ impl GenesisTask {
 #[derive(Resource)]
 pub struct GenesisServer {
     task_pool: TaskPool,
+    config: WorldGenConfig,
 }
 
 impl GenesisServer {
+    /// Creates a server using `assets/worldgen.ron`.
     pub fn new(num_threads: usize) -> Self {
+        Self::with_config(num_threads, WorldGenConfig::load_default())
+    }
+
+    /// Creates a server with an explicit configuration, mainly for tests and tools.
+    pub fn with_config(num_threads: usize, config: WorldGenConfig) -> Self {
         let task_pool = TaskPoolBuilder::new()
             .num_threads(num_threads)
             .thread_name("Genesis Server".to_string())
             .build();
 
-        Self { task_pool }
+        Self { task_pool, config }
     }
 
     pub fn generate(&self, chunk: Chunk) -> GenesisTask {
+        let config = self.config.clone();
         let task = self.task_pool.spawn(async move {
-            let mut noise = Noise::new();
+            let generator = TerrainGenerator::new(config);
             let mut kind = ChunkStorage::default();
-            super::generate_chunk(&noise, chunk, &mut kind);
+            generator.generate(chunk, &mut kind);
 
             let mut light = ChunkStorage::default();
             super::init_light(chunk, &kind, &mut light);

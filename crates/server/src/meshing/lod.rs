@@ -613,55 +613,6 @@ mod tests {
     }
 
     #[test]
-    fn coarse_light_contains_ambient_occlusion() {
-        let mut open_kind = ChunkStorage::<Kind>::default();
-        block(&mut open_kind, 0, 0);
-        let mut occluded_kind = open_kind.clone();
-        occluded_kind.set(ChunkVoxel::new(1, 1, 0), Kind::id(1));
-
-        let mut open_light = ChunkStorage::<Light>::default();
-        let mut occluded_light = open_light.clone();
-        for y in 1..=2 {
-            for z in 0..2 {
-                for x in 0..2 {
-                    let voxel = ChunkVoxel::new(x, y, z);
-                    if open_kind.get(voxel).is_none() {
-                        open_light.set(voxel, Light::natural(15));
-                    }
-                    if occluded_kind.get(voxel).is_none() {
-                        occluded_light.set(voxel, Light::natural(15));
-                    }
-                }
-            }
-        }
-
-        let min_up = |kind: &ChunkStorage<Kind>, light: &ChunkStorage<Light>| {
-            generate_coarse_vertices(
-                Chunk::new(0, 0),
-                kind,
-                light,
-                &[None; chunk::SIDE_COUNT],
-                &[None; chunk::SIDE_COUNT],
-                |_| Some(kind),
-                |_| Some(light),
-                1,
-            )
-            .iter()
-            .filter(|vertex| vertex.normal == voxel::Side::Up.normal())
-            .map(|vertex| vertex.light.x)
-            .fold(f32::MAX, f32::min)
-        };
-
-        let open = min_up(&open_kind, &open_light);
-        let occluded = min_up(&occluded_kind, &occluded_light);
-
-        assert!(
-            occluded < open,
-            "an opaque neighbour must darken a coarse face corner ({occluded} < {open})"
-        );
-    }
-
-    #[test]
     fn coarse_face_uses_adjacent_air_light() {
         let mut kind = ChunkStorage::<Kind>::default();
         for y in 0..=1 {

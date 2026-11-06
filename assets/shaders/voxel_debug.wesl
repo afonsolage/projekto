@@ -64,7 +64,12 @@ struct FragmentInput {
 
 @fragment
 fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
-    let tiled_coord = in.uv % material_data.tile_texture_size;
+    // Keep the tile-local coordinate inside the tile. The float remainder can land exactly on
+    // the next atlas tile at block edges, which samples the empty atlas background (visible as a
+    // light grid on dark terrain).
+    let tile = material_data.tile_texture_size;
+    let inset = tile * 0.06;
+    let tiled_coord = clamp(in.uv % tile, vec2<f32>(inset), vec2<f32>(tile - inset));
     var color = textureSample(atlas_texture, atlas_sampler, in.tile_coord_start + tiled_coord);
 
     if (material_data.debug_chunk_grid > 0.5) {

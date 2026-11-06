@@ -48,16 +48,6 @@ pub enum KindLightDesc {
     Emitter(u8),
 }
 
-// TODO: Find a better way to describe this
-#[derive(Debug, Clone, Deserialize, Default)]
-pub enum KindSourceDesc {
-    #[default]
-    None,
-    Genesis {
-        height: i32,
-    },
-}
-
 /// Describes how this kind should behave on the voxel world.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct KindDescItem {
@@ -65,7 +55,6 @@ pub struct KindDescItem {
     pub id: u16,
     pub sides: KindSidesDesc,
     pub light: KindLightDesc,
-    pub source: KindSourceDesc,
 }
 
 /// Holds a list of [`KindDescItem`] and other global data.
@@ -211,20 +200,9 @@ impl Kind {
         }
     }
 
-    // TODO: rework this, to use noise layers and get generated kind for each layer
-    pub fn get_kind_with_height_source(surface: usize, height: usize) -> Self {
-        let depth = height as i32 - surface as i32;
-
-        match depth {
-            0 => Kind(2),
-            depth if (-3..=-1).contains(&depth) => Kind(1),
-            _ => Kind(3),
-        }
-    }
-
     /// Get the [`KindDescItem`] corresponding to this kind id.
     /// Panics with there is no kind id on [`KindsDescs`] global reference.
-    fn desc(&self) -> &KindDescItem {
+    fn desc(&self) -> &'static KindDescItem {
         for desc in KindsDescs::get().descriptions.iter() {
             if desc.id == self.0 {
                 return desc;
@@ -232,6 +210,20 @@ impl Kind {
         }
 
         panic!("Failed to find kind description {}", self.0);
+    }
+
+    /// Returns the description name, for example `"Grass"`.
+    pub fn name(&self) -> &'static str {
+        &self.desc().name
+    }
+
+    /// Looks up a kind by its description name.
+    pub fn from_name(name: &str) -> Option<Self> {
+        KindsDescs::get()
+            .descriptions
+            .iter()
+            .find(|desc| desc.name == name)
+            .map(|desc| Kind(desc.id))
     }
 }
 
