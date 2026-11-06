@@ -12,17 +12,18 @@ Entity-Component-System (ECS) design of both the client and server.
 ## Client
 
 The client is responsible for rendering the world and handling user input. It connects to the
-server to get the world data and send player actions.
+server to get the world data and send player actions. It keeps no voxel data: every chunk exists
+on the client only as a mesh.
 
 ### Plugins and Systems
 
 The following plugins are used to organize the client's systems:
 
-- **[`CameraControllerPlugin`](./crates/client/src/controller/camera_controller.rs#L9)**: Manages
+- **[`CameraControllerPlugin`](./crates/client/src/controller/camera_controller.rs#L13)**: Manages
   camera switching and mouse grabbing.
-  - [`switch_camera`](./crates/client/src/controller/camera_controller.rs#L105): Switches between
+  - [`switch_camera`](./crates/client/src/controller/camera_controller.rs#L109): Switches between
     `FlyBy` and `FirstPerson` cameras.
-  - [`grab_mouse`](./crates/client/src/controller/camera_controller.rs#L115): Grabs or releases the
+  - [`grab_mouse`](./crates/client/src/controller/camera_controller.rs#L119): Grabs or releases the
     mouse cursor.
 - **[`CharacterControllerPlugin`](./crates/client/src/controller/character_controller.rs#L6)**:
   Manages character movement and position updates.
@@ -30,36 +31,54 @@ The following plugins are used to organize the client's systems:
     character based on keyboard input.
   - [`update_character_position`](./crates/client/src/controller/character_controller.rs#L115):
     Updates the character's position in the world.
+- **[`ClientPlugin`](./crates/client/src/lib.rs#L32)**: Adds the rendering, input and networking
+  plugins and sets up the shared scene and material.
+  - [`setup_mockup_scene`](./crates/client/src/lib.rs#L95): Spawns the cameras, character, axes
+    and light used by the test scene.
+  - [`setup_hold_esc_to_exit`](./crates/client/src/lib.rs#L73): Initializes the `EscHolding`
+    resource.
+  - [`hold_esc_to_exit`](./crates/client/src/lib.rs#L77): Exits the application when the `Esc`
+    key is held down.
+  - [`load_assets`](./crates/client/src/lib.rs#L199): Loads the kind descriptors and atlas.
+  - [`setup_material`](./crates/client/src/lib.rs#L208): Builds the `ChunkMaterial` from the
+    atlas.
 - **Debug plugins** (`crates/debug`, `debug-tools` feature): The debug crate exposes
   `ClientDebugPlugins` and `ServerDebugPlugins` groups for chunk data, overlays, the debug grid
   and BRP. The binary targets add the groups; omit the group or feature to remove the tooling.
-- [`setup_hold_esc_to_exit`](./crates/client/src/lib.rs#L102): Initializes the `EscHolding`
-  resource.
-  - [`hold_esc_to_exit`](./crates/client/src/lib.rs#L106): Exits the application when the `Esc`
-  key is held down.
 - **[`NetPlugin`](./crates/client/src/net.rs#L14)**: Handles the connection to the server and
   incoming messages.
   - [`reconnect_to_server`](./crates/client/src/net.rs#L41): Tries to reconnect to the server if
     the connection is lost.
   - [`server_connection`](./crates/client/src/net.rs#L69): Establishes the initial connection to
     the server.
-  - [`handle_messages`](./crates/client/src/net.rs#L91): Processes incoming messages from the
-    server.
-- **[`MeshingPlugin`](./crates/client/src/set/meshing.rs#L15)**: Generates the chunk meshes.
-  - [`update_chunk_mesh`](./crates/client/src/set/meshing.rs#L50): Updates the mesh of a chunk when
-    new vertex data is received.
-  - [`remove_chunk_mesh`](./crates/client/src/set/meshing.rs#L28): Despawns a chunk when the
-    server sends `ChunkUnload`.
-  - [`despawn_chunks_on_server_disconnect`](./crates/client/src/set/meshing.rs#L39): Despawns all
-    chunks when the server disconnects.
+  - [`handle_messages`](./crates/client/src/net.rs#L91): Drains the connection channel and runs
+    each message handler inline.
+- **[`MeshingPlugin`](./crates/client/src/set/meshing.rs#L32)**: Applies the chunk meshes sent by
+  the server.
+  - [`queue_chunk_mesh`](./crates/client/src/set/meshing.rs#L94): Message handler that queues
+    `ChunkVertex` for the next apply pass. The queue keeps only the newest mesh per chunk and is
+    bounded by `MAX_PENDING_CHUNK_MESHES` and `MAX_PENDING_CHUNK_VERTICES`.
+  - [`remove_chunk_mesh`](./crates/client/src/set/meshing.rs#L98): Message handler that drops a
+    queued mesh and despawns the chunk entity on `ChunkUnload`.
+  - [`apply_chunk_meshes`](./crates/client/src/set/meshing.rs#L125): Drains the queue for at most
+    [`MeshApplyBudget`](./crates/client/src/set/meshing.rs#L24) (6 ms by default), creates or
+    updates the mesh entity and writes `ChunkMeshBuilt`.
+  - [`despawn_chunks_on_server_disconnect`](./crates/client/src/set/meshing.rs#L112): Despawns all
+    chunks and clears the queue when the server disconnects.
 - **[`ReceiveMessagesPlugin`](./crates/client/src/set/receive_messages.rs#L3)**: This plugin is
   currently empty.
-- **[`SendInputPlugin`](./crates/client/src/set/send_input.rs#L5)**: Sends player input to the
-  server.
-  - [`update_player_landscape`](./crates/client/src/set/send_input.rs#L30): Sends a
-    `LandscapeUpdate` message to the server when the player's landscape changes.
-  - [`send_welcome_message`](./crates/client/src/set/send_input.rs#L37): Sends a `LandscapeUpdate`
-    message to the server when the client connects.
+- **[`SendInputPlugin`](./crates/client/src/set/send_input.rs#L15)**: Tracks the player's
+  landscape and sends it to the server.
+  - [`update_landscape_center`](./crates/client/src/set/send_input.rs#L51): Moves
+    `PlayerLandscape` to the active camera's chunk.
+  - [`update_player_landscape`](./crates/client/src/set/send_input.rs#L65): Sends a
+    `LandscapeUpdate` message when the player's landscape changes.
+  - [`send_welcome_message`](./crates/client/src/set/send_input.rs#L72): Sends the initial
+    `LandscapeUpdate` when the connection is established.
+
+Message handlers are registered with the `proto` crate instead of being added to a schedule.
+`handle_messages` runs them inline while it drains the channel, so they execute in `PreUpdate`
+on the frame their message arrives.
 
 ### System Sets (ClientSet)
 
@@ -67,73 +86,84 @@ The client's systems are organized into the following `SystemSet`s, which are ex
 specific order:
 
 1.  **`PreUpdate`**:
-    - `ReceiveMessages`:
-      - `reconnect_to_server` (`NetPlugin`)
-      - `server_connection` (`NetPlugin`)
-      - `handle_messages` (`NetPlugin`)
+    - `ReceiveMessages`: configured, but currently no system belongs to it.
+    - `reconnect_to_server` (`NetPlugin`), `server_connection` (`NetPlugin`) and
+      `handle_messages` (`NetPlugin`) run in `PreUpdate` outside any set.
 2.  **`Update`**:
     - `Meshing`:
-      - `update_chunk_mesh` (`MeshingPlugin`)
-      - `despawn_chunks_on_server_disconnect` (`MeshingPlugin`)
+      - `apply_chunk_meshes` (`MeshingPlugin`)
+    - `despawn_chunks_on_server_disconnect` (`MeshingPlugin`) also runs in `Update`, outside the
+      set, gated on `ServerDisconnected`.
 3.  **`PostUpdate`**:
-    - `SendInput`:
-      - `update_player_landscape` (`SendInputPlugin`)
-      - `send_welcome_message` (`SendInputPlugin`)
+    - `SendInput`, gated on `ServerConnection`:
+      - `update_landscape_center` (`SendInputPlugin`)
+      - `update_player_landscape` (`SendInputPlugin`), when `PlayerLandscape` changed
+      - `send_welcome_message` (`SendInputPlugin`), when `ServerConnection` was added
 
 ## Server
 
 The server is responsible for managing the game world, including world generation, chunk
-management, and processing player actions.
+management, and processing player actions. Chunks live as entities with their voxel data, and
+the server owns the archive and the generation pipeline.
 
 ### Plugins and Systems
 
 The following plugins are used to organize the server's systems:
 
-- **[`ChunkAssetPlugin`](./crates/server/src/asset.rs#L24)**: Manages the loading and generation of
-  chunk assets.
 - **[`NetPlugin`](./crates/server/src/net.rs#L15)**: Handles client connections and messages.
   - [`start_network_server`](./crates/server/src/net.rs#L124): Starts the network server.
   - [`new_client_connected`](./crates/server/src/net.rs#L160): Handles new client connections.
   - [`remove_disconnected_clients`](./crates/server/src/net.rs#L141): Removes disconnected clients.
-  - [`handle_messages`](./crates/server/src/net.rs#L174): Processes incoming messages from clients.
+  - [`handle_messages`](./crates/server/src/net.rs#L174): Drains every client channel and runs
+    each message handler inline.
   - [`ClientSync`](./crates/server/src/net.rs#L50): Tracks sent chunks and pending updates/unloads
     per client.
 - **[`ReceiveRequestsPlugin`](./crates/server/src/set/receive_requests.rs#L13)**: Handles requests
   from clients.
-  - [`handle_landscape_update`](./crates/server/src/set/receive_requests.rs#L21): Handles the
-    `LandscapeUpdate` message from clients.
-- **[`LandscapePlugin`](./crates/server/src/set/landscape.rs#L8)**: Manages the game world's
+  - [`handle_landscape_update`](./crates/server/src/set/receive_requests.rs#L21): Message handler
+    that validates the client's request, clamps the radius and replaces the `Landscape`
+    resource. It is invoked by `handle_messages`.
+- **[`LandscapePlugin`](./crates/server/src/set/landscape.rs#L9)**: Manages the game world's
   landscape.
-  - [`update_landscape`](./crates/server/src/set/landscape.rs#L39): Updates the landscape based on
-    the `Landscape` resource.
-- **[`ChunkManagementPlugin`](./crates/server/src/set/chunk_management.rs#L15)**: Manages the
-  loading, unloading, and spawning of chunks.
-  - [`chunks_unload`](./crates/server/src/set/chunk_management.rs#L55): Unloads chunks that are no
-    longer needed and notifies clients.
-  - [`chunks_load`](./crates/server/src/set/chunk_management.rs#L102): Loads new chunks, dropping
-    results that left the landscape while loading.
-  - [`queue_chunks_to_save`](./crates/server/src/set/chunk_management.rs#L310): Collects chunks
+  - [`update_landscape`](./crates/server/src/set/landscape.rs#L41): Diffs the landscape against
+    `ChunkMap` and emits `ChunkLoad`/`ChunkUnload` messages, nearest-first.
+- **[`ChunkManagementPlugin`](./crates/server/src/set/chunk_management.rs#L45)**: Manages the
+  loading, generation, unloading and saving of chunks.
+  - [`init_servers`](./crates/server/src/set/chunk_management.rs#L84): Inserts the
+    `ArchiveServer` and the `GenesisServer`.
+  - [`chunks_unload`](./crates/server/src/set/chunk_management.rs#L147): Unloads chunks that are
+    no longer needed, cancels their mesh tasks, invalidates neighbours and notifies clients.
+  - [`chunks_load`](./crates/server/src/set/chunk_management.rs#L204): Loads archive chunks and
+    generates missing ones, dropping results that left the landscape while loading.
+  - [`queue_chunks_to_save`](./crates/server/src/set/chunk_management.rs#L423): Collects chunks
     whose vertices changed since the last save.
-  - [`chunks_save`](./crates/server/src/set/chunk_management.rs#L324): Saves a bounded batch of
+  - [`chunks_save`](./crates/server/src/set/chunk_management.rs#L468): Saves a bounded batch of
     changed chunks, leaving compression to the archive workers.
-  - [`archive_maintenance`](./crates/server/src/set/chunk_management.rs#L77): Flushes archive
+  - [`archive_maintenance`](./crates/server/src/set/chunk_management.rs#L104): Flushes archive
     headers so saved chunks can be loaded in the next session.
+- **[`ChunkInitializationPlugin`](./crates/server/src/set/chunk_initialization.rs#L15)**: Seeds
+  light across chunk borders.
+  - [`seed_chunk_borders`](./crates/server/src/set/chunk_initialization.rs#L31): Transfers natural
+    light in both directions whenever either side of a border appears, so the result does not
+    depend on load order.
 - **[`PropagationPlugin`](./crates/server/src/set/propagation.rs#L13)**: Propagates light through
   the world.
   - [`propagate_light`](./crates/server/src/set/propagation.rs#L31): Propagates light based on
-    `LightUpdate` events.
-- **[`MeshingPlugin`](./crates/server/src/set/meshing.rs#L13)**: Generates the chunk meshes.
-  - [`mark_dirty_chunks`](./crates/server/src/set/meshing.rs#L31): Invalidates the derived caches
+    `LightUpdate` messages and forwards it to neighbouring chunks.
+- **[`MeshingPlugin`](./crates/server/src/set/meshing.rs#L25)**: Chooses chunk LOD and generates
+  the chunk meshes.
+  - [`update_chunk_lods`](./crates/server/src/set/meshing.rs#L138): Applies pending LOD
+    transitions and dirties the affected seams.
+  - [`mark_dirty_chunks`](./crates/server/src/set/meshing.rs#L191): Invalidates the derived caches
     and queues chunk meshes affected by `Kind` or `Light` changes. Chunks loaded with a saved
     mesh are skipped until something actually changes.
-  - [`generate_vertices`](./crates/server/src/set/meshing.rs#L81): Computes occlusion and soft
-    light on demand, waits for the chunk's halo before meshing, and generates the vertices for
-    the chunk meshes.
-- **[`SendResponsesPlugin`](./crates/server/src/set/send_responses.rs#L11)**: Sends responses to
+  - [`generate_vertices`](./crates/server/src/set/meshing.rs#L287): Imports finished async tasks,
+    drops stale results and spawns new mesh tasks, nearest-first.
+- **[`SendResponsesPlugin`](./crates/server/src/set/send_responses.rs#L14)**: Sends responses to
   clients.
-  - [`notify_chunk_vertex_updated`](./crates/server/src/set/send_responses.rs#L24): Queues chunk
+  - [`notify_chunk_vertex_updated`](./crates/server/src/set/send_responses.rs#L27): Queues chunk
     vertex updates for clients when the vertices change.
-  - [`resync_clients`](./crates/server/src/set/send_responses.rs#L54): Retries pending updates and
+  - [`resync_clients`](./crates/server/src/set/send_responses.rs#L57): Retries pending updates and
     unloads that did not fit in a client's bounded channel.
 
 ### System Sets (WorldSet)
@@ -142,26 +172,123 @@ The server's systems are organized into the following `SystemSet`s, which are ex
 specific order:
 
 1.  **`PreUpdate`**:
-    - `ReceiveRequests`:
-      - `new_client_connected` (`NetPlugin`)
-      - `remove_disconnected_clients` (`NetPlugin`)
-      - `handle_messages` (`NetPlugin`)
-      - `handle_landscape_update` (`ReceiveRequestsPlugin`)
-2.  **`Update`**:
+    - `ReceiveRequests`: configured, but currently no system belongs to it.
+    - `new_client_connected` (`NetPlugin`), `remove_disconnected_clients` (`NetPlugin`) and
+      `handle_messages` (`NetPlugin`) run in `PreUpdate` outside any set.
+    - `handle_messages` invokes `handle_landscape_update` (`ReceiveRequestsPlugin`) inline.
+2.  **`Update`**, chained in this order:
     - `LandscapeUpdate`:
       - `update_landscape` (`LandscapePlugin`)
     - `ChunkManagement`:
-      - `chunks_unload` (`ChunkManagementPlugin`)
-      - `chunks_load` (`ChunkManagementPlugin`)
+      - `chunks_unload`, `chunks_load`, `queue_chunks_to_save`, `chunks_save` and
+        `archive_maintenance` (`ChunkManagementPlugin`), chained in that order
+    - `ChunkInitialization`:
+      - `seed_chunk_borders` (`ChunkInitializationPlugin`)
     - `Propagation`:
       - `propagate_light` (`PropagationPlugin`)
     - `Meshing`:
-      - `mark_dirty_chunks` (`MeshingPlugin`)
-      - `generate_vertices` (`MeshingPlugin`)
+      - `update_chunk_lods`, `mark_dirty_chunks` and `generate_vertices` (`MeshingPlugin`),
+        chained in that order
 3.  **`PostUpdate`**:
     - `SendResponses`:
-      - `notify_chunk_vertex_updated` (`SendResponsesPlugin`)
-      - `resync_clients` (`SendResponsesPlugin`)
+      - `notify_chunk_vertex_updated` and `resync_clients` (`SendResponsesPlugin`), chained in
+        that order
+
+## World pipeline
+
+### Chunk storage
+
+A chunk is a 16×256×16 grid indexed by [`ChunkVoxel`](./crates/core/src/coords/chunk.rs#L99);
+[`ChunkStorage<T>`](./crates/core/src/chunk/storage.rs#L28) stores one layer of it and selects
+its backend at compile time through
+[`ChunkStorageType::USE_SECTIONS`](./crates/core/src/chunk/storage.rs#L14).
+
+`Kind` and `Light` use the section backend
+([`SubChunkStorage`](./crates/core/src/chunk/sub_chunk.rs#L60)): the chunk is split into 16³
+sections, and each section is one of [`ChunkPack`](./crates/core/src/chunk/sub_chunk.rs#L426)'s
+forms — `Single` for a uniform section, `Pallet` for a palette plus bit-packed indices, and
+`Dense` when a section has more than 255 distinct values. `pack` re-encodes a section into the
+smallest form. The derived layers, `FacesOcclusion` and `FacesSoftLight`, use the column backend
+([`ChunkColumnStorage`](./crates/core/src/chunk/column.rs#L21)), which packs each vertical
+16-voxel column into `Single` or palette form. Columns are not persisted; they are rebuilt from
+`Kind` and `Light` when needed.
+
+The backend tag is part of the serialized form. A `ChunkStorage<T>` decoded with the wrong
+backend for `T` is rejected rather than reinterpreted.
+
+### LOD and asynchronous meshing
+
+Server meshing has two detail tiers. [`desired_lod`](./crates/server/src/set/meshing.rs#L102)
+keeps chunks inside the [`LOD_FULL_RADIUS`](./crates/server/src/set/meshing.rs#L85) square (16
+chunks) around the landscape centre at LOD 0 and gives the rest LOD 1.
+[`next_lod`](./crates/server/src/set/meshing.rs#L120) adds
+[`LOD_HYSTERESIS`](./crates/server/src/set/meshing.rs#L90) for chunks already at LOD 0, so a
+chunk oscillating around the boundary is not remeshed every frame.
+[`update_chunk_lods`](./crates/server/src/set/meshing.rs#L138) applies at most
+[`LOD_UPDATES_PER_FRAME`](./crates/server/src/set/meshing.rs#L93) transitions per update and
+dirties the chunk and its horizontal neighbours because the seam changes. The coarse mesher
+([`LodScale`](./crates/server/src/meshing/lod.rs#L26)) downsamples x and z by `2^lod` (capped at
+16) and keeps the full vertical resolution, so horizontal overhangs remain visible.
+
+[`mark_dirty_chunks`](./crates/server/src/set/meshing.rs#L191) turns a `Kind` change into a
+three-by-three dirty region and drops both derived caches; a `Light` change dirties the same
+region but keeps the occlusion cache, which only depends on kinds. A chunk that still carries
+`CachedMesh` skips the initial pass.
+
+[`generate_vertices`](./crates/server/src/set/meshing.rs#L287) never meshes on the ECS thread.
+It imports finished [`MeshTasks`](./crates/server/src/set/meshing.rs#L54), discards results for
+chunks that were re-dirtied, unloaded or whose LOD changed, then admits at most
+[`MESH_MAX_SPAWNS`](./crates/server/src/set/meshing.rs#L46) tasks per update while fewer than
+[`MESH_MAX_IN_FLIGHT`](./crates/server/src/set/meshing.rs#L43) are running. Candidates are sorted
+nearest-first, alternate between full and coarse so neither starves, and wait until the chunk's
+halo is loaded. Full meshes store occlusion and soft light in
+[`DerivedCaches`](./crates/server/src/cache.rs#L14); coarse meshes do not populate those caches.
+
+### Streaming
+
+`PlayerLandscape` follows the active camera. The client sends a `LandscapeUpdate` when its
+centre or radius changes and once when the connection is established. The server clamps the
+radius to [`MAX_LANDSCAPE_RADIUS`](./crates/server/src/set/landscape.rs#L22) (32) and replaces
+the `Landscape` resource.
+
+[`update_landscape`](./crates/server/src/set/landscape.rs#L41) walks the requested square and
+emits `ChunkLoad` nearest-first, plus `ChunkUnload` for every mapped chunk outside the square.
+[`chunks_load`](./crates/server/src/set/chunk_management.rs#L204) keeps a loading set so a
+pending chunk is not requested twice, reads the archive first and falls back to `GenesisServer`
+on a miss, and drops any result that arrived after the chunk left the landscape. Saved chunks are
+spawned with the LOD they should use now; a changed LOD, an old mesh version or an empty mesh over
+solid terrain marks them dirty.
+[`chunks_unload`](./crates/server/src/set/chunk_management.rs#L147) cancels the chunk's mesh
+task, invalidates its neighbours, updates client bookkeeping and despawns the entity.
+
+Client updates use a bounded channel. [`ClientSync`](./crates/server/src/net.rs#L50) remembers
+which chunks have pending updates and unloads per client, and retries the ones that did not fit,
+so a slow client never blocks the ECS thread.
+
+### Persistence
+
+Chunks are stored in region files under `archive/region/{x}_{z}.rgn`, one file per 32×32 chunk
+region. A file starts with a 4096-byte header holding one 4-byte sector index per chunk; each
+asset is bincode-encoded, lz4-compressed and prefixed with
+[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L55). [`ArchiveServer`](./crates/archive/src/server.rs#L162)
+owns one worker per region on the I/O task pool, so reads, writes, compression and header flushes
+do not run on the ECS thread.
+
+[`ChunkAsset`](./crates/archive/src/asset.rs#L16) stores `kind`, `light`, `vertex`, `lod` and
+`mesh_version`. [`CHUNK_MESH_VERSION`](./crates/archive/src/asset.rs#L9) is bumped whenever the
+mesher output changes; a mesh saved by an older version is loaded but not trusted, so the chunk
+is remeshed. A missing asset, an unsupported archive version or a decode failure is regenerated
+through `GenesisServer`.
+
+[`queue_chunks_to_save`](./crates/server/src/set/chunk_management.rs#L423) only queues chunks
+whose `ChunkVertex` changed. It skips placeholder empty buffers and cached meshes that were not
+rebuilt.
+[`chunks_save`](./crates/server/src/set/chunk_management.rs#L468) persists at most 64 chunks
+every 0.25 s, drops chunks without a `ChunkLod`, and never saves a chunk that is dirty or has a
+mesh task in flight.
+[`archive_maintenance`](./crates/server/src/set/chunk_management.rs#L104) flushes dirty headers
+every 2 s and again when a save burst drains, which is what makes saved chunks visible to the
+next session.
 
 ## `proto` Crate
 
