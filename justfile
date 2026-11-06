@@ -71,6 +71,6 @@ client-win *args:
     # `dynamic_linking` needs the toolchain's std DLL next to the executable.
     cp -u "$(rustc --print sysroot)"/lib/rustlib/{{win_target}}/lib/std-*.dll {{win_dir}}/
     export BEVY_ASSET_ROOT="$(wslpath -w .)"
-    export RUST_LOG="${RUST_LOG:-error,projekto=debug,projekto_client=trace}"
+    export RUST_LOG="${RUST_LOG:-error,projekto=debug,projekto_client=debug}"
     export WSLENV="RUST_LOG:WGPU_BACKEND:BEVY_ASSET_ROOT:PROJEKTO_VIEW_RADIUS"
     exec {{win_dir}}/client.exe
