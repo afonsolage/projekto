@@ -132,8 +132,9 @@ impl TerrainGenerator {
                 let mut top = None;
 
                 for y in 0..Chunk::Y_AXIS_SIZE {
-                    if self.is_solid(height, origin, x, y, z, overhang.as_ref(), cavern.as_ref()) {
-                        kind.set(ChunkVoxel::new(x as u8, y as u8, z as u8), deep);
+                    let voxel = ChunkVoxel::new(x as u8, y as u8, z as u8);
+                    if self.is_solid(height, origin, voxel, overhang.as_ref(), cavern.as_ref()) {
+                        kind.set(voxel, deep);
                         top = Some(y);
                     }
                 }
@@ -182,20 +183,17 @@ impl TerrainGenerator {
         (y_min, y_max)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn is_solid(
         &self,
         height: f32,
         origin: Vec3,
-        x: usize,
-        y: usize,
-        z: usize,
+        voxel: ChunkVoxel,
         overhang: Option<&Lattice>,
         cavern: Option<&Lattice>,
     ) -> bool {
-        let world_x = origin.x + x as f32;
-        let world_y = y as f32;
-        let world_z = origin.z + z as f32;
+        let world_x = origin.x + f32::from(voxel.x);
+        let world_y = f32::from(voxel.y);
+        let world_z = origin.z + f32::from(voxel.z);
 
         let mut surface = height;
         if let Some(overhang) = overhang {
