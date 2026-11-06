@@ -90,14 +90,14 @@ pub const SIDES: [ChunkSide; SIDE_COUNT] = [
 ];
 
 impl ChunkSide {
-    // pub const fn opposite(&self) -> ChunkSide {
-    //     match self {
-    //         ChunkSide::Right => ChunkSide::Left,
-    //         ChunkSide::Left => ChunkSide::Right,
-    //         ChunkSide::Front => ChunkSide::Back,
-    //         ChunkSide::Back => ChunkSide::Front,
-    //     }
-    // }
+    pub const fn opposite(&self) -> ChunkSide {
+        match self {
+            ChunkSide::Right => ChunkSide::Left,
+            ChunkSide::Left => ChunkSide::Right,
+            ChunkSide::Front => ChunkSide::Back,
+            ChunkSide::Back => ChunkSide::Front,
+        }
+    }
 
     pub const fn index(&self) -> usize {
         match self {

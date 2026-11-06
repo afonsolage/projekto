@@ -1,13 +1,13 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy::prelude::*;
 use projekto_core::{
     chunk::{self},
-    voxel::{self},
+    voxel::LightTy,
 };
 
 use crate::{
     WorldSet,
-    bundle::{ChunkKind, ChunkLight, ChunkLocal, any_chunk},
-    light::{self, NeighborLightPropagation},
+    bundle::{ChunkLight, ChunkLocal, ChunkMap},
+    light,
 };
 
 use super::LightUpdate;
@@ -18,98 +18,113 @@ impl Plugin for ChunkInitializationPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (init_light
-                .run_if(any_chunk::<Added<ChunkLight>>)
-                .in_set(WorldSet::ChunkInitialization),),
+            seed_chunk_borders.in_set(WorldSet::ChunkInitialization),
         );
     }
 }
 
-fn init_light(
-    mut q: Query<(&ChunkLocal, &ChunkKind, &mut ChunkLight), Added<ChunkLight>>,
+/// Seeds natural light across the borders of chunks that just loaded.
+///
+/// A chunk can load before or after its neighbour, and light events sent to a missing neighbour
+/// are dropped. Seeding both directions whenever either side appears makes the result independent
+/// of load order and keeps cave openings lit across chunk borders.
+fn seed_chunk_borders(
+    new_chunks: Query<(&ChunkLocal, &ChunkLight), Added<ChunkLight>>,
+    lights: Query<&ChunkLight>,
+    map: Res<ChunkMap>,
     mut writer: MessageWriter<LightUpdate>,
 ) {
-    let mut map = HashMap::new();
-    let mut count = 0;
+    for (local, light) in &new_chunks {
+        for side in chunk::SIDES {
+            let neighbor = local.neighbor(side.dir());
+            let Some(&entity) = map.get(&neighbor) else {
+                continue;
+            };
+            let Ok(neighbor_light) = lights.get(entity) else {
+                continue;
+            };
 
-    q.iter_mut().for_each(|(local, kind, mut light)| {
-        chunk::top_voxels().for_each(|voxel| {
-            light.set_type(
-                voxel,
-                voxel::LightTy::Natural,
-                voxel::Light::MAX_NATURAL_INTENSITY,
-            );
-        });
+            let into_chunk =
+                light::border_transfer(&neighbor_light.0, side.opposite(), LightTy::Natural);
+            if !into_chunk.is_empty() {
+                writer.write(LightUpdate {
+                    chunk: local.0,
+                    ty: LightTy::Natural,
+                    values: into_chunk,
+                });
+            }
 
-        let neighbor_propagation = light::propagate(
-            kind,
-            &mut light,
-            voxel::LightTy::Natural,
-            chunk::top_voxels(),
-        );
-
-        neighbor_propagation.into_iter().for_each(
-            |NeighborLightPropagation {
-                 side,
-                 voxel,
-                 ty,
-                 intensity,
-             }| {
-                let chunk = local.neighbor(side.dir());
-                map.entry((chunk, ty))
-                    .or_insert(vec![])
-                    .push((voxel, intensity));
-            },
-        );
-
-        count += 1;
-    });
-
-    let events = map.len();
-
-    map.into_iter().for_each(|((chunk, ty), values)| {
-        writer.write(LightUpdate { chunk, ty, values });
-    });
-
-    trace!("[init_light] {count} chunks light initialized. {events} propagation events sent.");
+            let into_neighbor = light::border_transfer(&light.0, side, LightTy::Natural);
+            if !into_neighbor.is_empty() {
+                writer.write(LightUpdate {
+                    chunk: neighbor,
+                    ty: LightTy::Natural,
+                    values: into_neighbor,
+                });
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use bevy::app::ScheduleRunnerPlugin;
+    use bevy::{app::ScheduleRunnerPlugin, platform::collections::HashMap};
+    use projekto_core::{
+        chunk::ChunkStorage,
+        coords::{Chunk, ChunkVoxel},
+        voxel::{self},
+    };
 
-    use crate::bundle::ChunkBundle;
+    use crate::{
+        WorldSet,
+        bundle::{ChunkBundle, ChunkLight, ChunkLocal, ChunkMap},
+        set::PropagationPlugin,
+    };
 
     use super::*;
 
     #[test]
-    fn init_light_empty_chunk() {
-        // Arrange
+    fn seeds_light_across_the_border() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-            .add_message::<LightUpdate>()
-            .add_plugins(ChunkInitializationPlugin);
+            .add_plugins((ChunkInitializationPlugin, PropagationPlugin))
+            .configure_sets(
+                Update,
+                (WorldSet::ChunkInitialization, WorldSet::Propagation).chain(),
+            );
 
-        app.world.spawn(ChunkBundle::default());
+        let mut light = ChunkStorage::<voxel::Light>::default();
+        light.set_type(ChunkVoxel::new(Chunk::X_END, 5, 3), LightTy::Natural, 15);
 
-        // Act
+        let a = app
+            .world_mut()
+            .spawn(ChunkBundle {
+                light: ChunkLight(light),
+                ..Default::default()
+            })
+            .id();
+        let b = app
+            .world_mut()
+            .spawn(ChunkBundle {
+                local: ChunkLocal(Chunk::new(1, 0)),
+                ..Default::default()
+            })
+            .id();
+
+        app.world_mut().insert_resource(ChunkMap(HashMap::from([
+            (Chunk::default(), a),
+            (Chunk::new(1, 0), b),
+        ])));
+
+        app.update();
         app.update();
 
-        // Assert
-        let light = app.world.query::<&ChunkLight>().single(&app.world);
-        assert!(
-            light
-                .iter()
-                .all(|light| light.get(voxel::LightTy::Natural)
-                    == voxel::Light::MAX_NATURAL_INTENSITY),
-            "All voxels should have max natural light on empty chunk"
-        );
+        let light = app.world().get::<ChunkLight>(b).unwrap();
 
-        let light_update_events = app.world.resource::<Events<LightUpdate>>();
         assert_eq!(
-            light_update_events.len(),
-            4,
-            "Init light should propagate to all 4 neighbors"
+            light.get(ChunkVoxel::new(0, 5, 3)).get(LightTy::Natural),
+            14,
+            "light should cross the border from the lit chunk"
         );
     }
 }

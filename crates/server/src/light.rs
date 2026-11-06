@@ -296,6 +296,62 @@ pub fn smooth_lighting_skipping<'a>(
     }
 }
 
+/// Light a chunk sends into the neighbour on `side`.
+///
+/// The returned voxels already use the neighbour's local coordinates and have the horizontal
+/// decrement applied. Voxels with zero light are skipped.
+pub fn border_transfer(
+    light: &ChunkStorage<voxel::Light>,
+    side: ChunkSide,
+    light_ty: LightTy,
+) -> Vec<(ChunkVoxel, u8)> {
+    let voxel_side = match side {
+        ChunkSide::Right => voxel::Side::Right,
+        ChunkSide::Left => voxel::Side::Left,
+        ChunkSide::Front => voxel::Side::Front,
+        ChunkSide::Back => voxel::Side::Back,
+    };
+
+    let mut transferred = Vec::with_capacity(Chunk::X_AXIS_SIZE * Chunk::Y_AXIS_SIZE);
+
+    for y in 0..=Chunk::Y_END {
+        for cross in 0..=Chunk::X_END {
+            let (from, target) = match side {
+                ChunkSide::Right => (
+                    ChunkVoxel::new(Chunk::X_END, y, cross),
+                    ChunkVoxel::new(0, y, cross),
+                ),
+                ChunkSide::Left => (
+                    ChunkVoxel::new(0, y, cross),
+                    ChunkVoxel::new(Chunk::X_END, y, cross),
+                ),
+                ChunkSide::Front => (
+                    ChunkVoxel::new(cross, y, Chunk::Z_END),
+                    ChunkVoxel::new(cross, y, 0),
+                ),
+                ChunkSide::Back => (
+                    ChunkVoxel::new(cross, y, 0),
+                    ChunkVoxel::new(cross, y, Chunk::Z_END),
+                ),
+            };
+
+            let value = light.get(from).get(light_ty);
+            if value == 0 {
+                continue;
+            }
+
+            let intensity = calc_propagated_intensity(light_ty, voxel_side, value);
+            if intensity == 0 {
+                continue;
+            }
+
+            transferred.push((target, intensity));
+        }
+    }
+
+    transferred
+}
+
 fn calc_propagated_intensity(ty: LightTy, side: voxel::Side, intensity: u8) -> u8 {
     if side == voxel::Side::Down
         && ty == LightTy::Natural
@@ -386,6 +442,32 @@ mod test {
     use bevy::platform::collections::HashMap;
 
     use super::*;
+
+    #[test]
+    fn border_transfer_decrements_and_remaps() {
+        let mut light = ChunkStorage::<voxel::Light>::default();
+        light.set_type(ChunkVoxel::new(Chunk::X_END, 5, 3), LightTy::Natural, 15);
+        light.set_type(ChunkVoxel::new(0, 6, 4), LightTy::Natural, 15);
+        light.set_type(ChunkVoxel::new(7, 7, Chunk::Z_END), LightTy::Natural, 15);
+        light.set_type(ChunkVoxel::new(8, 8, 0), LightTy::Natural, 15);
+
+        assert_eq!(
+            border_transfer(&light, ChunkSide::Right, LightTy::Natural),
+            vec![(ChunkVoxel::new(0, 5, 3), 14)]
+        );
+        assert_eq!(
+            border_transfer(&light, ChunkSide::Left, LightTy::Natural),
+            vec![(ChunkVoxel::new(Chunk::X_END, 6, 4), 14)]
+        );
+        assert_eq!(
+            border_transfer(&light, ChunkSide::Front, LightTy::Natural),
+            vec![(ChunkVoxel::new(7, 7, 0), 14)]
+        );
+        assert_eq!(
+            border_transfer(&light, ChunkSide::Back, LightTy::Natural),
+            vec![(ChunkVoxel::new(8, 8, Chunk::Z_END), 14)]
+        );
+    }
 
     #[test]
     fn propagate_empty_chunk() {
