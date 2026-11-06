@@ -39,10 +39,6 @@ pub struct ChunkBundle {
     pub vertex: ChunkVertex,
 }
 
-pub fn any_chunk<T: QueryFilter>(q_changed_chunks: Query<(), (T, With<ChunkLocal>)>) -> bool {
-    !q_changed_chunks.is_empty()
-}
-
 #[derive(Resource, Default, Debug, Clone, Deref, DerefMut)]
 pub struct ChunkMap(pub HashMap<Chunk, Entity>);
 

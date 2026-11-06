@@ -6,7 +6,7 @@ use projekto_core::{
 
 use crate::{
     WorldSet,
-    bundle::{ChunkKind, ChunkLight, ChunkQuery},
+    bundle::{CachedMesh, ChunkKind, ChunkLight, ChunkMap, ChunkQuery},
     light::{self, NeighborLightPropagation},
 };
 
@@ -29,7 +29,10 @@ pub struct LightUpdate {
 }
 
 fn propagate_light(
+    mut commands: Commands,
     mut q_light: ChunkQuery<(&ChunkKind, &mut ChunkLight)>,
+    q_cached: Query<&CachedMesh>,
+    chunk_map: Res<ChunkMap>,
     mut params: ParamSet<(MessageReader<LightUpdate>, MessageWriter<LightUpdate>)>,
 ) {
     let mut count = 0;
@@ -40,11 +43,23 @@ fn propagate_light(
         .fold(
             HashMap::<(Chunk, voxel::LightTy), Vec<ChunkVoxel>>::new(),
             |mut map, LightUpdate { chunk, ty, values }| {
-                if let Some((_, mut light)) = q_light.get_chunk_mut(*chunk) {
+                if let Some((kind, mut light)) = q_light.get_chunk_mut(*chunk) {
                     values.iter().for_each(|&(voxel, intensity)| {
+                        if kind.get(voxel).is_opaque() {
+                            return;
+                        }
+
                         if intensity > light.get(voxel).get(*ty) {
                             light.set_type(voxel, *ty, intensity);
                             map.entry((*chunk, *ty)).or_default().push(voxel);
+
+                            // A saved mesh was built from the old light, so it can no longer be
+                            // treated as a valid archive restore.
+                            if let Some(&entity) = chunk_map.get(chunk)
+                                && q_cached.contains(entity)
+                            {
+                                commands.entity(entity).remove::<CachedMesh>();
+                            }
                         }
                     });
 

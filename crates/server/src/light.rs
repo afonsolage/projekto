@@ -299,9 +299,11 @@ pub fn smooth_lighting_skipping<'a>(
 /// Light a chunk sends into the neighbour on `side`.
 ///
 /// The returned voxels already use the neighbour's local coordinates and have the horizontal
-/// decrement applied. Voxels with zero light are skipped.
+/// decrement applied. Opaque source and target voxels are skipped, as is zero light.
 pub fn border_transfer(
-    light: &ChunkStorage<voxel::Light>,
+    from_kind: &ChunkStorage<voxel::Kind>,
+    from_light: &ChunkStorage<voxel::Light>,
+    to_kind: &ChunkStorage<voxel::Kind>,
     side: ChunkSide,
     light_ty: LightTy,
 ) -> Vec<(ChunkVoxel, u8)> {
@@ -311,11 +313,15 @@ pub fn border_transfer(
         ChunkSide::Front => voxel::Side::Front,
         ChunkSide::Back => voxel::Side::Back,
     };
+    let cross_end = match side {
+        ChunkSide::Right | ChunkSide::Left => Chunk::Z_END,
+        ChunkSide::Front | ChunkSide::Back => Chunk::X_END,
+    };
 
     let mut transferred = Vec::with_capacity(Chunk::X_AXIS_SIZE * Chunk::Y_AXIS_SIZE);
 
     for y in 0..=Chunk::Y_END {
-        for cross in 0..=Chunk::X_END {
+        for cross in 0..=cross_end {
             let (from, target) = match side {
                 ChunkSide::Right => (
                     ChunkVoxel::new(Chunk::X_END, y, cross),
@@ -335,7 +341,11 @@ pub fn border_transfer(
                 ),
             };
 
-            let value = light.get(from).get(light_ty);
+            if from_kind.get(from).is_opaque() || to_kind.get(target).is_opaque() {
+                continue;
+            }
+
+            let value = from_light.get(from).get(light_ty);
             if value == 0 {
                 continue;
             }
@@ -451,21 +461,40 @@ mod test {
         light.set_type(ChunkVoxel::new(7, 7, Chunk::Z_END), LightTy::Natural, 15);
         light.set_type(ChunkVoxel::new(8, 8, 0), LightTy::Natural, 15);
 
+        let air = ChunkStorage::<voxel::Kind>::default();
+
         assert_eq!(
-            border_transfer(&light, ChunkSide::Right, LightTy::Natural),
+            border_transfer(&air, &light, &air, ChunkSide::Right, LightTy::Natural),
             vec![(ChunkVoxel::new(0, 5, 3), 14)]
         );
         assert_eq!(
-            border_transfer(&light, ChunkSide::Left, LightTy::Natural),
+            border_transfer(&air, &light, &air, ChunkSide::Left, LightTy::Natural),
             vec![(ChunkVoxel::new(Chunk::X_END, 6, 4), 14)]
         );
         assert_eq!(
-            border_transfer(&light, ChunkSide::Front, LightTy::Natural),
+            border_transfer(&air, &light, &air, ChunkSide::Front, LightTy::Natural),
             vec![(ChunkVoxel::new(7, 7, 0), 14)]
         );
         assert_eq!(
-            border_transfer(&light, ChunkSide::Back, LightTy::Natural),
+            border_transfer(&air, &light, &air, ChunkSide::Back, LightTy::Natural),
             vec![(ChunkVoxel::new(8, 8, Chunk::Z_END), 14)]
+        );
+    }
+
+    #[test]
+    fn border_transfer_skips_opaque_voxels() {
+        let mut light = ChunkStorage::<voxel::Light>::default();
+        light.set_type(ChunkVoxel::new(Chunk::X_END, 5, 3), LightTy::Natural, 15);
+        light.set_type(ChunkVoxel::new(Chunk::X_END, 6, 3), LightTy::Natural, 15);
+
+        let mut opaque = ChunkStorage::<voxel::Kind>::default();
+        opaque.set(ChunkVoxel::new(Chunk::X_END, 5, 3), voxel::Kind::id(1));
+        opaque.set(ChunkVoxel::new(0, 6, 3), voxel::Kind::id(1));
+
+        // The source voxel at y=5 and the target voxel at y=6 are opaque, so nothing crosses.
+        assert!(
+            border_transfer(&opaque, &light, &opaque, ChunkSide::Right, LightTy::Natural)
+                .is_empty()
         );
     }
 
