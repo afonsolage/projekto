@@ -153,14 +153,24 @@ pub fn gather_neighborhood_light_mask<'a>(
                     } else {
                         Some(intensity)
                     }
-                } else if y != 0 {
-                    // There is no chunk above or below
+                } else if side_voxel.y < 0 {
+                    // There is no world below y = 0; do not treat it as open sky.
+                    None
+                } else if side_voxel.y >= Chunk::Y_AXIS_SIZE as i32 {
+                    // Above the chunk is open sky.
                     Some(voxel::Light::MAX_NATURAL_INTENSITY)
                 } else {
-                    let (dir, neighbor_voxel) =
+                    // x/z are outside the chunk. Keep the y offset: diagonal neighbours above
+                    // and below the current voxel belong to the same neighbour chunk column.
+                    let (neighbor_dir, neighbor_voxel) =
                         chunk::overlap_voxel(voxel, IVec2::new(dir.x, dir.z));
+                    let neighbor_voxel = ChunkVoxel::new(
+                        neighbor_voxel.x,
+                        (voxel.y as i32 + dir.y) as u8,
+                        neighbor_voxel.z,
+                    );
 
-                    let neighbor_chunk = chunk.neighbor(dir);
+                    let neighbor_chunk = chunk.neighbor(neighbor_dir);
 
                     if let Some(kind) = get_kind(neighbor_chunk)
                         && let Some(light) = get_light(neighbor_chunk)
@@ -174,7 +184,9 @@ pub fn gather_neighborhood_light_mask<'a>(
                             Some(intensity)
                         }
                     } else {
-                        Some(voxel::Light::MAX_NATURAL_INTENSITY)
+                        // A missing neighbour must not be treated as open sky: that raises the
+                        // soft light on every boundary vertex and leaves a bright seam.
+                        None
                     }
                 };
 
@@ -452,6 +464,50 @@ mod test {
     use bevy::platform::collections::HashMap;
 
     use super::*;
+
+    #[test]
+    fn opaque_neighbour_darkens_vertex_light() {
+        let open = [Some(voxel::Light::MAX_NATURAL_INTENSITY); NEIGHBOR_COUNT];
+        let mut occluded = open;
+        for index in NEIGHBOR_VERTEX_LOOKUP[voxel::Side::Up as usize][0] {
+            occluded[index] = None;
+        }
+
+        let open_light = soft_vertex_light(&open, voxel::Side::Up)[0];
+        let occluded_light = soft_vertex_light(&occluded, voxel::Side::Up)[0];
+
+        assert!(
+            occluded_light < open_light,
+            "opaque neighbours must darken a vertex ({occluded_light} < {open_light})"
+        );
+    }
+
+    #[test]
+    fn missing_neighbour_is_not_open_sky() {
+        let chunk = Chunk::default();
+        let kind = ChunkStorage::<voxel::Kind>::default();
+        let light = ChunkStorage::<voxel::Light>::default();
+        let get_kind = |target: Chunk| (target == chunk).then_some(&kind);
+        let get_light = |target: Chunk| (target == chunk).then_some(&light);
+
+        let neighbors = super::gather_neighborhood_light(
+            chunk,
+            ChunkVoxel::new(0, 100, 8),
+            get_kind,
+            get_light,
+        );
+
+        assert!(
+            neighbors.iter().any(Option::is_none),
+            "the missing -x neighbour should be None"
+        );
+        assert!(
+            neighbors
+                .iter()
+                .all(|neighbor| *neighbor != Some(voxel::Light::MAX_NATURAL_INTENSITY)),
+            "no missing neighbour may contribute full sky light"
+        );
+    }
 
     #[test]
     fn border_transfer_decrements_and_remaps() {
