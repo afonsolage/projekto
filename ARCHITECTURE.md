@@ -201,15 +201,25 @@ specific order:
 [`TerrainGenerator`](./crates/server/src/genesis/terrain/mod.rs#L40) builds each chunk from a
 validated [`WorldGenConfig`](./crates/server/src/genesis/terrain/config.rs#L11). Shape samples
 continentalness, erosion, weirdness and detail at world coordinates and combines them through
-splines into a height; the [`column`](./crates/server/src/genesis/terrain/mod.rs#L95) helper also
-returns the erosion it sampled, so biome selection can reuse it. Climate samples the
-temperature and humidity fields at the same coordinates, and
-[`BiomeTable::select`](./crates/server/src/genesis/terrain/biome.rs#L43) picks the nearest biome
-entry in `(temperature, humidity, erosion)` space, with ties resolved by table order.
-[`SurfaceRule::kind`](./crates/server/src/genesis/terrain/surface.rs#L29) then maps depth and slope
-to a kind: the biome's top, its subsurface for `subsurface_depth` voxels, the shared steep kind
-above `max_slope`, and the shared deep kind below. Every pass reads world coordinates, so adjacent
-chunks agree at their border.
+splines into a height. Climate samples the temperature and humidity fields at the same
+coordinates, and [`BiomeTable::weights_into`](./crates/server/src/genesis/terrain/biome.rs#L104)
+selects the nearest biome entry in `(temperature, humidity, erosion)` space and returns normalized
+blend weights. Ties resolve by table order, and the dominant index keeps the squared-distance
+comparison used before blending.
+[`BiomeTable::blended_shape`](./crates/server/src/genesis/terrain/biome.rs#L155) sums each entry's
+five shape fields over those weights: height offset, relief multiplier, terrace strength, cave
+density and overhang strength. The
+[`sample_column`](./crates/server/src/genesis/terrain/mod.rs#L97) helper applies the blend to the
+shape formula, applies one smoothed staircase terrace scaled by the blended strength, and clamps
+the result; `transition` and `terrace_step` are shared settings in `biomes`. The
+[`samples`](./crates/server/src/genesis/terrain/mod.rs#L136) helper caches an 18x18 column halo
+per chunk, so height, slope, biome and 3D parameters are read once per world column.
+
+[`SurfaceRule::kind`](./crates/server/src/genesis/terrain/surface.rs#L29) maps depth and slope to a
+kind: the dominant biome's top, its subsurface for `subsurface_depth` voxels, the shared steep kind
+above `max_slope`, and the shared deep kind below. The fill pass uses the cached overhang strength
+and cave density to lift the surface and scale the cavern threshold per column, so shape and cave
+character change continuously between biomes while the surface material switches in one column.
 
 [`worldgen.ron`](./assets/worldgen.ron#L43) ships five biomes: Plains (Grass over Dirt), Forest
 (Moss over Dirt), Desert (Sand over Sand), Tundra (Snow over Dirt) and Roughlands (Rock). Sand
@@ -222,6 +232,11 @@ tile and Moss reuses the grass top tile, each with a
 fragment shader ([`voxel.wesl`](./assets/shaders/voxel.wesl#L63)) multiplies the sampled tile by
 that light, so the tint reaches the client without a new atlas, mesh format or protocol change;
 dedicated hand-painted tiles are a follow-up.
+
+Changing the generated world requires bumping
+[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L57) and deleting the local `archive/region`
+directory before a clean visual run. Per-asset reads reject older magic, and the server warns and
+regenerates stale chunks loaded from an old archive.
 
 ### Chunk storage
 

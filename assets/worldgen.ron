@@ -44,30 +44,69 @@
         max_slope: 1.8,
         steep: "Rock",
         deep: "Rock",
+        // Parameter-space distance at which a neighbouring biome's weight reaches zero.
+        transition: 0.15,
+        // Vertical spacing of the shared smoothed terrace staircase.
+        terrace_step: 8.0,
         entries: [
             (
                 name: "Plains",
                 parameters: (temperature: 0.0, humidity: 0.0, erosion: 0.2),
+                shape: (
+                    height_offset: -4.0,
+                    relief_multiplier: 0.8,
+                    terrace_strength: 0.0,
+                    cave_density: 0.8,
+                    overhang_strength: 2.0,
+                ),
                 surface: (top: "Grass", subsurface: "Dirt", subsurface_depth: 3),
             ),
             (
                 name: "Forest",
                 parameters: (temperature: 0.0, humidity: 0.4, erosion: 0.2),
+                shape: (
+                    height_offset: 0.0,
+                    relief_multiplier: 0.9,
+                    terrace_strength: 0.0,
+                    cave_density: 1.0,
+                    overhang_strength: 3.0,
+                ),
                 surface: (top: "Moss", subsurface: "Dirt", subsurface_depth: 3),
             ),
             (
                 name: "Desert",
                 parameters: (temperature: 0.4, humidity: -0.4, erosion: 0.2),
+                shape: (
+                    height_offset: 2.0,
+                    relief_multiplier: 1.0,
+                    terrace_strength: 0.6,
+                    cave_density: 0.5,
+                    overhang_strength: 1.0,
+                ),
                 surface: (top: "Sand", subsurface: "Sand", subsurface_depth: 3),
             ),
             (
                 name: "Tundra",
                 parameters: (temperature: -0.4, humidity: 0.0, erosion: 0.2),
+                shape: (
+                    height_offset: 4.0,
+                    relief_multiplier: 1.1,
+                    terrace_strength: 0.2,
+                    cave_density: 0.6,
+                    overhang_strength: 2.0,
+                ),
                 surface: (top: "Snow", subsurface: "Dirt", subsurface_depth: 2),
             ),
             (
                 name: "Roughlands",
                 parameters: (temperature: 0.0, humidity: 0.0, erosion: -0.4),
+                shape: (
+                    height_offset: 6.0,
+                    relief_multiplier: 1.4,
+                    terrace_strength: 0.3,
+                    cave_density: 1.5,
+                    overhang_strength: 6.0,
+                ),
                 surface: (top: "Rock", subsurface: "Rock", subsurface_depth: 3),
             ),
         ],

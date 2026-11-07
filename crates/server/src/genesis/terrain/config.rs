@@ -58,7 +58,7 @@ pub struct SplineConfig {
     pub points: Vec<(f32, f32)>,
 }
 
-/// Biome selection table and the surface settings shared by every biome.
+/// Biome selection table, blended shape settings and the surface settings shared by every biome.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BiomesConfig {
     /// Slopes above this value expose `steep` instead of the biome surface.
@@ -67,17 +67,23 @@ pub struct BiomesConfig {
     pub steep: String,
     /// Kind for everything below the surface layers.
     pub deep: String,
+    /// Parameter-space distance at which a neighbouring biome's weight reaches zero.
+    pub transition: f32,
+    /// Vertical spacing of the smoothed terrace staircase shared by every biome.
+    pub terrace_step: f32,
     /// One entry per biome. The first entry wins an exact parameter tie.
     pub entries: Vec<BiomeConfig>,
 }
 
-/// One biome in parameter space plus its surface rules.
+/// One biome in parameter space plus its shape and surface rules.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BiomeConfig {
     /// Debug and validation name. It is not sent to the client.
     pub name: String,
     /// Climate and terrain parameters used for nearest-point selection.
     pub parameters: BiomeParameters,
+    /// How this biome shapes the terrain it dominates.
+    pub shape: BiomeShapeConfig,
     /// Materials for this biome's top and subsurface layers.
     pub surface: BiomeSurfaceConfig,
 }
@@ -88,6 +94,21 @@ pub struct BiomeParameters {
     pub temperature: f32,
     pub humidity: f32,
     pub erosion: f32,
+}
+
+/// Terrain shape contributed by one biome, blended by selection weight.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct BiomeShapeConfig {
+    /// Blocks added to the column height before clamping.
+    pub height_offset: f32,
+    /// Multiplies the peaks-and-valleys relief amplitude.
+    pub relief_multiplier: f32,
+    /// Blends between the raw height and the smoothed staircase.
+    pub terrace_strength: f32,
+    /// Scales the cavern field before the carve threshold.
+    pub cave_density: f32,
+    /// Vertical overhang displacement in blocks.
+    pub overhang_strength: f32,
 }
 
 /// Which kinds go on and under one biome's surface.
@@ -217,7 +238,14 @@ impl WorldGenConfig {
             )));
         }
 
-        validate_biomes(&self.biomes)?;
+        if !self.caves.overhang_strength.is_finite() || self.caves.overhang_strength < 0.0 {
+            return Err(invalid(format!(
+                "caves.overhang_strength must be finite and non-negative, got {}",
+                self.caves.overhang_strength
+            )));
+        }
+
+        validate_biomes(&self.biomes, self.caves.overhang_strength)?;
 
         if self.caves.enabled {
             validate_field("caves.overhang", &self.caves.overhang)?;
@@ -255,19 +283,16 @@ impl WorldGenConfig {
                     self.caves.cavern_threshold
                 )));
             }
-            if !self.caves.overhang_strength.is_finite() || self.caves.overhang_strength < 0.0 {
-                return Err(invalid(format!(
-                    "caves.overhang_strength must be finite and non-negative, got {}",
-                    self.caves.overhang_strength
-                )));
-            }
         }
 
         Ok(())
     }
 }
 
-fn validate_biomes(biomes: &BiomesConfig) -> Result<(), WorldGenConfigError> {
+fn validate_biomes(
+    biomes: &BiomesConfig,
+    max_overhang_strength: f32,
+) -> Result<(), WorldGenConfigError> {
     if biomes.entries.is_empty() {
         return Err(invalid("biomes.entries must not be empty".to_string()));
     }
@@ -275,6 +300,18 @@ fn validate_biomes(biomes: &BiomesConfig) -> Result<(), WorldGenConfigError> {
         return Err(invalid(format!(
             "biomes.max_slope must be finite and non-negative, got {}",
             biomes.max_slope
+        )));
+    }
+    if !biomes.transition.is_finite() || !(0.1..=1.0).contains(&biomes.transition) {
+        return Err(invalid(format!(
+            "biomes.transition must be in 0.1..=1.0, got {}",
+            biomes.transition
+        )));
+    }
+    if !biomes.terrace_step.is_finite() || !(1.0..=32.0).contains(&biomes.terrace_step) {
+        return Err(invalid(format!(
+            "biomes.terrace_step must be in 1..=32, got {}",
+            biomes.terrace_step
         )));
     }
 
@@ -299,7 +336,10 @@ fn validate_biomes(biomes: &BiomesConfig) -> Result<(), WorldGenConfigError> {
             )));
         }
 
+        let path = format!("biomes.entries[{index}] ({})", biome.name);
+
         validate_parameters(&path, &biome.parameters)?;
+        validate_shape(&path, &biome.shape, max_overhang_strength)?;
 
         if biomes.entries[..index]
             .iter()
@@ -328,6 +368,33 @@ fn validate_biomes(biomes: &BiomesConfig) -> Result<(), WorldGenConfigError> {
             return Err(invalid(format!(
                 "{path}.surface.subsurface_depth must be at most 16, got {}",
                 biome.surface.subsurface_depth
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_shape(
+    path: &str,
+    shape: &BiomeShapeConfig,
+    max_overhang_strength: f32,
+) -> Result<(), WorldGenConfigError> {
+    for (name, value, min, max) in [
+        ("height_offset", shape.height_offset, -32.0, 32.0),
+        ("relief_multiplier", shape.relief_multiplier, 0.0, 2.0),
+        ("terrace_strength", shape.terrace_strength, 0.0, 1.0),
+        ("cave_density", shape.cave_density, 0.0, 2.0),
+        (
+            "overhang_strength",
+            shape.overhang_strength,
+            0.0,
+            max_overhang_strength,
+        ),
+    ] {
+        if !value.is_finite() || !(min..=max).contains(&value) {
+            return Err(invalid(format!(
+                "{path}.shape.{name} must be in {min}..={max}, got {value}"
             )));
         }
     }
@@ -553,5 +620,66 @@ mod tests {
         config.caves.cell_xz = 3;
 
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_shape_values_with_the_biome_name_and_field() {
+        let cases: [(fn(&mut BiomeShapeConfig), &str); 5] = [
+            (|shape| shape.height_offset = 99.0, "height_offset"),
+            (|shape| shape.relief_multiplier = 3.0, "relief_multiplier"),
+            (|shape| shape.terrace_strength = 1.5, "terrace_strength"),
+            (|shape| shape.cave_density = 3.0, "cave_density"),
+            (|shape| shape.overhang_strength = 7.0, "overhang_strength"),
+        ];
+
+        for (set, field) in cases {
+            let mut config = WorldGenConfig::load_default();
+            let name = config.biomes.entries[0].name.clone();
+            set(&mut config.biomes.entries[0].shape);
+
+            let error = config
+                .validate()
+                .expect_err("shape value should be rejected");
+
+            assert!(
+                error.to_string().contains(&name) && error.to_string().contains(field),
+                "error does not name {name} and {field}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_bad_transition() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.transition = 0.05;
+        assert!(config.validate().is_err());
+
+        config.biomes.transition = f32::NAN;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_bad_terrace_step() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.terrace_step = 0.5;
+        assert!(config.validate().is_err());
+
+        config.biomes.terrace_step = 64.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_non_finite_global_overhang_when_caves_are_disabled() {
+        let mut config = WorldGenConfig::load_default();
+        config.caves.enabled = false;
+        config.caves.overhang_strength = f32::NAN;
+
+        let error = config
+            .validate()
+            .expect_err("non-finite overhang should fail");
+        assert!(
+            error.to_string().contains("caves.overhang_strength"),
+            "unexpected error: {error}"
+        );
     }
 }

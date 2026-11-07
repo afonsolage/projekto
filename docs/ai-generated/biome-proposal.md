@@ -27,7 +27,7 @@ In scope:
 Out of scope:
 
 - water, oceans, beaches, rivers and aquifers;
-- biome-specific height, dunes and blended biome transitions;
+- biome-specific dunes and blended biome transitions; height shaping landed in #109;
 - trees (#43), structures, ore veins and bedrock;
 - hand-painted Sand, Moss and Snow tiles, biome-dependent grass or foliage tinting beyond the
   per-kind color multiplier, and any client message or mesh format change.
@@ -406,7 +406,8 @@ biome and generates only the chunks containing them.
 - Hand-painted Sand, Moss and Snow tiles to replace the tinted placeholders; only their
   `kind.ron` offsets and colors change.
 - Water, oceans, beaches and rivers, with a lower height floor and a separate water mesh pass.
-- Biome height shaping and blended transitions, once selection can return weights.
+- Blended biome transitions and material blending; #109 added selection weights and biome height
+  shaping.
 - Trees and other biome features in #43, driven by per-biome density fields.
 - Biome-dependent grass and foliage tinting, which first needs a per-biome channel in the mesh or
   protocol beyond the per-kind color multiplier.
