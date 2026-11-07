@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 /// Version 7 changes the mesh through cross-chunk light seeding, so meshes saved before it are
 /// rebuilt on load.
 /// Version 8 stops treating missing neighbours as open sky in the soft-light pass.
-pub const CHUNK_MESH_VERSION: u8 = 8;
+/// Version 9 applies kind color tints to vertex light in the full and coarse meshers.
+pub const CHUNK_MESH_VERSION: u8 = 9;
 
 /// Persisted chunk data.
 ///

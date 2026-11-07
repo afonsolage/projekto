@@ -78,5 +78,43 @@
             ),
             light: Emitter(10),
         ),
+        // Sand, Moss and Snow are tinted placeholders on existing hand-made tiles.
+        // Hand-painted tiles are a follow-up; see docs/ai-generated/biome-proposal.md.
+        (
+            name: "Sand",
+            id: 5,
+            sides: All
+            (
+                (
+                    color: (1.9, 1.7, 1.1, 1.0),
+                    offset: (2, 0),
+                )
+            ),
+            light: Opaque,
+        ),
+        (
+            name: "Moss",
+            id: 6,
+            sides: All
+            (
+                (
+                    color: (0.7, 1.0, 0.6, 1.0),
+                    offset: (1, 0),
+                )
+            ),
+            light: Opaque,
+        ),
+        (
+            name: "Snow",
+            id: 7,
+            sides: All
+            (
+                (
+                    color: (2.0, 2.1, 2.3, 1.0),
+                    offset: (2, 0),
+                )
+            ),
+            light: Opaque,
+        ),
     ]
 )

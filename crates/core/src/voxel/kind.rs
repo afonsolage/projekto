@@ -11,7 +11,8 @@ static KINDS_DESCS: OnceCell<KindsDescs> = OnceCell::new();
 /// Describes what color and offset on texture atlas to be used.
 #[derive(Debug, Copy, Clone, Deserialize, Default)]
 pub struct KindSideTexture {
-    /// RGBA Color in scalar range [0.0 ~ 1.0]
+    /// RGB multiplier applied to the sampled atlas tile. Values above 1 brighten it; alpha
+    /// is currently unused.
     pub color: (f32, f32, f32, f32),
     /// Texture atlas off set (X, Y)
     pub offset: IVec2,
@@ -134,6 +135,8 @@ impl KindsDescs {
 }
 
 fn check_descs(kind_descs: &KindsDescs) {
+    let tiles = kind_descs.count_tiles();
+
     kind_descs
         .descriptions
         .iter()
@@ -143,7 +146,51 @@ fn check_descs(kind_descs: &KindsDescs) {
                 idx, item.id as usize,
                 "Item id and order doesn't match on kind description file!"
             );
+
+            match &item.sides {
+                KindSidesDesc::None => {}
+                KindSidesDesc::All(texture) => check_texture(item, texture, tiles),
+                KindSidesDesc::Unique {
+                    right,
+                    left,
+                    up,
+                    down,
+                    front,
+                    back,
+                } => {
+                    for texture in [right, left, up, down, front, back] {
+                        check_texture(item, texture, tiles);
+                    }
+                }
+            }
         });
+}
+
+fn check_texture(item: &KindDescItem, texture: &KindSideTexture, tiles: u16) {
+    check_offset(item, texture.offset, tiles);
+    check_color(item, texture.color);
+}
+
+fn check_offset(item: &KindDescItem, offset: IVec2, tiles: u16) {
+    let tiles = tiles as i32;
+    assert!(
+        (0..tiles).contains(&offset.x) && (0..tiles).contains(&offset.y),
+        "kind {:?} texture offset {offset:?} is outside the {tiles}x{tiles} atlas",
+        item.name
+    );
+}
+
+fn check_color(item: &KindDescItem, color: (f32, f32, f32, f32)) {
+    assert!(
+        color.0.is_finite() && color.1.is_finite() && color.2.is_finite() && color.3.is_finite(),
+        "kind {:?} texture color {color:?} must be finite",
+        item.name
+    );
+    assert!(
+        color.0 >= 0.0 && color.1 >= 0.0 && color.2 >= 0.0 && color.3 >= 0.0,
+        "kind {:?} texture color {color:?} must be non-negative",
+        item.name
+    );
 }
 
 /// Kind id reference.
@@ -238,6 +285,94 @@ mod tests {
         let input_path = format!("{}/voxels/kind.ron", env!("ASSETS_PATH"));
         let f = std::fs::File::open(input_path).expect("Failed opening kind descriptions file");
 
-        let _: KindsDescs = from_reader(f).unwrap();
+        let descs: KindsDescs = from_reader(f).unwrap();
+        check_descs(&descs);
+    }
+
+    #[test]
+    #[should_panic(expected = "outside the 10x10 atlas")]
+    fn rejects_texture_offset_outside_the_atlas() {
+        let descs = KindsDescs {
+            atlas_path: String::new(),
+            atlas_size: 320,
+            atlas_tile_size: 32,
+            descriptions: vec![
+                KindDescItem {
+                    name: "None".to_string(),
+                    id: 0,
+                    sides: KindSidesDesc::None,
+                    light: KindLightDesc::None,
+                },
+                KindDescItem {
+                    name: "Bad".to_string(),
+                    id: 1,
+                    sides: KindSidesDesc::All(KindSideTexture {
+                        color: (1.0, 1.0, 1.0, 1.0),
+                        offset: IVec2::new(10, 0),
+                    }),
+                    light: KindLightDesc::Opaque,
+                },
+            ],
+        };
+
+        check_descs(&descs);
+    }
+
+    #[test]
+    #[should_panic(expected = "must be finite")]
+    fn rejects_non_finite_texture_color() {
+        let descs = KindsDescs {
+            atlas_path: String::new(),
+            atlas_size: 320,
+            atlas_tile_size: 32,
+            descriptions: vec![
+                KindDescItem {
+                    name: "None".to_string(),
+                    id: 0,
+                    sides: KindSidesDesc::None,
+                    light: KindLightDesc::None,
+                },
+                KindDescItem {
+                    name: "Bad".to_string(),
+                    id: 1,
+                    sides: KindSidesDesc::All(KindSideTexture {
+                        color: (f32::NAN, 1.0, 1.0, 1.0),
+                        offset: IVec2::new(0, 0),
+                    }),
+                    light: KindLightDesc::Opaque,
+                },
+            ],
+        };
+
+        check_descs(&descs);
+    }
+
+    #[test]
+    #[should_panic(expected = "must be non-negative")]
+    fn rejects_negative_texture_color() {
+        let descs = KindsDescs {
+            atlas_path: String::new(),
+            atlas_size: 320,
+            atlas_tile_size: 32,
+            descriptions: vec![
+                KindDescItem {
+                    name: "None".to_string(),
+                    id: 0,
+                    sides: KindSidesDesc::None,
+                    light: KindLightDesc::None,
+                },
+                KindDescItem {
+                    name: "Bad".to_string(),
+                    id: 1,
+                    sides: KindSidesDesc::All(KindSideTexture {
+                        color: (-1.0, 1.0, 1.0, 1.0),
+                        offset: IVec2::new(0, 0),
+                    }),
+                    light: KindLightDesc::Opaque,
+                },
+            ],
+        };
+
+        check_descs(&descs);
     }
 }

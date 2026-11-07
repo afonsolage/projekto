@@ -86,7 +86,7 @@ struct Stats {
     height_min: i32,
     height_max: i32,
     height_mean: f64,
-    kinds: BTreeMap<u16, usize>,
+    kinds: BTreeMap<&'static str, usize>,
 }
 
 fn collect_stats(results: &[ChunkCreation]) -> Stats {
@@ -98,7 +98,7 @@ fn collect_stats(results: &[ChunkCreation]) -> Stats {
 
     for ChunkCreation { kind, .. } in results {
         for voxel in chunk::voxels() {
-            *kinds.entry(u16::from(kind.get(voxel))).or_insert(0usize) += 1;
+            *kinds.entry(kind.get(voxel).name()).or_insert(0usize) += 1;
         }
 
         for x in 0..=Chunk::X_END {
