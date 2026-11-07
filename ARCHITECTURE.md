@@ -301,7 +301,7 @@ asset is bincode-encoded, lz4-compressed and prefixed with
 owns one worker per region on the I/O task pool, so reads, writes, compression and header flushes
 do not run on the ECS thread.
 
-[`ChunkAsset`](./crates/archive/src/asset.rs#L16) stores `kind`, `light`, `vertex`, `lod` and
+[`ChunkAsset`](./crates/archive/src/asset.rs#L17) stores `kind`, `light`, `vertex`, `lod` and
 `mesh_version`. [`CHUNK_MESH_VERSION`](./crates/archive/src/asset.rs#L10) is bumped whenever the
 mesher output changes; a mesh saved by an older version is loaded but not trusted, so the chunk
 is remeshed. A missing asset, an unsupported archive version or a decode failure is regenerated

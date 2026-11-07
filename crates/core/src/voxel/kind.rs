@@ -346,4 +346,33 @@ mod tests {
 
         check_descs(&descs);
     }
+
+    #[test]
+    #[should_panic(expected = "must be non-negative")]
+    fn rejects_negative_texture_color() {
+        let descs = KindsDescs {
+            atlas_path: String::new(),
+            atlas_size: 320,
+            atlas_tile_size: 32,
+            descriptions: vec![
+                KindDescItem {
+                    name: "None".to_string(),
+                    id: 0,
+                    sides: KindSidesDesc::None,
+                    light: KindLightDesc::None,
+                },
+                KindDescItem {
+                    name: "Bad".to_string(),
+                    id: 1,
+                    sides: KindSidesDesc::All(KindSideTexture {
+                        color: (-1.0, 1.0, 1.0, 1.0),
+                        offset: IVec2::new(0, 0),
+                    }),
+                    light: KindLightDesc::Opaque,
+                },
+            ],
+        };
+
+        check_descs(&descs);
+    }
 }

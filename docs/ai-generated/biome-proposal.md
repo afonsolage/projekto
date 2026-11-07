@@ -248,7 +248,8 @@ generator. Only the new climate seeds change, and only the surface output change
   area and newly generated chunks use the same surface. Step 3 runs
   `just archive verify archive/region` and `just archive holes archive/region` on the regenerated
   archive.
-- `CHUNK_MESH_VERSION` bumps to 9 because both meshers now write tinted vertex light; vertex layout, UV layout and tile sizing are unchanged.
+- `CHUNK_MESH_VERSION` bumps to 9 because both meshers now write tinted vertex light; vertex
+  layout, UV layout and tile sizing are unchanged.
 - The server resolves kinds to atlas UVs and the tint before meshing. The client receives the same
   `ChunkVertex` layout and the unchanged atlas; the three kinds reuse existing tiles, so no client
   asset update is required.
@@ -258,9 +259,9 @@ generator. Only the new climate seeds change, and only the surface output change
 
 The shape pass samples four fields about five times per column because of `slope`. Climate adds
 two 2D samples per column, 512 per chunk, so the shape pass itself evaluates about ten percent
-more samples. Total genesis time grows less than that because fill and packing are unchanged;
-light's `Kind::desc` lookup scans three more descriptions per call.
-Biome selection adds five three-component distance checks per column.
+more samples. Total genesis time grows less than that because fill and packing are unchanged.
+The only new per-chunk kind-name work is the `BiomeTable` construction resolving twelve kind
+names per generator. Biome selection adds five three-component distance checks per column.
 
 Measure with `cargo bench -p projekto_server --bench genesis` on 256 chunks, five runs, and
 compare medians:
