@@ -138,9 +138,9 @@ case. The existing 10×10 atlas keeps `atlas_size = 320` and `atlas_tile_size = 
 Kinds are appended after Lamp in [`kind.ron`](assets/voxels/kind.ron); IDs are never reordered,
 because archives store `Kind(u16)` values.
 
-[`check_descs`](crates/core/src/voxel/kind.rs#L136) gains an assertion that every texture offset
+[`check_descs`](crates/core/src/voxel/kind.rs#L137) gains an assertion that every texture offset
 is inside the atlas on both axes. The existing
-[`load_kind_descriptions`](crates/core/src/voxel/kind.rs#L265) test is updated to call
+[`load_kind_descriptions`](crates/core/src/voxel/kind.rs#L284) test is updated to call
 `check_descs` so the shipped asset exercises it, and a second test feeds a synthetic
 out-of-bounds offset and expects the panic.
 
@@ -181,7 +181,7 @@ biomes: (
 - `biomes.max_slope` is finite and non-negative, moving the check that lived in the removed
   top-level `surface` block;
 - every top, subsurface, steep and deep name resolves through
-  [`Kind::from_name`](crates/core/src/voxel/kind.rs#L249) and is not the empty kind;
+  [`Kind::from_name`](crates/core/src/voxel/kind.rs#L268) and is not the empty kind;
 - `subsurface_depth` stays within the existing 0..=16 bound;
 - the temperature and humidity fields pass the existing field validation.
 
@@ -248,7 +248,7 @@ generator. Only the new climate seeds change, and only the surface output change
   area and newly generated chunks use the same surface. Step 3 runs
   `just archive verify archive/region` and `just archive holes archive/region` on the regenerated
   archive.
-- `CHUNK_MESH_VERSION` does not change; vertex layout, UV layout and tile sizing are unchanged.
+- `CHUNK_MESH_VERSION` bumps to 9 because both meshers now write tinted vertex light; vertex layout, UV layout and tile sizing are unchanged.
 - The server resolves kinds to atlas UVs and the tint before meshing. The client receives the same
   `ChunkVertex` layout and the unchanged atlas; the three kinds reuse existing tiles, so no client
   asset update is required.
@@ -259,7 +259,7 @@ generator. Only the new climate seeds change, and only the surface output change
 The shape pass samples four fields about five times per column because of `slope`. Climate adds
 two 2D samples per column, 512 per chunk, so the shape pass itself evaluates about ten percent
 more samples. Total genesis time grows less than that because fill and packing are unchanged;
-light does slightly more kind lookups because `init_light` resolves kinds through `Kind::desc`.
+light's `Kind::desc` lookup scans three more descriptions per call.
 Biome selection adds five three-component distance checks per column.
 
 Measure with `cargo bench -p projekto_server --bench genesis` on 256 chunks, five runs, and
@@ -267,9 +267,10 @@ compare medians:
 
 - target: no more than 10% more median milliseconds per chunk, with the before/after range
   reported;
-- record radius-32 RSS through the server BRP `projekto/memory` method; new kinds add palette
-  entries only where they appear, so the delta should stay within that overhead. If it does not,
-  update #91;
+- record radius-32 RSS through the server BRP `projekto/memory` method as information only;
+  archive/cache state makes it noisy. New kinds can grow a surface section's palette from 4 to 8
+  entries, moving bit-packed indices from 2 to 3 bits in boundary sections. Update #91 only if a
+  clean same-archive comparison shows material growth;
 - extend the bench to print `Kind::name()` alongside the count so Sand, Moss and Snow are
   identifiable;
 - if the target is missed, the first lever is two octaves for the climate fields, the second is
@@ -284,10 +285,10 @@ is a separate optimization if the entry count grows.
 ## Streaming and LOD
 
 No chunk lifecycle, section-storage or LOD logic changes. The LOD mesher picks the highest solid
-voxel kind per coarse cell, so biome tops remain visible at LOD 1 and above. New kinds add palette
-entries only where they appear. Run `just terrain-walk` once on the final config; the longer
-`terrain-stress` run is not required because no streaming path changed. Report the radius-32 RSS
-delta; if per-chunk storage grows beyond palette entries, update #91.
+voxel kind per coarse cell, so biome tops remain visible at LOD 1 and above. New kinds can grow
+surface-section palettes and bit-packed index widths in boundary sections. Run `just terrain-walk`
+once on the final config; the longer `terrain-stress` run is not required because no streaming
+path changed. Record the radius-32 RSS as information only; there is no hard memory gate.
 
 ## Staged plan
 
@@ -301,8 +302,8 @@ Each step is its own PR with its own acceptance run.
   [`generate_vertices`](crates/server/src/meshing/mod.rs#L52) and
   [`generate_coarse_vertices`](crates/server/src/meshing/lod.rs#L66), and add a unit test that the
   tint reaches the vertices.
-- Extend [`check_descs`](crates/core/src/voxel/kind.rs#L136) with the atlas-bounds assertion, call
-  it from [`load_kind_descriptions`](crates/core/src/voxel/kind.rs#L265), and add the
+- Extend [`check_descs`](crates/core/src/voxel/kind.rs#L137) with the atlas-bounds assertion, call
+  it from [`load_kind_descriptions`](crates/core/src/voxel/kind.rs#L284), and add the
   out-of-bounds test.
 - Update [`kind_color`](crates/server/examples/terrain_map.rs#L183) to match by kind name instead
   of numeric ID, and add the three colors.
@@ -344,8 +345,8 @@ All generator and selection tests are unit tests inside `genesis::terrain`; the 
 assumptions.
 
 Acceptance: `cargo test -p projekto_server`, `just ci`, `just terrain-map 64` shows the new
-surface kinds across a 2064×2064 block map, `just cia` at radius 24 shows the tinted biome
-surfaces without seams, and the distribution and per-biome tests pass.
+surface kinds across a 2064×2064 block map, `just cia` at radius 24 shows the biome surfaces
+(three of them tinted) without seams, and the distribution and per-biome tests pass.
 
 ### Step 3 — tuning and release checks (small)
 
@@ -373,9 +374,9 @@ archive and screenshot checks.
 | World-space surface | `cargo test -p projekto_server world_space_surface` | every column of two adjacent chunks on each horizontal axis matches an independent world-space recompute; height is continuous at 15.99/16.01 |
 | Bench | `cargo bench -p projekto_server --bench genesis` | median of five runs at most 10% over baseline |
 | Surface map | `just terrain-map 64` | new surface kinds visible across 2064×2064; visual aid only |
-| Visual | `just cia` | `debug_reports/ai/latest.png` shows the five tinted biome surfaces and no seams |
+| Visual | `just cia` | `debug_reports/ai/latest.png` shows the five biome surfaces (three tinted) and no seams |
 | Streaming | `just terrain-walk` | completes on the final config |
-| Memory | server BRP `projekto/memory` at radius 32 | RSS delta limited to palette entries |
+| Memory | server BRP `projekto/memory` at radius 32 | record only; compare with identical archive state |
 | Archive | `just archive verify archive/region`, `just archive holes archive/region` | both clean |
 | Review markers | `rg -n '//@AI'` | none left unresolved |
 

@@ -149,7 +149,7 @@ fn check_descs(kind_descs: &KindsDescs) {
 
             match &item.sides {
                 KindSidesDesc::None => {}
-                KindSidesDesc::All(texture) => check_offset(item, texture.offset, tiles),
+                KindSidesDesc::All(texture) => check_texture(item, texture, tiles),
                 KindSidesDesc::Unique {
                     right,
                     left,
@@ -159,11 +159,16 @@ fn check_descs(kind_descs: &KindsDescs) {
                     back,
                 } => {
                     for texture in [right, left, up, down, front, back] {
-                        check_offset(item, texture.offset, tiles);
+                        check_texture(item, texture, tiles);
                     }
                 }
             }
         });
+}
+
+fn check_texture(item: &KindDescItem, texture: &KindSideTexture, tiles: u16) {
+    check_offset(item, texture.offset, tiles);
+    check_color(item, texture.color);
 }
 
 fn check_offset(item: &KindDescItem, offset: IVec2, tiles: u16) {
@@ -171,6 +176,19 @@ fn check_offset(item: &KindDescItem, offset: IVec2, tiles: u16) {
     assert!(
         (0..tiles).contains(&offset.x) && (0..tiles).contains(&offset.y),
         "kind {:?} texture offset {offset:?} is outside the {tiles}x{tiles} atlas",
+        item.name
+    );
+}
+
+fn check_color(item: &KindDescItem, color: (f32, f32, f32, f32)) {
+    assert!(
+        color.0.is_finite() && color.1.is_finite() && color.2.is_finite() && color.3.is_finite(),
+        "kind {:?} texture color {color:?} must be finite",
+        item.name
+    );
+    assert!(
+        color.0 >= 0.0 && color.1 >= 0.0 && color.2 >= 0.0 && color.3 >= 0.0,
+        "kind {:?} texture color {color:?} must be non-negative",
         item.name
     );
 }
@@ -291,6 +309,35 @@ mod tests {
                     sides: KindSidesDesc::All(KindSideTexture {
                         color: (1.0, 1.0, 1.0, 1.0),
                         offset: IVec2::new(10, 0),
+                    }),
+                    light: KindLightDesc::Opaque,
+                },
+            ],
+        };
+
+        check_descs(&descs);
+    }
+
+    #[test]
+    #[should_panic(expected = "must be finite")]
+    fn rejects_non_finite_texture_color() {
+        let descs = KindsDescs {
+            atlas_path: String::new(),
+            atlas_size: 320,
+            atlas_tile_size: 32,
+            descriptions: vec![
+                KindDescItem {
+                    name: "None".to_string(),
+                    id: 0,
+                    sides: KindSidesDesc::None,
+                    light: KindLightDesc::None,
+                },
+                KindDescItem {
+                    name: "Bad".to_string(),
+                    id: 1,
+                    sides: KindSidesDesc::All(KindSideTexture {
+                        color: (f32::NAN, 1.0, 1.0, 1.0),
+                        offset: IVec2::new(0, 0),
                     }),
                     light: KindLightDesc::Opaque,
                 },

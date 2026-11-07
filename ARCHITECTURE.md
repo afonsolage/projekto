@@ -202,7 +202,8 @@ specific order:
 validated [`WorldGenConfig`](./crates/server/src/genesis/terrain/config.rs#L11). Shape samples
 continentalness, erosion, weirdness and detail at world coordinates and combines them through
 splines into a height; the [`column`](./crates/server/src/genesis/terrain/mod.rs#L95) helper also
-returns the erosion it sampled, so biome selection can reuse it. Climate samples the temperature and humidity fields at the same coordinates, and
+returns the erosion it sampled, so biome selection can reuse it. Climate samples the
+temperature and humidity fields at the same coordinates, and
 [`BiomeTable::select`](./crates/server/src/genesis/terrain/biome.rs#L43) picks the nearest biome
 entry in `(temperature, humidity, erosion)` space, with ties resolved by table order.
 [`SurfaceRule::kind`](./crates/server/src/genesis/terrain/surface.rs#L29) then maps depth and slope
@@ -213,7 +214,7 @@ chunks agree at their border.
 [`worldgen.ron`](./assets/worldgen.ron#L43) ships five biomes: Plains (Grass over Dirt), Forest
 (Moss over Dirt), Desert (Sand over Sand), Tundra (Snow over Dirt) and Roughlands (Rock). Sand
 (id 5), Moss (id 6) and Snow (id 7) are appended after Lamp in
-[`kind.ron`](./assets/voxels/kind.ron#L82) and add no atlas artwork: Sand and Snow reuse the Rock
+[`kind.ron`](./assets/voxels/kind.ron#L84) and add no atlas artwork: Sand and Snow reuse the Rock
 tile and Moss reuses the grass top tile, each with a
 [`KindSideTexture::color`](./crates/core/src/voxel/kind.rs#L13) multiplier that
 [`generate_vertices`](./crates/server/src/meshing/mod.rs#L52) and
@@ -301,7 +302,7 @@ owns one worker per region on the I/O task pool, so reads, writes, compression a
 do not run on the ECS thread.
 
 [`ChunkAsset`](./crates/archive/src/asset.rs#L16) stores `kind`, `light`, `vertex`, `lod` and
-`mesh_version`. [`CHUNK_MESH_VERSION`](./crates/archive/src/asset.rs#L9) is bumped whenever the
+`mesh_version`. [`CHUNK_MESH_VERSION`](./crates/archive/src/asset.rs#L10) is bumped whenever the
 mesher output changes; a mesh saved by an older version is loaded but not trusted, so the chunk
 is remeshed. A missing asset, an unsupported archive version or a decode failure is regenerated
 through `GenesisServer`.
