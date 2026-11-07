@@ -105,11 +105,25 @@ fn generated_terrain_has_surface_layers_and_caves() {
         }
     }
 
+    let config = WorldGenConfig::load_default();
+    let mut allowed = vec![config.biomes.steep.as_str(), config.biomes.deep.as_str()];
+    for biome in &config.biomes.entries {
+        allowed.push(biome.surface.top.as_str());
+        allowed.push(biome.surface.subsurface.as_str());
+    }
+
+    for name in counts.keys() {
+        assert!(
+            allowed.contains(name),
+            "generated unconfigured kind {name}: {counts:?}"
+        );
+    }
     assert!(
-        *counts.get("Grass").unwrap_or(&0) > 0,
-        "no grass: {counts:?}"
+        config.biomes.entries.iter().any(|biome| counts
+            .keys()
+            .any(|name| *name == biome.surface.top.as_str())),
+        "no configured biome top kind appeared: {counts:?}"
     );
-    assert!(*counts.get("Dirt").unwrap_or(&0) > 0, "no dirt: {counts:?}");
     assert!(*counts.get("Rock").unwrap_or(&0) > 0, "no rock: {counts:?}");
     assert!(underground_air > 0, "no caves carved");
 }

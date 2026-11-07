@@ -69,6 +69,7 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
         let face_desc = kinds_descs.get_face_desc(face);
         let tile_texture_size = (kinds_descs.count_tiles() as f32).recip();
         let tile_coord_start = face_desc.offset.as_vec2() * tile_texture_size;
+        let tint = Vec3::new(face_desc.color.0, face_desc.color.1, face_desc.color.2);
 
         for (i, v) in face.vertices.iter().enumerate() {
             let base_vertex_idx = VERTICES_INDICES[face.side as usize][i];
@@ -98,7 +99,7 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
                 normal,
                 uv: tile_uv[i],
                 tile_coord_start,
-                light: Vec3::splat(face.light[i] * LIGHT_FRACTION),
+                light: Vec3::splat(face.light[i] * LIGHT_FRACTION) * tint,
             });
         }
     }
@@ -418,6 +419,29 @@ pub fn generate_faces_skipping(
 mod test {
     use super::*;
     use crate::light;
+
+    #[test]
+    fn kind_color_tints_vertex_light() {
+        let kind = voxel::Kind::from_name("Sand").expect("Sand kind is configured");
+        let face = voxel::Face {
+            vertices: [ChunkVoxel::new(0, 0, 0); 4],
+            side: voxel::Side::Up,
+            kind,
+            light: [15.0; 4],
+        };
+
+        let vertices = generate_vertices(&[face]);
+        let expected = Vec3::new(1.9, 1.7, 1.1);
+
+        assert!(!vertices.is_empty());
+        for vertex in vertices {
+            assert!(
+                (vertex.light - expected).length() < 1e-5,
+                "kind tint was not applied: {}",
+                vertex.light
+            );
+        }
+    }
 
     #[test]
     fn full_face_is_visible_against_partially_air_coarse_neighbor() {

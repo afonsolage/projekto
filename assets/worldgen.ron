@@ -12,6 +12,9 @@
         erosion: (frequency: 0.004, octaves: 3, gain: 0.5, lacunarity: 2.0),
         weirdness: (frequency: 0.008, octaves: 3, gain: 0.5, lacunarity: 2.0),
         detail: (frequency: 0.06, octaves: 2, gain: 0.5, lacunarity: 2.0),
+        // Climate fields used only by biome selection.
+        temperature: (frequency: 0.0015, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        humidity: (frequency: 0.002, octaves: 3, gain: 0.5, lacunarity: 2.0),
     ),
     // Maps continentalness (-1..1) to base elevation.
     base_height: (
@@ -34,13 +37,40 @@
         ],
     ),
     detail_strength: 0.6,
-    surface: (
+    // Biome selection is the nearest point in (temperature, humidity, erosion) space.
+    // Top kinds are unique per biome. Rock is also the steep kind, so the surface map is
+    // a visual aid rather than a biome count.
+    biomes: (
         max_slope: 1.8,
-        top: "Grass",
-        subsurface: "Dirt",
-        subsurface_depth: 3,
         steep: "Rock",
         deep: "Rock",
+        entries: [
+            (
+                name: "Plains",
+                parameters: (temperature: 0.0, humidity: 0.0, erosion: 0.2),
+                surface: (top: "Grass", subsurface: "Dirt", subsurface_depth: 3),
+            ),
+            (
+                name: "Forest",
+                parameters: (temperature: 0.0, humidity: 0.4, erosion: 0.2),
+                surface: (top: "Moss", subsurface: "Dirt", subsurface_depth: 3),
+            ),
+            (
+                name: "Desert",
+                parameters: (temperature: 0.4, humidity: -0.4, erosion: 0.2),
+                surface: (top: "Sand", subsurface: "Sand", subsurface_depth: 3),
+            ),
+            (
+                name: "Tundra",
+                parameters: (temperature: -0.4, humidity: 0.0, erosion: 0.2),
+                surface: (top: "Snow", subsurface: "Dirt", subsurface_depth: 2),
+            ),
+            (
+                name: "Roughlands",
+                parameters: (temperature: 0.0, humidity: 0.0, erosion: -0.4),
+                surface: (top: "Rock", subsurface: "Rock", subsurface_depth: 3),
+            ),
+        ],
     ),
     // 3D fields are sampled on a coarse lattice and interpolated per voxel.
     caves: (

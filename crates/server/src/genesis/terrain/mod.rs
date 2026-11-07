@@ -1,9 +1,11 @@
 //! Deterministic terrain generation.
 //!
 //! The shape is built from three 2D fields (continentalness, erosion and weirdness) combined
-//! through monotone splines, plus a small detail field. Overhangs and caves come from 3D fields
+//! through monotone splines, plus a small detail field. Temperature and humidity select a biome,
+//! and each biome supplies its own surface materials. Overhangs and caves come from 3D fields
 //! sampled on a coarse lattice and interpolated per voxel.
 
+mod biome;
 mod config;
 mod noise;
 mod spline;
@@ -19,10 +21,10 @@ use projekto_core::{
 };
 
 use self::{
+    biome::BiomeTable,
     config::CaveConfig,
     noise::{NoiseField, derive_seed},
     spline::Spline,
-    surface::SurfaceRules,
 };
 
 const SEED_CONTINENTALNESS: u64 = 1;
@@ -31,6 +33,8 @@ const SEED_WEIRDNESS: u64 = 3;
 const SEED_DETAIL: u64 = 4;
 const SEED_OVERHANG: u64 = 5;
 const SEED_CAVERN: u64 = 6;
+const SEED_TEMPERATURE: u64 = 7;
+const SEED_HUMIDITY: u64 = 8;
 
 /// Generates chunks from a validated [`WorldGenConfig`].
 pub(crate) struct TerrainGenerator {
@@ -43,7 +47,9 @@ pub(crate) struct TerrainGenerator {
     cavern: Option<NoiseField>,
     base_height: Spline,
     relief_amplitude: Spline,
-    surface: SurfaceRules,
+    temperature: NoiseField,
+    humidity: NoiseField,
+    biomes: BiomeTable,
 }
 
 impl TerrainGenerator {
@@ -70,13 +76,23 @@ impl TerrainGenerator {
             cavern,
             base_height: Spline::new(&config.base_height),
             relief_amplitude: Spline::new(&config.relief_amplitude),
-            surface: SurfaceRules::new(&config.surface),
+            temperature: NoiseField::new(
+                &config.fields.temperature,
+                derive_seed(seed, SEED_TEMPERATURE),
+            ),
+            humidity: NoiseField::new(&config.fields.humidity, derive_seed(seed, SEED_HUMIDITY)),
+            biomes: BiomeTable::new(&config.biomes),
             config,
         }
     }
 
     /// Surface height at world coordinates `(x, z)`.
     pub(crate) fn height(&self, x: f32, z: f32) -> f32 {
+        self.column(x, z).height
+    }
+
+    /// Shape values needed by the height, slope and biome passes.
+    fn column(&self, x: f32, z: f32) -> ColumnShape {
         let continentalness = self.continentalness.sample(x, z);
         let erosion = self.erosion.sample(x, z);
         let weirdness = self.weirdness.sample(x, z);
@@ -85,9 +101,10 @@ impl TerrainGenerator {
         let base = self.base_height.sample(continentalness);
         let amplitude = self.relief_amplitude.sample(erosion);
         let detail = self.detail.sample(x, z) * self.config.detail_strength;
+        let height = (base + peaks_and_valleys * amplitude + detail)
+            .clamp(self.config.min_height as f32, self.config.max_height as f32);
 
-        (base + peaks_and_valleys * amplitude + detail)
-            .clamp(self.config.min_height as f32, self.config.max_height as f32)
+        ColumnShape { height, erosion }
     }
 
     /// Maximum surface height difference between the two neighbours on each horizontal axis.
@@ -113,22 +130,30 @@ impl TerrainGenerator {
 
         let mut heights = [[0.0f32; Chunk::X_AXIS_SIZE]; Chunk::Z_AXIS_SIZE];
         let mut slopes = [[0.0f32; Chunk::X_AXIS_SIZE]; Chunk::Z_AXIS_SIZE];
+        let mut biomes = [[0usize; Chunk::X_AXIS_SIZE]; Chunk::Z_AXIS_SIZE];
 
         for x in 0..Chunk::X_AXIS_SIZE {
             for z in 0..Chunk::Z_AXIS_SIZE {
                 let world_x = origin.x + x as f32;
                 let world_z = origin.z + z as f32;
-                heights[z][x] = self.height(world_x, world_z);
+                let column = self.column(world_x, world_z);
+                heights[z][x] = column.height;
                 slopes[z][x] = self.slope(world_x, world_z);
+                biomes[z][x] = self.biomes.select(
+                    self.temperature.sample(world_x, world_z),
+                    self.humidity.sample(world_x, world_z),
+                    column.erosion,
+                );
             }
         }
 
-        let deep = self.surface.deep();
+        let deep = self.biomes.deep();
 
         for x in 0..Chunk::X_AXIS_SIZE {
             for z in 0..Chunk::Z_AXIS_SIZE {
                 let height = heights[z][x];
                 let slope = slopes[z][x];
+                let biome = biomes[z][x];
                 let mut top = None;
 
                 for y in 0..Chunk::Y_AXIS_SIZE {
@@ -151,10 +176,10 @@ impl TerrainGenerator {
                         break;
                     }
 
-                    kind.set(voxel, self.surface.kind(depth, slope));
+                    kind.set(voxel, self.biomes.surface(biome, depth, slope));
                     depth += 1;
 
-                    if depth > self.config.surface.subsurface_depth as i32 {
+                    if depth > self.biomes.surface_depth(biome) {
                         break;
                     }
 
@@ -219,6 +244,12 @@ impl TerrainGenerator {
     pub(crate) fn config(&self) -> &WorldGenConfig {
         &self.config
     }
+}
+
+/// Shape values for one world column.
+struct ColumnShape {
+    height: f32,
+    erosion: f32,
 }
 
 /// A 3D noise field sampled on a coarse grid and interpolated trilinearly.
@@ -339,6 +370,30 @@ mod tests {
         counts
     }
 
+    fn biome_index(generator: &TerrainGenerator, x: f32, z: f32) -> usize {
+        let column = generator.column(x, z);
+
+        generator.biomes.select(
+            generator.temperature.sample(x, z),
+            generator.humidity.sample(x, z),
+            column.erosion,
+        )
+    }
+
+    fn expected_top_kind(generator: &TerrainGenerator, x: f32, z: f32) -> Kind {
+        let biome = biome_index(generator, x, z);
+        let slope = generator.slope(x, z);
+
+        generator.biomes.surface(biome, 0, slope)
+    }
+
+    fn top_kind(kind: &ChunkStorage<Kind>, x: u8, z: u8) -> Option<Kind> {
+        (0..=Chunk::Y_END)
+            .rev()
+            .find(|&y| !kind.get(ChunkVoxel::new(x, y, z)).is_none())
+            .map(|y| kind.get(ChunkVoxel::new(x, y, z)))
+    }
+
     #[test]
     fn height_stays_within_configured_bounds_and_varies() {
         let generator = generator(42);
@@ -406,22 +461,197 @@ mod tests {
     }
 
     #[test]
-    fn surface_has_grass_dirt_and_rock() {
+    fn surface_kinds_are_configured_biome_kinds() {
         let generator = generator(42);
+        let config = generator.config();
         let mut counts = BTreeMap::new();
 
-        for chunk in [Chunk::new(0, 0), Chunk::new(1, 0), Chunk::new(0, 1)] {
+        for chunk in [
+            Chunk::new(0, 0),
+            Chunk::new(1, 0),
+            Chunk::new(0, 1),
+            Chunk::new(-1, -1),
+        ] {
             for (kind, count) in kind_counts(&generate(&generator, chunk)) {
                 *counts.entry(kind).or_insert(0usize) += count;
             }
         }
 
-        assert!(
-            *counts.get("Grass").unwrap_or(&0) > 0,
-            "no grass: {counts:?}"
-        );
-        assert!(*counts.get("Dirt").unwrap_or(&0) > 0, "no dirt: {counts:?}");
+        let allowed = std::iter::once(config.biomes.steep.as_str())
+            .chain(std::iter::once(config.biomes.deep.as_str()))
+            .chain(config.biomes.entries.iter().flat_map(|biome| {
+                [
+                    biome.surface.top.as_str(),
+                    biome.surface.subsurface.as_str(),
+                ]
+            }))
+            .collect::<Vec<_>>();
+
+        assert!(!counts.is_empty(), "no solid kinds generated");
+        for name in counts.keys() {
+            assert!(
+                allowed.contains(name),
+                "generated unconfigured kind {name}: {counts:?}"
+            );
+        }
         assert!(*counts.get("Rock").unwrap_or(&0) > 0, "no rock: {counts:?}");
+    }
+
+    #[test]
+    fn biome_distribution_stays_within_bounds() {
+        const SAMPLES: usize = 256;
+
+        for seed in [42, 43, 44] {
+            let generator = generator(seed);
+            let mut counts = vec![0usize; generator.config().biomes.entries.len()];
+
+            for x in 0..SAMPLES {
+                for z in 0..SAMPLES {
+                    let index = biome_index(&generator, (x * 8) as f32, (z * 8) as f32);
+                    counts[index] += 1;
+                }
+            }
+
+            let total = SAMPLES * SAMPLES;
+            let shares: Vec<f32> = counts
+                .iter()
+                .map(|count| *count as f32 / total as f32)
+                .collect();
+            println!(
+                "seed {seed} biome shares: {}",
+                shares
+                    .iter()
+                    .enumerate()
+                    .map(|(index, share)| format!(
+                        "{}={:.1}%",
+                        generator.config().biomes.entries[index].name,
+                        share * 100.0
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+
+            for (index, share) in shares.iter().enumerate() {
+                assert!(
+                    (0.05..=0.40).contains(share),
+                    "biome {} has share {:.1}% for seed {seed}",
+                    generator.config().biomes.entries[index].name,
+                    share * 100.0
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn world_space_surface_matches_generated_chunks() {
+        let generator = generator(42);
+
+        for chunk in [
+            Chunk::new(0, 0),
+            Chunk::new(1, 0),
+            Chunk::new(-1, 0),
+            Chunk::new(0, 1),
+            Chunk::new(0, -1),
+        ] {
+            let kind = generate(&generator, chunk);
+            let origin: Vec3 = chunk.into();
+
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    let world_x = origin.x + x as f32;
+                    let world_z = origin.z + z as f32;
+                    let expected = expected_top_kind(&generator, world_x, world_z);
+                    let actual = top_kind(&kind, x as u8, z as u8)
+                        .unwrap_or_else(|| panic!("no solid voxel at ({world_x}, {world_z})"));
+
+                    assert_eq!(
+                        actual, expected,
+                        "generated surface differs from world-space probe at ({world_x}, {world_z}) in {chunk:?}"
+                    );
+                }
+            }
+        }
+
+        for step in 0..32 {
+            let z = step as f32 * 7.3;
+            let before = generator.height(Chunk::X_AXIS_SIZE as f32 - 0.01, z);
+            let after = generator.height(Chunk::X_AXIS_SIZE as f32 + 0.01, z);
+
+            assert!(
+                (before - after).abs() < 1.0,
+                "height jumped across the border: {before} -> {after}"
+            );
+        }
+    }
+
+    #[test]
+    fn each_biome_generates_its_surface_sequence() {
+        let generator = generator(42);
+        let mut candidates = vec![Vec::new(); generator.config().biomes.entries.len()];
+
+        for x in 0..256 {
+            for z in 0..256 {
+                if candidates.iter().all(|entry| entry.len() >= 16) {
+                    break;
+                }
+
+                let world_x = (x * 8) as f32;
+                let world_z = (z * 8) as f32;
+                let index = biome_index(&generator, world_x, world_z);
+                if candidates[index].len() < 16
+                    && generator.slope(world_x, world_z) <= generator.config().biomes.max_slope
+                {
+                    candidates[index].push((world_x, world_z));
+                }
+            }
+        }
+
+        for (biome, candidates) in candidates.iter().enumerate() {
+            let mut verified = false;
+
+            for &(world_x, world_z) in candidates {
+                let chunk = Chunk::new(
+                    (world_x as i32).div_euclid(Chunk::X_AXIS_SIZE as i32),
+                    (world_z as i32).div_euclid(Chunk::Z_AXIS_SIZE as i32),
+                );
+                let kind = generate(&generator, chunk);
+                let x = (world_x as i32).rem_euclid(Chunk::X_AXIS_SIZE as i32) as u8;
+                let z = (world_z as i32).rem_euclid(Chunk::Z_AXIS_SIZE as i32) as u8;
+                let Some(top) = (0..=Chunk::Y_END)
+                    .rev()
+                    .find(|&y| !kind.get(ChunkVoxel::new(x, y, z)).is_none())
+                else {
+                    continue;
+                };
+
+                let slope = generator.slope(world_x, world_z);
+                let depth = generator.biomes.surface_depth(biome);
+                let mut complete = true;
+
+                for offset in 0..=depth + 1 {
+                    let y = top as i32 - offset;
+                    if y < 0 || kind.get(ChunkVoxel::new(x, y as u8, z)).is_none() {
+                        complete = false;
+                        break;
+                    }
+                    assert_eq!(
+                        kind.get(ChunkVoxel::new(x, y as u8, z)),
+                        generator.biomes.surface(biome, offset, slope),
+                        "biome {biome} surface mismatch at depth {offset} ({world_x}, {world_z})"
+                    );
+                }
+
+                if complete {
+                    verified = true;
+                    break;
+                }
+            }
+
+            assert!(
+                verified,
+                "could not find an uninterrupted surface run for biome {biome}"
+            );
+        }
     }
 
     #[test]

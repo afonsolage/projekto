@@ -18,7 +18,7 @@ pub struct WorldGenConfig {
     pub min_height: i32,
     /// Highest generated surface height, including peaks.
     pub max_height: i32,
-    /// 2D shape fields.
+    /// 2D shape and climate fields.
     pub fields: FieldSet,
     /// Maps continentalness to base elevation.
     pub base_height: SplineConfig,
@@ -26,19 +26,21 @@ pub struct WorldGenConfig {
     pub relief_amplitude: SplineConfig,
     /// Amplitude of the small high-frequency height detail.
     pub detail_strength: f32,
-    /// Surface material rules.
-    pub surface: SurfaceConfig,
+    /// Biome selection and surface rules.
+    pub biomes: BiomesConfig,
     /// Caves and overhangs.
     pub caves: CaveConfig,
 }
 
-/// The 2D noise fields used by the height model.
+/// The 2D noise fields used by the height and climate models.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FieldSet {
     pub continentalness: FieldConfig,
     pub erosion: FieldConfig,
     pub weirdness: FieldConfig,
     pub detail: FieldConfig,
+    pub temperature: FieldConfig,
+    pub humidity: FieldConfig,
 }
 
 /// One fractal noise field.
@@ -56,21 +58,47 @@ pub struct SplineConfig {
     pub points: Vec<(f32, f32)>,
 }
 
-/// Which kinds go on and under the surface.
+/// Biome selection table and the surface settings shared by every biome.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SurfaceConfig {
-    /// Slopes above this value expose `steep` instead of `top` and `subsurface`.
+pub struct BiomesConfig {
+    /// Slopes above this value expose `steep` instead of the biome surface.
     pub max_slope: f32,
-    /// Kind on flat ground above the water line.
+    /// Kind on steep slopes and cliffs.
+    pub steep: String,
+    /// Kind for everything below the surface layers.
+    pub deep: String,
+    /// One entry per biome. The first entry wins an exact parameter tie.
+    pub entries: Vec<BiomeConfig>,
+}
+
+/// One biome in parameter space plus its surface rules.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BiomeConfig {
+    /// Debug and validation name. It is not sent to the client.
+    pub name: String,
+    /// Climate and terrain parameters used for nearest-point selection.
+    pub parameters: BiomeParameters,
+    /// Materials for this biome's top and subsurface layers.
+    pub surface: BiomeSurfaceConfig,
+}
+
+/// Position of a biome in the `(temperature, humidity, erosion)` parameter space.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct BiomeParameters {
+    pub temperature: f32,
+    pub humidity: f32,
+    pub erosion: f32,
+}
+
+/// Which kinds go on and under one biome's surface.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BiomeSurfaceConfig {
+    /// Kind on flat ground.
     pub top: String,
     /// Kind directly under `top`.
     pub subsurface: String,
     /// How many voxels of `subsurface` follow `top`.
     pub subsurface_depth: u8,
-    /// Kind on steep slopes and cliffs.
-    pub steep: String,
-    /// Kind for everything below the surface layers.
-    pub deep: String,
 }
 
 /// Caves and overhangs.
@@ -177,6 +205,8 @@ impl WorldGenConfig {
         validate_field("fields.erosion", &self.fields.erosion)?;
         validate_field("fields.weirdness", &self.fields.weirdness)?;
         validate_field("fields.detail", &self.fields.detail)?;
+        validate_field("fields.temperature", &self.fields.temperature)?;
+        validate_field("fields.humidity", &self.fields.humidity)?;
         validate_spline("base_height", &self.base_height)?;
         validate_spline("relief_amplitude", &self.relief_amplitude)?;
 
@@ -187,36 +217,7 @@ impl WorldGenConfig {
             )));
         }
 
-        if !self.surface.max_slope.is_finite() || self.surface.max_slope < 0.0 {
-            return Err(invalid(format!(
-                "surface.max_slope must be finite and non-negative, got {}",
-                self.surface.max_slope
-            )));
-        }
-        if self.surface.subsurface_depth > 16 {
-            return Err(invalid(format!(
-                "surface.subsurface_depth must be at most 16, got {}",
-                self.surface.subsurface_depth
-            )));
-        }
-        for (field, name) in [
-            ("surface.top", &self.surface.top),
-            ("surface.subsurface", &self.surface.subsurface),
-            ("surface.steep", &self.surface.steep),
-            ("surface.deep", &self.surface.deep),
-        ] {
-            match Kind::from_name(name) {
-                None => {
-                    return Err(invalid(format!("{field} references unknown kind {name:?}")));
-                }
-                Some(kind) if kind.is_none() => {
-                    return Err(invalid(format!(
-                        "{field} must not use the empty kind {name:?}"
-                    )));
-                }
-                Some(_) => {}
-            }
-        }
+        validate_biomes(&self.biomes)?;
 
         if self.caves.enabled {
             validate_field("caves.overhang", &self.caves.overhang)?;
@@ -263,6 +264,109 @@ impl WorldGenConfig {
         }
 
         Ok(())
+    }
+}
+
+fn validate_biomes(biomes: &BiomesConfig) -> Result<(), WorldGenConfigError> {
+    if biomes.entries.is_empty() {
+        return Err(invalid("biomes.entries must not be empty".to_string()));
+    }
+    if !biomes.max_slope.is_finite() || biomes.max_slope < 0.0 {
+        return Err(invalid(format!(
+            "biomes.max_slope must be finite and non-negative, got {}",
+            biomes.max_slope
+        )));
+    }
+
+    validate_kind("biomes.steep", &biomes.steep)?;
+    validate_kind("biomes.deep", &biomes.deep)?;
+
+    let mut tops = Vec::with_capacity(biomes.entries.len());
+
+    for (index, biome) in biomes.entries.iter().enumerate() {
+        let path = format!("biomes.entries[{index}]");
+
+        if biome.name.trim().is_empty() {
+            return Err(invalid(format!("{path}.name must not be empty")));
+        }
+        if biomes.entries[..index]
+            .iter()
+            .any(|previous| previous.name == biome.name)
+        {
+            return Err(invalid(format!(
+                "{path}.name {:?} is already used",
+                biome.name
+            )));
+        }
+
+        validate_parameters(&path, &biome.parameters)?;
+
+        if biomes.entries[..index]
+            .iter()
+            .any(|previous| same_parameters(&previous.parameters, &biome.parameters))
+        {
+            return Err(invalid(format!(
+                "{path}.parameters duplicate an earlier biome"
+            )));
+        }
+
+        let top = validate_kind(&format!("{path}.surface.top"), &biome.surface.top)?;
+        if tops.contains(&top) {
+            return Err(invalid(format!(
+                "{path}.surface.top repeats kind {:?}; biome top kinds must be unique",
+                biome.surface.top
+            )));
+        }
+        tops.push(top);
+
+        validate_kind(
+            &format!("{path}.surface.subsurface"),
+            &biome.surface.subsurface,
+        )?;
+
+        if biome.surface.subsurface_depth > 16 {
+            return Err(invalid(format!(
+                "{path}.surface.subsurface_depth must be at most 16, got {}",
+                biome.surface.subsurface_depth
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_parameters(
+    path: &str,
+    parameters: &BiomeParameters,
+) -> Result<(), WorldGenConfigError> {
+    for (name, value) in [
+        ("temperature", parameters.temperature),
+        ("humidity", parameters.humidity),
+        ("erosion", parameters.erosion),
+    ] {
+        if !value.is_finite() {
+            return Err(invalid(format!(
+                "{path}.parameters.{name} must be finite, got {value}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn same_parameters(a: &BiomeParameters, b: &BiomeParameters) -> bool {
+    (a.temperature - b.temperature).abs() <= 1e-6
+        && (a.humidity - b.humidity).abs() <= 1e-6
+        && (a.erosion - b.erosion).abs() <= 1e-6
+}
+
+fn validate_kind(path: &str, name: &str) -> Result<Kind, WorldGenConfigError> {
+    match Kind::from_name(name) {
+        None => Err(invalid(format!("{path} references unknown kind {name:?}"))),
+        Some(kind) if kind.is_none() => Err(invalid(format!(
+            "{path} must not use the empty kind {name:?}"
+        ))),
+        Some(kind) => Ok(kind),
     }
 }
 
@@ -332,9 +436,25 @@ mod tests {
     }
 
     #[test]
+    fn shipped_config_has_five_named_biomes() {
+        let config = WorldGenConfig::load_default();
+        let names: Vec<&str> = config
+            .biomes
+            .entries
+            .iter()
+            .map(|biome| biome.name.as_str())
+            .collect();
+
+        assert_eq!(
+            names,
+            ["Plains", "Forest", "Desert", "Tundra", "Roughlands"]
+        );
+    }
+
+    #[test]
     fn rejects_unknown_surface_kind() {
         let mut config = WorldGenConfig::load_default();
-        config.surface.top = "NotAKind".to_string();
+        config.biomes.entries[0].surface.top = "NotAKind".to_string();
 
         assert!(config.validate().is_err());
     }
@@ -342,7 +462,47 @@ mod tests {
     #[test]
     fn rejects_empty_surface_kind() {
         let mut config = WorldGenConfig::load_default();
-        config.surface.deep = "None".to_string();
+        config.biomes.deep = "None".to_string();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_biome_name() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.entries[1].name = config.biomes.entries[0].name.clone();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_biome_parameters() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.entries[1].parameters = config.biomes.entries[0].parameters;
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_top_kind() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.entries[1].surface.top = config.biomes.entries[0].surface.top.clone();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_non_finite_biome_parameter() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.entries[0].parameters.temperature = f32::NAN;
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_negative_max_slope() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.max_slope = -1.0;
 
         assert!(config.validate().is_err());
     }
@@ -367,6 +527,14 @@ mod tests {
     fn rejects_zero_frequency() {
         let mut config = WorldGenConfig::load_default();
         config.fields.erosion.frequency = 0.0;
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_zero_climate_frequency() {
+        let mut config = WorldGenConfig::load_default();
+        config.fields.temperature.frequency = 0.0;
 
         assert!(config.validate().is_err());
     }

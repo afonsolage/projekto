@@ -181,12 +181,15 @@ fn kind_at(chunks: &HashMap<Chunk, ChunkCreation>, world_x: i32, y: u8, world_z:
 }
 
 fn kind_color(kind: Kind) -> [u8; 3] {
-    match u16::from(kind) {
-        0 => [0, 0, 0],
-        1 => [134, 96, 67],
-        2 => [95, 159, 53],
-        3 => [128, 128, 128],
-        4 => [255, 220, 80],
+    match kind.name() {
+        "None" => [0, 0, 0],
+        "Dirt" => [134, 96, 67],
+        "Grass" => [95, 159, 53],
+        "Rock" => [128, 128, 128],
+        "Lamp" => [255, 220, 80],
+        "Sand" => [216, 196, 140],
+        "Moss" => [74, 110, 45],
+        "Snow" => [235, 240, 245],
         _ => [255, 0, 255],
     }
 }

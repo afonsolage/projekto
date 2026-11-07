@@ -1,46 +1,47 @@
-//! Surface material rules.
+//! Surface material rules for one biome.
 
 use projekto_core::voxel::Kind;
 
-use super::config::SurfaceConfig;
+use super::config::BiomeSurfaceConfig;
 
 /// Chooses the kind for a voxel based on its depth below the top of a column.
-pub(crate) struct SurfaceRules {
-    max_slope: f32,
+pub(crate) struct SurfaceRule {
     top: Kind,
     subsurface: Kind,
     subsurface_depth: i32,
-    steep: Kind,
-    deep: Kind,
 }
 
-impl SurfaceRules {
-    pub(crate) fn new(config: &SurfaceConfig) -> Self {
+impl SurfaceRule {
+    pub(crate) fn new(config: &BiomeSurfaceConfig) -> Self {
         Self {
-            max_slope: config.max_slope,
             top: resolve(&config.top),
             subsurface: resolve(&config.subsurface),
             subsurface_depth: config.subsurface_depth as i32,
-            steep: resolve(&config.steep),
-            deep: resolve(&config.deep),
         }
     }
 
-    /// Kind used for the bulk of the column.
-    pub(crate) fn deep(&self) -> Kind {
-        self.deep
+    /// Number of voxels below the top that use the subsurface kind.
+    pub(crate) fn depth(&self) -> i32 {
+        self.subsurface_depth
     }
 
     /// Kind at `depth` below the top of a surface run.
-    pub(crate) fn kind(&self, depth: i32, slope: f32) -> Kind {
-        if slope > self.max_slope {
-            return self.steep;
+    pub(crate) fn kind(
+        &self,
+        depth: i32,
+        slope: f32,
+        max_slope: f32,
+        steep: Kind,
+        deep: Kind,
+    ) -> Kind {
+        if slope > max_slope {
+            return steep;
         }
 
         match depth {
             0 => self.top,
             depth if depth <= self.subsurface_depth => self.subsurface,
-            _ => self.deep,
+            _ => deep,
         }
     }
 }
@@ -53,15 +54,16 @@ fn resolve(name: &str) -> Kind {
 mod tests {
     use super::*;
 
-    fn rules() -> SurfaceRules {
-        SurfaceRules::new(&SurfaceConfig {
-            max_slope: 3.0,
+    fn rules(surface: BiomeSurfaceConfig) -> SurfaceRule {
+        SurfaceRule::new(&surface)
+    }
+
+    fn grass_dirt() -> BiomeSurfaceConfig {
+        BiomeSurfaceConfig {
             top: "Grass".to_string(),
             subsurface: "Dirt".to_string(),
             subsurface_depth: 3,
-            steep: "Rock".to_string(),
-            deep: "Rock".to_string(),
-        })
+        }
     }
 
     fn name(kind: Kind) -> &'static str {
@@ -70,20 +72,36 @@ mod tests {
 
     #[test]
     fn flat_ground_gets_grass_then_dirt() {
-        let rules = rules();
+        let rules = rules(grass_dirt());
+        let rock = Kind::from_name("Rock").unwrap();
 
-        assert_eq!(name(rules.kind(0, 0.0)), "Grass");
-        assert_eq!(name(rules.kind(1, 0.0)), "Dirt");
-        assert_eq!(name(rules.kind(3, 0.0)), "Dirt");
-        assert_eq!(name(rules.kind(4, 0.0)), "Rock");
+        assert_eq!(name(rules.kind(0, 0.0, 3.0, rock, rock)), "Grass");
+        assert_eq!(name(rules.kind(1, 0.0, 3.0, rock, rock)), "Dirt");
+        assert_eq!(name(rules.kind(3, 0.0, 3.0, rock, rock)), "Dirt");
+        assert_eq!(name(rules.kind(4, 0.0, 3.0, rock, rock)), "Rock");
     }
 
     #[test]
     fn steep_ground_gets_rock() {
-        let rules = rules();
+        let rules = rules(grass_dirt());
+        let rock = Kind::from_name("Rock").unwrap();
 
         for depth in 0..6 {
-            assert_eq!(name(rules.kind(depth, 5.0)), "Rock");
+            assert_eq!(name(rules.kind(depth, 5.0, 3.0, rock, rock)), "Rock");
         }
+    }
+
+    #[test]
+    fn tundra_depth_uses_two_subsurface_layers() {
+        let rules = rules(BiomeSurfaceConfig {
+            top: "Snow".to_string(),
+            subsurface: "Dirt".to_string(),
+            subsurface_depth: 2,
+        });
+        let rock = Kind::from_name("Rock").unwrap();
+
+        assert_eq!(name(rules.kind(0, 0.0, 3.0, rock, rock)), "Snow");
+        assert_eq!(name(rules.kind(2, 0.0, 3.0, rock, rock)), "Dirt");
+        assert_eq!(name(rules.kind(3, 0.0, 3.0, rock, rock)), "Rock");
     }
 }

@@ -145,6 +145,7 @@ pub fn generate_coarse_vertices<'a>(
                     };
                     let face_desc = kinds.get_face_desc(&face);
                     let tile_coord_start = face_desc.offset.as_vec2() * tile_texture_size;
+                    let tint = Vec3::new(face_desc.color.0, face_desc.color.1, face_desc.color.2);
 
                     let mut positions = [Vec3::ZERO; 4];
                     for (i, position) in positions.iter_mut().enumerate() {
@@ -187,7 +188,7 @@ pub fn generate_coarse_vertices<'a>(
                             normal,
                             uv: tile_uv[i],
                             tile_coord_start,
-                            light: Vec3::splat(light_values[i].max(floor) * LIGHT_FRACTION),
+                            light: Vec3::splat(light_values[i].max(floor) * LIGHT_FRACTION) * tint,
                         });
                     }
                 }
@@ -466,6 +467,35 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn coarse_vertices_apply_kind_tint() {
+        let sand = Kind::from_name("Sand").expect("Sand kind is configured");
+        let mut kind = ChunkStorage::<Kind>::default();
+        kind.fill(sand);
+        let mut light = ChunkStorage::<Light>::default();
+        light.fill(Light::natural(15));
+
+        let vertices = generate_coarse_vertices(
+            Chunk::new(0, 0),
+            &kind,
+            &light,
+            &[None; chunk::SIDE_COUNT],
+            &[None; chunk::SIDE_COUNT],
+            |_| Some(&kind),
+            |_| Some(&light),
+            1,
+        );
+        let expected = Vec3::new(1.9, 1.7, 1.1);
+
+        assert!(!vertices.is_empty());
+        assert!(
+            vertices
+                .iter()
+                .any(|vertex| (vertex.light - expected).length() < 1e-4),
+            "coarse mesh did not apply the kind tint"
+        );
     }
 
     #[test]
