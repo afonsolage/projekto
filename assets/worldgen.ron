@@ -4,7 +4,7 @@
 // and landform_mountains by the landform mask, adds upheaval_lift scaled from 40% to 100% by that
 // mask and peaks-and-valleys relief scaled from 60% to 140%, applies the biome shape blend and
 // terrace, then soft-clamps asymptotically to min_height..max_height. Inside a biome transition
-// band, fields.blend dithers the surface material by the biome weights.
+// band, a deterministic cell hash dithers the surface material by the biome weights.
 (
     seed: 42,
     sea_level: 64,
@@ -26,8 +26,6 @@
         // Low-frequency domain warp for the shape fields.
         turbulence_x: (frequency: 0.0015, octaves: 3, gain: 0.5, lacunarity: 2.0),
         turbulence_z: (frequency: 0.0015, octaves: 3, gain: 0.5, lacunarity: 2.0),
-        // Material jitter inside biome transition bands.
-        blend: (frequency: 0.008, octaves: 2, gain: 0.5, lacunarity: 2.0),
     ),
     // Height profiles mapped from continentalness (-1..1). The plains profile is low and gentle;
     // the mountain profile keeps a steep mid-section so mountain fronts read as cliffs.
@@ -84,6 +82,8 @@
         transition: 0.4,
         // Vertical spacing of the shared smoothed terrace staircase.
         terrace_step: 8.0,
+        // Cell size in blocks for the deterministic material jitter inside transition bands.
+        material_blend_cell: 12,
         entries: [
             (
                 name: "Plains",

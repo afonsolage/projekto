@@ -198,29 +198,29 @@ specific order:
 
 ### World generation
 
-[`TerrainGenerator`](./crates/server/src/genesis/terrain/mod.rs#L45) builds each chunk from a
+[`TerrainGenerator`](./crates/server/src/genesis/terrain/mod.rs#L46) builds each chunk from a
 validated [`WorldGenConfig`](./crates/server/src/genesis/terrain/config.rs#L11). Two low-frequency
 turbulence fields warp the shape sampling position, and the warped coordinates feed continentalness,
 erosion, weirdness, the landform mask and the upheaval field. The landform mask blends two height
 profiles, `landform_plains` and `landform_mountains`, over continentalness, so plains and mountain
 regions have genuinely different vertical scale rather than different noise amplitude. The upheaval
 field adds tectonic uplift, strongest in mountain landforms, and erosion controls a small
-peaks-and-valleys relief term. [`landform_weight`](./crates/server/src/genesis/terrain/mod.rs#L360),
-[`soft_clamp_height`](./crates/server/src/genesis/terrain/mod.rs#L370) and
-[`terrace`](./crates/server/src/genesis/terrain/mod.rs#L388) keep the vertical profile continuous and
+peaks-and-valleys relief term. [`landform_weight`](./crates/server/src/genesis/terrain/mod.rs#L400),
+[`soft_clamp_height`](./crates/server/src/genesis/terrain/mod.rs#L400) and
+[`terrace`](./crates/server/src/genesis/terrain/mod.rs#L418) keep the vertical profile continuous and
 compress rare peaks asymptotically instead of flattening them against a hard ceiling.
 
 Climate samples temperature and humidity at unwarped coordinates, and
 [`BiomeTable::weights_into`](./crates/server/src/genesis/terrain/biome.rs#L104) selects the nearest
 biome entry in `(temperature, humidity, erosion)` space and returns normalized blend weights. Ties
 resolve by table order, and the dominant index keeps the squared-distance comparison used before
-blending. [`BiomeTable::blended_shape`](./crates/server/src/genesis/terrain/biome.rs#L155) sums each
+blending. [`BiomeTable::blended_shape`](./crates/server/src/genesis/terrain/biome.rs#L181) sums each
 entry's five shape fields over those weights: height offset, relief multiplier, terrace strength,
 cave density and overhang strength. The
 [`sample_column`](./crates/server/src/genesis/terrain/mod.rs#L121) helper combines the landform
 profile, uplift and biome shape, applies one smoothed staircase terrace and the soft top clamp, and
 returns the cached column values. The
-[`samples`](./crates/server/src/genesis/terrain/mod.rs#L182) helper caches an 18x18 column halo per
+[`samples`](./crates/server/src/genesis/terrain/mod.rs#L189) helper caches an 18x18 column halo per
 chunk, so height, slope, biome and 3D parameters are read once per world column.
 
 [`SurfaceRule::kind`](./crates/server/src/genesis/terrain/surface.rs#L29) maps depth and slope to a
@@ -229,10 +229,11 @@ steep kind above `max_slope`, and the shared deep kind below. The fill pass uses
 overhang strength and cave density to lift the surface and scale the cavern threshold per column.
 Inside a transition band,
 [`BiomeTable::surface_biome`](./crates/server/src/genesis/terrain/biome.rs#L154) picks the surface
-biome from the blend weights using a deterministic jitter sampled from the `fields.blend` noise
-field, so materials interleave over a wide band instead of switching at a hard border. Climate
-frequencies are low enough that biome cores span hundreds of blocks, while the transition band
-covers the remaining gradient.
+biome from the blend weights using a deterministic, uniform jitter derived from a cell hash, so
+materials interleave over the transition band instead of switching at a hard border. The
+`material_blend_cell` setting controls the patch size, and uniform jitter makes each material's
+share follow its weight. Climate frequencies are low enough that biome cores span hundreds of
+blocks.
 
 [`worldgen.ron`](./assets/worldgen.ron) ships five biomes: Plains (Grass over Dirt), Forest
 (Moss over Dirt), Desert (Sand over Sand), Tundra (Snow over Dirt) and Roughlands (Rock). Sand

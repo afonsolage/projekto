@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn weights_are_continuous_across_a_pairwise_boundary() {
+    fn weights_blend_smoothly_across_a_boundary() {
         let (_config, table) = table();
         let midpoint = weights(&table, 0.0, 0.2, 0.2);
 
@@ -450,6 +450,23 @@ mod tests {
         for _ in 0..8 {
             assert_eq!(table.surface_biome(&weights, 0.42), 1);
         }
+
+        // Uniform jitter must realize the weights: 90% of the unit interval picks entry 0.
+        weights[0] = 0.9;
+        weights[1] = 0.1;
+        let mut first = 0;
+        for step in 0..10_000 {
+            let jitter = (step as f32 + 0.5) / 10_000.0;
+
+            if table.surface_biome(&weights, jitter) == 0 {
+                first += 1;
+            }
+        }
+        let realised = first as f32 / 10_000.0;
+        assert!(
+            (realised - 0.9).abs() < 0.01,
+            "weighted surface picks do not follow the weights: {realised}"
+        );
     }
 
     #[test]

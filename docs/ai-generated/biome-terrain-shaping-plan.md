@@ -10,6 +10,9 @@ approved design in [`biome-proposal.md`](docs/ai-generated/biome-proposal.md) pu
 and blended transitions out of scope and listed them as follow-ups. Issue #109 closes the height
 shape and 3D-characteristics part of that gap while keeping transitions as a separate feature.
 
+The body below describes the original biome-shaping design. The landform addendum near the end
+supersedes its shape and transition details; the historical statements are kept for context.
+
 Current pipeline, for reference:
 
 - The pre-#109 `column` helper sampled continentalness, erosion, weirdness and detail and
@@ -375,7 +378,7 @@ Unit tests in `genesis::terrain` (the generator and biome table stay crate-priva
 | Test | Assertion |
 |---|---|
 | `weights_are_a_normalized_partition` | weights sum to one, nearest entry dominates, values stay finite with large coordinates |
-| `weights_are_continuous_across_a_boundary` | crossing a pairwise Voronoi boundary by `1e-3` changes weights smoothly, and the weights are about even at the equality point |
+| `weights_blend_smoothly_across_a_boundary` | crossing a pairwise Voronoi boundary by `1e-3` changes weights smoothly, and the weights are about even at the equality point |
 | `transition_sweep_keeps_the_boundary_continuous` | synthetic configs with `0.1`, `0.15` and `0.5` all keep the blended boundary jump below the bound |
 | `shape_parameters_do_not_affect_selection` | weights and dominant index are bit-identical after every shape field is changed |
 | `tie_resolves_to_the_first_entry` | equal distances select the earlier entry and split weights evenly |
@@ -524,10 +527,11 @@ Design changes:
   columns above that knee. The landform weight also scales uplift from 40% to 100% and relief from
   60% to 140%.
 - **Biome scale and material transitions.** Climate frequencies were lowered so biome cores span
-  hundreds of blocks, and `transition` was widened to 0.4. Inside the transition band, a dedicated
-  `fields.blend` noise drives `BiomeTable::surface_biome`, which picks the surface biome with
-  probability proportional to the blend weights. Materials therefore interleave over a wide band
-  instead of switching in one column.
+  hundreds of blocks, and `transition` was widened to 0.4. Inside the transition band,
+  `BiomeTable::surface_biome` picks the surface biome from the blend weights using a deterministic,
+  uniform cell hash (`biomes.material_blend_cell`, default 12 blocks). Uniform jitter makes each
+  material's realized share follow its weight, and cell-sized patches interleave instead of
+  switching in one column.
 - **Terrace and biome blending** stay as planned: one shared terrace after blending, biome shape
   fields blended by weights.
 
@@ -537,7 +541,8 @@ a column height, so this redesign reproduces the large-scale feel (warp, uplift,
 true non-heightfield overhangs; that would be a separate, larger change.
 
 New fields and settings: `fields.landform`, `fields.upheaval`, `fields.turbulence_x`,
-`fields.turbulence_z`, `landform_plains`, `landform_mountains`, `upheaval_lift`, `warp_strength`.
+`fields.turbulence_z`, `landform_plains`, `landform_mountains`, `upheaval_lift`, `warp_strength`
+and `biomes.material_blend_cell`.
 Tests cover the landform weight curve, warp/profile/uplift wiring, soft-clamp monotonicity and the
 existing height, boundary, halo, cave and biome checks.
 

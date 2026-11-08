@@ -55,8 +55,6 @@ pub struct FieldSet {
     pub turbulence_x: FieldConfig,
     /// Low-frequency horizontal warp of the shape fields.
     pub turbulence_z: FieldConfig,
-    /// Low-frequency jitter that dithers materials inside a biome transition band.
-    pub blend: FieldConfig,
 }
 
 /// One fractal noise field.
@@ -87,6 +85,8 @@ pub struct BiomesConfig {
     pub transition: f32,
     /// Vertical spacing of the smoothed terrace staircase shared by every biome.
     pub terrace_step: f32,
+    /// Cell size, in blocks, of the deterministic material jitter used inside transition bands.
+    pub material_blend_cell: u8,
     /// One entry per biome. The first entry wins an exact parameter tie.
     pub entries: Vec<BiomeConfig>,
 }
@@ -249,7 +249,6 @@ impl WorldGenConfig {
         validate_field("fields.upheaval", &self.fields.upheaval)?;
         validate_field("fields.turbulence_x", &self.fields.turbulence_x)?;
         validate_field("fields.turbulence_z", &self.fields.turbulence_z)?;
-        validate_field("fields.blend", &self.fields.blend)?;
         validate_spline("landform_plains", &self.landform_plains)?;
         validate_spline("landform_mountains", &self.landform_mountains)?;
         validate_spline("upheaval_lift", &self.upheaval_lift)?;
@@ -342,6 +341,12 @@ fn validate_biomes(
         return Err(invalid(format!(
             "biomes.terrace_step must be in 1..=32, got {}",
             biomes.terrace_step
+        )));
+    }
+    if !(1..=64).contains(&biomes.material_blend_cell) {
+        return Err(invalid(format!(
+            "biomes.material_blend_cell must be in 1..=64, got {}",
+            biomes.material_blend_cell
         )));
     }
 
@@ -699,6 +704,16 @@ mod tests {
         assert!(config.validate().is_err());
 
         config.biomes.transition = f32::NAN;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_bad_material_blend_cell() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.material_blend_cell = 0;
+        assert!(config.validate().is_err());
+
+        config.biomes.material_blend_cell = 65;
         assert!(config.validate().is_err());
     }
 

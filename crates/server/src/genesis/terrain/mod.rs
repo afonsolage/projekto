@@ -41,7 +41,6 @@ const SEED_LANDFORM: u64 = 9;
 const SEED_UPHEAVAL: u64 = 10;
 const SEED_TURBULENCE_X: u64 = 11;
 const SEED_TURBULENCE_Z: u64 = 12;
-const SEED_BLEND: u64 = 13;
 
 /// Generates chunks from a validated [`WorldGenConfig`].
 pub(crate) struct TerrainGenerator {
@@ -56,7 +55,6 @@ pub(crate) struct TerrainGenerator {
     upheaval: NoiseField,
     turbulence_x: NoiseField,
     turbulence_z: NoiseField,
-    blend: NoiseField,
     landform_plains: Spline,
     landform_mountains: Spline,
     upheaval_lift: Spline,
@@ -98,7 +96,6 @@ impl TerrainGenerator {
                 &config.fields.turbulence_z,
                 derive_seed(seed, SEED_TURBULENCE_Z),
             ),
-            blend: NoiseField::new(&config.fields.blend, derive_seed(seed, SEED_BLEND)),
             landform_plains: Spline::new(&config.landform_plains),
             landform_mountains: Spline::new(&config.landform_mountains),
             upheaval_lift: Spline::new(&config.upheaval_lift),
@@ -138,11 +135,15 @@ impl TerrainGenerator {
         let temperature = self.temperature.sample(x, z);
         let humidity = self.humidity.sample(x, z);
 
-        let dominant = self
+        let _ = self
             .biomes
             .weights_into(temperature, humidity, erosion, weights);
-        let blend = self.blend.sample(x, z);
-        let jitter = (blend * 0.5 + 0.5).clamp(0.0, 0.999_999);
+        let jitter = material_jitter(
+            x,
+            z,
+            self.config.seed,
+            self.config.biomes.material_blend_cell,
+        );
         let surface_biome = self.biomes.surface_biome(weights, jitter);
         let shape = self.biomes.blended_shape(weights);
 
@@ -175,7 +176,6 @@ impl TerrainGenerator {
 
         ColumnSample {
             height,
-            dominant,
             surface_biome,
             overhang_strength: shape.overhang_strength,
             cave_density: shape.cave_density,
@@ -345,8 +345,6 @@ const HALO: usize = Chunk::X_AXIS_SIZE + 2;
 #[derive(Clone, Copy, Default)]
 struct ColumnSample {
     height: f32,
-    #[allow(dead_code)]
-    dominant: usize,
     surface_biome: usize,
     overhang_strength: f32,
     cave_density: f32,
@@ -377,6 +375,50 @@ fn landform_weight(landform: f32) -> f32 {
 
 /// Compresses the top of the height range instead of clamping it to a flat ceiling.
 ///
+/// Deterministic, uniform jitter in `0..1` for a material-blend cell.
+///
+/// The jitter must be uniform for `BiomeTable::surface_biome` to pick materials with probability
+/// proportional to their weights. A noise field would not be uniform and would bias the result.
+/// Cells are `cell` blocks wide, so materials form patches instead of per-block speckle.
+fn material_jitter(x: f32, z: f32, seed: u64, cell: u8) -> f32 {
+    let cell = f32::from(cell.max(1));
+    let grid_x = (x / cell).floor() as i32;
+    let grid_z = (z / cell).floor() as i32;
+    let mut nearest = f32::MAX;
+    let mut jitter = 0.0;
+
+    // Pick the closest jittered feature point of the surrounding 3x3 cells. Feature points keep
+    // the hash uniform per cell but make the cell borders irregular instead of axis-aligned.
+    for offset_x in -1..=1 {
+        for offset_z in -1..=1 {
+            let cell_x = grid_x + offset_x;
+            let cell_z = grid_z + offset_z;
+            let feature_x = (cell_x as f32 + cell_fraction(cell_x, cell_z, seed, 1)) * cell;
+            let feature_z = (cell_z as f32 + cell_fraction(cell_x, cell_z, seed, 2)) * cell;
+            let distance = (x - feature_x) * (x - feature_x) + (z - feature_z) * (z - feature_z);
+
+            if distance < nearest {
+                nearest = distance;
+                jitter = cell_fraction(cell_x, cell_z, seed, 3);
+            }
+        }
+    }
+
+    jitter
+}
+
+fn cell_fraction(x: i32, z: i32, seed: u64, salt: u64) -> f32 {
+    let mut value = (x as u32 as u64) | ((z as u32 as u64) << 32);
+
+    value ^= seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ salt.wrapping_mul(0xD6E8_FEB8_6659_FD93);
+    value = value.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^= value >> 31;
+
+    (value >> 40) as f32 / 16_777_216.0
+}
+
 /// Heights above the last 16 blocks are mapped through a rational asymptote, so rare peaks lose
 /// height progressively and approach `max_height` without ever forming a flat plateau.
 fn soft_clamp_height(height: f32, min_height: f32, max_height: f32) -> f32 {
@@ -550,8 +592,12 @@ mod tests {
             terrain_erosion(generator, x, z),
             &mut weights,
         );
-        let blend = generator.blend.sample(x, z);
-        let jitter = (blend * 0.5 + 0.5).clamp(0.0, 0.999_999);
+        let jitter = material_jitter(
+            x,
+            z,
+            generator.config().seed,
+            generator.config().biomes.material_blend_cell,
+        );
 
         generator.biomes.surface_biome(&weights, jitter)
     }
@@ -883,6 +929,37 @@ mod tests {
     }
 
     #[test]
+    fn surface_biome_distribution_stays_within_bounds() {
+        const SAMPLES: usize = 256;
+        const STEP: usize = 32;
+
+        for seed in [42, 43, 44] {
+            let generator = generator(seed);
+            let mut counts = vec![0usize; generator.biomes.len()];
+
+            for x in 0..SAMPLES {
+                for z in 0..SAMPLES {
+                    let index = surface_biome_at(&generator, (x * STEP) as f32, (z * STEP) as f32);
+                    counts[index] += 1;
+                }
+            }
+
+            let total = SAMPLES * SAMPLES;
+
+            for (index, count) in counts.iter().enumerate() {
+                let share = *count as f32 / total as f32;
+
+                assert!(
+                    (0.05..=0.40).contains(&share),
+                    "surface biome {} has share {:.1}% for seed {seed}",
+                    generator.config().biomes.entries[index].name,
+                    share * 100.0
+                );
+            }
+        }
+    }
+
+    #[test]
     fn world_space_surface_matches_generated_chunks() {
         let generator = generator(42);
 
@@ -917,11 +994,6 @@ mod tests {
                         (samples.slope(x, z) - probe_slope).abs() < 1e-3,
                         "cached slope {} differs from probe {probe_slope} at ({world_x}, {world_z})",
                         samples.slope(x, z)
-                    );
-                    assert_eq!(
-                        column.dominant,
-                        biome_index(&generator, world_x, world_z),
-                        "cached dominant differs from the world-space probe at ({world_x}, {world_z})"
                     );
                     assert_eq!(
                         column.surface_biome,
@@ -1313,6 +1385,8 @@ mod tests {
         let generator = TerrainGenerator::new(two_entry_config(0.4));
         let (x, z) = boundary_point(&generator);
         let mut seen = [false; 2];
+        let mut previous = None;
+        let mut changes = 0;
 
         for step in -250..=250 {
             let sample = generator.sample_column(
@@ -1324,11 +1398,21 @@ mod tests {
             if sample.surface_biome < 2 {
                 seen[sample.surface_biome] = true;
             }
+            if let Some(previous) = previous
+                && previous != sample.surface_biome
+            {
+                changes += 1;
+            }
+            previous = Some(sample.surface_biome);
         }
 
         assert!(
             seen[0] && seen[1],
             "surface materials did not interleave across the transition: {seen:?}"
+        );
+        assert!(
+            changes >= 10,
+            "surface materials changed only {changes} times across the transition"
         );
     }
 
