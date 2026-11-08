@@ -1,0 +1,12 @@
+[package]
+name = "projekto_textures"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Procedural terrain atlas generation prototype for Projekto"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[lints]
+workspace = true
