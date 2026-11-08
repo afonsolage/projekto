@@ -20,12 +20,18 @@ pub struct WorldGenConfig {
     pub max_height: i32,
     /// 2D shape and climate fields.
     pub fields: FieldSet,
-    /// Maps continentalness to base elevation.
-    pub base_height: SplineConfig,
+    /// Maps continentalness to elevation in lowland/landform-mixed regions.
+    pub landform_plains: SplineConfig,
+    /// Maps continentalness to elevation in mountain landform regions.
+    pub landform_mountains: SplineConfig,
+    /// Maps the upheaval field to tectonic uplift in blocks.
+    pub upheaval_lift: SplineConfig,
     /// Maps erosion to the peaks-and-valleys amplitude.
     pub relief_amplitude: SplineConfig,
     /// Amplitude of the small high-frequency height detail.
     pub detail_strength: f32,
+    /// Horizontal displacement of the shape fields, in blocks.
+    pub warp_strength: f32,
     /// Biome selection and surface rules.
     pub biomes: BiomesConfig,
     /// Caves and overhangs.
@@ -41,6 +47,14 @@ pub struct FieldSet {
     pub detail: FieldConfig,
     pub temperature: FieldConfig,
     pub humidity: FieldConfig,
+    /// Very low-frequency mask that blends the plains and mountain height profiles.
+    pub landform: FieldConfig,
+    /// Low-frequency tectonic uplift field.
+    pub upheaval: FieldConfig,
+    /// Low-frequency horizontal warp of the shape fields.
+    pub turbulence_x: FieldConfig,
+    /// Low-frequency horizontal warp of the shape fields.
+    pub turbulence_z: FieldConfig,
 }
 
 /// One fractal noise field.
@@ -58,7 +72,7 @@ pub struct SplineConfig {
     pub points: Vec<(f32, f32)>,
 }
 
-/// Biome selection table and the surface settings shared by every biome.
+/// Biome selection table, blended shape settings and the surface settings shared by every biome.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BiomesConfig {
     /// Slopes above this value expose `steep` instead of the biome surface.
@@ -67,17 +81,25 @@ pub struct BiomesConfig {
     pub steep: String,
     /// Kind for everything below the surface layers.
     pub deep: String,
+    /// Parameter-space distance at which a neighbouring biome's weight reaches zero.
+    pub transition: f32,
+    /// Vertical spacing of the smoothed terrace staircase shared by every biome.
+    pub terrace_step: f32,
+    /// Cell size, in blocks, of the deterministic material jitter used inside transition bands.
+    pub material_blend_cell: u8,
     /// One entry per biome. The first entry wins an exact parameter tie.
     pub entries: Vec<BiomeConfig>,
 }
 
-/// One biome in parameter space plus its surface rules.
+/// One biome in parameter space plus its shape and surface rules.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BiomeConfig {
     /// Debug and validation name. It is not sent to the client.
     pub name: String,
     /// Climate and terrain parameters used for nearest-point selection.
     pub parameters: BiomeParameters,
+    /// How this biome shapes the terrain it dominates.
+    pub shape: BiomeShapeConfig,
     /// Materials for this biome's top and subsurface layers.
     pub surface: BiomeSurfaceConfig,
 }
@@ -88,6 +110,21 @@ pub struct BiomeParameters {
     pub temperature: f32,
     pub humidity: f32,
     pub erosion: f32,
+}
+
+/// Terrain shape contributed by one biome, blended by selection weight.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct BiomeShapeConfig {
+    /// Blocks added to the column height before clamping.
+    pub height_offset: f32,
+    /// Multiplies the peaks-and-valleys relief amplitude.
+    pub relief_multiplier: f32,
+    /// Blends between the raw height and the smoothed staircase.
+    pub terrace_strength: f32,
+    /// Scales the cavern field before the carve threshold.
+    pub cave_density: f32,
+    /// Vertical overhang displacement in blocks.
+    pub overhang_strength: f32,
 }
 
 /// Which kinds go on and under one biome's surface.
@@ -111,7 +148,8 @@ pub struct CaveConfig {
     pub overhang_strength: f32,
     /// 3D field carved out as caverns.
     pub cavern: FieldConfig,
-    /// Voxels where the cavern field is above this value become air.
+    /// Voxels where the cavern field, scaled by the blended cave density, is above this value
+    /// become air. Must be non-negative so a higher density always carves more.
     pub cavern_threshold: f32,
     /// Vertical margin around the height range where 3D fields are sampled. The generated
     /// margin is at least the overhang strength, so a small band cannot clip lifted peaks.
@@ -207,7 +245,13 @@ impl WorldGenConfig {
         validate_field("fields.detail", &self.fields.detail)?;
         validate_field("fields.temperature", &self.fields.temperature)?;
         validate_field("fields.humidity", &self.fields.humidity)?;
-        validate_spline("base_height", &self.base_height)?;
+        validate_field("fields.landform", &self.fields.landform)?;
+        validate_field("fields.upheaval", &self.fields.upheaval)?;
+        validate_field("fields.turbulence_x", &self.fields.turbulence_x)?;
+        validate_field("fields.turbulence_z", &self.fields.turbulence_z)?;
+        validate_spline("landform_plains", &self.landform_plains)?;
+        validate_spline("landform_mountains", &self.landform_mountains)?;
+        validate_spline("upheaval_lift", &self.upheaval_lift)?;
         validate_spline("relief_amplitude", &self.relief_amplitude)?;
 
         if !self.detail_strength.is_finite() || self.detail_strength < 0.0 {
@@ -216,8 +260,21 @@ impl WorldGenConfig {
                 self.detail_strength
             )));
         }
+        if !self.warp_strength.is_finite() || !(0.0..=256.0).contains(&self.warp_strength) {
+            return Err(invalid(format!(
+                "warp_strength must be in 0..=256, got {}",
+                self.warp_strength
+            )));
+        }
 
-        validate_biomes(&self.biomes)?;
+        if !self.caves.overhang_strength.is_finite() || self.caves.overhang_strength < 0.0 {
+            return Err(invalid(format!(
+                "caves.overhang_strength must be finite and non-negative, got {}",
+                self.caves.overhang_strength
+            )));
+        }
+
+        validate_biomes(&self.biomes, self.caves.overhang_strength)?;
 
         if self.caves.enabled {
             validate_field("caves.overhang", &self.caves.overhang)?;
@@ -248,17 +305,11 @@ impl WorldGenConfig {
                 )));
             }
             if !self.caves.cavern_threshold.is_finite()
-                || !(-1.0..=1.0).contains(&self.caves.cavern_threshold)
+                || !(0.0..=1.0).contains(&self.caves.cavern_threshold)
             {
                 return Err(invalid(format!(
-                    "caves.cavern_threshold must be in -1..=1, got {}",
+                    "caves.cavern_threshold must be in 0..=1, got {}",
                     self.caves.cavern_threshold
-                )));
-            }
-            if !self.caves.overhang_strength.is_finite() || self.caves.overhang_strength < 0.0 {
-                return Err(invalid(format!(
-                    "caves.overhang_strength must be finite and non-negative, got {}",
-                    self.caves.overhang_strength
                 )));
             }
         }
@@ -267,7 +318,10 @@ impl WorldGenConfig {
     }
 }
 
-fn validate_biomes(biomes: &BiomesConfig) -> Result<(), WorldGenConfigError> {
+fn validate_biomes(
+    biomes: &BiomesConfig,
+    max_overhang_strength: f32,
+) -> Result<(), WorldGenConfigError> {
     if biomes.entries.is_empty() {
         return Err(invalid("biomes.entries must not be empty".to_string()));
     }
@@ -275,6 +329,24 @@ fn validate_biomes(biomes: &BiomesConfig) -> Result<(), WorldGenConfigError> {
         return Err(invalid(format!(
             "biomes.max_slope must be finite and non-negative, got {}",
             biomes.max_slope
+        )));
+    }
+    if !biomes.transition.is_finite() || !(0.1..=1.0).contains(&biomes.transition) {
+        return Err(invalid(format!(
+            "biomes.transition must be in 0.1..=1.0, got {}",
+            biomes.transition
+        )));
+    }
+    if !biomes.terrace_step.is_finite() || !(1.0..=32.0).contains(&biomes.terrace_step) {
+        return Err(invalid(format!(
+            "biomes.terrace_step must be in 1..=32, got {}",
+            biomes.terrace_step
+        )));
+    }
+    if !(1..=64).contains(&biomes.material_blend_cell) {
+        return Err(invalid(format!(
+            "biomes.material_blend_cell must be in 1..=64, got {}",
+            biomes.material_blend_cell
         )));
     }
 
@@ -299,7 +371,10 @@ fn validate_biomes(biomes: &BiomesConfig) -> Result<(), WorldGenConfigError> {
             )));
         }
 
+        let path = format!("biomes.entries[{index}] ({})", biome.name);
+
         validate_parameters(&path, &biome.parameters)?;
+        validate_shape(&path, &biome.shape, max_overhang_strength)?;
 
         if biomes.entries[..index]
             .iter()
@@ -328,6 +403,33 @@ fn validate_biomes(biomes: &BiomesConfig) -> Result<(), WorldGenConfigError> {
             return Err(invalid(format!(
                 "{path}.surface.subsurface_depth must be at most 16, got {}",
                 biome.surface.subsurface_depth
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_shape(
+    path: &str,
+    shape: &BiomeShapeConfig,
+    max_overhang_strength: f32,
+) -> Result<(), WorldGenConfigError> {
+    for (name, value, min, max) in [
+        ("height_offset", shape.height_offset, -32.0, 32.0),
+        ("relief_multiplier", shape.relief_multiplier, 0.0, 2.0),
+        ("terrace_strength", shape.terrace_strength, 0.0, 1.0),
+        ("cave_density", shape.cave_density, 0.0, 2.0),
+        (
+            "overhang_strength",
+            shape.overhang_strength,
+            0.0,
+            max_overhang_strength,
+        ),
+    ] {
+        if !value.is_finite() || !(min..=max).contains(&value) {
+            return Err(invalid(format!(
+                "{path}.shape.{name} must be in {min}..={max}, got {value}"
             )));
         }
     }
@@ -518,7 +620,7 @@ mod tests {
     #[test]
     fn rejects_unsorted_spline() {
         let mut config = WorldGenConfig::load_default();
-        config.base_height.points.swap(0, 1);
+        config.landform_plains.points.swap(0, 1);
 
         assert!(config.validate().is_err());
     }
@@ -553,5 +655,107 @@ mod tests {
         config.caves.cell_xz = 3;
 
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_shape_values_with_the_biome_name_and_field() {
+        let cases: [(fn(&mut BiomeShapeConfig), &str); 5] = [
+            (|shape| shape.height_offset = 99.0, "height_offset"),
+            (|shape| shape.relief_multiplier = 3.0, "relief_multiplier"),
+            (|shape| shape.terrace_strength = 1.5, "terrace_strength"),
+            (|shape| shape.cave_density = 3.0, "cave_density"),
+            (|shape| shape.overhang_strength = 7.0, "overhang_strength"),
+        ];
+
+        for (set, field) in cases {
+            let mut config = WorldGenConfig::load_default();
+            let name = config.biomes.entries[0].name.clone();
+            set(&mut config.biomes.entries[0].shape);
+
+            let error = config
+                .validate()
+                .expect_err("shape value should be rejected");
+
+            assert!(
+                error.to_string().contains(&name) && error.to_string().contains(field),
+                "error does not name {name} and {field}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_negative_cavern_threshold() {
+        let mut config = WorldGenConfig::load_default();
+        config.caves.cavern_threshold = -0.5;
+
+        let error = config
+            .validate()
+            .expect_err("negative cavern threshold should fail");
+        assert!(
+            error.to_string().contains("caves.cavern_threshold"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn rejects_bad_transition() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.transition = 0.05;
+        assert!(config.validate().is_err());
+
+        config.biomes.transition = f32::NAN;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_bad_material_blend_cell() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.material_blend_cell = 0;
+        assert!(config.validate().is_err());
+
+        config.biomes.material_blend_cell = 65;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_bad_warp_strength() {
+        let mut config = WorldGenConfig::load_default();
+        config.warp_strength = -1.0;
+        assert!(config.validate().is_err());
+
+        config.warp_strength = 300.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_bad_landform_spline() {
+        let mut config = WorldGenConfig::load_default();
+        config.landform_mountains.points.swap(0, 1);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_bad_terrace_step() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.terrace_step = 0.5;
+        assert!(config.validate().is_err());
+
+        config.biomes.terrace_step = 64.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_non_finite_global_overhang_when_caves_are_disabled() {
+        let mut config = WorldGenConfig::load_default();
+        config.caves.enabled = false;
+        config.caves.overhang_strength = f32::NAN;
+
+        let error = config
+            .validate()
+            .expect_err("non-finite overhang should fail");
+        assert!(
+            error.to_string().contains("caves.overhang_strength"),
+            "unexpected error: {error}"
+        );
     }
 }

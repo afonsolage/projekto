@@ -3,7 +3,7 @@
 ## Context
 
 Issue #42 replaced the single noise field with a layered world generator: four 2D shape fields
-combined by splines ([`TerrainGenerator::height`](crates/server/src/genesis/terrain/mod.rs#L90)),
+combined by splines ([`TerrainGenerator::height`](crates/server/src/genesis/terrain/mod.rs#L115)),
 3D cave and overhang fields, and one global surface rule set. The issue closed with biomes
 explicitly deferred, so the pre-biome world had one surface treatment: Grass over Dirt over Rock,
 with Rock on steep slopes.
@@ -27,7 +27,7 @@ In scope:
 Out of scope:
 
 - water, oceans, beaches, rivers and aquifers;
-- biome-specific height, dunes and blended biome transitions;
+- biome-specific dunes and blended biome transitions; height shaping landed in #109;
 - trees (#43), structures, ore veins and bedrock;
 - hand-painted Sand, Moss and Snow tiles, biome-dependent grass or foliage tinting beyond the
   per-kind color multiplier, and any client message or mesh format change.
@@ -51,7 +51,7 @@ other.
 
 ## Climate fields
 
-Two new 2D fields use the existing [`FieldConfig`](crates/server/src/genesis/terrain/config.rs#L48)
+Two new 2D fields use the existing [`FieldConfig`](crates/server/src/genesis/terrain/config.rs#L62)
 and [`NoiseField`](crates/server/src/genesis/terrain/noise.rs#L8):
 
 | Field | Frequency | Octaves | Gain | Lacunarity | Seed tag |
@@ -76,7 +76,7 @@ Euclidean distance and equal weights. The first entry wins an exact tie, and ent
 because a duplicate can never win.
 
 Erosion is part of the lookup because it already controls relief amplitude
-([`relief_amplitude`](crates/server/src/genesis/terrain/mod.rs#L102)): low erosion produces the
+([`relief_amplitude`](crates/server/src/genesis/terrain/mod.rs#L155)): low erosion produces the
 largest height swings. Erosion is already sampled by the shape pass, so this adds no extra noise
 evaluation.
 
@@ -172,7 +172,7 @@ biomes: (
 ),
 ```
 
-[`WorldGenConfig::validate`](crates/server/src/genesis/terrain/config.rs#L170) adds these checks:
+[`WorldGenConfig::validate`](crates/server/src/genesis/terrain/config.rs#L206) adds these checks:
 
 - `biomes.entries` is not empty;
 - each name is non-empty and unique;
@@ -242,7 +242,7 @@ generator. Only the new climate seeds change, and only the surface output change
 
 ## Assets, archive and client
 
-- Bump [`VERSION_MAGIC`](crates/archive/src/lib.rs#L56) to version 5 in Step 2, with a comment
+- Bump [`VERSION_MAGIC`](crates/archive/src/lib.rs#L57) to version 5 in Step 2, with a comment
   that version 5 adds biomes and their surface kinds.
 - Delete and regenerate `archive/region` in Step 2, before any `just cia` run, so the archived
   area and newly generated chunks use the same surface. Step 3 runs
@@ -406,7 +406,8 @@ biome and generates only the chunks containing them.
 - Hand-painted Sand, Moss and Snow tiles to replace the tinted placeholders; only their
   `kind.ron` offsets and colors change.
 - Water, oceans, beaches and rivers, with a lower height floor and a separate water mesh pass.
-- Biome height shaping and blended transitions, once selection can return weights.
+- Blended biome transitions and material blending; #109 added selection weights and biome height
+  shaping.
 - Trees and other biome features in #43, driven by per-biome density fields.
 - Biome-dependent grass and foliage tinting, which first needs a per-biome channel in the mesh or
   protocol beyond the per-kind color multiplier.
