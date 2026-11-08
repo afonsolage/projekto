@@ -145,6 +145,32 @@ impl BiomeTable {
         best
     }
 
+    /// Returns the biome whose surface materials a column uses.
+    ///
+    /// Inside a transition band several entries have non-zero weight. A deterministic jitter in
+    /// `0..1` selects one of them with probability proportional to its weight, so materials
+    /// interleave gradually instead of switching at a hard border. Columns where one entry has
+    /// full weight always resolve to that entry.
+    pub(crate) fn surface_biome(&self, weights: &[f32], jitter: f32) -> usize {
+        let mut remaining = jitter.clamp(0.0, 0.999_999);
+        let mut dominant = 0;
+        let mut dominant_weight = 0.0;
+
+        for (index, &weight) in weights.iter().enumerate() {
+            if weight > dominant_weight {
+                dominant = index;
+                dominant_weight = weight;
+            }
+
+            if remaining < weight {
+                return index;
+            }
+            remaining -= weight;
+        }
+
+        dominant
+    }
+
     /// Sums the per-biome shape parameters for one column.
     ///
     /// Fields that hold the same value in every entry return that value exactly instead of the
@@ -305,9 +331,9 @@ mod tests {
         let (_config, table) = table();
         let midpoint = weights(&table, 0.0, 0.2, 0.2);
 
-        assert!((midpoint[0] - 0.5).abs() < 1e-3, "{midpoint:?}");
-        assert!((midpoint[1] - 0.5).abs() < 1e-3, "{midpoint:?}");
-        assert!(midpoint[2..].iter().all(|weight| *weight < 1e-4));
+        assert!((midpoint[0] - midpoint[1]).abs() < 1e-3, "{midpoint:?}");
+        assert!(midpoint[0] > 0.4, "{midpoint:?}");
+        assert!(midpoint[1] > 0.4, "{midpoint:?}");
 
         let before = weights(&table, 0.0, 0.2 - 1e-3, 0.2);
         let after = weights(&table, 0.0, 0.2 + 1e-3, 0.2);
@@ -398,6 +424,32 @@ mod tests {
         let shape = table.blended_shape(&midpoint);
         assert!((shape.height_offset - 12.0).abs() < 1e-3);
         assert!((shape.relief_multiplier - 1.2).abs() < 1e-3);
+    }
+
+    #[test]
+    fn surface_biome_is_weighted_and_deterministic() {
+        let table_config = WorldGenConfig::load_default();
+        let table = BiomeTable::new(&table_config.biomes, table_config.caves.overhang_strength);
+
+        // One-hot weights always resolve to that entry.
+        for step in 0..16 {
+            let jitter = step as f32 / 16.0;
+            let mut weights = vec![0.0; table.len()];
+            weights[2] = 1.0;
+            assert_eq!(table.surface_biome(&weights, jitter), 2);
+        }
+
+        // Mixed weights follow the cumulative distribution.
+        let mut weights = vec![0.0; table.len()];
+        weights[0] = 0.3;
+        weights[1] = 0.7;
+        assert_eq!(table.surface_biome(&weights, 0.1), 0);
+        assert_eq!(table.surface_biome(&weights, 0.5), 1);
+        assert_eq!(table.surface_biome(&weights, 0.95), 1);
+
+        for _ in 0..8 {
+            assert_eq!(table.surface_biome(&weights, 0.42), 1);
+        }
     }
 
     #[test]

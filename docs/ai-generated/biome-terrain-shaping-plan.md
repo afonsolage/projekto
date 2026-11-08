@@ -523,6 +523,11 @@ Design changes:
   peaks are compressed instead of becoming perfectly flat plateaus, and the shipped report counts
   columns above that knee. The landform weight also scales uplift from 40% to 100% and relief from
   60% to 140%.
+- **Biome scale and material transitions.** Climate frequencies were lowered so biome cores span
+  hundreds of blocks, and `transition` was widened to 0.4. Inside the transition band, a dedicated
+  `fields.blend` noise drives `BiomeTable::surface_biome`, which picks the surface biome with
+  probability proportional to the blend weights. Materials therefore interleave over a wide band
+  instead of switching in one column.
 - **Terrace and biome blending** stay as planned: one shared terrace after blending, biome shape
   fields blended by weights.
 

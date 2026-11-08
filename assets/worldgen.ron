@@ -3,7 +3,8 @@
 // position; detail, temperature and humidity are sampled unwarped. Height blends landform_plains
 // and landform_mountains by the landform mask, adds upheaval_lift scaled from 40% to 100% by that
 // mask and peaks-and-valleys relief scaled from 60% to 140%, applies the biome shape blend and
-// terrace, then soft-clamps asymptotically to min_height..max_height.
+// terrace, then soft-clamps asymptotically to min_height..max_height. Inside a biome transition
+// band, fields.blend dithers the surface material by the biome weights.
 (
     seed: 42,
     sea_level: 64,
@@ -12,12 +13,12 @@
     // Fractal simplex fields. Frequency is in cells per block.
     fields: (
         continentalness: (frequency: 0.0018, octaves: 4, gain: 0.5, lacunarity: 2.0),
-        erosion: (frequency: 0.0025, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        erosion: (frequency: 0.0012, octaves: 3, gain: 0.5, lacunarity: 2.0),
         weirdness: (frequency: 0.004, octaves: 2, gain: 0.5, lacunarity: 2.0),
         detail: (frequency: 0.05, octaves: 2, gain: 0.5, lacunarity: 2.0),
         // Climate fields used only by biome selection.
-        temperature: (frequency: 0.001, octaves: 3, gain: 0.5, lacunarity: 2.0),
-        humidity: (frequency: 0.0014, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        temperature: (frequency: 0.0005, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        humidity: (frequency: 0.0007, octaves: 3, gain: 0.5, lacunarity: 2.0),
         // Very large landform regions: plains, hills and mountain country.
         landform: (frequency: 0.0006, octaves: 2, gain: 0.5, lacunarity: 2.0),
         // Tectonic uplift: long slopes and mountain fronts.
@@ -25,6 +26,8 @@
         // Low-frequency domain warp for the shape fields.
         turbulence_x: (frequency: 0.0015, octaves: 3, gain: 0.5, lacunarity: 2.0),
         turbulence_z: (frequency: 0.0015, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        // Material jitter inside biome transition bands.
+        blend: (frequency: 0.008, octaves: 2, gain: 0.5, lacunarity: 2.0),
     ),
     // Height profiles mapped from continentalness (-1..1). The plains profile is low and gentle;
     // the mountain profile keeps a steep mid-section so mountain fronts read as cliffs.
@@ -78,7 +81,7 @@
         steep: "Rock",
         deep: "Rock",
         // Parameter-space distance at which a neighbouring biome's weight reaches zero.
-        transition: 0.15,
+        transition: 0.4,
         // Vertical spacing of the shared smoothed terrace staircase.
         terrace_step: 8.0,
         entries: [

@@ -41,6 +41,7 @@ const SEED_LANDFORM: u64 = 9;
 const SEED_UPHEAVAL: u64 = 10;
 const SEED_TURBULENCE_X: u64 = 11;
 const SEED_TURBULENCE_Z: u64 = 12;
+const SEED_BLEND: u64 = 13;
 
 /// Generates chunks from a validated [`WorldGenConfig`].
 pub(crate) struct TerrainGenerator {
@@ -55,6 +56,7 @@ pub(crate) struct TerrainGenerator {
     upheaval: NoiseField,
     turbulence_x: NoiseField,
     turbulence_z: NoiseField,
+    blend: NoiseField,
     landform_plains: Spline,
     landform_mountains: Spline,
     upheaval_lift: Spline,
@@ -96,6 +98,7 @@ impl TerrainGenerator {
                 &config.fields.turbulence_z,
                 derive_seed(seed, SEED_TURBULENCE_Z),
             ),
+            blend: NoiseField::new(&config.fields.blend, derive_seed(seed, SEED_BLEND)),
             landform_plains: Spline::new(&config.landform_plains),
             landform_mountains: Spline::new(&config.landform_mountains),
             upheaval_lift: Spline::new(&config.upheaval_lift),
@@ -138,6 +141,9 @@ impl TerrainGenerator {
         let dominant = self
             .biomes
             .weights_into(temperature, humidity, erosion, weights);
+        let blend = self.blend.sample(x, z);
+        let jitter = (blend * 0.5 + 0.5).clamp(0.0, 0.999_999);
+        let surface_biome = self.biomes.surface_biome(weights, jitter);
         let shape = self.biomes.blended_shape(weights);
 
         // Blend two vertical profiles with the landform mask. The plains profile is low and
@@ -170,6 +176,7 @@ impl TerrainGenerator {
         ColumnSample {
             height,
             dominant,
+            surface_biome,
             overhang_strength: shape.overhang_strength,
             cave_density: shape.cave_density,
         }
@@ -256,10 +263,13 @@ impl TerrainGenerator {
                         break;
                     }
 
-                    kind.set(voxel, self.biomes.surface(column.dominant, depth, slope));
+                    kind.set(
+                        voxel,
+                        self.biomes.surface(column.surface_biome, depth, slope),
+                    );
                     depth += 1;
 
-                    if depth > self.biomes.surface_depth(column.dominant) {
+                    if depth > self.biomes.surface_depth(column.surface_biome) {
                         break;
                     }
 
@@ -335,7 +345,9 @@ const HALO: usize = Chunk::X_AXIS_SIZE + 2;
 #[derive(Clone, Copy, Default)]
 struct ColumnSample {
     height: f32,
+    #[allow(dead_code)]
     dominant: usize,
+    surface_biome: usize,
     overhang_strength: f32,
     cave_density: f32,
 }
@@ -530,6 +542,20 @@ mod tests {
         generator.erosion.sample(x + warp_x, z + warp_z)
     }
 
+    fn surface_biome_at(generator: &TerrainGenerator, x: f32, z: f32) -> usize {
+        let mut weights = vec![0.0; generator.biomes.len()];
+        generator.biomes.weights_into(
+            generator.temperature.sample(x, z),
+            generator.humidity.sample(x, z),
+            terrain_erosion(generator, x, z),
+            &mut weights,
+        );
+        let blend = generator.blend.sample(x, z);
+        let jitter = (blend * 0.5 + 0.5).clamp(0.0, 0.999_999);
+
+        generator.biomes.surface_biome(&weights, jitter)
+    }
+
     fn generate(generator: &TerrainGenerator, chunk: Chunk) -> ChunkStorage<Kind> {
         let mut kind = ChunkStorage::default();
         generator.generate(chunk, &mut kind);
@@ -559,7 +585,7 @@ mod tests {
     }
 
     fn expected_top_kind(generator: &TerrainGenerator, x: f32, z: f32) -> Kind {
-        let biome = biome_index(generator, x, z);
+        let biome = surface_biome_at(generator, x, z);
         let slope = generator.slope(x, z);
 
         generator.biomes.surface(biome, 0, slope)
@@ -813,6 +839,7 @@ mod tests {
     #[test]
     fn biome_distribution_stays_within_bounds() {
         const SAMPLES: usize = 256;
+        const STEP: usize = 32;
 
         for seed in [42, 43, 44] {
             let generator = generator(seed);
@@ -820,7 +847,7 @@ mod tests {
 
             for x in 0..SAMPLES {
                 for z in 0..SAMPLES {
-                    let index = biome_index(&generator, (x * 8) as f32, (z * 8) as f32);
+                    let index = biome_index(&generator, (x * STEP) as f32, (z * STEP) as f32);
                     counts[index] += 1;
                 }
             }
@@ -897,6 +924,11 @@ mod tests {
                         "cached dominant differs from the world-space probe at ({world_x}, {world_z})"
                     );
                     assert_eq!(
+                        column.surface_biome,
+                        surface_biome_at(&generator, world_x, world_z),
+                        "cached surface biome differs from the world-space probe at ({world_x}, {world_z})"
+                    );
+                    assert_eq!(
                         actual, expected,
                         "generated surface differs from world-space probe at ({world_x}, {world_z}) in {chunk:?}"
                     );
@@ -928,9 +960,9 @@ mod tests {
 
         for x in 0..256 {
             for z in 0..256 {
-                let world_x = (x * 8) as f32;
-                let world_z = (z * 8) as f32;
-                let index = biome_index(&generator, world_x, world_z);
+                let world_x = (x * 16) as f32;
+                let world_z = (z * 16) as f32;
+                let index = surface_biome_at(&generator, world_x, world_z);
 
                 if candidates[index].is_none()
                     && generator.slope(world_x, world_z) <= generator.config().biomes.max_slope
@@ -1277,6 +1309,30 @@ mod tests {
     }
 
     #[test]
+    fn surface_materials_interleave_across_a_transition() {
+        let generator = TerrainGenerator::new(two_entry_config(0.4));
+        let (x, z) = boundary_point(&generator);
+        let mut seen = [false; 2];
+
+        for step in -250..=250 {
+            let sample = generator.sample_column(
+                x + step as f32 * 2.0,
+                z,
+                &mut vec![0.0; generator.biomes.len()],
+            );
+
+            if sample.surface_biome < 2 {
+                seen[sample.surface_biome] = true;
+            }
+        }
+
+        assert!(
+            seen[0] && seen[1],
+            "surface materials did not interleave across the transition: {seen:?}"
+        );
+    }
+
+    #[test]
     fn neutral_shapes_do_not_change_the_height() {
         let mut config = WorldGenConfig::load_default();
         for entry in &mut config.biomes.entries {
@@ -1585,8 +1641,8 @@ mod tests {
         let mut clamped_low = vec![0usize; entries.len()];
         let mut weights = vec![0.0; generator.biomes.len()];
 
-        for x in 0..128 {
-            for z in 0..128 {
+        for x in 0..256 {
+            for z in 0..256 {
                 let world_x = (x * 16) as f32;
                 let world_z = (z * 16) as f32;
                 let index = biome_index(&generator, world_x, world_z);

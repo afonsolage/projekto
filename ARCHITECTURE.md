@@ -224,10 +224,15 @@ returns the cached column values. The
 chunk, so height, slope, biome and 3D parameters are read once per world column.
 
 [`SurfaceRule::kind`](./crates/server/src/genesis/terrain/surface.rs#L29) maps depth and slope to a
-kind: the dominant biome's top, its subsurface for `subsurface_depth` voxels, the shared steep kind
-above `max_slope`, and the shared deep kind below. The fill pass uses the cached overhang strength
-and cave density to lift the surface and scale the cavern threshold per column, so shape and cave
-character change continuously between biomes while the surface material switches in one column.
+kind: the selected surface biome's top, its subsurface for `subsurface_depth` voxels, the shared
+steep kind above `max_slope`, and the shared deep kind below. The fill pass uses the cached
+overhang strength and cave density to lift the surface and scale the cavern threshold per column.
+Inside a transition band,
+[`BiomeTable::surface_biome`](./crates/server/src/genesis/terrain/biome.rs#L154) picks the surface
+biome from the blend weights using a deterministic jitter sampled from the `fields.blend` noise
+field, so materials interleave over a wide band instead of switching at a hard border. Climate
+frequencies are low enough that biome cores span hundreds of blocks, while the transition band
+covers the remaining gradient.
 
 [`worldgen.ron`](./assets/worldgen.ron) ships five biomes: Plains (Grass over Dirt), Forest
 (Moss over Dirt), Desert (Sand over Sand), Tundra (Snow over Dirt) and Roughlands (Rock). Sand

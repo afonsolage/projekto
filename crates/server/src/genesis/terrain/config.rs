@@ -55,6 +55,8 @@ pub struct FieldSet {
     pub turbulence_x: FieldConfig,
     /// Low-frequency horizontal warp of the shape fields.
     pub turbulence_z: FieldConfig,
+    /// Low-frequency jitter that dithers materials inside a biome transition band.
+    pub blend: FieldConfig,
 }
 
 /// One fractal noise field.
@@ -247,6 +249,7 @@ impl WorldGenConfig {
         validate_field("fields.upheaval", &self.fields.upheaval)?;
         validate_field("fields.turbulence_x", &self.fields.turbulence_x)?;
         validate_field("fields.turbulence_z", &self.fields.turbulence_z)?;
+        validate_field("fields.blend", &self.fields.blend)?;
         validate_spline("landform_plains", &self.landform_plains)?;
         validate_spline("landform_mountains", &self.landform_mountains)?;
         validate_spline("upheaval_lift", &self.upheaval_lift)?;
