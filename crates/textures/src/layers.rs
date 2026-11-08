@@ -9,8 +9,11 @@ use crate::hash::{derive_seed, hash2d};
 use crate::index_tile::{IndexTile, TILE, TILE_PIXELS};
 use crate::noise::PeriodicNoise;
 
-/// First tile row the fragment shader samples: its 6% UV inset hides the outer two rows.
-pub const FIRST_VISIBLE_ROW: usize = 2;
+/// First tile row the fragment shader displays without stretching it.
+///
+/// The 6% UV inset drops row 0 and stretches row 1 across the clamped border strip, so edge art
+/// starts here to stay visible and undistorted.
+pub const FIRST_UNSTRETCHED_ROW: usize = 2;
 
 /// Where a layer is allowed to draw over the layers below it.
 #[derive(Clone, Copy, Debug)]
@@ -34,7 +37,7 @@ pub struct TopBand {
     pub drips: u32,
     /// Darkens the row where the band meets the material below it.
     pub lip: bool,
-    /// Brightens the topmost row of the tile.
+    /// Brightens the first un-stretched row of the tile.
     pub highlight_top: bool,
     /// Seed tag for the band noise.
     pub seed_tag: u64,
@@ -136,8 +139,8 @@ pub fn apply_top_band(
             levels.set(x, lip_row, previous_levels.get(x, lip_row) as i32 - 2);
             palette[lip_row * TILE + x] = previous_palette[lip_row * TILE + x];
         }
-        if band.highlight_top && height > FIRST_VISIBLE_ROW {
-            levels.add(x, FIRST_VISIBLE_ROW, 1);
+        if band.highlight_top && height > FIRST_UNSTRETCHED_ROW {
+            levels.add(x, FIRST_UNSTRETCHED_ROW, 1);
         }
     }
 
@@ -215,7 +218,7 @@ mod tests {
         let mut palette = [0u8; TILE_PIXELS];
         apply_top_band(&mut levels, &mut palette, &overlay, &band, 1, 42);
 
-        assert_eq!(levels.get(4, FIRST_VISIBLE_ROW), 4);
+        assert_eq!(levels.get(4, FIRST_UNSTRETCHED_ROW), 4);
         assert_eq!(
             levels.get(4, 0),
             3,

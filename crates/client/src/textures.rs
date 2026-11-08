@@ -2,7 +2,8 @@
 //!
 //! The client no longer ships or loads a terrain spritesheet. The atlas is synthesized from the
 //! world seed announced by the server, so every connected client renders the same tiles without
-//! transferring any image data. The seed arrives right after the connection is established; the
+//! transferring any image data. Palette conversion can differ by at most a few sRGB steps between
+//! platforms, which is cosmetic. The seed arrives right after the connection is established; the
 //! fallback seed only covers the few frames before that.
 
 use bevy::{

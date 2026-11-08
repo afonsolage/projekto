@@ -2,8 +2,9 @@
 //!
 //! The client renders terrain from a 320x320 atlas and the mesher bakes tile coordinates into
 //! chunk vertices. This crate generates that atlas from a world seed and code alone: there is no
-//! spritesheet, bitmap or other image input. The layout, UVs and protocol stay unchanged while
-//! every seed produces a slightly different tile set.
+//! spritesheet, bitmap or other image input. The atlas layout, UVs and mesh format stay unchanged,
+//! and the protocol only gains an append-only `ServerInfo` message, while every seed produces a
+//! slightly different tile set.
 //!
 //! Two synthesis styles share one pipeline:
 //!

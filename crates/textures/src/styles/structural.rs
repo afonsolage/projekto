@@ -616,6 +616,25 @@ mod tests {
     }
 
     #[test]
+    fn three_layer_composite_uses_all_three_palettes() {
+        let material = material(MaterialKind::SnowyGrassSide);
+        let content = tile(material, 42, Detail::Full, &art());
+        let TileContent::Layered { palette, .. } = &content else {
+            panic!("snowy_grass_side must be layered");
+        };
+
+        let mut used = [false; 3];
+        for &index in palette.iter() {
+            used[index as usize] = true;
+        }
+        assert_eq!(
+            used,
+            [true, true, true],
+            "dirt, grass and snow palettes must appear"
+        );
+    }
+
+    #[test]
     fn generation_is_deterministic() {
         let first = tile(material(MaterialKind::Rock), 42, Detail::Full, &art());
         let second = tile(material(MaterialKind::Rock), 42, Detail::Full, &art());

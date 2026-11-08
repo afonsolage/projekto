@@ -15,7 +15,6 @@ use projekto_core::{
 use super::{VERTICES, VERTICES_INDICES};
 use crate::light;
 
-/// Converts a voxel light intensity in `0..=15` to the normalized shader range.
 /// Downsample factors for a coarse chunk, measured in full-resolution voxels per coarse cell.
 ///
 /// Horizontal axes are downsampled while `y` stays at one voxel, so horizontal overhangs keep
@@ -468,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn coarse_vertices_apply_kind_tint() {
+    fn coarse_vertices_keep_neutral_kind_tint() {
         let sand = Kind::from_name("Sand").expect("Sand kind is configured");
         let mut kind = ChunkStorage::<Kind>::default();
         kind.fill(sand);

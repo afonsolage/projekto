@@ -644,6 +644,77 @@ mod save_tests {
         ChunkKind(kind)
     }
 
+    fn saved_asset(chunk: Chunk, vertex: Vec<voxel::Vertex>, mesh_version: u8) -> ChunkAsset {
+        ChunkAsset {
+            chunk,
+            kind: ChunkStorage::<voxel::Kind>::default(),
+            light: ChunkStorage::<voxel::Light>::default(),
+            vertex,
+            lod: 0,
+            mesh_version,
+        }
+    }
+
+    fn spawn_saved(asset: ChunkAsset, desired_lod: u8) -> (World, Entity) {
+        let mut world = World::new();
+        let mut queue = bevy::ecs::world::CommandQueue::default();
+        let entity;
+        {
+            let mut commands = Commands::new(&mut queue, &world);
+            entity = spawn_chunk(&mut commands, asset, desired_lod);
+        }
+        queue.apply(&mut world);
+        (world, entity)
+    }
+
+    #[test]
+    fn stale_saved_mesh_is_not_streamed_or_cached() {
+        let chunk = Chunk::new(0, 0);
+        let asset = saved_asset(
+            chunk,
+            vec![voxel::Vertex::default()],
+            CHUNK_MESH_VERSION - 1,
+        );
+        let (world, entity) = spawn_saved(asset, 0);
+
+        assert!(
+            world.get::<ChunkVertex>(entity).unwrap().0.is_empty(),
+            "a mesh saved with older tile bindings must not be streamed"
+        );
+        assert!(
+            world.get::<CachedMesh>(entity).is_none(),
+            "a stale mesh must be remeshed, not cached"
+        );
+        assert_eq!(world.get::<ChunkLod>(entity).unwrap().0, 0);
+
+        // An empty placeholder without CachedMesh is already refused by
+        // `does_not_save_unmeshed_empty_*`; the remesh writes a real vertex buffer later.
+    }
+
+    #[test]
+    fn current_saved_mesh_is_streamed_and_cached() {
+        let chunk = Chunk::new(0, 0);
+        let asset = saved_asset(chunk, vec![voxel::Vertex::default()], CHUNK_MESH_VERSION);
+        let (world, entity) = spawn_saved(asset, 0);
+
+        assert_eq!(world.get::<ChunkVertex>(entity).unwrap().0.len(), 1);
+        assert!(world.get::<CachedMesh>(entity).is_some());
+    }
+
+    #[test]
+    fn saved_mesh_from_other_lod_is_streamed_but_not_cached() {
+        let asset = saved_asset(
+            Chunk::new(0, 0),
+            vec![voxel::Vertex::default()],
+            CHUNK_MESH_VERSION,
+        );
+        let (world, entity) = spawn_saved(asset, 1);
+
+        assert_eq!(world.get::<ChunkVertex>(entity).unwrap().0.len(), 1);
+        assert!(world.get::<CachedMesh>(entity).is_none());
+        assert_eq!(world.get::<ChunkLod>(entity).unwrap().0, 1);
+    }
+
     fn app() -> App {
         let mut app = App::new();
         app.init_resource::<PendingSaves>()

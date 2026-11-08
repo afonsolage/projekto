@@ -5,9 +5,9 @@
 The client renders terrain from a 320×320 atlas of 32×32 tiles, and
 [`kind.ron`](assets/voxels/kind.ron) maps every `Kind`/`Side` pair to a tile offset and an RGB tint
 multiplier. The mesher bakes the tile origin into each vertex
-([`generate_vertices`](crates/server/src/meshing/mod.rs#L52)), the fragment shader repeats the tile
+([`generate_vertices`](crates/server/src/meshing/mod.rs#L60)), the fragment shader repeats the tile
 across the quad ([`voxel.wesl`](assets/shaders/voxel.wesl#L59)), and the tint is applied to vertex
-light on the server ([`generate_vertices`](crates/server/src/meshing/mod.rs#L72)).
+light on the server ([`generate_vertices`](crates/server/src/meshing/mod.rs#L60)).
 
 This change retires the fixed spritesheet. The atlas is synthesized at client startup from the
 world seed by [`projekto_textures`](crates/textures/Cargo.toml), and there is no bitmap or
@@ -33,7 +33,7 @@ dirt below; `Moss` and `Snow` follow the same pattern with moss and snow bands.
 - Palette cohesion: one seed's tiles must read as one game, not as unrelated materials.
 - Atlas layout is shared with the server. `tile_coord_start` is baked into saved chunk meshes, so
   changing a tile offset requires a `CHUNK_MESH_VERSION` bump
-  ([`CHUNK_MESH_VERSION`](crates/archive/src/asset.rs#L10)).
+  ([`CHUNK_MESH_VERSION`](crates/archive/src/asset.rs#L12)).
 - No image input and no image-generating models. The repository forbids AI-generated media
   ([AGENTS.md](AGENTS.md)); runtime algorithms with hand-authored parameters satisfy the policy and
   keep the texture data out of the repository.
@@ -75,7 +75,7 @@ Rejected for now:
 ## Prototype
 
 The generator lives in [`projekto_textures`](crates/textures/Cargo.toml) and is wired into the
-client through [`TexturesPlugin`](crates/client/src/textures.rs#L40). It produces the exact 320×320
+client through [`TexturesPlugin`](crates/client/src/textures.rs#L44). It produces the exact 320×320
 RGBA atlas the client expects, with the tile offsets declared in `kind.ron`. The example binary is
 kept as an authoring tool for previewing styles, presets and seeds offline.
 
@@ -90,17 +90,17 @@ below. There is no `--base` or texture input of any kind: the only inputs are th
 preset and the world seed. The library itself has no dependencies beyond `std`; the `image` crate is
 only used by the example to save PNGs.
 
-- [`generate_atlas`](crates/textures/src/lib.rs#L83) builds one tile per material and blits it into
+- [`generate_atlas`](crates/textures/src/lib.rs#L85) builds one tile per material and blits it into
   the atlas at the material's offset.
 - [`PeriodicNoise`](crates/textures/src/noise.rs#L15) and
   [`PeriodicWorley`](crates/textures/src/noise.rs#L94) wrap at the tile border, which is what keeps
   repeated tiles seamless.
 - [`IndexTile`](crates/textures/src/index_tile.rs#L17) keeps content as palette indices, and
-  [`Ramp`](crates/textures/src/color.rs#L136) maps them to sRGB bytes. Colors are authored in
+  [`Ramp`](crates/textures/src/color.rs#L141) maps them to sRGB bytes. Colors are authored in
   Oklch: shadows shift cool, highlights shift warm, and chroma drops at both extremes.
 - [`MATERIALS`](crates/textures/src/materials.rs#L201) holds the authored material recipes: atlas
   offset, base Oklch color, palette spread, seed tag, biome climate and, for complex blocks, a layer
-  stack. [`LayerMask`](crates/textures/src/layers.rs#L14) evaluates the procedural band and patch
+  stack. [`LayerMask`](crates/textures/src/layers.rs#L20) evaluates the procedural band and patch
   masks.
 
 The material set has 12 entries: the eight original materials plus `snow_side`, `moss_side`,
@@ -139,7 +139,7 @@ by the seed, so a world varies inside the chosen direction instead of redesignin
 
 Presets live in [`ArtPreset`](crates/textures/src/art.rs#L30) and are pure data, so a new look is a
 new parameter set, not new generator code. Every tile's palette is built by
-[`Ramp::new`](crates/textures/src/color.rs#L158), which quantizes the six generator levels onto the
+[`Ramp::new`](crates/textures/src/color.rs#L171), which quantizes the six generator levels onto the
 preset's shade count.
 
 All six presets were rendered in-game with the same camera pose, world and seed, together with the
@@ -294,13 +294,13 @@ simple.
 
 ### 2. Client atlas generation
 
-[`TexturesPlugin`](crates/client/src/textures.rs#L40) replaces the old PNG loading.
-[`setup_textures`](crates/client/src/textures.rs#L55) initializes the kind descriptors, validates
+[`TexturesPlugin`](crates/client/src/textures.rs#L44) replaces the old PNG loading.
+[`setup_textures`](crates/client/src/textures.rs#L59) initializes the kind descriptors, validates
 the atlas layout and synthesizes the atlas with
-[`generate_atlas`](crates/textures/src/lib.rs#L83); the image is `Rgba8UnormSrgb` with an explicit
-nearest sampler. [`setup_material`](crates/client/src/textures.rs#L64) builds `ChunkMaterial` from
+[`generate_atlas`](crates/textures/src/lib.rs#L85); the image is `Rgba8UnormSrgb` with an explicit
+nearest sampler. [`setup_material`](crates/client/src/textures.rs#L68) builds `ChunkMaterial` from
 the generated handle, and the debug grid material shares it through
-[`TerrainAtlas`](crates/client/src/textures.rs#L38). Generation is fast enough to run
+[`TerrainAtlas`](crates/client/src/textures.rs#L42). Generation is fast enough to run
 synchronously; if it ever grows, it can move to the async task pool like the mesher.
 
 ### 3. Seed distribution
@@ -309,9 +309,9 @@ The seed is the world seed, not a per-client visual seed. The
 [`ServerInfo`](crates/messages/src/lib.rs#L28) message carries it, the server sends it from
 [`new_client_connected`](crates/server/src/net.rs#L162) using
 [`GenesisServer::seed`](crates/server/src/genesis/server.rs#L60), and the client stores it in
-[`WorldSeed`](crates/client/src/textures.rs#L28).
-[`regenerate_atlas`](crates/client/src/textures.rs#L83) rewrites the atlas when it arrives. Until
-then the client uses [`FALLBACK_WORLD_SEED`](crates/client/src/textures.rs#L24), so all clients
+[`WorldSeed`](crates/client/src/textures.rs#L32).
+[`regenerate_atlas`](crates/client/src/textures.rs#L87) rewrites the atlas when it arrives. Until
+then the client uses [`FALLBACK_WORLD_SEED`](crates/client/src/textures.rs#L28), so all clients
 render the same world with the same textures.
 
 ### 4. `kind.ron` changes
@@ -339,7 +339,7 @@ change. Snow and Moss become face-specific for the side treatment:
 
 Changing an offset in `kind.ron` leaves saved chunk meshes pointing at the old tile, because
 `tile_coord_start` is part of the vertex data.
-[`CHUNK_MESH_VERSION`](crates/archive/src/asset.rs#L10) was bumped to 10 so an old archive is
+[`CHUNK_MESH_VERSION`](crates/archive/src/asset.rs#L12) was bumped to 10 so an old archive is
 remeshed from stored kinds instead of rendered with stale coordinates.
 
 ### 6. Shader sampling review

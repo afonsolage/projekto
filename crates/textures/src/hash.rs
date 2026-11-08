@@ -1,7 +1,9 @@
 //! Deterministic hashing used to derive independent seeds and per-pixel noise.
 //!
-//! All hashing is integer based so the generated atlas is identical on every platform and
-//! toolchain. `std`'s hashers are explicitly avoided because their output is not stable.
+//! All hashing is integer based so the derived seed and noise streams are identical on every
+//! platform and toolchain. `std`'s hashers are explicitly avoided because their output is not
+//! stable. Palette conversion still uses `f32` transcendental intrinsics, so the final pixels can
+//! differ by a few sRGB steps across platforms (see [`crate::color`]).
 
 /// One round of the splitmix64 finalizer.
 pub fn splitmix64(mut value: u64) -> u64 {

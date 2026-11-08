@@ -428,7 +428,7 @@ mod test {
     use crate::light;
 
     #[test]
-    fn kind_color_tints_vertex_light() {
+    fn neutral_kind_tint_keeps_full_vertex_light() {
         let kind = voxel::Kind::from_name("Sand").expect("Sand kind is configured");
         let face = voxel::Face {
             vertices: [ChunkVoxel::new(0, 0, 0); 4],

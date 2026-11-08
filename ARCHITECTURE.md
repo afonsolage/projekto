@@ -39,17 +39,17 @@ The following plugins are used to organize the client's systems:
     resource.
   - [`hold_esc_to_exit`](./crates/client/src/lib.rs#L75): Exits the application when the `Esc`
     key is held down.
-- **[`TexturesPlugin`](./crates/client/src/textures.rs#L40)**: Generates the terrain atlas from
+- **[`TexturesPlugin`](./crates/client/src/textures.rs#L44)**: Generates the terrain atlas from
   the world seed and builds the chunk material. No terrain spritesheet is shipped or loaded.
-  - [`setup_textures`](./crates/client/src/textures.rs#L55): Initializes the kind descriptors,
+  - [`setup_textures`](./crates/client/src/textures.rs#L59): Initializes the kind descriptors,
     validates the atlas layout and synthesizes the atlas with the fallback seed.
-  - [`setup_material`](./crates/client/src/textures.rs#L64): Builds `ChunkMaterial` from the
+  - [`setup_material`](./crates/client/src/textures.rs#L68): Builds `ChunkMaterial` from the
     generated atlas.
-  - [`handle_server_info`](./crates/client/src/textures.rs#L78): Stores the world seed announced
+  - [`handle_server_info`](./crates/client/src/textures.rs#L82): Stores the world seed announced
     by the server.
-  - [`regenerate_atlas`](./crates/client/src/textures.rs#L83): Rewrites the atlas pixels for the
+  - [`regenerate_atlas`](./crates/client/src/textures.rs#L87): Rewrites the atlas pixels for the
     world seed.
-  - [`check_atlas_layout`](./crates/client/src/textures.rs#L119): Rejects `kind.ron` offsets the
+  - [`check_atlas_layout`](./crates/client/src/textures.rs#L123): Rejects `kind.ron` offsets the
     generator does not produce.
 - **Debug plugins** (`crates/debug`, `debug-tools` feature): The debug crate exposes
   `ClientDebugPlugins` and `ServerDebugPlugins` groups for chunk data, overlays, the debug grid
@@ -89,22 +89,23 @@ The following plugins are used to organize the client's systems:
 
 Terrain is rendered from an atlas generated at runtime by the
 [`projekto_textures`](./crates/textures/Cargo.toml) crate. No terrain spritesheet is shipped or
-loaded: [`generate_atlas`](./crates/textures/src/lib.rs#L83) synthesizes a 320×320 atlas of 32×32
+loaded: [`generate_atlas`](./crates/textures/src/lib.rs#L85) synthesizes a 320×320 atlas of 32×32
 tiles from the world seed, and the mesher keeps using the tile offsets declared in
 [`kind.ron`](./assets/voxels/kind.ron).
 
 Materials are authored data ([`MATERIALS`](./crates/textures/src/materials.rs#L201)): periodic
 noise fields plus per-material motifs such as grass tufts, rock cracks and strata, sand ripples,
 snow hollows, moss cushions and lamp facets. Complex blocks compose several materials through
-procedural masks ([`LayerMask`](./crates/textures/src/layers.rs#L14)): a grass side is dirt with a
+procedural masks ([`LayerMask`](./crates/textures/src/layers.rs#L20)): a grass side is dirt with a
 grass band on top, and snow and moss sides use the same pattern. An art preset
 ([`ArtPreset`](./crates/textures/src/art.rs#L30)) sets shade count, contrast, chroma and color
 temperature; the default is `soft`.
 
 The world seed arrives through the [`ServerInfo`](./crates/messages/src/lib.rs#L28) message when
 the connection is established. Until then the client uses
-[`FALLBACK_WORLD_SEED`](./crates/client/src/textures.rs#L24), so every client renders the same
-textures for the same world without transferring image data.
+[`FALLBACK_WORLD_SEED`](./crates/client/src/textures.rs#L28), so every client renders the same
+tiles for the same world without transferring image data. Palette conversion can differ by a few
+sRGB steps between platforms, which is cosmetic.
 
 Message handlers are registered with the `proto` crate instead of being added to a schedule.
 `handle_messages` runs them inline while it drains the channel, so they execute in `PreUpdate`
@@ -166,9 +167,9 @@ The following plugins are used to organize the server's systems:
     no longer needed, cancels their mesh tasks, invalidates neighbours and notifies clients.
   - [`chunks_load`](./crates/server/src/set/chunk_management.rs#L204): Loads archive chunks and
     generates missing ones, dropping results that left the landscape while loading.
-  - [`queue_chunks_to_save`](./crates/server/src/set/chunk_management.rs#L423): Collects chunks
+  - [`queue_chunks_to_save`](./crates/server/src/set/chunk_management.rs#L436): Collects chunks
     whose vertices changed since the last save.
-  - [`chunks_save`](./crates/server/src/set/chunk_management.rs#L468): Saves a bounded batch of
+  - [`chunks_save`](./crates/server/src/set/chunk_management.rs#L481): Saves a bounded batch of
     changed chunks, leaving compression to the archive workers.
   - [`archive_maintenance`](./crates/server/src/set/chunk_management.rs#L104): Flushes archive
     headers so saved chunks can be loaded in the next session.
@@ -273,8 +274,8 @@ uses a grass top, a composite grass-over-dirt side and dirt below, `Moss` and `S
 pattern with moss and snow bands, and `Sand` uses one sand tile on every face. The atlas and all
 tiles are synthesized at runtime by the client (see [Terrain textures](#terrain-textures)); the
 per-kind [`KindSideTexture::color`](./crates/core/src/voxel/kind.rs#L13) multiplier applied by
-[`generate_vertices`](./crates/server/src/meshing/mod.rs#L52) and
-[`generate_coarse_vertices`](./crates/server/src/meshing/lod.rs#L66) is neutral `(1, 1, 1, 1)` for
+[`generate_vertices`](./crates/server/src/meshing/mod.rs#L60) and
+[`generate_coarse_vertices`](./crates/server/src/meshing/lod.rs#L63) is neutral `(1, 1, 1, 1)` for
 every shipped kind, and remains available for future per-biome tints.
 
 Changing the generated world requires bumping
@@ -313,7 +314,7 @@ chunk oscillating around the boundary is not remeshed every frame.
 [`update_chunk_lods`](./crates/server/src/set/meshing.rs#L138) applies at most
 [`LOD_UPDATES_PER_FRAME`](./crates/server/src/set/meshing.rs#L93) transitions per update and
 dirties the chunk and its horizontal neighbours because the seam changes. The coarse mesher
-([`LodScale`](./crates/server/src/meshing/lod.rs#L26)) downsamples x and z by `2^lod` (capped at
+([`LodScale`](./crates/server/src/meshing/lod.rs#L23)) downsamples x and z by `2^lod` (capped at
 16) and keeps the full vertical resolution, so horizontal overhangs remain visible.
 
 [`mark_dirty_chunks`](./crates/server/src/set/meshing.rs#L191) turns a `Kind` change into a
@@ -361,15 +362,15 @@ owns one worker per region on the I/O task pool, so reads, writes, compression a
 do not run on the ECS thread.
 
 [`ChunkAsset`](./crates/archive/src/asset.rs#L17) stores `kind`, `light`, `vertex`, `lod` and
-`mesh_version`. [`CHUNK_MESH_VERSION`](./crates/archive/src/asset.rs#L10) is bumped whenever the
+`mesh_version`. [`CHUNK_MESH_VERSION`](./crates/archive/src/asset.rs#L12) is bumped whenever the
 mesher output changes; a mesh saved by an older version is loaded but not trusted, so the chunk
 is remeshed. A missing asset, an unsupported archive version or a decode failure is regenerated
 through `GenesisServer`.
 
-[`queue_chunks_to_save`](./crates/server/src/set/chunk_management.rs#L423) only queues chunks
+[`queue_chunks_to_save`](./crates/server/src/set/chunk_management.rs#L436) only queues chunks
 whose `ChunkVertex` changed. It skips placeholder empty buffers and cached meshes that were not
 rebuilt.
-[`chunks_save`](./crates/server/src/set/chunk_management.rs#L468) persists at most 64 chunks
+[`chunks_save`](./crates/server/src/set/chunk_management.rs#L481) persists at most 64 chunks
 every 0.25 s, drops chunks without a `ChunkLod`, and never saves a chunk that is dirty or has a
 mesh task in flight.
 [`archive_maintenance`](./crates/server/src/set/chunk_management.rs#L104) flushes dirty headers
