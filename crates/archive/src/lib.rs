@@ -53,7 +53,8 @@ pub const MAGIC_SIZE: usize = 8;
 /// Version 3 added the mesh LOD and mesher version to `ChunkAsset`.
 /// Version 4 changes the generated world (sea-level terrain, surface kinds and caves).
 /// Version 5 adds climate-selected biomes and their surface kinds.
-/// Version 6 changes the generated world: biomes shape height, terraces, caves and overhangs.
+/// Version 6 changes the generated world: landform-profile terrain, tectonic uplift, domain-warped
+/// shape fields, biome shape blending, terraces, caves and overhangs.
 pub const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x06];
 
 /// Errors which can happens while using the archive crate.

@@ -1,9 +1,11 @@
 //! Deterministic terrain generation.
 //!
-//! The shape is built from three 2D fields (continentalness, erosion and weirdness) combined
-//! through monotone splines, plus a small detail field. Temperature and humidity select a biome,
-//! and each biome supplies its own surface materials. Overhangs and caves come from 3D fields
-//! sampled on a coarse lattice and interpolated per voxel.
+//! Low-frequency turbulence warps the shape sampling position, a landform mask blends a plains and
+//! a mountain height profile, and an upheaval field adds tectonic uplift. Erosion controls a small
+//! peaks-and-valleys relief term, and temperature and humidity select biomes and blend their shape
+//! parameters (height offset, relief multiplier, terrace strength, cave density and overhang
+//! strength) over a transition band. Each biome supplies its own surface materials; overhangs and
+//! caves come from 3D fields sampled on a coarse lattice and interpolated per voxel.
 
 mod biome;
 mod config;
@@ -35,6 +37,10 @@ const SEED_OVERHANG: u64 = 5;
 const SEED_CAVERN: u64 = 6;
 const SEED_TEMPERATURE: u64 = 7;
 const SEED_HUMIDITY: u64 = 8;
+const SEED_LANDFORM: u64 = 9;
+const SEED_UPHEAVAL: u64 = 10;
+const SEED_TURBULENCE_X: u64 = 11;
+const SEED_TURBULENCE_Z: u64 = 12;
 
 /// Generates chunks from a validated [`WorldGenConfig`].
 pub(crate) struct TerrainGenerator {
@@ -45,7 +51,13 @@ pub(crate) struct TerrainGenerator {
     detail: NoiseField,
     overhang: Option<NoiseField>,
     cavern: Option<NoiseField>,
-    base_height: Spline,
+    landform: NoiseField,
+    upheaval: NoiseField,
+    turbulence_x: NoiseField,
+    turbulence_z: NoiseField,
+    landform_plains: Spline,
+    landform_mountains: Spline,
+    upheaval_lift: Spline,
     relief_amplitude: Spline,
     temperature: NoiseField,
     humidity: NoiseField,
@@ -74,7 +86,19 @@ impl TerrainGenerator {
             detail: NoiseField::new(&config.fields.detail, derive_seed(seed, SEED_DETAIL)),
             overhang,
             cavern,
-            base_height: Spline::new(&config.base_height),
+            landform: NoiseField::new(&config.fields.landform, derive_seed(seed, SEED_LANDFORM)),
+            upheaval: NoiseField::new(&config.fields.upheaval, derive_seed(seed, SEED_UPHEAVAL)),
+            turbulence_x: NoiseField::new(
+                &config.fields.turbulence_x,
+                derive_seed(seed, SEED_TURBULENCE_X),
+            ),
+            turbulence_z: NoiseField::new(
+                &config.fields.turbulence_z,
+                derive_seed(seed, SEED_TURBULENCE_Z),
+            ),
+            landform_plains: Spline::new(&config.landform_plains),
+            landform_mountains: Spline::new(&config.landform_mountains),
+            upheaval_lift: Spline::new(&config.upheaval_lift),
             relief_amplitude: Spline::new(&config.relief_amplitude),
             temperature: NoiseField::new(
                 &config.fields.temperature,
@@ -95,9 +119,18 @@ impl TerrainGenerator {
 
     /// Samples one world column: shape fields, climate fields, blend weights and height.
     fn sample_column(&self, x: f32, z: f32, weights: &mut [f32]) -> ColumnSample {
-        let continentalness = self.continentalness.sample(x, z);
-        let erosion = self.erosion.sample(x, z);
-        let weirdness = self.weirdness.sample(x, z);
+        // Warp the shape fields with a low-frequency vector field, so ridges, valleys and
+        // landform boundaries do not line up with the underlying noise lattice.
+        let warp_x = self.turbulence_x.sample(x, z) * self.config.warp_strength;
+        let warp_z = self.turbulence_z.sample(x, z) * self.config.warp_strength;
+        let shape_x = x + warp_x;
+        let shape_z = z + warp_z;
+
+        let continentalness = self.continentalness.sample(shape_x, shape_z);
+        let erosion = self.erosion.sample(shape_x, shape_z);
+        let weirdness = self.weirdness.sample(shape_x, shape_z);
+        let landform = self.landform.sample(shape_x, shape_z);
+        let upheaval = self.upheaval.sample(shape_x, shape_z);
         let detail = self.detail.sample(x, z) * self.config.detail_strength;
         let temperature = self.temperature.sample(x, z);
         let humidity = self.humidity.sample(x, z);
@@ -107,16 +140,30 @@ impl TerrainGenerator {
             .weights_into(temperature, humidity, erosion, weights);
         let shape = self.biomes.blended_shape(weights);
 
+        // Blend two vertical profiles with the landform mask. The plains profile is low and
+        // smooth; the mountain profile is much taller and steeper over the same continentalness.
+        let weight = landform_weight(landform);
+        let plains = self.landform_plains.sample(continentalness);
+        let mountains = self.landform_mountains.sample(continentalness);
+        let profile = plains + (mountains - plains) * weight;
+
+        // Tectonic uplift raises long, sloped plains into cliffs and mountain fronts. It is
+        // strongest in mountain landforms, which keeps lowlands from being lifted uniformly.
+        let uplift = self.upheaval_lift.sample(upheaval) * (0.4 + 0.6 * weight);
+        let amplitude = self.relief_amplitude.sample(erosion) * (0.6 + 0.8 * weight);
         let peaks_and_valleys = 1.0 - (3.0 * weirdness.abs() - 2.0).abs();
-        let base = self.base_height.sample(continentalness);
-        let amplitude = self.relief_amplitude.sample(erosion);
-        let raw = base
+        let raw = profile
+            + uplift
             + peaks_and_valleys * amplitude * shape.relief_multiplier
             + detail
             + shape.height_offset;
         let terraced =
             raw + shape.terrace_strength * (terrace(raw, self.config.biomes.terrace_step) - raw);
-        let height = terraced.clamp(self.config.min_height as f32, self.config.max_height as f32);
+        let height = soft_clamp_height(
+            terraced,
+            self.config.min_height as f32,
+            self.config.max_height as f32,
+        );
 
         ColumnSample {
             height,
@@ -307,6 +354,28 @@ impl ChunkSamples {
     }
 }
 
+/// Smooth transition between the plains and mountain height profiles.
+fn landform_weight(landform: f32) -> f32 {
+    let value = ((landform + 1.0) * 0.5).clamp(0.0, 1.0);
+
+    value * value * (3.0 - 2.0 * value)
+}
+
+/// Compresses the top of the height range instead of clamping it to a flat ceiling.
+///
+/// The last few blocks below `max_height` are mapped through a 0.5 slope, so rare peaks lose
+/// height gradually instead of becoming perfectly flat plateaus.
+fn soft_clamp_height(height: f32, min_height: f32, max_height: f32) -> f32 {
+    let knee = max_height - 16.0;
+    let compressed = if height > knee {
+        knee + (height - knee) * 0.5
+    } else {
+        height
+    };
+
+    compressed.clamp(min_height, max_height)
+}
+
 /// Smooth staircase used by the biome terrace blend.
 ///
 /// The curve is continuous at cell edges and its derivative with respect to `height` stays in
@@ -421,6 +490,41 @@ mod tests {
         TerrainGenerator::new(config)
     }
 
+    /// Recomputes the terrain part of a column without going through `sample_column`.
+    ///
+    /// Returns `(base elevation, relief amplitude, detail, peaks_and_valleys)` so tests can build
+    /// an independent expected height for a neutral biome shape.
+    fn independent_terrain(generator: &TerrainGenerator, x: f32, z: f32) -> (f32, f32, f32, f32) {
+        let warp_x = generator.turbulence_x.sample(x, z) * generator.config().warp_strength;
+        let warp_z = generator.turbulence_z.sample(x, z) * generator.config().warp_strength;
+        let shape_x = x + warp_x;
+        let shape_z = z + warp_z;
+
+        let continentalness = generator.continentalness.sample(shape_x, shape_z);
+        let erosion = generator.erosion.sample(shape_x, shape_z);
+        let weirdness = generator.weirdness.sample(shape_x, shape_z);
+        let landform = generator.landform.sample(shape_x, shape_z);
+        let upheaval = generator.upheaval.sample(shape_x, shape_z);
+
+        let weight = landform_weight(landform);
+        let plains = generator.landform_plains.sample(continentalness);
+        let mountains = generator.landform_mountains.sample(continentalness);
+        let profile = plains + (mountains - plains) * weight;
+        let uplift = generator.upheaval_lift.sample(upheaval) * (0.4 + 0.6 * weight);
+        let amplitude = generator.relief_amplitude.sample(erosion) * (0.6 + 0.8 * weight);
+        let detail = generator.detail.sample(x, z) * generator.config().detail_strength;
+        let peaks_and_valleys = 1.0 - (3.0 * weirdness.abs() - 2.0).abs();
+
+        (profile + uplift, amplitude, detail, peaks_and_valleys)
+    }
+
+    fn terrain_erosion(generator: &TerrainGenerator, x: f32, z: f32) -> f32 {
+        let warp_x = generator.turbulence_x.sample(x, z) * generator.config().warp_strength;
+        let warp_z = generator.turbulence_z.sample(x, z) * generator.config().warp_strength;
+
+        generator.erosion.sample(x + warp_x, z + warp_z)
+    }
+
     fn generate(generator: &TerrainGenerator, chunk: Chunk) -> ChunkStorage<Kind> {
         let mut kind = ChunkStorage::default();
         generator.generate(chunk, &mut kind);
@@ -445,7 +549,7 @@ mod tests {
         generator.biomes.select(
             generator.temperature.sample(x, z),
             generator.humidity.sample(x, z),
-            generator.erosion.sample(x, z),
+            terrain_erosion(generator, x, z),
         )
     }
 
@@ -503,6 +607,108 @@ mod tests {
                 (before - after).abs() < 1.0,
                 "height jumped across the border: {before} -> {after}"
             );
+        }
+    }
+
+    #[test]
+    fn landform_weight_is_continuous_and_covers_the_range() {
+        let mut previous = landform_weight(-1.0);
+        assert_eq!(previous, 0.0);
+
+        for step in 0..=20 {
+            let landform = -1.0 + step as f32 * 0.1;
+            let weight = landform_weight(landform);
+
+            assert!((0.0..=1.0).contains(&weight));
+            assert!(weight >= previous, "landform weight is not monotone");
+            previous = weight;
+        }
+
+        assert_eq!(previous, 1.0);
+        assert!((landform_weight(0.0) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn warp_changes_the_terrain() {
+        let mut config = WorldGenConfig::load_default();
+        config.warp_strength = 0.0;
+        let unwarped = TerrainGenerator::new(config);
+
+        let warped = generator(42);
+        let mut differences = 0;
+
+        for step in 0..64 {
+            let x = (step % 8) as f32 * 47.0 - 160.0;
+            let z = (step / 8) as f32 * 53.0 - 180.0;
+
+            if (unwarped.height(x, z) - warped.height(x, z)).abs() > 1.0 {
+                differences += 1;
+            }
+        }
+
+        assert!(differences > 0, "domain warp never changed the terrain");
+    }
+
+    #[test]
+    fn landform_profiles_change_the_terrain() {
+        let mut flat_mountains = WorldGenConfig::load_default();
+        flat_mountains.landform_mountains = flat_mountains.landform_plains.clone();
+        let flat = TerrainGenerator::new(flat_mountains);
+
+        let shaped = generator(42);
+        let mut differences = 0;
+
+        for step in 0..64 {
+            let x = (step % 8) as f32 * 61.0 - 200.0;
+            let z = (step / 8) as f32 * 43.0 - 140.0;
+
+            if (flat.height(x, z) - shaped.height(x, z)).abs() > 1.0 {
+                differences += 1;
+            }
+        }
+
+        assert!(
+            differences > 0,
+            "mountain profile never changed the terrain"
+        );
+    }
+
+    #[test]
+    fn upheaval_lift_changes_the_terrain() {
+        let mut no_uplift = WorldGenConfig::load_default();
+        for (_, value) in &mut no_uplift.upheaval_lift.points {
+            *value = 0.0;
+        }
+        let flat = TerrainGenerator::new(no_uplift);
+
+        let uplifted = generator(42);
+        let mut differences = 0;
+
+        for step in 0..64 {
+            let x = (step % 8) as f32 * 71.0 - 240.0;
+            let z = (step / 8) as f32 * 37.0 - 120.0;
+
+            if (flat.height(x, z) - uplifted.height(x, z)).abs() > 1.0 {
+                differences += 1;
+            }
+        }
+
+        assert!(differences > 0, "tectonic uplift never changed the terrain");
+    }
+
+    #[test]
+    fn soft_clamp_compresses_peaks_without_flat_plateaus() {
+        assert_eq!(soft_clamp_height(236.0, 70.0, 252.0), 236.0);
+        assert_eq!(soft_clamp_height(252.0, 70.0, 252.0), 244.0);
+        assert_eq!(soft_clamp_height(280.0, 70.0, 252.0), 252.0);
+
+        let mut previous = soft_clamp_height(200.0, 70.0, 252.0);
+
+        for step in 201..=280 {
+            let height = soft_clamp_height(step as f32, 70.0, 252.0);
+
+            assert!(height >= previous, "soft clamp is not monotone");
+            previous = height;
         }
     }
 
@@ -885,7 +1091,7 @@ mod tests {
         generator.biomes.weights_into(
             generator.temperature.sample(x, z),
             generator.humidity.sample(x, z),
-            generator.erosion.sample(x, z),
+            terrain_erosion(generator, x, z),
             &mut weights,
         );
 
@@ -925,6 +1131,66 @@ mod tests {
         panic!("no temperature boundary found in the scan");
     }
 
+    fn shipped_boundary_columns(generator: &TerrainGenerator) -> (f32, f32, f32, usize, usize) {
+        let z = 0.0;
+        let mut weights = vec![0.0; generator.biomes.len()];
+        let mut previous: Option<(f32, usize)> = None;
+
+        for step in -2048..=2048 {
+            let x = step as f32;
+            let dominant = generator.biomes.weights_into(
+                generator.temperature.sample(x, z),
+                generator.humidity.sample(x, z),
+                terrain_erosion(generator, x, z),
+                &mut weights,
+            );
+
+            if let Some((previous_x, previous_dominant)) = previous
+                && previous_dominant != dominant
+            {
+                return (previous_x, x, z, previous_dominant, dominant);
+            }
+
+            previous = Some((x, dominant));
+        }
+
+        panic!("no shipped biome boundary found in the scan");
+    }
+
+    #[test]
+    fn height_has_no_jump_across_a_shipped_biome_boundary() {
+        let generator = generator(42);
+        let (left, right, z, first, second) = shipped_boundary_columns(&generator);
+        let mut weights = vec![0.0; generator.biomes.len()];
+
+        for (label, x) in [("left", left), ("right", right)] {
+            generator.biomes.weights_into(
+                generator.temperature.sample(x, z),
+                generator.humidity.sample(x, z),
+                terrain_erosion(&generator, x, z),
+                &mut weights,
+            );
+            assert!(
+                weights[first] > 0.05 && weights[second] > 0.05,
+                "{label} boundary column has no blended weights: {weights:?}"
+            );
+        }
+
+        let steps = 40;
+        let mut previous = generator.height(left, z);
+
+        for index in 1..=steps {
+            let x = left + (right - left) * index as f32 / steps as f32;
+            let height = generator.height(x, z);
+
+            assert!(
+                (height - previous).abs() < 0.2,
+                "height jumped at x={x}: {previous} -> {height}"
+            );
+            previous = height;
+        }
+    }
+
     #[test]
     fn blended_height_matches_an_independent_formula() {
         let mut config = WorldGenConfig::load_default();
@@ -943,10 +1209,7 @@ mod tests {
         for step in 0..256 {
             let x = (step % 16) as f32 * 19.0 - 128.0;
             let z = (step / 16) as f32 * 23.0 - 128.0;
-            let continentalness = generator.continentalness.sample(x, z);
-            let erosion = generator.erosion.sample(x, z);
-            let weirdness = generator.weirdness.sample(x, z);
-            let detail = generator.detail.sample(x, z) * generator.config().detail_strength;
+            let erosion = terrain_erosion(&generator, x, z);
 
             generator.biomes.weights_into(
                 generator.temperature.sample(x, z),
@@ -955,14 +1218,14 @@ mod tests {
                 &mut weights,
             );
             let shape = generator.biomes.blended_shape(&weights);
-            let peaks_and_valleys = 1.0 - (3.0 * weirdness.abs() - 2.0).abs();
-            let raw = generator.base_height.sample(continentalness)
-                + peaks_and_valleys
-                    * generator.relief_amplitude.sample(erosion)
-                    * shape.relief_multiplier
+            let (base, amplitude, detail, peaks_and_valleys) =
+                independent_terrain(&generator, x, z);
+            let raw = base
+                + peaks_and_valleys * amplitude * shape.relief_multiplier
                 + detail
                 + shape.height_offset;
-            let expected = raw.clamp(
+            let expected = soft_clamp_height(
+                raw,
                 generator.config().min_height as f32,
                 generator.config().max_height as f32,
             );
@@ -976,7 +1239,7 @@ mod tests {
     }
 
     #[test]
-    fn neutral_shapes_reproduce_the_previous_height() {
+    fn neutral_shapes_do_not_change_the_height() {
         let mut config = WorldGenConfig::load_default();
         for entry in &mut config.biomes.entries {
             entry.shape.height_offset = 0.0;
@@ -992,10 +1255,7 @@ mod tests {
         for step in 0..256 {
             let x = (step % 16) as f32 * 19.0 - 128.0;
             let z = (step / 16) as f32 * 23.0 - 128.0;
-            let continentalness = generator.continentalness.sample(x, z);
-            let erosion = generator.erosion.sample(x, z);
-            let weirdness = generator.weirdness.sample(x, z);
-            let detail = generator.detail.sample(x, z) * generator.config().detail_strength;
+            let erosion = terrain_erosion(&generator, x, z);
 
             generator.biomes.weights_into(
                 generator.temperature.sample(x, z),
@@ -1003,16 +1263,18 @@ mod tests {
                 erosion,
                 &mut weights,
             );
-            let peaks_and_valleys = 1.0 - (3.0 * weirdness.abs() - 2.0).abs();
-            let expected = (generator.base_height.sample(continentalness)
-                + peaks_and_valleys * generator.relief_amplitude.sample(erosion)
-                + detail)
-                .clamp(
-                    generator.config().min_height as f32,
-                    generator.config().max_height as f32,
-                );
+            let (base, amplitude, detail, peaks_and_valleys) =
+                independent_terrain(&generator, x, z);
+            let expected = soft_clamp_height(
+                base + peaks_and_valleys * amplitude + detail,
+                generator.config().min_height as f32,
+                generator.config().max_height as f32,
+            );
 
-            assert_eq!(generator.height(x, z), expected);
+            assert!(
+                (generator.height(x, z) - expected).abs() < 1e-6,
+                "neutral shapes altered the height at ({x}, {z})"
+            );
         }
     }
 
@@ -1129,7 +1391,7 @@ mod tests {
     fn cave_density_zero_removes_caverns() {
         let mut config = WorldGenConfig::load_default();
         config.caves.overhang_strength = 0.0;
-        config.caves.cavern_threshold = -0.5;
+        config.caves.cavern_threshold = 0.0;
         for entry in &mut config.biomes.entries {
             entry.shape.cave_density = 0.0;
             entry.shape.overhang_strength = 0.0;
@@ -1198,6 +1460,50 @@ mod tests {
     }
 
     #[test]
+    fn generator_blends_non_uniform_cave_and_overhang_strength() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.entries.truncate(2);
+        config.biomes.transition = 0.2;
+        config.caves.overhang_strength = 18.0;
+
+        for (index, entry) in config.biomes.entries.iter_mut().enumerate() {
+            let first = index == 0;
+            entry.parameters = BiomeParameters {
+                temperature: if first { -0.5 } else { 0.5 },
+                humidity: 0.0,
+                erosion: 0.0,
+            };
+            entry.shape = BiomeShapeConfig {
+                height_offset: 0.0,
+                relief_multiplier: 1.0,
+                terrace_strength: 0.0,
+                cave_density: if first { 0.0 } else { 2.0 },
+                overhang_strength: if first { 2.0 } else { 18.0 },
+            };
+        }
+
+        let generator = TerrainGenerator::new(config);
+        let (x, z) = boundary_point(&generator);
+        let mut weights = vec![0.0; generator.biomes.len()];
+        let sample = generator.sample_column(x, z, &mut weights);
+
+        assert!(
+            (weights[0] - weights[1]).abs() < 1e-2,
+            "boundary weights are not even: {weights:?}"
+        );
+        assert!(
+            (sample.cave_density - 1.0).abs() < 1e-2,
+            "blended cave density {} should be the mean of 0 and 2",
+            sample.cave_density
+        );
+        assert!(
+            (sample.overhang_strength - 10.0).abs() < 1e-2,
+            "blended overhang strength {} should be the mean of 2 and 18",
+            sample.overhang_strength
+        );
+    }
+
+    #[test]
     fn overhang_strength_zero_keeps_the_surface_at_height() {
         let mut config = WorldGenConfig::load_default();
         config.caves.cavern_threshold = 1.0;
@@ -1259,11 +1565,7 @@ mod tests {
                     steep[index] = Some((world_x, world_z, slope));
                 }
 
-                let continentalness = generator.continentalness.sample(world_x, world_z);
-                let erosion = generator.erosion.sample(world_x, world_z);
-                let weirdness = generator.weirdness.sample(world_x, world_z);
-                let detail =
-                    generator.detail.sample(world_x, world_z) * generator.config().detail_strength;
+                let erosion = terrain_erosion(&generator, world_x, world_z);
 
                 generator.biomes.weights_into(
                     generator.temperature.sample(world_x, world_z),
@@ -1272,10 +1574,10 @@ mod tests {
                     &mut weights,
                 );
                 let shape = generator.biomes.blended_shape(&weights);
-                let raw = generator.base_height.sample(continentalness)
-                    + (1.0 - (3.0 * weirdness.abs() - 2.0).abs())
-                        * generator.relief_amplitude.sample(erosion)
-                        * shape.relief_multiplier
+                let (base, amplitude, detail, peaks_and_valleys) =
+                    independent_terrain(&generator, world_x, world_z);
+                let raw = base
+                    + peaks_and_valleys * amplitude * shape.relief_multiplier
                     + detail
                     + shape.height_offset;
 
@@ -1292,37 +1594,56 @@ mod tests {
         let mut solid = vec![0usize; entries.len()];
         let mut cave_column = vec![None::<(f32, f32, f32)>; entries.len()];
 
-        for chunk_x in -1..=1 {
-            for chunk_z in -1..=1 {
-                let kind = generate(&generator, Chunk::new(chunk_x, chunk_z));
-                let origin: Vec3 = Chunk::new(chunk_x, chunk_z).into();
+        // Sample chunks around each biome's representative flat column instead of a fixed
+        // central window, so every biome gets cave statistics even when it is absent from the
+        // spawn area.
+        for (index, entry) in entries.iter().enumerate() {
+            let Some((representative_x, representative_z, _)) = flat[index] else {
+                println!("{}: no representative column for cave sampling", entry.name);
+                continue;
+            };
+            let center = Chunk::new(
+                (representative_x as i32).div_euclid(Chunk::X_AXIS_SIZE as i32),
+                (representative_z as i32).div_euclid(Chunk::Z_AXIS_SIZE as i32),
+            );
 
-                for x in 0..Chunk::X_AXIS_SIZE {
-                    for z in 0..Chunk::Z_AXIS_SIZE {
-                        let world_x = origin.x + x as f32;
-                        let world_z = origin.z + z as f32;
-                        let index = biome_index(&generator, world_x, world_z);
-                        let height = generator.height(world_x, world_z);
-                        let top = (0..=Chunk::Y_END)
-                            .rev()
-                            .find(|&y| !kind.get(ChunkVoxel::new(x as u8, y, z as u8)).is_none());
+            for offset_x in -1..=1 {
+                for offset_z in -1..=1 {
+                    let chunk = Chunk::new(center.x + offset_x, center.z + offset_z);
+                    let kind = generate(&generator, chunk);
+                    let origin: Vec3 = chunk.into();
 
-                        if let Some(top) = top
-                            && top as f32 + 8.0 < height
-                            && cave_column[index].is_none()
-                        {
-                            cave_column[index] = Some((world_x, world_z, height));
-                        }
+                    for x in 0..Chunk::X_AXIS_SIZE {
+                        for z in 0..Chunk::Z_AXIS_SIZE {
+                            let world_x = origin.x + x as f32;
+                            let world_z = origin.z + z as f32;
 
-                        let start = (height as usize).saturating_sub(8);
-                        for y in 1..start {
-                            if kind
-                                .get(ChunkVoxel::new(x as u8, y as u8, z as u8))
-                                .is_none()
+                            if biome_index(&generator, world_x, world_z) != index {
+                                continue;
+                            }
+
+                            let height = generator.height(world_x, world_z);
+                            let top = (0..=Chunk::Y_END).rev().find(|&y| {
+                                !kind.get(ChunkVoxel::new(x as u8, y, z as u8)).is_none()
+                            });
+
+                            if let Some(top) = top
+                                && top as f32 + 8.0 < height
+                                && cave_column[index].is_none()
                             {
-                                carved[index] += 1;
-                            } else {
-                                solid[index] += 1;
+                                cave_column[index] = Some((world_x, world_z, height));
+                            }
+
+                            let start = (height as usize).saturating_sub(8);
+                            for y in 1..start {
+                                if kind
+                                    .get(ChunkVoxel::new(x as u8, y as u8, z as u8))
+                                    .is_none()
+                                {
+                                    carved[index] += 1;
+                                } else {
+                                    solid[index] += 1;
+                                }
                             }
                         }
                     }
@@ -1344,11 +1665,11 @@ mod tests {
             let percentile = |values: &[f32], fraction: f32| {
                 values[((values.len() - 1) as f32 * fraction) as usize]
             };
-            let carved_fraction =
-                carved[index] as f32 / (carved[index] + solid[index]).max(1) as f32;
+            let sampled = carved[index] + solid[index];
+            let carved_fraction = carved[index] as f32 / sampled.max(1) as f32;
 
             println!(
-                "{}: columns={} height p10={:.1} p50={:.1} p90={:.1} slope p50={:.2} carved={:.1}% clamp_high={:.1}% clamp_low={:.1}%",
+                "{}: columns={} height p10={:.1} p50={:.1} p90={:.1} slope p50={:.2} carved={:.1}% ({}/{} sampled) clamp_high={:.1}% clamp_low={:.1}%",
                 entry.name,
                 sorted_heights.len(),
                 percentile(&sorted_heights, 0.1),
@@ -1356,6 +1677,8 @@ mod tests {
                 percentile(&sorted_heights, 0.9),
                 percentile(&sorted_slopes, 0.5),
                 carved_fraction * 100.0,
+                carved[index],
+                sampled,
                 clamped_high[index] as f32 / heights[index].len() as f32 * 100.0,
                 clamped_low[index] as f32 / heights[index].len() as f32 * 100.0,
             );
@@ -1372,13 +1695,73 @@ mod tests {
         }
     }
 
+    fn independent_terrace(height: f32, step: f32) -> f32 {
+        let cells = height / step;
+        let whole = cells.floor();
+        let fraction = cells - whole;
+        let smooth = fraction * fraction * (3.0 - 2.0 * fraction);
+
+        (whole + smooth) * step
+    }
+
+    fn uniform_terrace_config(strength: f32, step: f32) -> WorldGenConfig {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.terrace_step = step;
+
+        for entry in &mut config.biomes.entries {
+            entry.shape.height_offset = 0.0;
+            entry.shape.relief_multiplier = 1.0;
+            entry.shape.terrace_strength = strength;
+            entry.shape.cave_density = 1.0;
+            entry.shape.overhang_strength = config.caves.overhang_strength;
+        }
+
+        config
+    }
+
     #[test]
-    fn terrace_blend_is_identity_at_zero_strength() {
-        for step in [1.0, 8.0, 32.0] {
-            for height in [-10.0, 0.0, 3.7, 100.0] {
-                assert_eq!(height + 0.0 * (terrace(height, step) - height), height);
+    fn terrace_blend_matches_sample_column() {
+        for (strength, step) in [(0.0, 8.0), (0.5, 8.0), (1.0, 8.0), (1.0, 12.0)] {
+            let generator = TerrainGenerator::new(uniform_terrace_config(strength, step));
+
+            for index in 0..64 {
+                let x = (index % 8) as f32 * 23.0 - 96.0;
+                let z = (index / 8) as f32 * 29.0 - 112.0;
+                let (base, amplitude, detail, peaks_and_valleys) =
+                    independent_terrain(&generator, x, z);
+                let raw = base + peaks_and_valleys * amplitude + detail;
+                let expected = soft_clamp_height(
+                    raw + strength * (independent_terrace(raw, step) - raw),
+                    generator.config().min_height as f32,
+                    generator.config().max_height as f32,
+                );
+                let actual = generator.height(x, z);
+
+                assert!(
+                    (actual - expected).abs() < 1e-3,
+                    "terrace blend differs at ({x}, {z}) with strength {strength}: {actual} != {expected}"
+                );
             }
         }
+    }
+
+    #[test]
+    fn terrace_strength_changes_the_height() {
+        let flat = TerrainGenerator::new(uniform_terrace_config(0.0, 8.0));
+        let full = TerrainGenerator::new(uniform_terrace_config(1.0, 8.0));
+        let mut differs = false;
+
+        for index in 0..64 {
+            let x = (index % 8) as f32 * 23.0 - 96.0;
+            let z = (index / 8) as f32 * 29.0 - 112.0;
+
+            if (flat.height(x, z) - full.height(x, z)).abs() > 1e-3 {
+                differs = true;
+                break;
+            }
+        }
+
+        assert!(differs, "full terrace strength never changed the height");
     }
 
     #[test]

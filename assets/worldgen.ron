@@ -1,47 +1,79 @@
 // World generation settings. Loaded at server startup; invalid values fail fast.
-// Height is base_height(continentalness) + peaks_and_valleys * relief_amplitude(erosion)
-// + detail * detail_strength, clamped to min_height..max_height.
+// The shape fields are sampled at a domain-warped position. Height blends landform_plains and
+// landform_mountains by the landform mask, adds upheaval_lift scaled by that mask and
+// peaks-and-valleys relief scaled by the mask, applies the biome shape blend and terrace, then
+// soft-clamps to min_height..max_height.
 (
     seed: 42,
     sea_level: 64,
     min_height: 70,
-    max_height: 240,
+    max_height: 252,
     // Fractal simplex fields. Frequency is in cells per block.
     fields: (
-        continentalness: (frequency: 0.0025, octaves: 4, gain: 0.5, lacunarity: 2.0),
-        erosion: (frequency: 0.004, octaves: 3, gain: 0.5, lacunarity: 2.0),
-        weirdness: (frequency: 0.008, octaves: 3, gain: 0.5, lacunarity: 2.0),
-        detail: (frequency: 0.06, octaves: 2, gain: 0.5, lacunarity: 2.0),
+        continentalness: (frequency: 0.0018, octaves: 4, gain: 0.5, lacunarity: 2.0),
+        erosion: (frequency: 0.0025, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        weirdness: (frequency: 0.004, octaves: 2, gain: 0.5, lacunarity: 2.0),
+        detail: (frequency: 0.05, octaves: 2, gain: 0.5, lacunarity: 2.0),
         // Climate fields used only by biome selection.
-        temperature: (frequency: 0.0015, octaves: 3, gain: 0.5, lacunarity: 2.0),
-        humidity: (frequency: 0.002, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        temperature: (frequency: 0.001, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        humidity: (frequency: 0.0014, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        // Very large landform regions: plains, hills and mountain country.
+        landform: (frequency: 0.0006, octaves: 2, gain: 0.5, lacunarity: 2.0),
+        // Tectonic uplift: long slopes and mountain fronts.
+        upheaval: (frequency: 0.0005, octaves: 2, gain: 0.5, lacunarity: 2.0),
+        // Low-frequency domain warp for the shape fields.
+        turbulence_x: (frequency: 0.0015, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        turbulence_z: (frequency: 0.0015, octaves: 3, gain: 0.5, lacunarity: 2.0),
     ),
-    // Maps continentalness (-1..1) to base elevation.
-    base_height: (
+    // Height profiles mapped from continentalness (-1..1). The plains profile is low and gentle;
+    // the mountain profile keeps a steep mid-section so mountain fronts read as cliffs.
+    landform_plains: (
         points: [
-            (-1.0, 100.0),
-            (-0.4, 110.0),
-            (0.0, 125.0),
-            (0.4, 148.0),
-            (0.75, 168.0),
-            (1.0, 190.0),
+            (-1.0, 85.0),
+            (-0.5, 95.0),
+            (0.0, 105.0),
+            (0.5, 115.0),
+            (0.8, 125.0),
+            (1.0, 135.0),
+        ],
+    ),
+    landform_mountains: (
+        points: [
+            (-1.0, 80.0),
+            (-0.5, 98.0),
+            (-0.2, 115.0),
+            (0.0, 165.0),
+            (0.2, 185.0),
+            (0.6, 200.0),
+            (1.0, 210.0),
+        ],
+    ),
+    // Maps the upheaval field (-1..1) to tectonic uplift in blocks.
+    upheaval_lift: (
+        points: [
+            (-1.0, -25.0),
+            (-0.3, -10.0),
+            (0.3, 12.0),
+            (0.7, 30.0),
+            (1.0, 40.0),
         ],
     ),
     // Maps erosion (-1..1) to the peaks-and-valleys amplitude.
     relief_amplitude: (
         points: [
-            (-1.0, 30.0),
-            (-0.3, 22.0),
-            (0.3, 16.0),
-            (1.0, 10.0),
+            (-1.0, 16.0),
+            (-0.3, 12.0),
+            (0.3, 9.0),
+            (1.0, 6.0),
         ],
     ),
-    detail_strength: 0.6,
+    detail_strength: 0.5,
+    warp_strength: 150.0,
     // Biome selection is the nearest point in (temperature, humidity, erosion) space.
     // Top kinds are unique per biome. Rock is also the steep kind, so the surface map is
     // a visual aid rather than a biome count.
     biomes: (
-        max_slope: 1.8,
+        max_slope: 2.5,
         steep: "Rock",
         deep: "Rock",
         // Parameter-space distance at which a neighbouring biome's weight reaches zero.
@@ -53,11 +85,11 @@
                 name: "Plains",
                 parameters: (temperature: 0.0, humidity: 0.0, erosion: 0.2),
                 shape: (
-                    height_offset: -4.0,
-                    relief_multiplier: 0.8,
+                    height_offset: -6.0,
+                    relief_multiplier: 0.75,
                     terrace_strength: 0.0,
                     cave_density: 0.8,
-                    overhang_strength: 2.0,
+                    overhang_strength: 3.0,
                 ),
                 surface: (top: "Grass", subsurface: "Dirt", subsurface_depth: 3),
             ),
@@ -65,11 +97,11 @@
                 name: "Forest",
                 parameters: (temperature: 0.0, humidity: 0.4, erosion: 0.2),
                 shape: (
-                    height_offset: 0.0,
+                    height_offset: -2.0,
                     relief_multiplier: 0.9,
                     terrace_strength: 0.0,
                     cave_density: 1.0,
-                    overhang_strength: 3.0,
+                    overhang_strength: 2.0,
                 ),
                 surface: (top: "Moss", subsurface: "Dirt", subsurface_depth: 3),
             ),
@@ -77,9 +109,9 @@
                 name: "Desert",
                 parameters: (temperature: 0.4, humidity: -0.4, erosion: 0.2),
                 shape: (
-                    height_offset: 2.0,
-                    relief_multiplier: 1.0,
-                    terrace_strength: 0.6,
+                    height_offset: -8.0,
+                    relief_multiplier: 0.8,
+                    terrace_strength: 0.25,
                     cave_density: 0.5,
                     overhang_strength: 1.0,
                 ),
@@ -90,8 +122,8 @@
                 parameters: (temperature: -0.4, humidity: 0.0, erosion: 0.2),
                 shape: (
                     height_offset: 4.0,
-                    relief_multiplier: 1.1,
-                    terrace_strength: 0.2,
+                    relief_multiplier: 1.0,
+                    terrace_strength: 0.05,
                     cave_density: 0.6,
                     overhang_strength: 2.0,
                 ),
@@ -101,9 +133,9 @@
                 name: "Roughlands",
                 parameters: (temperature: 0.0, humidity: 0.0, erosion: -0.4),
                 shape: (
-                    height_offset: 6.0,
-                    relief_multiplier: 1.4,
-                    terrace_strength: 0.3,
+                    height_offset: 10.0,
+                    relief_multiplier: 1.2,
+                    terrace_strength: 0.05,
                     cave_density: 1.5,
                     overhang_strength: 6.0,
                 ),

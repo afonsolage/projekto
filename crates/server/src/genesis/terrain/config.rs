@@ -20,12 +20,18 @@ pub struct WorldGenConfig {
     pub max_height: i32,
     /// 2D shape and climate fields.
     pub fields: FieldSet,
-    /// Maps continentalness to base elevation.
-    pub base_height: SplineConfig,
+    /// Maps continentalness to elevation in lowland/landform-mixed regions.
+    pub landform_plains: SplineConfig,
+    /// Maps continentalness to elevation in mountain landform regions.
+    pub landform_mountains: SplineConfig,
+    /// Maps the upheaval field to tectonic uplift in blocks.
+    pub upheaval_lift: SplineConfig,
     /// Maps erosion to the peaks-and-valleys amplitude.
     pub relief_amplitude: SplineConfig,
     /// Amplitude of the small high-frequency height detail.
     pub detail_strength: f32,
+    /// Horizontal displacement of the shape fields, in blocks.
+    pub warp_strength: f32,
     /// Biome selection and surface rules.
     pub biomes: BiomesConfig,
     /// Caves and overhangs.
@@ -41,6 +47,14 @@ pub struct FieldSet {
     pub detail: FieldConfig,
     pub temperature: FieldConfig,
     pub humidity: FieldConfig,
+    /// Very low-frequency mask that blends the plains and mountain height profiles.
+    pub landform: FieldConfig,
+    /// Low-frequency tectonic uplift field.
+    pub upheaval: FieldConfig,
+    /// Low-frequency horizontal warp of the shape fields.
+    pub turbulence_x: FieldConfig,
+    /// Low-frequency horizontal warp of the shape fields.
+    pub turbulence_z: FieldConfig,
 }
 
 /// One fractal noise field.
@@ -132,7 +146,8 @@ pub struct CaveConfig {
     pub overhang_strength: f32,
     /// 3D field carved out as caverns.
     pub cavern: FieldConfig,
-    /// Voxels where the cavern field is above this value become air.
+    /// Voxels where the cavern field, scaled by the blended cave density, is above this value
+    /// become air. Must be non-negative so a higher density always carves more.
     pub cavern_threshold: f32,
     /// Vertical margin around the height range where 3D fields are sampled. The generated
     /// margin is at least the overhang strength, so a small band cannot clip lifted peaks.
@@ -228,13 +243,25 @@ impl WorldGenConfig {
         validate_field("fields.detail", &self.fields.detail)?;
         validate_field("fields.temperature", &self.fields.temperature)?;
         validate_field("fields.humidity", &self.fields.humidity)?;
-        validate_spline("base_height", &self.base_height)?;
+        validate_field("fields.landform", &self.fields.landform)?;
+        validate_field("fields.upheaval", &self.fields.upheaval)?;
+        validate_field("fields.turbulence_x", &self.fields.turbulence_x)?;
+        validate_field("fields.turbulence_z", &self.fields.turbulence_z)?;
+        validate_spline("landform_plains", &self.landform_plains)?;
+        validate_spline("landform_mountains", &self.landform_mountains)?;
+        validate_spline("upheaval_lift", &self.upheaval_lift)?;
         validate_spline("relief_amplitude", &self.relief_amplitude)?;
 
         if !self.detail_strength.is_finite() || self.detail_strength < 0.0 {
             return Err(invalid(format!(
                 "detail_strength must be finite and non-negative, got {}",
                 self.detail_strength
+            )));
+        }
+        if !self.warp_strength.is_finite() || !(0.0..=256.0).contains(&self.warp_strength) {
+            return Err(invalid(format!(
+                "warp_strength must be in 0..=256, got {}",
+                self.warp_strength
             )));
         }
 
@@ -276,10 +303,10 @@ impl WorldGenConfig {
                 )));
             }
             if !self.caves.cavern_threshold.is_finite()
-                || !(-1.0..=1.0).contains(&self.caves.cavern_threshold)
+                || !(0.0..=1.0).contains(&self.caves.cavern_threshold)
             {
                 return Err(invalid(format!(
-                    "caves.cavern_threshold must be in -1..=1, got {}",
+                    "caves.cavern_threshold must be in 0..=1, got {}",
                     self.caves.cavern_threshold
                 )));
             }
@@ -585,7 +612,7 @@ mod tests {
     #[test]
     fn rejects_unsorted_spline() {
         let mut config = WorldGenConfig::load_default();
-        config.base_height.points.swap(0, 1);
+        config.landform_plains.points.swap(0, 1);
 
         assert!(config.validate().is_err());
     }
@@ -649,12 +676,43 @@ mod tests {
     }
 
     #[test]
+    fn rejects_negative_cavern_threshold() {
+        let mut config = WorldGenConfig::load_default();
+        config.caves.cavern_threshold = -0.5;
+
+        let error = config
+            .validate()
+            .expect_err("negative cavern threshold should fail");
+        assert!(
+            error.to_string().contains("caves.cavern_threshold"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
     fn rejects_bad_transition() {
         let mut config = WorldGenConfig::load_default();
         config.biomes.transition = 0.05;
         assert!(config.validate().is_err());
 
         config.biomes.transition = f32::NAN;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_bad_warp_strength() {
+        let mut config = WorldGenConfig::load_default();
+        config.warp_strength = -1.0;
+        assert!(config.validate().is_err());
+
+        config.warp_strength = 300.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_bad_landform_spline() {
+        let mut config = WorldGenConfig::load_default();
+        config.landform_mountains.points.swap(0, 1);
         assert!(config.validate().is_err());
     }
 

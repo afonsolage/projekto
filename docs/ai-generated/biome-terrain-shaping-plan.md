@@ -156,8 +156,9 @@ coarse-grid sampling cost and the existing border continuity are unchanged:
 
 - Cavern: a voxel below `height` is carved when `density > 0` and
   `cavern.sample(x, y, z) * density > cavern_threshold`. `density = 0` disables cavern carving for
-  any valid threshold. The `density > 0` guard matters because `cavern_threshold` may be negative,
-  and `0 * sample` would otherwise be greater than a negative threshold and carve everything.
+  any valid threshold. `cavern_threshold` is validated to `0..=1`, so a zero density already cannot
+  carve; the explicit `density > 0` guard keeps the carve condition monotonic if that range is ever
+  widened.
 - Overhang: `surface = height + overhang.sample(x, y, z) * overhang_strength`. The strength is a
   non-negative blended value, so a strength of zero leaves the surface exactly at `height`.
 - The `world_y < height` cave condition, the lattice construction, `lattice_bounds` and the
@@ -489,6 +490,49 @@ check on the final config; no streaming or LOD path changes, so it is not a gate
   boundary; the per-biome terrace character comes from `terrace_strength` and relief.
 - Materials stay hard-edged at biome boundaries; smoothing them would need per-kind blending or a
   different surface representation and is out of scope alongside blended transitions.
+
+## Addendum: Vintage Story-inspired terrain redesign
+
+After the first visual pass the shape fields still read as uniform noise hills. A review of
+Vintage Story's world generation showed that the scale and "living" feel come from large domain
+warp, tectonic uplift and per-landform vertical profiles, not from larger noise amplitude alone.
+This addendum records the redesign layered on top of the biome-shaping plan above.
+
+Research sources: the Vintage Story wiki pages for
+[Terrain Generation](https://wiki.vintagestory.at/Terrain_Generation),
+[WorldGen Configuration](https://wiki.vintagestory.at/Modding:WorldGen_Configuration) and
+[WorldGen Concept](https://wiki.vintagestory.at/Modding:WorldGen_Concept), plus the public
+TerraPrety copy of the vanilla generator for warp/upheaval constants.
+
+Design changes:
+
+- **Domain warp.** Two low-frequency turbulence fields displace the shape sampling position by up
+  to `warp_strength` blocks. Continentalness, erosion, weirdness, the landform mask and upheaval
+  are all read at the warped position, so ridges and profile boundaries stop lining up with the
+  noise lattice.
+- **Landform profiles.** `landform_plains` and `landform_mountains` map continentalness to height.
+  A very low-frequency `landform` field is mapped through a smoothstep to a blend weight. The
+  profiles differ in both elevation and vertical scale, which is what makes mountain regions read
+  as mountains instead of taller hills.
+- **Tectonic uplift.** A low-frequency `upheaval` field maps through `upheaval_lift` to positive and
+  negative blocks. The lift is scaled by the landform weight (`0.4 + 0.6 * weight`) so lowlands are
+  not lifted uniformly and long slopes lead into mountain fronts.
+- **Ridged relief.** The existing peaks-and-valleys term is scaled by the landform weight and stays
+  smaller than the profile change, so it adds ridges without turning the whole world into noise.
+- **Soft top clamp.** The last 16 blocks below `max_height` map through a 0.5 slope. Rare peaks are
+  compressed instead of becoming perfectly flat plateaus.
+- **Terrace and biome blending** stay as planned: one shared terrace after blending, biome shape
+  fields blended by weights.
+
+Vintage Story itself fills voxels from a 3D noise compared against a Y-dependent threshold curve,
+which is what permits cliffs, benches and overhangs inside a column. Projekto still generates from
+a column height, so this redesign reproduces the large-scale feel (warp, uplift, profiles) but not
+true non-heightfield overhangs; that would be a separate, larger change.
+
+New fields and settings: `fields.landform`, `fields.upheaval`, `fields.turbulence_x`,
+`fields.turbulence_z`, `landform_plains`, `landform_mountains`, `upheaval_lift`, `warp_strength`.
+Tests cover the landform weight curve, warp/profile/uplift wiring, soft-clamp monotonicity and the
+existing height, boundary, halo, cave and biome checks.
 
 ---
 

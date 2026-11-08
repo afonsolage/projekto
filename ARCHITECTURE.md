@@ -198,22 +198,30 @@ specific order:
 
 ### World generation
 
-[`TerrainGenerator`](./crates/server/src/genesis/terrain/mod.rs#L40) builds each chunk from a
-validated [`WorldGenConfig`](./crates/server/src/genesis/terrain/config.rs#L11). Shape samples
-continentalness, erosion, weirdness and detail at world coordinates and combines them through
-splines into a height. Climate samples the temperature and humidity fields at the same
-coordinates, and [`BiomeTable::weights_into`](./crates/server/src/genesis/terrain/biome.rs#L104)
-selects the nearest biome entry in `(temperature, humidity, erosion)` space and returns normalized
-blend weights. Ties resolve by table order, and the dominant index keeps the squared-distance
-comparison used before blending.
-[`BiomeTable::blended_shape`](./crates/server/src/genesis/terrain/biome.rs#L155) sums each entry's
-five shape fields over those weights: height offset, relief multiplier, terrace strength, cave
-density and overhang strength. The
-[`sample_column`](./crates/server/src/genesis/terrain/mod.rs#L97) helper applies the blend to the
-shape formula, applies one smoothed staircase terrace scaled by the blended strength, and clamps
-the result; `transition` and `terrace_step` are shared settings in `biomes`. The
-[`samples`](./crates/server/src/genesis/terrain/mod.rs#L136) helper caches an 18x18 column halo
-per chunk, so height, slope, biome and 3D parameters are read once per world column.
+[`TerrainGenerator`](./crates/server/src/genesis/terrain/mod.rs#L45) builds each chunk from a
+validated [`WorldGenConfig`](./crates/server/src/genesis/terrain/config.rs#L11). Two low-frequency
+turbulence fields warp the shape sampling position, and the warped coordinates feed continentalness,
+erosion, weirdness, the landform mask and the upheaval field. The landform mask blends two height
+profiles, `landform_plains` and `landform_mountains`, over continentalness, so plains and mountain
+regions have genuinely different vertical scale rather than different noise amplitude. The upheaval
+field adds tectonic uplift, strongest in mountain landforms, and erosion controls a small
+peaks-and-valleys relief term. [`landform_weight`](./crates/server/src/genesis/terrain/mod.rs#L363),
+[`soft_clamp_height`](./crates/server/src/genesis/terrain/mod.rs#L373) and
+[`terrace`](./crates/server/src/genesis/terrain/mod.rs#L388) keep the vertical profile continuous and
+compress rare peaks instead of flattening them against the ceiling.
+
+Climate samples temperature and humidity at unwarped coordinates, and
+[`BiomeTable::weights_into`](./crates/server/src/genesis/terrain/biome.rs#L104) selects the nearest
+biome entry in `(temperature, humidity, erosion)` space and returns normalized blend weights. Ties
+resolve by table order, and the dominant index keeps the squared-distance comparison used before
+blending. [`BiomeTable::blended_shape`](./crates/server/src/genesis/terrain/biome.rs#L155) sums each
+entry's five shape fields over those weights: height offset, relief multiplier, terrace strength,
+cave density and overhang strength. The
+[`sample_column`](./crates/server/src/genesis/terrain/mod.rs#L126) helper combines the landform
+profile, uplift and biome shape, applies one smoothed staircase terrace and the soft top clamp, and
+returns the cached column values. The
+[`samples`](./crates/server/src/genesis/terrain/mod.rs#L185) helper caches an 18x18 column halo per
+chunk, so height, slope, biome and 3D parameters are read once per world column.
 
 [`SurfaceRule::kind`](./crates/server/src/genesis/terrain/surface.rs#L29) maps depth and slope to a
 kind: the dominant biome's top, its subsurface for `subsurface_depth` voxels, the shared steep kind
@@ -221,7 +229,7 @@ above `max_slope`, and the shared deep kind below. The fill pass uses the cached
 and cave density to lift the surface and scale the cavern threshold per column, so shape and cave
 character change continuously between biomes while the surface material switches in one column.
 
-[`worldgen.ron`](./assets/worldgen.ron#L43) ships five biomes: Plains (Grass over Dirt), Forest
+[`worldgen.ron`](./assets/worldgen.ron) ships five biomes: Plains (Grass over Dirt), Forest
 (Moss over Dirt), Desert (Sand over Sand), Tundra (Snow over Dirt) and Roughlands (Rock). Sand
 (id 5), Moss (id 6) and Snow (id 7) are appended after Lamp in
 [`kind.ron`](./assets/voxels/kind.ron#L84) and add no atlas artwork: Sand and Snow reuse the Rock
@@ -312,7 +320,7 @@ so a slow client never blocks the ECS thread.
 Chunks are stored in region files under `archive/region/{x}_{z}.rgn`, one file per 32×32 chunk
 region. A file starts with a 4096-byte header holding one 4-byte sector index per chunk; each
 asset is bincode-encoded, lz4-compressed and prefixed with
-[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L56). [`ArchiveServer`](./crates/archive/src/server.rs#L162)
+[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L57). [`ArchiveServer`](./crates/archive/src/server.rs#L162)
 owns one worker per region on the I/O task pool, so reads, writes, compression and header flushes
 do not run on the ECS thread.
 

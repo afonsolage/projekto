@@ -231,7 +231,7 @@ fn resolve(name: &str) -> Kind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::genesis::WorldGenConfig;
+    use crate::genesis::{WorldGenConfig, terrain::config::BiomeShapeConfig};
 
     fn table() -> (WorldGenConfig, BiomeTable) {
         let config = WorldGenConfig::load_default();
@@ -349,6 +349,64 @@ mod tests {
             assert_eq!(reference_dominant, changed_dominant);
             assert_eq!(reference_weights, changed_weights);
         }
+    }
+
+    #[test]
+    fn non_uniform_shape_values_blend_by_weight() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.entries.truncate(2);
+        config.caves.overhang_strength = 6.0;
+        config.biomes.entries[0].shape = BiomeShapeConfig {
+            height_offset: 20.0,
+            relief_multiplier: 1.6,
+            terrace_strength: 0.4,
+            cave_density: 0.2,
+            overhang_strength: 2.0,
+        };
+        config.biomes.entries[1].shape = BiomeShapeConfig {
+            height_offset: -8.0,
+            relief_multiplier: 0.4,
+            terrace_strength: 0.1,
+            cave_density: 1.8,
+            overhang_strength: 5.0,
+        };
+        let table = BiomeTable::new(&config.biomes, config.caves.overhang_strength);
+        let shape = table.blended_shape(&[0.25, 0.75]);
+
+        assert!((shape.height_offset - (-1.0)).abs() < 1e-5);
+        assert!((shape.relief_multiplier - 0.7).abs() < 1e-5);
+        assert!((shape.terrace_strength - 0.175).abs() < 1e-5);
+        assert!((shape.cave_density - 1.4).abs() < 1e-5);
+        assert!((shape.overhang_strength - 4.25).abs() < 1e-5);
+    }
+
+    #[test]
+    fn offset_and_relief_blend_at_an_equidistant_point() {
+        let mut config = WorldGenConfig::load_default();
+        config.biomes.entries.truncate(2);
+        config.biomes.entries[0].shape.height_offset = 20.0;
+        config.biomes.entries[0].shape.relief_multiplier = 1.4;
+        config.biomes.entries[1].shape.height_offset = 4.0;
+        config.biomes.entries[1].shape.relief_multiplier = 1.0;
+
+        let table = BiomeTable::new(&config.biomes, config.caves.overhang_strength);
+        let midpoint = weights(&table, 0.0, 0.2, 0.2);
+
+        assert!((midpoint[0] - 0.5).abs() < 1e-3, "{midpoint:?}");
+        assert!((midpoint[1] - 0.5).abs() < 1e-3, "{midpoint:?}");
+
+        let shape = table.blended_shape(&midpoint);
+        assert!((shape.height_offset - 12.0).abs() < 1e-3);
+        assert!((shape.relief_multiplier - 1.2).abs() < 1e-3);
+    }
+
+    #[test]
+    fn tie_resolves_to_the_first_entry() {
+        let (_config, table) = table();
+        let midpoint = weights(&table, 0.0, 0.2, 0.2);
+
+        assert!((midpoint[0] - midpoint[1]).abs() < 1e-3, "{midpoint:?}");
+        assert_eq!(table.select(0.0, 0.2, 0.2), 0);
     }
 
     #[test]
