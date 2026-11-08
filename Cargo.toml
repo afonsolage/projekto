@@ -54,6 +54,7 @@ projekto_client = { path = "crates/client" }
 projekto_archive = { path = "crates/archive" }
 projekto_diagnostics = { path = "crates/diagnostics" }
 projekto_debug = { path = "crates/debug" }
+projekto_textures = { path = "crates/textures" }
 
 bevy = { version = "0.20", default-features = false, features = ["3d", "bevy_ui_render"]}
 

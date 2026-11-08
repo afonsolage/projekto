@@ -1,7 +1,6 @@
 (
-    atlas_path: "textures/terrain_sheet.png",
-    atlas_size: 320, // Atlas must be a perfect square
-    atlas_tile_size: 32, // Tile must also be a perfect square
+    atlas_size: 320, // Generated atlas edge in pixels; must match projekto_textures::ATLAS_SIZE
+    atlas_tile_size: 32, // Generated tile edge in pixels
     descriptions: 
     [
         (
@@ -78,41 +77,83 @@
             ),
             light: Emitter(10),
         ),
-        // Sand, Moss and Snow are tinted placeholders on existing hand-made tiles.
-        // Hand-painted tiles are a follow-up; see docs/ai-generated/biome-proposal.md.
+        // Sand, Moss and Snow own generated tiles now. Desert surface is sand from top to
+        // subsurface, so Sand uses the same tile on every face.
         (
             name: "Sand",
             id: 5,
             sides: All
             (
                 (
-                    color: (1.9, 1.7, 1.1, 1.0),
-                    offset: (2, 0),
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (3, 0),
                 )
             ),
             light: Opaque,
         ),
+        // Forest surface: moss on top, dirt below, so the sides blend moss over dirt.
         (
             name: "Moss",
             id: 6,
-            sides: All
+            sides: Unique
             (
-                (
-                    color: (0.7, 1.0, 0.6, 1.0),
-                    offset: (1, 0),
-                )
+                right: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (7, 0),
+                ),
+                left: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (7, 0),
+                ),
+                up: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (5, 0),
+                ),
+                down: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (2, 1),
+                ),
+                front: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (7, 0),
+                ),
+                back: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (7, 0),
+                ),
             ),
             light: Opaque,
         ),
+        // Tundra surface: snow on top, dirt below, so the sides blend snow over dirt.
         (
             name: "Snow",
             id: 7,
-            sides: All
+            sides: Unique
             (
-                (
-                    color: (2.0, 2.1, 2.3, 1.0),
-                    offset: (2, 0),
-                )
+                right: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (6, 0),
+                ),
+                left: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (6, 0),
+                ),
+                up: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (4, 0),
+                ),
+                down: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (2, 1),
+                ),
+                front: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (6, 0),
+                ),
+                back: (
+                    color: (1.0, 1.0, 1.0, 1.0),
+                    offset: (6, 0),
+                ),
             ),
             light: Opaque,
         ),

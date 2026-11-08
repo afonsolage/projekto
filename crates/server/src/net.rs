@@ -9,8 +9,10 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, TaskPool},
 };
 use projekto_core::coords::Chunk;
-use projekto_messages::{ClientMessage, ServerMessage};
+use projekto_messages::{ClientMessage, ServerInfo, ServerMessage};
 use projekto_proto::{Client, ClientId, MessageType};
+
+use crate::genesis::GenesisServer;
 
 pub(crate) struct NetPlugin;
 
@@ -161,9 +163,20 @@ fn new_client_connected(
     mut receiver: ResMut<OnClientConnectedReceiver>,
     mut clients: ResMut<Clients>,
     mut sync: ResMut<ClientSync>,
+    genesis: Res<GenesisServer>,
 ) {
     for new_client in receiver.get().try_iter() {
         let id = new_client.id();
+
+        // Tell the client which world seed to synthesize its terrain textures from. A fresh
+        // channel has room for this message; failure only delays the correct look until the
+        // client reconnects.
+        if let Err(err) = new_client.channel().send(ServerInfo {
+            seed: genesis.seed(),
+        }) {
+            error!("Failed to send ServerInfo to client {id}. Error: {err}");
+        }
+
         sync.insert_client(id);
         if clients.insert(id, new_client).is_some() {
             panic!("Duplicated client detected {id}.");

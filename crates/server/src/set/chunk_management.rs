@@ -398,10 +398,23 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset, desired_lod: u8) -> E
     } = asset;
 
     let suspect_hole = vertex.is_empty() && !kind.all(|kind| kind.is_none());
+    let stale_mesh = mesh_version != CHUNK_MESH_VERSION;
 
     if suspect_hole {
         warn!("chunk {chunk} was loaded with an empty mesh over solid terrain");
     }
+    if stale_mesh {
+        debug!(
+            "chunk {chunk} was saved with mesh version {mesh_version}; remeshing instead of \
+             streaming the stale mesh"
+        );
+    }
+
+    // A mesh saved with older tile bindings would sample the generated atlas with the wrong
+    // offsets and tints until the async remesh lands. Stream an empty mesh instead; the dirty
+    // flag queues the remesh and the changed vertex buffer is sent when it finishes.
+    let vertex = if stale_mesh { Vec::new() } else { vertex };
+    let trust_mesh = !suspect_hole && !stale_mesh && lod == desired_lod;
 
     let mut entity = commands.spawn(ChunkBundle {
         kind: ChunkKind(kind),
@@ -412,7 +425,7 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset, desired_lod: u8) -> E
 
     // An empty saved mesh over solid terrain is not a valid cache. Let the meshing
     // pipeline rebuild it instead of trusting it forever.
-    if !suspect_hole && mesh_version == CHUNK_MESH_VERSION && lod == desired_lod {
+    if trust_mesh {
         entity.insert(CachedMesh);
     }
 
@@ -629,6 +642,77 @@ mod save_tests {
         let mut kind = ChunkStorage::<Kind>::default();
         kind.set(ChunkVoxel::new(0, 0, 0), Kind::id(3));
         ChunkKind(kind)
+    }
+
+    fn saved_asset(chunk: Chunk, vertex: Vec<voxel::Vertex>, mesh_version: u8) -> ChunkAsset {
+        ChunkAsset {
+            chunk,
+            kind: ChunkStorage::<voxel::Kind>::default(),
+            light: ChunkStorage::<voxel::Light>::default(),
+            vertex,
+            lod: 0,
+            mesh_version,
+        }
+    }
+
+    fn spawn_saved(asset: ChunkAsset, desired_lod: u8) -> (World, Entity) {
+        let mut world = World::new();
+        let mut queue = bevy::ecs::world::CommandQueue::default();
+        let entity;
+        {
+            let mut commands = Commands::new(&mut queue, &world);
+            entity = spawn_chunk(&mut commands, asset, desired_lod);
+        }
+        queue.apply(&mut world);
+        (world, entity)
+    }
+
+    #[test]
+    fn stale_saved_mesh_is_not_streamed_or_cached() {
+        let chunk = Chunk::new(0, 0);
+        let asset = saved_asset(
+            chunk,
+            vec![voxel::Vertex::default()],
+            CHUNK_MESH_VERSION - 1,
+        );
+        let (world, entity) = spawn_saved(asset, 0);
+
+        assert!(
+            world.get::<ChunkVertex>(entity).unwrap().0.is_empty(),
+            "a mesh saved with older tile bindings must not be streamed"
+        );
+        assert!(
+            world.get::<CachedMesh>(entity).is_none(),
+            "a stale mesh must be remeshed, not cached"
+        );
+        assert_eq!(world.get::<ChunkLod>(entity).unwrap().0, 0);
+
+        // An empty placeholder without CachedMesh is already refused by
+        // `does_not_save_unmeshed_empty_*`; the remesh writes a real vertex buffer later.
+    }
+
+    #[test]
+    fn current_saved_mesh_is_streamed_and_cached() {
+        let chunk = Chunk::new(0, 0);
+        let asset = saved_asset(chunk, vec![voxel::Vertex::default()], CHUNK_MESH_VERSION);
+        let (world, entity) = spawn_saved(asset, 0);
+
+        assert_eq!(world.get::<ChunkVertex>(entity).unwrap().0.len(), 1);
+        assert!(world.get::<CachedMesh>(entity).is_some());
+    }
+
+    #[test]
+    fn saved_mesh_from_other_lod_is_streamed_but_not_cached() {
+        let asset = saved_asset(
+            Chunk::new(0, 0),
+            vec![voxel::Vertex::default()],
+            CHUNK_MESH_VERSION,
+        );
+        let (world, entity) = spawn_saved(asset, 1);
+
+        assert_eq!(world.get::<ChunkVertex>(entity).unwrap().0.len(), 1);
+        assert!(world.get::<CachedMesh>(entity).is_none());
+        assert_eq!(world.get::<ChunkLod>(entity).unwrap().0, 1);
     }
 
     fn app() -> App {

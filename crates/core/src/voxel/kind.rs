@@ -62,7 +62,6 @@ pub struct KindDescItem {
 /// This struct is create from a ron file.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct KindsDescs {
-    pub atlas_path: String,
     pub atlas_size: u16,
     pub atlas_tile_size: u16,
     pub descriptions: Vec<KindDescItem>,
@@ -293,7 +292,6 @@ mod tests {
     #[should_panic(expected = "outside the 10x10 atlas")]
     fn rejects_texture_offset_outside_the_atlas() {
         let descs = KindsDescs {
-            atlas_path: String::new(),
             atlas_size: 320,
             atlas_tile_size: 32,
             descriptions: vec![
@@ -322,7 +320,6 @@ mod tests {
     #[should_panic(expected = "must be finite")]
     fn rejects_non_finite_texture_color() {
         let descs = KindsDescs {
-            atlas_path: String::new(),
             atlas_size: 320,
             atlas_tile_size: 32,
             descriptions: vec![
@@ -351,7 +348,6 @@ mod tests {
     #[should_panic(expected = "must be non-negative")]
     fn rejects_negative_texture_color() {
         let descs = KindsDescs {
-            atlas_path: String::new(),
             atlas_size: 320,
             atlas_tile_size: 32,
             descriptions: vec![

@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 /// rebuilt on load.
 /// Version 8 stops treating missing neighbours as open sky in the soft-light pass.
 /// Version 9 applies kind color tints to vertex light in the full and coarse meshers.
-pub const CHUNK_MESH_VERSION: u8 = 9;
+/// Version 10 remaps Sand, Moss and Snow to their own atlas tiles and gives Moss and Snow
+/// face-specific side materials, so saved meshes would sample the wrong tiles.
+pub const CHUNK_MESH_VERSION: u8 = 10;
 
 /// Persisted chunk data.
 ///

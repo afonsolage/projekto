@@ -23,4 +23,9 @@ pub enum ServerMessage {
         pub rss_bytes: u64,
         pub peak_rss_bytes: u64,
     },
+    /// Sent once when a client connects: the world seed every client must use for terrain
+    /// textures so all players see the same world.
+    ServerInfo {
+        pub seed: u64,
+    },
 }

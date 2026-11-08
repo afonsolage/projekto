@@ -16,18 +16,17 @@ use projekto_camera::{
     first_person::{FirstPersonCamera, FirstPersonTarget},
     fly_by::FlyByCamera,
 };
-use projekto_core::{
-    coords::Chunk,
-    voxel::{self},
-};
+use projekto_core::coords::Chunk;
 mod bundle;
 mod controller;
 pub mod material;
 mod net;
 mod set;
+mod textures;
 
 pub use bundle::ChunkLocal;
 pub use set::{MeshApplyBudget, PlayerLandscape};
+pub use textures::{FALLBACK_WORLD_SEED, TerrainAtlas, WorldSeed};
 
 pub struct ClientPlugin;
 
@@ -59,9 +58,8 @@ impl Plugin for ClientPlugin {
                 set::ReceiveMessagesPlugin,
                 set::MeshingPlugin,
                 set::SendInputPlugin,
-            ))
-            .add_systems(Startup, setup_material)
-            .add_systems(PreStartup, load_assets);
+                textures::TexturesPlugin,
+            ));
     }
 }
 
@@ -189,32 +187,4 @@ struct ChunkBundle {
     material: MeshMaterial3d<ChunkMaterial>,
     mesh: Mesh3d,
     transform: Transform,
-}
-
-#[derive(Debug, Resource)]
-pub struct KindsAtlasRes {
-    pub atlas: Handle<Image>,
-}
-
-fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let kinds_path = format!("{}{}", env!("ASSETS_PATH"), "/voxels/kind.ron");
-    let descs = voxel::KindsDescs::init(kinds_path);
-
-    let atlas = asset_server.load(&descs.atlas_path);
-
-    commands.insert_resource(KindsAtlasRes { atlas });
-}
-
-fn setup_material(
-    mut commands: Commands,
-    mut materials: ResMut<Assets<ChunkMaterial>>,
-    kinds_res: Res<KindsAtlasRes>,
-) {
-    let material = materials.add(ChunkMaterial {
-        texture: kinds_res.atlas.clone(),
-        tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
-        show_back_faces: false,
-    });
-
-    commands.insert_resource(ChunkMaterialHandle(material));
 }

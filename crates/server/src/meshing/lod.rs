@@ -15,9 +15,6 @@ use projekto_core::{
 use super::{VERTICES, VERTICES_INDICES};
 use crate::light;
 
-/// Converts a voxel light intensity in `0..=15` to the normalized shader range.
-const LIGHT_FRACTION: f32 = (Light::MAX_NATURAL_INTENSITY as f32).recip();
-
 /// Downsample factors for a coarse chunk, measured in full-resolution voxels per coarse cell.
 ///
 /// Horizontal axes are downsampled while `y` stays at one voxel, so horizontal overhangs keep
@@ -188,7 +185,7 @@ pub fn generate_coarse_vertices<'a>(
                             normal,
                             uv: tile_uv[i],
                             tile_coord_start,
-                            light: Vec3::splat(light_values[i].max(floor) * LIGHT_FRACTION) * tint,
+                            light: super::light_with_tint(light_values[i].max(floor), tint),
                         });
                     }
                 }
@@ -470,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn coarse_vertices_apply_kind_tint() {
+    fn coarse_vertices_keep_neutral_kind_tint() {
         let sand = Kind::from_name("Sand").expect("Sand kind is configured");
         let mut kind = ChunkStorage::<Kind>::default();
         kind.fill(sand);
@@ -487,15 +484,28 @@ mod tests {
             |_| Some(&light),
             1,
         );
-        let expected = Vec3::new(1.9, 1.7, 1.1);
-
+        // Shipped kind tints are neutral, so the tint must keep every coarse vertex grayscale and
+        // inside the valid light range. Coarse cells can average light below full intensity, so
+        // full light is only required to appear somewhere. The colored-tint multiplication itself
+        // is covered by `kind_tint_scales_vertex_light` in the full mesher.
         assert!(!vertices.is_empty());
         assert!(
             vertices
                 .iter()
-                .any(|vertex| (vertex.light - expected).length() < 1e-4),
-            "coarse mesh did not apply the kind tint"
+                .any(|vertex| (vertex.light - Vec3::ONE).length() < 1e-4),
+            "coarse mesh lost full natural light"
         );
+        for vertex in &vertices {
+            let light = vertex.light;
+            assert!(
+                (light.x - light.y).abs() < 1e-5 && (light.y - light.z).abs() < 1e-5,
+                "neutral kind tint made coarse light colored: {light}"
+            );
+            assert!(
+                (0.0..=1.0 + 1e-5).contains(&light.x),
+                "coarse vertex light out of range: {light}"
+            );
+        }
     }
 
     #[test]

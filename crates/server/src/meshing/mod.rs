@@ -44,6 +44,14 @@ pub const VERTICES_INDICES: [[usize; 4]; 6] = [
     [1, 0, 3, 2], // BACK
 ];
 
+/// Fraction that maps a natural light value onto the shader's `0..1` range.
+const LIGHT_FRACTION: f32 = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
+
+/// Applies a kind tint to a vertex light intensity.
+pub(crate) fn light_with_tint(intensity: f32, tint: Vec3) -> Vec3 {
+    Vec3::splat(intensity * LIGHT_FRACTION) * tint
+}
+
 /// Generates vertices data from a given [`voxel::Face`] list.
 ///
 /// All generated indices will be relative to a triangle list.
@@ -51,7 +59,6 @@ pub const VERTICES_INDICES: [[usize; 4]; 6] = [
 /// **Returns** a list of generated [`voxel::Vertex`].
 pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
     const VERTICES_ESTIMATION: usize = (Chunk::BUFFER_SIZE * voxel::SIDE_COUNT * 6) / 100;
-    const LIGHT_FRACTION: f32 = (voxel::Light::MAX_NATURAL_INTENSITY as f32).recip();
 
     #[inline]
     fn calc_tile_size(min: Vec3, max: Vec3) -> f32 {
@@ -99,7 +106,7 @@ pub fn generate_vertices(faces: &[voxel::Face]) -> Vec<voxel::Vertex> {
                 normal,
                 uv: tile_uv[i],
                 tile_coord_start,
-                light: Vec3::splat(face.light[i] * LIGHT_FRACTION) * tint,
+                light: light_with_tint(face.light[i], tint),
             });
         }
     }
@@ -421,7 +428,7 @@ mod test {
     use crate::light;
 
     #[test]
-    fn kind_color_tints_vertex_light() {
+    fn neutral_kind_tint_keeps_full_vertex_light() {
         let kind = voxel::Kind::from_name("Sand").expect("Sand kind is configured");
         let face = voxel::Face {
             vertices: [ChunkVoxel::new(0, 0, 0); 4],
@@ -431,16 +438,28 @@ mod test {
         };
 
         let vertices = generate_vertices(&[face]);
-        let expected = Vec3::new(1.9, 1.7, 1.1);
 
+        // Shipped kind tints are neutral, so a full-light face must keep unit vertex light.
+        // The multiplication itself is covered by `kind_tint_scales_vertex_light`.
+        let expected = Vec3::ONE;
         assert!(!vertices.is_empty());
         for vertex in vertices {
             assert!(
                 (vertex.light - expected).length() < 1e-5,
-                "kind tint was not applied: {}",
+                "neutral kind tint changed vertex light: {}",
                 vertex.light
             );
         }
+    }
+
+    #[test]
+    fn kind_tint_scales_vertex_light() {
+        let tint = Vec3::new(1.9, 1.7, 1.1);
+
+        assert!((light_with_tint(15.0, tint) - tint).length() < 1e-6);
+        assert!((light_with_tint(15.0, Vec3::ONE) - Vec3::ONE).length() < 1e-6);
+        assert!(light_with_tint(0.0, tint).abs_diff_eq(Vec3::ZERO, 1e-6));
+        assert!((light_with_tint(7.5, tint) - tint * 0.5).length() < 1e-6);
     }
 
     #[test]
