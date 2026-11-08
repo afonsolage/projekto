@@ -1,8 +1,9 @@
 // World generation settings. Loaded at server startup; invalid values fail fast.
-// The shape fields are sampled at a domain-warped position. Height blends landform_plains and
-// landform_mountains by the landform mask, adds upheaval_lift scaled by that mask and
-// peaks-and-valleys relief scaled by the mask, applies the biome shape blend and terrace, then
-// soft-clamps to min_height..max_height.
+// Continentalness, erosion, weirdness, landform and upheaval are sampled at a domain-warped
+// position; detail, temperature and humidity are sampled unwarped. Height blends landform_plains
+// and landform_mountains by the landform mask, adds upheaval_lift scaled from 40% to 100% by that
+// mask and peaks-and-valleys relief scaled from 60% to 140%, applies the biome shape blend and
+// terrace, then soft-clamps asymptotically to min_height..max_height.
 (
     seed: 42,
     sea_level: 64,

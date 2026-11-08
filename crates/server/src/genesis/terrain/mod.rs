@@ -147,9 +147,11 @@ impl TerrainGenerator {
         let mountains = self.landform_mountains.sample(continentalness);
         let profile = plains + (mountains - plains) * weight;
 
-        // Tectonic uplift raises long, sloped plains into cliffs and mountain fronts. It is
-        // strongest in mountain landforms, which keeps lowlands from being lifted uniformly.
+        // Tectonic uplift raises long, sloped plains into cliffs and mountain fronts. The
+        // coefficients scale it from 40% in pure plains to 100% in pure mountains, so lowlands
+        // are not lifted uniformly.
         let uplift = self.upheaval_lift.sample(upheaval) * (0.4 + 0.6 * weight);
+        // Relief is scaled from 60% in pure plains to 140% in pure mountains for ridged flanks.
         let amplitude = self.relief_amplitude.sample(erosion) * (0.6 + 0.8 * weight);
         let peaks_and_valleys = 1.0 - (3.0 * weirdness.abs() - 2.0).abs();
         let raw = profile
@@ -363,12 +365,15 @@ fn landform_weight(landform: f32) -> f32 {
 
 /// Compresses the top of the height range instead of clamping it to a flat ceiling.
 ///
-/// The last few blocks below `max_height` are mapped through a 0.5 slope, so rare peaks lose
-/// height gradually instead of becoming perfectly flat plateaus.
+/// Heights above the last 16 blocks are mapped through a rational asymptote, so rare peaks lose
+/// height progressively and approach `max_height` without ever forming a flat plateau.
 fn soft_clamp_height(height: f32, min_height: f32, max_height: f32) -> f32 {
     let knee = max_height - 16.0;
+    let margin = max_height - knee;
     let compressed = if height > knee {
-        knee + (height - knee) * 0.5
+        let excess = height - knee;
+
+        knee + margin * excess / (excess + margin)
     } else {
         height
     };
@@ -699,17 +704,50 @@ mod tests {
     #[test]
     fn soft_clamp_compresses_peaks_without_flat_plateaus() {
         assert_eq!(soft_clamp_height(236.0, 70.0, 252.0), 236.0);
-        assert_eq!(soft_clamp_height(252.0, 70.0, 252.0), 244.0);
-        assert_eq!(soft_clamp_height(280.0, 70.0, 252.0), 252.0);
 
         let mut previous = soft_clamp_height(200.0, 70.0, 252.0);
 
-        for step in 201..=280 {
+        for step in 201..=400 {
             let height = soft_clamp_height(step as f32, 70.0, 252.0);
 
             assert!(height >= previous, "soft clamp is not monotone");
+            assert!(
+                height < 252.0,
+                "soft clamp reached the hard ceiling at raw {step}: {height}"
+            );
             previous = height;
         }
+    }
+
+    #[test]
+    fn generator_compresses_peaks_instead_of_plateauing() {
+        let mut config = WorldGenConfig::load_default();
+
+        for (_, value) in &mut config.landform_mountains.points {
+            *value = 340.0;
+        }
+        for (_, value) in &mut config.upheaval_lift.points {
+            *value = 0.0;
+        }
+
+        let generator = TerrainGenerator::new(config);
+        let mut compressed = 0;
+
+        for step in 0..64 {
+            let x = (step % 8) as f32 * 97.0 - 320.0;
+            let z = (step / 8) as f32 * 89.0 - 280.0;
+            let height = generator.height(x, z);
+
+            assert!(
+                height < 252.0,
+                "height reached the hard ceiling at ({x}, {z}): {height}"
+            );
+            if height > 236.0 {
+                compressed += 1;
+            }
+        }
+
+        assert!(compressed > 0, "no column exercised the soft-clamp branch");
     }
 
     #[test]
@@ -1580,11 +1618,15 @@ mod tests {
                     + peaks_and_valleys * amplitude * shape.relief_multiplier
                     + detail
                     + shape.height_offset;
+                let terraced = raw
+                    + shape.terrace_strength
+                        * (terrace(raw, generator.config().biomes.terrace_step) - raw);
+                let knee = generator.config().max_height as f32 - 16.0;
 
-                if raw > generator.config().max_height as f32 {
+                if terraced > knee {
                     clamped_high[index] += 1;
                 }
-                if raw < generator.config().min_height as f32 {
+                if terraced < generator.config().min_height as f32 {
                     clamped_low[index] += 1;
                 }
             }
@@ -1669,7 +1711,7 @@ mod tests {
             let carved_fraction = carved[index] as f32 / sampled.max(1) as f32;
 
             println!(
-                "{}: columns={} height p10={:.1} p50={:.1} p90={:.1} slope p50={:.2} carved={:.1}% ({}/{} sampled) clamp_high={:.1}% clamp_low={:.1}%",
+                "{}: columns={} height p10={:.1} p50={:.1} p90={:.1} slope p50={:.2} carved={:.1}% ({}/{} sampled) above_knee={:.1}% clamp_low={:.1}%",
                 entry.name,
                 sorted_heights.len(),
                 percentile(&sorted_heights, 0.1),

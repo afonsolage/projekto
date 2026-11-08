@@ -3,7 +3,7 @@
 ## Context
 
 Issue #42 replaced the single noise field with a layered world generator: four 2D shape fields
-combined by splines ([`TerrainGenerator::height`](crates/server/src/genesis/terrain/mod.rs#L120)),
+combined by splines ([`TerrainGenerator::height`](crates/server/src/genesis/terrain/mod.rs#L115)),
 3D cave and overhang fields, and one global surface rule set. The issue closed with biomes
 explicitly deferred, so the pre-biome world had one surface treatment: Grass over Dirt over Rock,
 with Rock on steep slopes.
@@ -76,7 +76,7 @@ Euclidean distance and equal weights. The first entry wins an exact tie, and ent
 because a duplicate can never win.
 
 Erosion is part of the lookup because it already controls relief amplitude
-([`relief_amplitude`](crates/server/src/genesis/terrain/mod.rs#L158)): low erosion produces the
+([`relief_amplitude`](crates/server/src/genesis/terrain/mod.rs#L155)): low erosion produces the
 largest height swings. Erosion is already sampled by the shape pass, so this adds no extra noise
 evaluation.
 

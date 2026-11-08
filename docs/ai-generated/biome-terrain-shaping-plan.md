@@ -2,9 +2,9 @@
 
 ## Context
 
-PR #108 added five surface-only biomes. [`TerrainGenerator::column`](crates/server/src/genesis/terrain/mod.rs#L95)
-still computes one global height from continentalness, erosion, weirdness and detail, and
-[`BiomeTable::select`](crates/server/src/genesis/terrain/biome.rs#L43) only chooses which
+PR #108 added five surface-only biomes. At that point the (pre-#109) pipeline in
+[`TerrainGenerator`](crates/server/src/genesis/terrain/mod.rs) still computed one global height from continentalness, erosion, weirdness and detail, and
+[`BiomeTable::select`](crates/server/src/genesis/terrain/biome.rs) only chose which
 materials [`SurfaceRule::kind`](crates/server/src/genesis/terrain/surface.rs#L29) applies. The
 approved design in [`biome-proposal.md`](docs/ai-generated/biome-proposal.md) put height shaping
 and blended transitions out of scope and listed them as follow-ups. Issue #109 closes the height
@@ -12,8 +12,8 @@ shape and 3D-characteristics part of that gap while keeping transitions as a sep
 
 Current pipeline, for reference:
 
-- [`column`](crates/server/src/genesis/terrain/mod.rs#L95) samples continentalness, erosion,
-  weirdness and detail and returns the height plus the erosion it already read.
+- The pre-#109 `column` helper sampled continentalness, erosion, weirdness and detail and
+  returned the height plus the erosion it already read.
 - [`height`](crates/server/src/genesis/terrain/mod.rs#L90) is `base + peaks_and_valleys *
   relief_amplitude(erosion) + detail`, clamped to `min_height..max_height`.
 - [`slope`](crates/server/src/genesis/terrain/mod.rs#L111) evaluates `height` at the four
@@ -258,7 +258,7 @@ move in #108: there is one shipped asset and no compatibility shim.
 | File | Change |
 |---|---|
 | [`terrain/config.rs`](crates/server/src/genesis/terrain/config.rs) | `BiomeShapeConfig`, `BiomeConfig.shape`, `BiomesConfig.transition` and `terrace_step`, validation with the biome name in every path, rejection tests |
-| [`terrain/biome.rs`](crates/server/src/genesis/terrain/biome.rs) | `BiomeTable` keeps resolved shape values; `weights_into(t, h, e, out) -> usize` fills normalized weights from a caller-owned scratch buffer and returns the squared-distance dominant index; `select` delegates; `blended_shape(&weights)` returns the five summed parameters |
+| [`terrain/biome.rs`](crates/server/src/genesis/terrain/biome.rs) | `BiomeTable` keeps resolved shape values; `weights_into(t, h, e, out) -> usize` fills normalized weights from a caller-owned scratch buffer and returns the squared-distance dominant index; `select` keeps the same squared-distance loop for tests while `weights_into` is the production path; `blended_shape(&weights)` returns the five summed parameters |
 | [`terrain/mod.rs`](crates/server/src/genesis/terrain/mod.rs) | `sample_column(x, z, weights) -> ColumnSample`; `samples(chunk) -> ChunkSamples` builds the 18x18 halo, the per-column samples and the 16x16 slopes; `generate` consumes `samples`; `is_solid` takes `&ColumnSample`; `height` and `slope` remain crate-private probes; `lattice_bounds` unchanged except for its doc comment |
 | [`terrain/surface.rs`](crates/server/src/genesis/terrain/surface.rs) | unchanged; it keeps receiving depth and slope |
 | [`assets/worldgen.ron`](assets/worldgen.ron) | `transition`, `terrace_step`, `shape` blocks, tuned values |
@@ -280,8 +280,9 @@ chunk. Weights need temperature and humidity on every height evaluation, so reco
 through `height` would raise it to 30 per column, 7,680 per chunk.
 
 `samples(chunk)` builds one `ColumnSample` for each column of an 18x18 halo (16 plus one column of
-margin on each axis), which is `324 * 6 = 1,944` field evaluations per chunk, about 65% below
-today. The halo also gives one authoritative value per world column for height, slope, dominant
+margin on each axis), which is `324 * 10 = 3,240` field evaluations per chunk, about 42% below
+the old 5,632 (ten fields per halo column: three shape, detail, two climate, landform, upheaval and
+two turbulence directions). The halo also gives one authoritative value per world column for height, slope, dominant
 biome, overhang strength and cave density. The 16x16 interior is copied into the fill pass and the
 18x18 grid is dropped with the task. A `ColumnSample` is two f32, one `usize` and two more f32, so
 the grid is under 10 KiB including the 16x16 slope array.
@@ -374,7 +375,6 @@ Unit tests in `genesis::terrain` (the generator and biome table stay crate-priva
 | Test | Assertion |
 |---|---|
 | `weights_are_a_normalized_partition` | weights sum to one, nearest entry dominates, values stay finite with large coordinates |
-| `dominant_matches_the_squared_distance_select` | the dominant index equals the current squared-distance selection over sampled columns |
 | `weights_are_continuous_across_a_boundary` | crossing a pairwise Voronoi boundary by `1e-3` changes weights smoothly, and the weights are about even at the equality point |
 | `transition_sweep_keeps_the_boundary_continuous` | synthetic configs with `0.1`, `0.15` and `0.5` all keep the blended boundary jump below the bound |
 | `shape_parameters_do_not_affect_selection` | weights and dominant index are bit-identical after every shape field is changed |
@@ -382,7 +382,7 @@ Unit tests in `genesis::terrain` (the generator and biome table stay crate-priva
 | `neutral_shapes_reproduce_the_global_height` | with all shapes neutral, blended height equals the pre-blend formula at sampled columns |
 | `blended_height_matches_an_independent_formula` | a synthetic terrace-free config's height equals a test-side recomputation from the raw noise fields and weights |
 | `offset_and_relief_blend_at_an_equidistant_point` | a synthetic two-entry config yields the mean offset and multiplier at the midpoint |
-| `terrace_blend_is_identity_at_zero_strength` | the height formula with strength zero returns the raw height, and strength one returns the staircase |
+| `terrace_blend_matches_sample_column` | strengths 0, 0.5 and 1 match an independently computed terrace through `sample_column` |
 | `terrace_is_continuous_at_step_edges` | the staircase matches on both sides of a cell edge and its deviation stays within `0.1 * step` |
 | `height_has_no_jump_across_a_synthetic_biome_boundary` | the bisected synthetic boundary has no first-order height jump |
 | `height_has_no_jump_across_a_shipped_biome_boundary` | same check with the tuned shipped config |
@@ -390,7 +390,7 @@ Unit tests in `genesis::terrain` (the generator and biome table stay crate-priva
 | `cave_density_zero_removes_caverns` | with every overhang strength zero, an all-zero density config carves nothing anywhere and columns whose cached blended density is exactly zero stay solid, for positive and negative thresholds |
 | `cave_density_increases_carved_volume` | with every overhang strength zero, carved count with density two exceeds density zero over the same columns |
 | `overhang_strength_zero_keeps_the_surface_at_height` | with caves enabled, every overhang strength zero, every cave density zero and the carve threshold at 1.0, the top voxel is `ceil(height) - 1` on every column |
-| `overhang_strength_lifts_the_surface` | with cave density zero, a positive per-entry overhang strength lifts at least one sampled column |
+| `overhang_strength_moves_the_surface_up` | with cave density zero, a positive per-entry overhang strength lifts at least one sampled column |
 | `height_stays_within_configured_bounds_and_varies` | existing test, now over the blended height |
 | `height_is_continuous_across_a_chunk_border` | existing test at 15.99/16.01 |
 | `world_space_surface_matches_generated_chunks` | recomputes height, slope and dominant biome from world coordinates through the probe functions (validating the halo mapping), compares every generated top kind with the surface rule, and checks top voxels against the generated height where no 3D effect applies |
@@ -462,7 +462,7 @@ gitignored either way).
 
 The bench baseline is measured on commit 1's parent with the same `PROJEKTO_GENESIS_BENCH_CHUNKS`
 and thread count. The halo cache is expected to keep the median at or below today's, because it
-replaces 22 field evaluations per column with six per halo column. `just terrain-walk` is a smoke
+replaces 22 field evaluations per column with ten per halo column, still fewer in total. `just terrain-walk` is a smoke
 check on the final config; no streaming or LOD path changes, so it is not a gate.
 
 ## Risks and mitigations
@@ -519,8 +519,10 @@ Design changes:
   not lifted uniformly and long slopes lead into mountain fronts.
 - **Ridged relief.** The existing peaks-and-valleys term is scaled by the landform weight and stays
   smaller than the profile change, so it adds ridges without turning the whole world into noise.
-- **Soft top clamp.** The last 16 blocks below `max_height` map through a 0.5 slope. Rare peaks are
-  compressed instead of becoming perfectly flat plateaus.
+- **Soft top clamp.** The last 16 blocks below `max_height` map through a rational asymptote. Rare
+  peaks are compressed instead of becoming perfectly flat plateaus, and the shipped report counts
+  columns above that knee. The landform weight also scales uplift from 40% to 100% and relief from
+  60% to 140%.
 - **Terrace and biome blending** stay as planned: one shared terrace after blending, biome shape
   fields blended by weights.
 

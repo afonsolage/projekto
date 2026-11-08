@@ -205,10 +205,10 @@ erosion, weirdness, the landform mask and the upheaval field. The landform mask 
 profiles, `landform_plains` and `landform_mountains`, over continentalness, so plains and mountain
 regions have genuinely different vertical scale rather than different noise amplitude. The upheaval
 field adds tectonic uplift, strongest in mountain landforms, and erosion controls a small
-peaks-and-valleys relief term. [`landform_weight`](./crates/server/src/genesis/terrain/mod.rs#L363),
-[`soft_clamp_height`](./crates/server/src/genesis/terrain/mod.rs#L373) and
+peaks-and-valleys relief term. [`landform_weight`](./crates/server/src/genesis/terrain/mod.rs#L360),
+[`soft_clamp_height`](./crates/server/src/genesis/terrain/mod.rs#L370) and
 [`terrace`](./crates/server/src/genesis/terrain/mod.rs#L388) keep the vertical profile continuous and
-compress rare peaks instead of flattening them against the ceiling.
+compress rare peaks asymptotically instead of flattening them against a hard ceiling.
 
 Climate samples temperature and humidity at unwarped coordinates, and
 [`BiomeTable::weights_into`](./crates/server/src/genesis/terrain/biome.rs#L104) selects the nearest
@@ -217,10 +217,10 @@ resolve by table order, and the dominant index keeps the squared-distance compar
 blending. [`BiomeTable::blended_shape`](./crates/server/src/genesis/terrain/biome.rs#L155) sums each
 entry's five shape fields over those weights: height offset, relief multiplier, terrace strength,
 cave density and overhang strength. The
-[`sample_column`](./crates/server/src/genesis/terrain/mod.rs#L126) helper combines the landform
+[`sample_column`](./crates/server/src/genesis/terrain/mod.rs#L121) helper combines the landform
 profile, uplift and biome shape, applies one smoothed staircase terrace and the soft top clamp, and
 returns the cached column values. The
-[`samples`](./crates/server/src/genesis/terrain/mod.rs#L185) helper caches an 18x18 column halo per
+[`samples`](./crates/server/src/genesis/terrain/mod.rs#L182) helper caches an 18x18 column halo per
 chunk, so height, slope, biome and 3D parameters are read once per world column.
 
 [`SurfaceRule::kind`](./crates/server/src/genesis/terrain/surface.rs#L29) maps depth and slope to a
