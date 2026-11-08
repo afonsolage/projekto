@@ -21,6 +21,9 @@ use projekto_textures::{
 use crate::ChunkMaterial;
 
 /// Seed used on the first frames, before the server announces the world seed.
+///
+/// It matches the seed shipped in `assets/worldgen.ron`, so a client joining the default world
+/// does not visibly switch textures once the handshake completes; other worlds regenerate once.
 pub const FALLBACK_WORLD_SEED: u64 = 42;
 
 /// World seed used to synthesize terrain textures.
@@ -159,7 +162,11 @@ fn check_offset(kind: &str, texture: &KindSideTexture) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use projekto_messages::ServerMessage;
+    use projekto_proto::{BoxedMessage, ClientId, RunMessageHandlers};
     use projekto_textures::index_tile::TILE;
+
+    use crate::ChunkMaterial;
 
     fn shipped_descs() -> voxel::KindsDescs {
         let path = format!("{}/voxels/kind.ron", env!("ASSETS_PATH"));
@@ -191,5 +198,42 @@ mod tests {
     #[test]
     fn atlas_tile_size_matches_the_generator() {
         assert_eq!(shipped_descs().atlas_tile_size as usize, TILE);
+    }
+
+    #[test]
+    fn server_info_regenerates_the_atlas_for_the_world_seed() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Image>>()
+            .init_resource::<Assets<ChunkMaterial>>()
+            .add_plugins(TexturesPlugin);
+        app.update();
+
+        let handle = app.world().resource::<TerrainAtlas>().0.clone();
+        let before = atlas_bytes(&app, &handle);
+        assert_eq!(app.world().resource::<WorldSeed>().0, FALLBACK_WORLD_SEED);
+
+        // Dispatch through the same message plumbing the network client uses, so a broken
+        // handler registration or change detection fails this test.
+        let boxed: BoxedMessage<ServerMessage> = Box::new(ServerInfo { seed: 7 });
+        app.world_mut()
+            .run_handlers::<ServerInfo>(ClientId::default(), boxed);
+        app.update();
+
+        assert_eq!(app.world().resource::<WorldSeed>().0, 7);
+        let after = atlas_bytes(&app, &handle);
+        assert_ne!(
+            before, after,
+            "the atlas must be regenerated when the world seed arrives"
+        );
+    }
+
+    fn atlas_bytes(app: &App, handle: &Handle<Image>) -> Vec<u8> {
+        app.world()
+            .resource::<Assets<Image>>()
+            .get(handle)
+            .expect("generated atlas exists")
+            .data
+            .clone()
+            .expect("generated atlas keeps its CPU pixels")
     }
 }

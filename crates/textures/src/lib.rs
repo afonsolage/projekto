@@ -1,9 +1,9 @@
 //! Procedural terrain-atlas generation prototype.
 //!
-//! The client currently loads a fixed 10x10 hand-painted atlas and the mesher bakes tile
-//! coordinates into chunk vertices. This crate generates the same 320x320 atlas from a world
-//! seed and code alone: there is no spritesheet, bitmap or other image input. The layout, UVs
-//! and protocol stay unchanged while every seed produces a slightly different tile set.
+//! The client renders terrain from a 320x320 atlas and the mesher bakes tile coordinates into
+//! chunk vertices. This crate generates that atlas from a world seed and code alone: there is no
+//! spritesheet, bitmap or other image input. The layout, UVs and protocol stay unchanged while
+//! every seed produces a slightly different tile set.
 //!
 //! Two synthesis styles share one pipeline:
 //!

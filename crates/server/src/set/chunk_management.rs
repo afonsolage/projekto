@@ -398,10 +398,23 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset, desired_lod: u8) -> E
     } = asset;
 
     let suspect_hole = vertex.is_empty() && !kind.all(|kind| kind.is_none());
+    let stale_mesh = mesh_version != CHUNK_MESH_VERSION;
 
     if suspect_hole {
         warn!("chunk {chunk} was loaded with an empty mesh over solid terrain");
     }
+    if stale_mesh {
+        debug!(
+            "chunk {chunk} was saved with mesh version {mesh_version}; remeshing instead of \
+             streaming the stale mesh"
+        );
+    }
+
+    // A mesh saved with older tile bindings would sample the generated atlas with the wrong
+    // offsets and tints until the async remesh lands. Stream an empty mesh instead; the dirty
+    // flag queues the remesh and the changed vertex buffer is sent when it finishes.
+    let vertex = if stale_mesh { Vec::new() } else { vertex };
+    let trust_mesh = !suspect_hole && !stale_mesh && lod == desired_lod;
 
     let mut entity = commands.spawn(ChunkBundle {
         kind: ChunkKind(kind),
@@ -412,7 +425,7 @@ fn spawn_chunk(commands: &mut Commands, asset: ChunkAsset, desired_lod: u8) -> E
 
     // An empty saved mesh over solid terrain is not a valid cache. Let the meshing
     // pipeline rebuild it instead of trusting it forever.
-    if !suspect_hole && mesh_version == CHUNK_MESH_VERSION && lod == desired_lod {
+    if trust_mesh {
         entity.insert(CachedMesh);
     }
 

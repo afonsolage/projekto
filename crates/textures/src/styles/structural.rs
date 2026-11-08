@@ -549,9 +549,12 @@ fn pebbles(tile: &mut IndexTile, seed: u64, art: &ArtParameters) {
     let count = (3.0 * art.structure).round().clamp(1.0, 6.0) as usize;
     for index in 0..count {
         let hash = hash2d(index as i32, 0, pebble_seed);
-        let x = MARGIN + 1 + (hash as usize % 26);
-        let y = MARGIN + 1 + ((hash >> 8) as usize % 26);
         let size = 2 + ((hash >> 16) as usize % 2);
+        // Keep the whole pebble (origin plus `size - 1` pixels) inside the visible tile, so it
+        // never smears into the stretched shader inset.
+        let span = TILE - MARGIN - 1 - size - MARGIN;
+        let x = MARGIN + 1 + (hash as usize % span);
+        let y = MARGIN + 1 + ((hash >> 8) as usize % span);
         let base = tile.get(x, y) as i32;
 
         for dy in 0..size {

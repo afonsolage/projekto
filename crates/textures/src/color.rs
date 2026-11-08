@@ -7,6 +7,11 @@
 //! colors those indices map to: more colors give a soft painterly ramp, fewer colors give a
 //! crisp pixel-art look. The mapping is done here so generators stay art-agnostic.
 //!
+//! Palette conversion uses `f32` transcendental intrinsics (`sin`, `cos`, `powf`), so a seed is
+//! deterministic for a given platform and toolchain but is not guaranteed to be bit-identical
+//! across platforms. Any cross-platform difference is at most a few sRGB steps, which is cosmetic
+//! for terrain tiles.
+//!
 //! References: <https://bottosson.github.io/posts/oklab/>.
 
 use crate::hash::hash2d;

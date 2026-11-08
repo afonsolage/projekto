@@ -24,7 +24,9 @@ dirt below; `Moss` and `Snow` follow the same pattern with moss and snow bands.
 
 ## Constraints
 
-- Deterministic and platform independent: the same seed must produce the same atlas everywhere.
+- Deterministic: the same seed and toolchain must produce the same atlas. Palette conversion uses
+  `f32` transcendental intrinsics, so bit-identical output across platforms is not guaranteed;
+  differences are at most a few sRGB steps and cosmetic.
 - Cheap: the whole atlas is 102,400 pixels, so generation must cost a few milliseconds at client
   startup and never run per frame.
 - Pixel art: 32×32 tiles, a handful of shades per material, no mipmaps, nearest sampling.
@@ -176,7 +178,8 @@ material "grass_side": layers: [
 
 Because the overlay references `grass_top`, the band uses the same grass pattern and the same
 seeded palette as the top face, so the block reads as one material. The mask is evaluated from the
-seed: noisy band height, optional one-pixel overhangs, a dark lip at the seam and a bright top row.
+seed: noisy band height, optional one-pixel overhangs, a dark lip at the seam and a bright first
+visible row.
 No alpha image or extra tile data is stored.
 
 The same layer system covers every "X over Y" surface:
@@ -255,14 +258,14 @@ Observed in-game for the fully procedural `structural` style:
   the same dirt material as the bottom face. Tundra and forest surfaces use the same mechanism with
   snow and moss bands, and a three-layer stack shows a snow cap over a grass band over dirt.
 - All composite tiles were validated in the same in-game scene with the `soft` preset; the side
-  faces of grass blocks are generated, not sampled from the shipped PNG.
+  faces of grass blocks are generated, not sampled from any sheet.
 
 ## Recommendation
 
 Adopt the fully procedural `structural` style with one of the art presets:
 
 1. No bitmap, spritesheet or base texture is shipped or read for terrain rendering. The fixed PNG
-   is retired once this lands.
+   has been retired.
 2. The client generates the atlas at startup from the world seed.
 3. Material recipes (palette, spread, motif set, biome climate) are authored data, and the art
    preset sets the shade count, contrast, chroma, temperature and relief.
@@ -275,48 +278,19 @@ Adopt the fully procedural `structural` style with one of the art presets:
 
 ### 1. Material descriptors
 
-Add an `assets/textures.ron` that lists one recipe per material. `kind.ron` keeps the atlas offset
-and tint and references the material by name, so the mesher ([`KindSideTexture`](crates/core/src/voxel/kind.rs#L13))
-is unchanged:
+Material recipes are implemented as authored data in code
+([`MATERIALS`](crates/textures/src/materials.rs#L201)): atlas offset, Oklab base color, palette
+spread, seed tag, biome climate and the layer stack for composite materials. `kind.ron` keeps the
+atlas offset and tint per `Kind`/`Side`, so the mesher
+([`KindSideTexture`](crates/core/src/voxel/kind.rs#L13)) is unchanged.
 
-```ron
-(
-    materials: [
-        (
-            name: "grass_top",
-            base: (lightness: 0.355, chroma: 0.125, hue: 143.0),
-            spread: 0.10,
-            motifs: [Tufts, Speckles],
-        ),
-        (
-            name: "grass_side",
-            layers: [
-                (source: "dirt", mask: Full),
-                (source: "grass_top", mask: (top_band: (height: 8.0, variation: 4.5, drips: 20, lip: true))),
-            ],
-        ),
-        (
-            name: "sand",
-            base: (lightness: 0.800, chroma: 0.090, hue: 88.0),
-            spread: 0.09,
-            motifs: [Ripples, Grain, Sparkles],
-        ),
-        // remaining materials follow the same shape
-    ],
-)
-```
+Follow-up: move the recipes into `assets/textures.ron` and let `kind.ron` reference them by name
+instead of duplicating offsets. That would make recipes moddable without recompiling and is why the
+initial design sketched a `material` field, but it was left out to keep this change focused.
 
-```ron
-up: (
-    color: (1.0, 1.0, 1.0, 1.0),
-    offset: (1, 0),
-    material: "grass_top",
-),
-// sides: material "grass_side", down: material "dirt"
-```
-
-Validation belongs next to [`check_descs`](crates/core/src/voxel/kind.rs#L137): every referenced
-material must exist, offsets must stay inside the atlas, and duplicate material names are rejected.
+Validation for the current split lives in the client: `check_atlas_layout` fails fast when a
+`kind.ron` offset is not produced by the generator, and the generator tests keep every layer source
+simple.
 
 ### 2. Client atlas generation
 

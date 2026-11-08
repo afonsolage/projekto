@@ -9,6 +9,9 @@ use crate::hash::{derive_seed, hash2d};
 use crate::index_tile::{IndexTile, TILE, TILE_PIXELS};
 use crate::noise::PeriodicNoise;
 
+/// First tile row the fragment shader samples: its 6% UV inset hides the outer two rows.
+pub const FIRST_VISIBLE_ROW: usize = 2;
+
 /// Where a layer is allowed to draw over the layers below it.
 #[derive(Clone, Copy, Debug)]
 pub enum LayerMask {
@@ -127,12 +130,14 @@ pub fn apply_top_band(
             }
         }
 
-        if band.lip && height < TILE {
-            levels.set(x, height, previous_levels.get(x, height) as i32 - 2);
-            palette[height * TILE + x] = previous_palette[height * TILE + x];
+        // The lip sits below any overhang; shading row `height` would erase the drip.
+        let lip_row = height + drips;
+        if band.lip && lip_row < TILE {
+            levels.set(x, lip_row, previous_levels.get(x, lip_row) as i32 - 2);
+            palette[lip_row * TILE + x] = previous_palette[lip_row * TILE + x];
         }
-        if band.highlight_top && height > 0 {
-            levels.add(x, 0, 1);
+        if band.highlight_top && height > FIRST_VISIBLE_ROW {
+            levels.add(x, FIRST_VISIBLE_ROW, 1);
         }
     }
 
@@ -193,6 +198,51 @@ mod tests {
         for height in heights {
             assert!((3..=TILE - 5).contains(&height));
         }
+    }
+
+    #[test]
+    fn top_band_highlights_a_visible_row() {
+        let band = TopBand {
+            height: 8.0,
+            variation: 0.0,
+            drips: 0,
+            lip: false,
+            highlight_top: true,
+            seed_tag: 5,
+        };
+        let mut levels = IndexTile::filled(3);
+        let overlay = IndexTile::filled(3);
+        let mut palette = [0u8; TILE_PIXELS];
+        apply_top_band(&mut levels, &mut palette, &overlay, &band, 1, 42);
+
+        assert_eq!(levels.get(4, FIRST_VISIBLE_ROW), 4);
+        assert_eq!(
+            levels.get(4, 0),
+            3,
+            "the hidden top row must stay untouched"
+        );
+    }
+
+    #[test]
+    fn top_band_drips_survive_the_lip() {
+        let band = TopBand {
+            height: 8.0,
+            variation: 0.0,
+            drips: 100,
+            lip: true,
+            highlight_top: false,
+            seed_tag: 3,
+        };
+        let mut levels = IndexTile::filled(3);
+        let overlay = IndexTile::filled(5);
+        let mut palette = [0u8; TILE_PIXELS];
+        let heights = apply_top_band(&mut levels, &mut palette, &overlay, &band, 1, 42);
+        let height = heights[0];
+
+        // The overhang row belongs to the overlay, and the darkened lip moves below it.
+        assert_eq!(palette[height * TILE], 1);
+        assert_eq!(palette[(height + 1) * TILE], 0);
+        assert!(levels.get(0, height + 1) < 3);
     }
 
     #[test]
