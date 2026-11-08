@@ -205,9 +205,9 @@ erosion, weirdness, the landform mask and the upheaval field. The landform mask 
 profiles, `landform_plains` and `landform_mountains`, over continentalness, so plains and mountain
 regions have genuinely different vertical scale rather than different noise amplitude. The upheaval
 field adds tectonic uplift, strongest in mountain landforms, and erosion controls a small
-peaks-and-valleys relief term. [`landform_weight`](./crates/server/src/genesis/terrain/mod.rs#L400),
-[`soft_clamp_height`](./crates/server/src/genesis/terrain/mod.rs#L400) and
-[`terrace`](./crates/server/src/genesis/terrain/mod.rs#L418) keep the vertical profile continuous and
+peaks-and-valleys relief term. [`landform_weight`](./crates/server/src/genesis/terrain/mod.rs#L370),
+[`soft_clamp_height`](./crates/server/src/genesis/terrain/mod.rs#L424) and
+[`terrace`](./crates/server/src/genesis/terrain/mod.rs#L442) keep the vertical profile continuous and
 compress rare peaks asymptotically instead of flattening them against a hard ceiling.
 
 Climate samples temperature and humidity at unwarped coordinates, and
@@ -248,7 +248,7 @@ that light, so the tint reaches the client without a new atlas, mesh format or p
 dedicated hand-painted tiles are a follow-up.
 
 Changing the generated world requires bumping
-[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L57) and deleting the local `archive/region`
+[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L58) and deleting the local `archive/region`
 directory before a clean visual run. Per-asset reads reject older magic, and the server warns and
 regenerates stale chunks loaded from an old archive.
 
@@ -326,7 +326,7 @@ so a slow client never blocks the ECS thread.
 Chunks are stored in region files under `archive/region/{x}_{z}.rgn`, one file per 32×32 chunk
 region. A file starts with a 4096-byte header holding one 4-byte sector index per chunk; each
 asset is bincode-encoded, lz4-compressed and prefixed with
-[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L57). [`ArchiveServer`](./crates/archive/src/server.rs#L162)
+[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L58). [`ArchiveServer`](./crates/archive/src/server.rs#L162)
 owns one worker per region on the I/O task pool, so reads, writes, compression and header flushes
 do not run on the ECS thread.
 

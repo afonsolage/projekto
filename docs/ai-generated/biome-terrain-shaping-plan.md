@@ -26,7 +26,7 @@ Current pipeline, for reference:
   and applies the biome surface layers.
 - [`BiomesConfig`](crates/server/src/genesis/terrain/config.rs#L63) holds `max_slope`, `steep`,
   `deep` and the five entries. Global cave settings live in [`CaveConfig`](crates/server/src/genesis/terrain/config.rs#L106).
-- Archive version 5 ([`VERSION_MAGIC`](crates/archive/src/lib.rs#L56)) and mesh version 9
+- Archive version 5 ([`VERSION_MAGIC`](crates/archive/src/lib.rs#L58)) and mesh version 9
   ([`CHUNK_MESH_VERSION`](crates/archive/src/asset.rs#L10)).
 
 ## Design
@@ -382,7 +382,7 @@ Unit tests in `genesis::terrain` (the generator and biome table stay crate-priva
 | `transition_sweep_keeps_the_boundary_continuous` | synthetic configs with `0.1`, `0.15` and `0.5` all keep the blended boundary jump below the bound |
 | `shape_parameters_do_not_affect_selection` | weights and dominant index are bit-identical after every shape field is changed |
 | `tie_resolves_to_the_first_entry` | equal distances select the earlier entry and split weights evenly |
-| `neutral_shapes_reproduce_the_global_height` | with all shapes neutral, blended height equals the pre-blend formula at sampled columns |
+| `neutral_shapes_do_not_change_the_height` | with all shapes neutral, the blended height equals the terrain formula at sampled columns |
 | `blended_height_matches_an_independent_formula` | a synthetic terrace-free config's height equals a test-side recomputation from the raw noise fields and weights |
 | `offset_and_relief_blend_at_an_equidistant_point` | a synthetic two-entry config yields the mean offset and multiplier at the midpoint |
 | `terrace_blend_matches_sample_column` | strengths 0, 0.5 and 1 match an independently computed terrace through `sample_column` |
@@ -396,7 +396,7 @@ Unit tests in `genesis::terrain` (the generator and biome table stay crate-priva
 | `overhang_strength_moves_the_surface_up` | with cave density zero, a positive per-entry overhang strength lifts at least one sampled column |
 | `height_stays_within_configured_bounds_and_varies` | existing test, now over the blended height |
 | `height_is_continuous_across_a_chunk_border` | existing test at 15.99/16.01 |
-| `world_space_surface_matches_generated_chunks` | recomputes height, slope and dominant biome from world coordinates through the probe functions (validating the halo mapping), compares every generated top kind with the surface rule, and checks top voxels against the generated height where no 3D effect applies |
+| `world_space_surface_matches_generated_chunks` | recomputes height, slope and surface biome from world coordinates through the probe functions (validating the halo mapping), compares every generated top kind with the surface rule, and checks top voxels against the generated height where no 3D effect applies |
 | `caves_disabled_top_matches_height` | with caves disabled, the top solid voxel of every generated column is `ceil(height) - 1` |
 | `biome_distribution_stays_within_bounds` | unchanged; selection is unchanged by shape parameters |
 | `biome_terrain_report` | prints per-biome column counts, height percentiles, mean slope, carved fraction, clamp saturation and representative columns; not a pass/fail gate |

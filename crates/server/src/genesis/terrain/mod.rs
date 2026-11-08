@@ -373,8 +373,6 @@ fn landform_weight(landform: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-/// Compresses the top of the height range instead of clamping it to a flat ceiling.
-///
 /// Deterministic, uniform jitter in `0..1` for a material-blend cell.
 ///
 /// The jitter must be uniform for `BiomeTable::surface_biome` to pick materials with probability
@@ -419,6 +417,8 @@ fn cell_fraction(x: i32, z: i32, seed: u64, salt: u64) -> f32 {
     (value >> 40) as f32 / 16_777_216.0
 }
 
+/// Compresses the top of the height range instead of clamping it to a flat ceiling.
+///
 /// Heights above the last 16 blocks are mapped through a rational asymptote, so rare peaks lose
 /// height progressively and approach `max_height` without ever forming a flat plateau.
 fn soft_clamp_height(height: f32, min_height: f32, max_height: f32) -> f32 {
@@ -820,6 +820,40 @@ mod tests {
         }
 
         assert!(compressed > 0, "no column exercised the soft-clamp branch");
+    }
+
+    #[test]
+    fn material_jitter_is_uniform() {
+        let cell = 12u8;
+        let mut samples = 0usize;
+        let mut below_half = 0usize;
+        let mut below_ninety = 0usize;
+        let mut sum = 0.0f64;
+
+        for cell_x in -100..100 {
+            for cell_z in -100..100 {
+                let x = cell_x as f32 * f32::from(cell) + 0.37 * f32::from(cell);
+                let z = cell_z as f32 * f32::from(cell) + 0.61 * f32::from(cell);
+                let jitter = material_jitter(x, z, 42, cell) as f64;
+
+                samples += 1;
+                sum += jitter;
+                if jitter < 0.5 {
+                    below_half += 1;
+                }
+                if jitter < 0.9 {
+                    below_ninety += 1;
+                }
+            }
+        }
+
+        let mean = sum / samples as f64;
+        let half = below_half as f64 / samples as f64;
+        let ninety = below_ninety as f64 / samples as f64;
+
+        assert!((mean - 0.5).abs() < 0.01, "jitter mean is {mean}");
+        assert!((half - 0.5).abs() < 0.02, "P(jitter < 0.5) is {half}");
+        assert!((ninety - 0.9).abs() < 0.02, "P(jitter < 0.9) is {ninety}");
     }
 
     #[test]
