@@ -56,6 +56,11 @@ impl GenesisServer {
         Self { task_pool, config }
     }
 
+    /// Returns the world seed every client must use to generate its terrain textures.
+    pub fn seed(&self) -> u64 {
+        self.config.seed
+    }
+
     pub fn generate(&self, chunk: Chunk) -> GenesisTask {
         let config = self.config.clone();
         let task = self.task_pool.spawn(async move {

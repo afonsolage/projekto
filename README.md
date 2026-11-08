@@ -23,6 +23,7 @@ The new design will try to is best to use Bevy ECS and separate client and world
 - **Messages** - Contains both the client and server messages. Client messages are sent to server and Server messages are sent from server to client;
 - **Server** - The server binary which runs the world simulation and process most of the voxel world;
 - **Client** - The game client which handles input and render the game itself;
+- **Textures** - Synthesizes the terrain atlas at runtime from the world seed, including per-material colors and composite layers for complex blocks;
 
 If you need a detailed view, check [ARCHITECTURE](ARCHITECTURE.md). Debug overlays, the archive CLI and the remote BRP API are documented in [docs/debug-tools.md](docs/debug-tools.md).
 

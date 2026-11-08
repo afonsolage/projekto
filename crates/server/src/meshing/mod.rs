@@ -430,8 +430,10 @@ mod test {
             light: [15.0; 4],
         };
 
+        let tint = voxel::KindsDescs::get().get_face_desc(&face);
+        let expected = Vec3::new(tint.color.0, tint.color.1, tint.color.2);
+
         let vertices = generate_vertices(&[face]);
-        let expected = Vec3::new(1.9, 1.7, 1.1);
 
         assert!(!vertices.is_empty());
         for vertex in vertices {

@@ -487,7 +487,17 @@ mod tests {
             |_| Some(&light),
             1,
         );
-        let expected = Vec3::new(1.9, 1.7, 1.1);
+        let expected = {
+            let desc = Kind::from_name("Sand").expect("Sand kind is configured");
+            let face = voxel::Face {
+                vertices: [ChunkVoxel::new(0, 0, 0); 4],
+                side: voxel::Side::Up,
+                kind: desc,
+                light: [15.0; 4],
+            };
+            let tint = voxel::KindsDescs::get().get_face_desc(&face);
+            Vec3::new(tint.color.0, tint.color.1, tint.color.2)
+        };
 
         assert!(!vertices.is_empty());
         assert!(

@@ -8,7 +8,7 @@ use bevy::{
 };
 use projekto_core::voxel;
 
-use projekto_client::{ChunkLocal, ChunkMaterial, ChunkMaterialHandle, KindsAtlasRes};
+use projekto_client::{ChunkLocal, ChunkMaterial, ChunkMaterialHandle, TerrainAtlas};
 
 use crate::DebugViewConfig;
 
@@ -88,10 +88,10 @@ impl Plugin for DebugGridPlugin {
 fn setup_debug_material(
     mut commands: Commands,
     mut materials: ResMut<Assets<DebugChunkMaterial>>,
-    kinds_res: Res<KindsAtlasRes>,
+    atlas: Res<TerrainAtlas>,
 ) {
     let material = materials.add(DebugChunkMaterial {
-        texture: kinds_res.atlas.clone(),
+        texture: atlas.0.clone(),
         data: DebugChunkMaterialData {
             tile_texture_size: 1.0 / voxel::KindsDescs::get().count_tiles() as f32,
             debug_chunk_grid: 1.0,
