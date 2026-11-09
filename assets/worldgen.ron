@@ -5,9 +5,8 @@
 // mask and peaks-and-valleys relief scaled from 60% to 140%, applies the biome shape blend and
 // terrace, then soft-clamps asymptotically to min_height..max_height - density margin. Inside a
 // biome transition band, a deterministic cell hash dithers the surface material by the biome
-// weights. Solidity is the sign of a per-voxel density: the clamped height is the bias and a 3D
-// field displaces the zero crossing, so shelves and overhangs come from the same decision as the
-// surface.
+// weights. Solidity is the sign of one per-voxel density: the clamped height is the bias, and the
+// 3D density field, the overhang field and the cavern field are all terms of that same decision.
 (
     seed: 42,
     sea_level: 64,
@@ -150,24 +149,26 @@
             ),
         ],
     ),
-    // 3D fields are sampled on a coarse lattice and interpolated per voxel.
+    // 3D fields are sampled on a coarse lattice and interpolated per voxel. The overhang field
+    // adds `overhang3d * overhang_strength * stretch` density units, and the cavern field subtracts
+    // `carve_amplitude` density units per unit above `cavern_threshold`.
     caves: (
         enabled: true,
         overhang: (frequency: 0.008, octaves: 2, gain: 0.5, lacunarity: 2.0),
         overhang_strength: 6.0,
         cavern: (frequency: 0.02, octaves: 3, gain: 0.5, lacunarity: 2.0),
-        cavern_threshold: 0.32,
-        band: 56,
+        cavern_threshold: 0.30,
+        carve_amplitude: 4096.0,
         cell_xz: 4,
         cell_y: 8,
     ),
     // Per-voxel density shaping. A voxel is solid when
-    // `(surface - y) * stretch + field * amplitude > 0`, where `surface` is the column height plus
-    // the overhang lift. Erosion maps through `stretch` to a vertical gain, so low-erosion
-    // roughlands keep a crisper zero crossing than high-erosion plains. The bias is clamped to
-    // `max_height - margin`, with `margin = ceil(amplitude / min_stretch)`, so the density
-    // displacement cannot pass the configured ceiling; the separate overhang lift can still push a
-    // little past it, as before. Sampled on a coarse lattice and interpolated per voxel.
+    // `(bias - y) * stretch + field * amplitude + overhang - carve > 0`; the density block owns the
+    // 3D field and the stretch, and the caves block owns the overhang and carve terms. Erosion maps
+    // through `stretch` to a vertical gain, so low-erosion roughlands keep a crisper zero crossing
+    // than high-erosion plains. The bias is clamped to `max_height - margin`, with
+    // `margin = ceil(amplitude / min_stretch) + ceil(overhang_strength)`, so the 3D terms cannot
+    // pass the configured ceiling. Sampled on a coarse lattice and interpolated per voxel.
     density: (
         field: (frequency: 0.04, octaves: 3, gain: 0.5, lacunarity: 2.0),
         amplitude: 14.0,

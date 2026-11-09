@@ -40,6 +40,37 @@ pub struct WorldGenConfig {
     pub density: DensityConfig,
 }
 
+impl WorldGenConfig {
+    /// Blocks the bias is clamped below `max_height` so the 3D terms cannot reach the configured
+    /// ceiling.
+    ///
+    /// The density field and the overhang term move the zero crossing up by at most
+    /// `density.amplitude / min_stretch + caves.overhang_strength` blocks; the cave carve only
+    /// lowers the density, so it cannot raise the surface.
+    pub(crate) fn density_margin(&self) -> i32 {
+        let density = if self.density.amplitude == 0.0 {
+            0
+        } else {
+            (self.density.amplitude / self.density.min_stretch()).ceil() as i32
+        };
+        let overhang = if self.caves.enabled {
+            self.caves.overhang_strength.ceil() as i32
+        } else {
+            0
+        };
+
+        density + overhang
+    }
+}
+
+/// Upper bound for `caves.carve_amplitude`.
+///
+/// The cave carve has to overcome the bias density at cave depth, so it is much larger than the
+/// density amplitude; the shipped value is half this guard and the full range leaves headroom for
+/// retuning cave families. Larger values already carve almost every voxel where the cavern field
+/// crosses the threshold.
+pub const MAX_CARVE_AMPLITUDE: f32 = 8192.0;
+
 /// The 2D noise fields used by the height and climate models.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FieldSet {
@@ -142,10 +173,11 @@ pub struct BiomeSurfaceConfig {
 
 /// Per-voxel density shaping.
 ///
-/// A voxel is solid when `(surface - y) * stretch + field * amplitude > 0`, where `surface` is the
-/// column bias plus the overhang lift and `stretch` is mapped from the column's erosion. The 3D
-/// `field` term moves the zero crossing around the bias, which is what produces shelves, cliffs
-/// and overhangs.
+/// A voxel is solid when `(bias - y) * stretch + field * amplitude + overhang - carve > 0`, where
+/// `stretch` is mapped from the column's erosion, the overhang contribution is expressed in density
+/// units by [`CaveConfig`], and the cave carve is subtracted by the same decision. The 3D `field`
+/// term
+/// moves the zero crossing around the bias, which is what produces shelves, cliffs and overhangs.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DensityConfig {
     /// 3D field that displaces the zero crossing around the bias.
@@ -161,19 +193,6 @@ pub struct DensityConfig {
 }
 
 impl DensityConfig {
-    /// Blocks the bias is clamped below `max_height` so the density term cannot reach it.
-    ///
-    /// With `density = (surface - y) * stretch + field * amplitude`, a field value in `-1..=1`
-    /// moves the zero crossing by at most `amplitude / stretch`; the smallest stretch is the
-    /// worst case. Zero amplitude disables the displacement.
-    pub(crate) fn margin(&self) -> i32 {
-        if self.amplitude == 0.0 {
-            return 0;
-        }
-
-        (self.amplitude / self.min_stretch()).ceil() as i32
-    }
-
     /// Smallest vertical gain the stretch spline can return.
     pub(crate) fn min_stretch(&self) -> f32 {
         self.stretch
@@ -188,22 +207,35 @@ impl DensityConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CaveConfig {
     pub enabled: bool,
-    /// 3D field that lifts or lowers the surface.
+    /// 3D field that adds a density displacement.
     pub overhang: FieldConfig,
-    /// How many blocks the overhang field can move the surface.
+    /// How many blocks the overhang field can move the zero crossing.
     pub overhang_strength: f32,
-    /// 3D field carved out as caverns.
+    /// 3D field subtracted from the density as caverns.
     pub cavern: FieldConfig,
-    /// Voxels where the cavern field, scaled by the blended cave density, is above this value
-    /// become air. Must be non-negative so a higher density always carves more.
+    /// The cavern field, scaled by the blended cave density, must exceed this value before the
+    /// carve term is positive. Must be non-negative so a higher density always carves more.
     pub cavern_threshold: f32,
-    /// Vertical margin around the height range where 3D fields are sampled. The generated
-    /// margin is at least the overhang strength, so a small band cannot clip lifted peaks.
-    pub band: i32,
+    /// Density units subtracted per unit of cavern excess. The term has to overcome the bias term
+    /// at cave depth, so it is much larger than `density.amplitude`; its magnitude sets how sharply
+    /// the cave boundary follows the threshold.
+    pub carve_amplitude: f32,
     /// Horizontal lattice stride. Must divide the chunk width.
     pub cell_xz: u8,
     /// Vertical lattice stride. Must divide the chunk height.
     pub cell_y: u8,
+}
+
+impl CaveConfig {
+    /// Largest density the carve can subtract for a column whose blended cave density is
+    /// `cave_density`, using `cavern <= 1`.
+    pub(crate) fn carve_bound(&self, cave_density: f32) -> f32 {
+        if !self.enabled || self.carve_amplitude == 0.0 {
+            return 0.0;
+        }
+
+        self.carve_amplitude * (cave_density - self.cavern_threshold).max(0.0)
+    }
 }
 
 /// Errors raised while loading or validating [`WorldGenConfig`].
@@ -348,16 +380,6 @@ impl WorldGenConfig {
             )));
         }
 
-        let density_margin = self.density.margin();
-        if self.max_height - density_margin <= self.min_height {
-            return Err(invalid(format!(
-                "max_height ({}) minus the density margin ({density_margin}) must stay above min_height ({}), got {}",
-                self.max_height,
-                self.min_height,
-                self.max_height - density_margin
-            )));
-        }
-
         if !self.caves.overhang_strength.is_finite()
             || !(0.0..=64.0).contains(&self.caves.overhang_strength)
         {
@@ -367,18 +389,22 @@ impl WorldGenConfig {
             )));
         }
 
+        let density_margin = self.density_margin();
+        if self.max_height - density_margin <= self.min_height {
+            return Err(invalid(format!(
+                "max_height ({}) minus the density margin ({density_margin}) must stay above min_height ({}), got {}",
+                self.max_height,
+                self.min_height,
+                self.max_height - density_margin
+            )));
+        }
+
         validate_biomes(&self.biomes, self.caves.overhang_strength)?;
 
         if self.caves.enabled {
             validate_field("caves.overhang", &self.caves.overhang)?;
             validate_field("caves.cavern", &self.caves.cavern)?;
 
-            if self.caves.band < 0 {
-                return Err(invalid(format!(
-                    "caves.band must be non-negative, got {}",
-                    self.caves.band
-                )));
-            }
             if self.caves.cell_xz == 0
                 || !(Chunk::X_AXIS_SIZE as u8).is_multiple_of(self.caves.cell_xz)
             {
@@ -403,6 +429,14 @@ impl WorldGenConfig {
                 return Err(invalid(format!(
                     "caves.cavern_threshold must be in 0..=1, got {}",
                     self.caves.cavern_threshold
+                )));
+            }
+            if !self.caves.carve_amplitude.is_finite()
+                || !(0.0..=MAX_CARVE_AMPLITUDE).contains(&self.caves.carve_amplitude)
+            {
+                return Err(invalid(format!(
+                    "caves.carve_amplitude must be in 0..={MAX_CARVE_AMPLITUDE}, got {}",
+                    self.caves.carve_amplitude
                 )));
             }
         }
@@ -921,6 +955,35 @@ mod tests {
             error.to_string().contains("density margin"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn density_margin_covers_the_density_field_and_the_overhang_lift() {
+        let mut config = WorldGenConfig::load_default();
+        config.density.amplitude = 14.0;
+        assert_eq!(config.density_margin(), 24 + 6);
+
+        config.caves.enabled = false;
+        assert_eq!(config.density_margin(), 24);
+
+        config.density.amplitude = 0.0;
+        assert_eq!(config.density_margin(), 0);
+    }
+
+    #[test]
+    fn rejects_bad_carve_amplitude() {
+        for amplitude in [-1.0, f32::NAN, MAX_CARVE_AMPLITUDE + 1.0] {
+            let mut config = WorldGenConfig::load_default();
+            config.caves.carve_amplitude = amplitude;
+
+            let error = config
+                .validate()
+                .expect_err("invalid carve amplitude should fail");
+            assert!(
+                error.to_string().contains("caves.carve_amplitude"),
+                "unexpected error: {error}"
+            );
+        }
     }
 
     #[test]
