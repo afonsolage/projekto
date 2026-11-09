@@ -159,7 +159,7 @@ This project follows Bevy Org best practices, so the table below maps Bevy's
 
 | Bevy norm | Proposed here |
 | --- | --- |
-| No AI-generated media | Adopt. Textures, models and audio must be hand-made or permissively licensed; `assets_src/` holds the hand-authored sources. |
+| No AI-generated media | Adopt. Textures, models and audio must be hand-made or permissively licensed. Terrain textures are synthesized at runtime by `projekto_textures` from authored recipes; no terrain image is authored or generated as media. |
 | No AI-generated prose | Partially adopt. AI may still draft documentation (as the README already allows) and PR titles/descriptions, but a human must review, rewrite where needed and own the result before it lands. AI output is not pasted directly into issue comments or human conversations. |
 | No AI-generated communication | Adopt. Talk to people directly; do not paste AI output into human conversations. |
 | No AI-authored commits | Adopt. Commits are authored by humans; no AI `Co-authored-by`. |

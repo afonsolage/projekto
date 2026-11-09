@@ -287,6 +287,7 @@ atlas offset and tint per `Kind`/`Side`, so the mesher
 Follow-up: move the recipes into `assets/textures.ron` and let `kind.ron` reference them by name
 instead of duplicating offsets. That would make recipes moddable without recompiling and is why the
 initial design sketched a `material` field, but it was left out to keep this change focused.
+Tracked in #122.
 
 Validation for the current split lives in the client: `check_atlas_layout` fails fast when a
 `kind.ron` offset is not produced by the generator, and the generator tests keep every layer source
@@ -347,24 +348,25 @@ remeshed from stored kinds instead of rendered with stale coordinates.
 The 6% inset ([`voxel.wesl`](assets/shaders/voxel.wesl#L59)) exists to hide atlas bleed. With
 nearest sampling and no mipmaps on a generated atlas, a half-texel inset (`0.5 / 32`) would recover
 the outer pixels of every tile and remove the stretched border band. That is a separate visual
-change and should be tested on its own.
+change and should be tested on its own. Tracked in #118.
 
 ### 7. Later phases
 
 - **Tile variants**: 2–4 variants per Kind, chosen by a deterministic hash of the voxel position in
   the mesher or in the fragment shader. The atlas has 100 slots and the mesher already passes
   `tile_coord_start` per vertex, so variants are cheap, but per-voxel variation must not break
-  greedy merging.
+  greedy merging. Tracked in #120.
 - **Per-biome tints for shared kinds**: biomes currently get distinct Kinds. If two biomes must
   share a Kind with different tints, the biome index has to reach the mesher (per column) or the
-  shader (per vertex attribute), which is a larger chunk-data change.
+  shader (per vertex attribute), which is a larger chunk-data change. Tracked in #119.
 - **Texture arrays**: if the atlas outgrows 100 tiles, a `texture_2d_array` with `REPEAT` removes
   the atlas and the UV clamp entirely.
-- **Biome transitions**: once materials are per-biome, blending two materials across the transition
-  band becomes a natural follow-up.
+- **Biome transitions**: #116 dithers the biome surface materials across the transition band from
+  the selection weights. A smooth per-material blend would need per-face material data and is out
+  of scope here.
 - **Optional artist source tiles**: the generator can gain an optional base-tile input for a
   material if an artist wants hand-authored structure later. That is an explicit extension, not a
-  dependency of this design.
+  dependency of this design. Tracked in #121.
 
 ## Test plan
 
