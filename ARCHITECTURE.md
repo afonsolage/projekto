@@ -230,17 +230,21 @@ specific order:
 
 ### World generation
 
-[`TerrainGenerator`](./crates/server/src/genesis/terrain/mod.rs#L46) builds each chunk from a
+[`TerrainGenerator`](./crates/server/src/genesis/terrain/mod.rs#L50) builds each chunk from a
 validated [`WorldGenConfig`](./crates/server/src/genesis/terrain/config.rs#L11). Two low-frequency
 turbulence fields warp the shape sampling position, and the warped coordinates feed continentalness,
 erosion, weirdness, the landform mask and the upheaval field. The landform mask blends two height
 profiles, `landform_plains` and `landform_mountains`, over continentalness, so plains and mountain
 regions have genuinely different vertical scale rather than different noise amplitude. The upheaval
 field adds tectonic uplift, strongest in mountain landforms, and erosion controls a small
-peaks-and-valleys relief term. [`landform_weight`](./crates/server/src/genesis/terrain/mod.rs#L370),
-[`soft_clamp_height`](./crates/server/src/genesis/terrain/mod.rs#L424) and
-[`terrace`](./crates/server/src/genesis/terrain/mod.rs#L442) keep the vertical profile continuous and
-compress rare peaks asymptotically instead of flattening them against a hard ceiling.
+peaks-and-valleys relief term. [`landform_weight`](./crates/server/src/genesis/terrain/mod.rs#L551),
+[`soft_clamp_height`](./crates/server/src/genesis/terrain/mod.rs#L605) and
+[`terrace`](./crates/server/src/genesis/terrain/mod.rs#L623) keep the vertical profile continuous and
+compress rare peaks asymptotically instead of flattening them against a hard ceiling. The shaped
+column is the bias of the per-voxel density: the soft clamp tops out at
+`max_height - density_margin`, where
+`density_margin = ceil(amplitude / min_stretch) + ceil(overhang_strength)`, which leaves room for the
+density displacement and the overhang term while staying inside the configured ceiling.
 
 Climate samples temperature and humidity at unwarped coordinates, and
 [`BiomeTable::weights_into`](./crates/server/src/genesis/terrain/biome.rs#L104) selects the nearest
@@ -249,16 +253,29 @@ resolve by table order, and the dominant index keeps the squared-distance compar
 blending. [`BiomeTable::blended_shape`](./crates/server/src/genesis/terrain/biome.rs#L181) sums each
 entry's five shape fields over those weights: height offset, relief multiplier, terrace strength,
 cave density and overhang strength. The
-[`sample_column`](./crates/server/src/genesis/terrain/mod.rs#L121) helper combines the landform
+[`sample_column`](./crates/server/src/genesis/terrain/mod.rs#L136) helper combines the landform
 profile, uplift and biome shape, applies one smoothed staircase terrace and the soft top clamp, and
-returns the cached column values. The
-[`samples`](./crates/server/src/genesis/terrain/mod.rs#L189) helper caches an 18x18 column halo per
-chunk, so height, slope, biome and 3D parameters are read once per world column.
+returns the cached column values including the density `stretch` sampled from the same erosion. The
+[`samples`](./crates/server/src/genesis/terrain/mod.rs#L208) helper caches an 18x18 column halo per
+chunk, so bias, slope, biome and 3D parameters are read once per world column.
 
 [`SurfaceRule::kind`](./crates/server/src/genesis/terrain/surface.rs#L29) maps depth and slope to a
 kind: the selected surface biome's top, its subsurface for `subsurface_depth` voxels, the shared
-steep kind above `max_slope`, and the shared deep kind below. The fill pass uses the cached
-overhang strength and cave density to lift the surface and scale the cavern threshold per column.
+steep kind above `max_slope`, and the shared deep kind below. One signed density decides solidity per
+voxel in [`solid_at`](./crates/server/src/genesis/terrain/mod.rs#L421):
+`(bias - y) * stretch + density3d * amplitude + overhang3d * strength * stretch - carve > 0`. The
+overhang field is a density term (its per-biome block strength multiplied by the column `stretch`),
+and the cave carve is subtracted by the same expression:
+`carve_amplitude * max(0, cavern3d * cave_density - cave_threshold)`. There is no separate surface
+test and no post-density carve branch.
+[`evaluation_band`](./crates/server/src/genesis/terrain/mod.rs#L369) unions every column's decision
+range: above `bias + noise_half` the density is provably not positive, and below
+`bias - solid_depth` it is provably positive even after the largest carve the column can receive, so
+those voxels sample no lattice. Inside the band the cavern lattice is sampled first only where the
+base density is provably positive, and otherwise the density and overhang lattices are read before
+the cavern is sampled, because the carve can never increase solidity.
+[`Lattice::with_cells`](./crates/server/src/genesis/terrain/mod.rs#L648) builds the three
+band-limited lattices; nodes are world-aligned, so neighbouring chunks interpolate identical values.
 Inside a transition band,
 [`BiomeTable::surface_biome`](./crates/server/src/genesis/terrain/biome.rs#L154) picks the surface
 biome from the blend weights using a deterministic, uniform jitter derived from a cell hash, so
@@ -268,7 +285,10 @@ share follow its weight. Climate frequencies are low enough that biome cores spa
 blocks.
 
 [`worldgen.ron`](./assets/worldgen.ron) ships five biomes: Plains (Grass over Dirt), Forest
-(Moss over Dirt), Desert (Sand over Sand), Tundra (Snow over Dirt) and Roughlands (Rock).
+(Moss over Dirt), Desert (Sand over Sand), Tundra (Snow over Dirt) and Roughlands (Rock), plus a
+`density` block holding the 3D field, the amplitude, the erosion-to-stretch spline and the lattice
+strides, and a `caves` block holding the overhang and cavern fields, their strengths, the carve
+amplitude and the lattice strides.
 [`kind.ron`](./assets/voxels/kind.ron) binds each biome surface to generated materials: `Grass`
 uses a grass top, a composite grass-over-dirt side and dirt below, `Moss` and `Snow` use the same
 pattern with moss and snow bands, and `Sand` uses one sand tile on every face. The atlas and all
@@ -279,9 +299,11 @@ per-kind [`KindSideTexture::color`](./crates/core/src/voxel/kind.rs#L13) multipl
 every shipped kind, and remains available for future per-biome tints.
 
 Changing the generated world requires bumping
-[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L58) and deleting the local `archive/region`
-directory before a clean visual run. Per-asset reads reject older magic, and the server warns and
-regenerates stale chunks loaded from an old archive.
+[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L62) and deleting the local `archive/region`
+directory before a clean visual run. Version 7 introduced the 3D density decision, and version 8
+unifies caves and overhang into that decision: the overhang lift and the post-density carve are gone,
+and both are terms of the same signed density. Per-asset reads reject older magic, and the server
+warns and regenerates stale chunks loaded from an old archive.
 
 ### Chunk storage
 
@@ -357,7 +379,7 @@ so a slow client never blocks the ECS thread.
 Chunks are stored in region files under `archive/region/{x}_{z}.rgn`, one file per 32×32 chunk
 region. A file starts with a 4096-byte header holding one 4-byte sector index per chunk; each
 asset is bincode-encoded, lz4-compressed and prefixed with
-[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L58). [`ArchiveServer`](./crates/archive/src/server.rs#L162)
+[`VERSION_MAGIC`](./crates/archive/src/lib.rs#L62). [`ArchiveServer`](./crates/archive/src/server.rs#L162)
 owns one worker per region on the I/O task pool, so reads, writes, compression and header flushes
 do not run on the ECS thread.
 
