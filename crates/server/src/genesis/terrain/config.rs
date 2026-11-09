@@ -36,6 +36,8 @@ pub struct WorldGenConfig {
     pub biomes: BiomesConfig,
     /// Caves and overhangs.
     pub caves: CaveConfig,
+    /// Per-voxel density shaping.
+    pub density: DensityConfig,
 }
 
 /// The 2D noise fields used by the height and climate models.
@@ -136,6 +138,50 @@ pub struct BiomeSurfaceConfig {
     pub subsurface: String,
     /// How many voxels of `subsurface` follow `top`.
     pub subsurface_depth: u8,
+}
+
+/// Per-voxel density shaping.
+///
+/// A voxel is solid when `(surface - y) * stretch + field * amplitude > 0`, where `surface` is the
+/// column bias plus the overhang lift and `stretch` is mapped from the column's erosion. The 3D
+/// `field` term moves the zero crossing around the bias, which is what produces shelves, cliffs
+/// and overhangs.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DensityConfig {
+    /// 3D field that displaces the zero crossing around the bias.
+    pub field: FieldConfig,
+    /// Density units applied to the field term.
+    pub amplitude: f32,
+    /// Maps erosion (`-1..=1`) to the positive vertical gain applied to the bias term.
+    pub stretch: SplineConfig,
+    /// Horizontal lattice stride. Must divide the chunk width.
+    pub cell_xz: u8,
+    /// Vertical lattice stride. Must divide the chunk height.
+    pub cell_y: u8,
+}
+
+impl DensityConfig {
+    /// Blocks the bias is clamped below `max_height` so the density term cannot reach it.
+    ///
+    /// With `density = (surface - y) * stretch + field * amplitude`, a field value in `-1..=1`
+    /// moves the zero crossing by at most `amplitude / stretch`; the smallest stretch is the
+    /// worst case. Zero amplitude disables the displacement.
+    pub(crate) fn margin(&self) -> i32 {
+        if self.amplitude == 0.0 {
+            return 0;
+        }
+
+        (self.amplitude / self.min_stretch()).ceil() as i32
+    }
+
+    /// Smallest vertical gain the stretch spline can return.
+    pub(crate) fn min_stretch(&self) -> f32 {
+        self.stretch
+            .points
+            .iter()
+            .map(|&(_, value)| value)
+            .fold(f32::MAX, f32::min)
+    }
 }
 
 /// Caves and overhangs.
@@ -267,9 +313,56 @@ impl WorldGenConfig {
             )));
         }
 
-        if !self.caves.overhang_strength.is_finite() || self.caves.overhang_strength < 0.0 {
+        validate_field("density.field", &self.density.field)?;
+        validate_spline("density.stretch", &self.density.stretch)?;
+
+        if !self.density.amplitude.is_finite() || !(0.0..=32.0).contains(&self.density.amplitude) {
             return Err(invalid(format!(
-                "caves.overhang_strength must be finite and non-negative, got {}",
+                "density.amplitude must be in 0..=32, got {}",
+                self.density.amplitude
+            )));
+        }
+        for (index, &(erosion, value)) in self.density.stretch.points.iter().enumerate() {
+            if !value.is_finite() || !(0.1..=4.0).contains(&value) {
+                return Err(invalid(format!(
+                    "density.stretch.points[{index}] must be in 0.1..=4.0, got {value} at erosion {erosion}"
+                )));
+            }
+        }
+        if self.density.cell_xz == 0
+            || !(Chunk::X_AXIS_SIZE as u8).is_multiple_of(self.density.cell_xz)
+        {
+            return Err(invalid(format!(
+                "density.cell_xz must divide {}, got {}",
+                Chunk::X_AXIS_SIZE,
+                self.density.cell_xz
+            )));
+        }
+        if self.density.cell_y == 0
+            || !(Chunk::Y_AXIS_SIZE as u16).is_multiple_of(self.density.cell_y as u16)
+        {
+            return Err(invalid(format!(
+                "density.cell_y must divide {}, got {}",
+                Chunk::Y_AXIS_SIZE,
+                self.density.cell_y
+            )));
+        }
+
+        let density_margin = self.density.margin();
+        if self.max_height - density_margin <= self.min_height {
+            return Err(invalid(format!(
+                "max_height ({}) minus the density margin ({density_margin}) must stay above min_height ({}), got {}",
+                self.max_height,
+                self.min_height,
+                self.max_height - density_margin
+            )));
+        }
+
+        if !self.caves.overhang_strength.is_finite()
+            || !(0.0..=64.0).contains(&self.caves.overhang_strength)
+        {
+            return Err(invalid(format!(
+                "caves.overhang_strength must be in 0..=64, got {}",
                 self.caves.overhang_strength
             )));
         }
@@ -742,6 +835,108 @@ mod tests {
 
         config.biomes.terrace_step = 64.0;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_bad_density_field() {
+        let mut config = WorldGenConfig::load_default();
+        config.density.field.frequency = 0.0;
+
+        let error = config
+            .validate()
+            .expect_err("zero density frequency should fail");
+        assert!(
+            error.to_string().contains("density.field.frequency"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn rejects_bad_density_amplitude() {
+        for amplitude in [-1.0, f32::NAN, 33.0] {
+            let mut config = WorldGenConfig::load_default();
+            config.density.amplitude = amplitude;
+
+            let error = config
+                .validate()
+                .expect_err("invalid density amplitude should fail");
+            assert!(
+                error.to_string().contains("density.amplitude"),
+                "unexpected error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_bad_density_stretch() {
+        let cases: [(fn(&mut Vec<(f32, f32)>), &str); 4] = [
+            (|points| points.swap(0, 1), "sorted"),
+            (|points| points[1].1 = 0.05, "density.stretch.points[1]"),
+            (|points| points[2].1 = f32::NAN, "density.stretch.points[2]"),
+            (|points| points[0].1 = 5.0, "density.stretch.points[0]"),
+        ];
+
+        for (set, message) in cases {
+            let mut config = WorldGenConfig::load_default();
+            set(&mut config.density.stretch.points);
+
+            let error = config
+                .validate()
+                .expect_err("invalid density stretch should fail");
+            assert!(
+                error.to_string().contains(message),
+                "error does not contain {message:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_bad_density_cells() {
+        let mut config = WorldGenConfig::load_default();
+        config.density.cell_xz = 3;
+        assert!(config.validate().is_err());
+
+        let mut config = WorldGenConfig::load_default();
+        config.density.cell_xz = 0;
+        assert!(config.validate().is_err());
+
+        let mut config = WorldGenConfig::load_default();
+        config.density.cell_y = 5;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_density_margin_larger_than_the_height_range() {
+        let mut config = WorldGenConfig::load_default();
+        config.density.amplitude = 32.0;
+        // The margin must use the smallest stretch; using the largest would fit the range.
+        let last = config.density.stretch.points.len() - 1;
+        config.density.stretch.points[0].1 = 0.1;
+        config.density.stretch.points[last].1 = 4.0;
+
+        let error = config
+            .validate()
+            .expect_err("density margin should not fit the height range");
+        assert!(
+            error.to_string().contains("density margin"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn rejects_out_of_range_global_overhang_strength() {
+        for strength in [-1.0, 65.0] {
+            let mut config = WorldGenConfig::load_default();
+            config.caves.overhang_strength = strength;
+
+            let error = config
+                .validate()
+                .expect_err("out-of-range overhang strength should fail");
+            assert!(
+                error.to_string().contains("caves.overhang_strength"),
+                "unexpected error: {error}"
+            );
+        }
     }
 
     #[test]

@@ -3,8 +3,11 @@
 // position; detail, temperature and humidity are sampled unwarped. Height blends landform_plains
 // and landform_mountains by the landform mask, adds upheaval_lift scaled from 40% to 100% by that
 // mask and peaks-and-valleys relief scaled from 60% to 140%, applies the biome shape blend and
-// terrace, then soft-clamps asymptotically to min_height..max_height. Inside a biome transition
-// band, a deterministic cell hash dithers the surface material by the biome weights.
+// terrace, then soft-clamps asymptotically to min_height..max_height - density margin. Inside a
+// biome transition band, a deterministic cell hash dithers the surface material by the biome
+// weights. Solidity is the sign of a per-voxel density: the clamped height is the bias and a 3D
+// field displaces the zero crossing, so shelves and overhangs come from the same decision as the
+// surface.
 (
     seed: 42,
     sea_level: 64,
@@ -157,5 +160,26 @@
         band: 56,
         cell_xz: 4,
         cell_y: 8,
+    ),
+    // Per-voxel density shaping. A voxel is solid when
+    // `(surface - y) * stretch + field * amplitude > 0`, where `surface` is the column height plus
+    // the overhang lift. Erosion maps through `stretch` to a vertical gain, so low-erosion
+    // roughlands keep a crisper zero crossing than high-erosion plains. The bias is clamped to
+    // `max_height - margin`, with `margin = ceil(amplitude / min_stretch)`, so the density
+    // displacement cannot pass the configured ceiling; the separate overhang lift can still push a
+    // little past it, as before. Sampled on a coarse lattice and interpolated per voxel.
+    density: (
+        field: (frequency: 0.04, octaves: 3, gain: 0.5, lacunarity: 2.0),
+        amplitude: 14.0,
+        stretch: (
+            points: [
+                (-1.0, 1.35),
+                (-0.3, 1.0),
+                (0.3, 0.85),
+                (1.0, 0.6),
+            ],
+        ),
+        cell_xz: 4,
+        cell_y: 4,
     ),
 )

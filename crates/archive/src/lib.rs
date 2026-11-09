@@ -55,7 +55,9 @@ pub const MAGIC_SIZE: usize = 8;
 /// Version 5 adds climate-selected biomes and their surface kinds.
 /// Version 6 changes the generated world: landform-profile terrain, tectonic uplift, domain-warped
 /// shape fields, blended biome shapes and materials, terraces, caves and overhangs.
-pub const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x06];
+/// Version 7 changes the generated world: 3D density shaping replaces the height test, the bias is
+/// clamped below `max_height` and the surface is the density zero crossing.
+pub const VERSION_MAGIC: [u8; MAGIC_SIZE] = [0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x00, 0x07];
 
 /// Errors which can happens while using the archive crate.
 /// Check variants for description.

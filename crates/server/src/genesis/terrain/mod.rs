@@ -4,8 +4,12 @@
 //! a mountain height profile, and an upheaval field adds tectonic uplift. Erosion controls a small
 //! peaks-and-valleys relief term, and temperature and humidity select biomes and blend their shape
 //! parameters (height offset, relief multiplier, terrace strength, cave density and overhang
-//! strength) over a transition band. Each biome supplies its own surface materials; overhangs and
-//! caves come from 3D fields sampled on a coarse lattice and interpolated per voxel.
+//! strength) over a transition band. Each biome supplies its own surface materials.
+//!
+//! The shaped column is the bias of a per-voxel density: a 3D noise field and an erosion-driven
+//! vertical stretch decide where the density crosses zero around that bias, so shelves, cliffs and
+//! overhangs come from the same solidity decision as the surface. Overhang lift and cavern carving
+//! stay separate 3D fields sampled on coarse lattices and interpolated per voxel.
 
 mod biome;
 mod config;
@@ -41,6 +45,7 @@ const SEED_LANDFORM: u64 = 9;
 const SEED_UPHEAVAL: u64 = 10;
 const SEED_TURBULENCE_X: u64 = 11;
 const SEED_TURBULENCE_Z: u64 = 12;
+const SEED_DENSITY: u64 = 13;
 
 /// Generates chunks from a validated [`WorldGenConfig`].
 pub(crate) struct TerrainGenerator {
@@ -51,6 +56,7 @@ pub(crate) struct TerrainGenerator {
     detail: NoiseField,
     overhang: Option<NoiseField>,
     cavern: Option<NoiseField>,
+    density: NoiseField,
     landform: NoiseField,
     upheaval: NoiseField,
     turbulence_x: NoiseField,
@@ -59,9 +65,14 @@ pub(crate) struct TerrainGenerator {
     landform_mountains: Spline,
     upheaval_lift: Spline,
     relief_amplitude: Spline,
+    density_stretch: Spline,
     temperature: NoiseField,
     humidity: NoiseField,
     biomes: BiomeTable,
+    /// Blocks the bias is clamped below `max_height` so the density term cannot reach it.
+    density_margin: i32,
+    /// Bias-to-voxel distance outside which the 3D lattices are not needed.
+    density_aperture: i32,
 }
 
 impl TerrainGenerator {
@@ -75,6 +86,14 @@ impl TerrainGenerator {
             .caves
             .enabled
             .then(|| NoiseField::new(&config.caves.cavern, derive_seed(seed, SEED_CAVERN)));
+        let density_margin = config.density.margin();
+        // The overhang lift is capped by the global strength, so the aperture that covers both the
+        // density displacement and the lifted surface is the margin plus that strength.
+        let overhang_margin = if config.caves.enabled {
+            config.caves.overhang_strength.ceil() as i32
+        } else {
+            0
+        };
 
         Self {
             continentalness: NoiseField::new(
@@ -86,6 +105,7 @@ impl TerrainGenerator {
             detail: NoiseField::new(&config.fields.detail, derive_seed(seed, SEED_DETAIL)),
             overhang,
             cavern,
+            density: NoiseField::new(&config.density.field, derive_seed(seed, SEED_DENSITY)),
             landform: NoiseField::new(&config.fields.landform, derive_seed(seed, SEED_LANDFORM)),
             upheaval: NoiseField::new(&config.fields.upheaval, derive_seed(seed, SEED_UPHEAVAL)),
             turbulence_x: NoiseField::new(
@@ -100,17 +120,23 @@ impl TerrainGenerator {
             landform_mountains: Spline::new(&config.landform_mountains),
             upheaval_lift: Spline::new(&config.upheaval_lift),
             relief_amplitude: Spline::new(&config.relief_amplitude),
+            density_stretch: Spline::new(&config.density.stretch),
             temperature: NoiseField::new(
                 &config.fields.temperature,
                 derive_seed(seed, SEED_TEMPERATURE),
             ),
             humidity: NoiseField::new(&config.fields.humidity, derive_seed(seed, SEED_HUMIDITY)),
             biomes: BiomeTable::new(&config.biomes, config.caves.overhang_strength),
+            density_margin,
+            density_aperture: density_margin + overhang_margin,
             config,
         }
     }
 
-    /// Surface height at world coordinates `(x, z)`.
+    /// Density bias at world coordinates `(x, z)`.
+    ///
+    /// The generated surface crosses zero around this height, displaced by the 3D density field;
+    /// the returned value is the column bias, not the top solid voxel.
     #[cfg(test)]
     pub(crate) fn height(&self, x: f32, z: f32) -> f32 {
         let mut weights = vec![0.0; self.biomes.len()];
@@ -168,14 +194,19 @@ impl TerrainGenerator {
             + shape.height_offset;
         let terraced =
             raw + shape.terrace_strength * (terrace(raw, self.config.biomes.terrace_step) - raw);
+        // The density term can move the zero crossing up by `density_margin`, so the bias is
+        // clamped below `max_height` to keep the density displacement inside the configured
+        // range. The separate overhang lift can still push a little past it, as it could before
+        // this change.
         let height = soft_clamp_height(
             terraced,
             self.config.min_height as f32,
-            self.config.max_height as f32,
+            (self.config.max_height - self.density_margin) as f32,
         );
 
         ColumnSample {
             height,
+            stretch: self.density_stretch.sample(erosion),
             surface_biome,
             overhang_strength: shape.overhang_strength,
             cave_density: shape.cave_density,
@@ -223,29 +254,27 @@ impl TerrainGenerator {
 
     pub(crate) fn generate(&self, chunk: Chunk, kind: &mut ChunkStorage<Kind>) {
         let origin: Vec3 = chunk.into();
-        let (y_min, y_max) = self.lattice_bounds();
-
-        let overhang = self
-            .overhang
-            .as_ref()
-            .map(|field| Lattice::new(field, origin, y_min, y_max, &self.config.caves));
-        let cavern = self
-            .cavern
-            .as_ref()
-            .map(|field| Lattice::new(field, origin, y_min, y_max, &self.config.caves));
-
         let samples = self.samples(chunk);
+        let lattices = self.lattices(chunk, &samples);
         let deep = self.biomes.deep();
+        let aperture = self.density_aperture as f32;
 
         for x in 0..Chunk::X_AXIS_SIZE {
+            let world_x = origin.x + x as f32;
+
             for z in 0..Chunk::Z_AXIS_SIZE {
+                let world_z = origin.z + z as f32;
                 let column = samples.column(x, z);
                 let slope = samples.slope(x, z);
                 let mut top = None;
+                // Every voxel above the bias plus the aperture is air by the density bound, so the
+                // scan can stop there instead of walking the rest of the column.
+                let y_end = ((column.height + aperture).floor() as i32 + 1)
+                    .clamp(0, Chunk::Y_AXIS_SIZE as i32) as usize;
 
-                for y in 0..Chunk::Y_AXIS_SIZE {
+                for y in 0..y_end {
                     let voxel = ChunkVoxel::new(x as u8, y as u8, z as u8);
-                    if self.is_solid(column, origin, voxel, overhang.as_ref(), cavern.as_ref()) {
+                    if self.is_solid(column, world_x, y as f32, world_z, &lattices) {
                         kind.set(voxel, deep);
                         top = Some(y);
                     }
@@ -281,12 +310,88 @@ impl TerrainGenerator {
         kind.pack();
     }
 
-    /// Vertical range the 3D lattices must cover.
+    /// Builds the 3D lattices used by one chunk's fill pass.
     ///
-    /// The overhang field moves the surface by up to the global `overhang_strength`, which is also
-    /// the validated ceiling for every biome shape, so the sampling margin is the larger of `band`
-    /// and that strength. Without this, a small `band` clamps the field over the top or bottom of
-    /// the moved surface.
+    /// The overhang and density lattices only cover the band around the chunk's column biases where
+    /// the density decision can change; outside it [`TerrainGenerator::is_solid`] decides without
+    /// sampling. The cavern lattice keeps the full height range because caves are carved under every
+    /// column.
+    fn lattices(&self, chunk: Chunk, samples: &ChunkSamples) -> ChunkLattices {
+        let origin: Vec3 = chunk.into();
+        let (band_min, band_max) = self.density_bounds(samples);
+        let caves = &self.config.caves;
+        let caves_cell_xz = caves.cell_xz;
+        let caves_cell_y = caves.cell_y;
+
+        let overhang = (caves.enabled && caves.overhang_strength > 0.0).then(|| {
+            let field = self
+                .overhang
+                .as_ref()
+                .expect("caves enable the overhang field");
+
+            Lattice::with_cells(
+                field,
+                origin,
+                band_min,
+                band_max,
+                caves_cell_xz,
+                caves_cell_y,
+            )
+        });
+        let density = (self.config.density.amplitude > 0.0).then(|| {
+            Lattice::with_cells(
+                &self.density,
+                origin,
+                band_min,
+                band_max,
+                self.config.density.cell_xz,
+                self.config.density.cell_y,
+            )
+        });
+        let (y_min, y_max) = self.lattice_bounds();
+        let cavern = self
+            .cavern
+            .as_ref()
+            .map(|field| Lattice::new(field, origin, y_min, y_max, caves));
+
+        ChunkLattices {
+            overhang,
+            density,
+            cavern,
+        }
+    }
+
+    /// Whole-voxel vertical range where the density decision can move the surface.
+    ///
+    /// The bias is clamped to `max_height - density_margin` and the density term moves the crossing
+    /// by at most `amplitude / min_stretch` blocks either way, while the overhang lift moves the
+    /// surface by at most the global overhang strength. Extending the chunk's bias range by that
+    /// aperture and aligning to the density cell grid covers every voxel the early-outs cannot
+    /// decide, and keeps the lattice nodes on the same world grid as the neighbouring chunks.
+    fn density_bounds(&self, samples: &ChunkSamples) -> (i32, i32) {
+        let mut min = f32::MAX;
+        let mut max = f32::MIN;
+
+        for x in 0..Chunk::X_AXIS_SIZE {
+            for z in 0..Chunk::Z_AXIS_SIZE {
+                let height = samples.column(x, z).height;
+                min = min.min(height);
+                max = max.max(height);
+            }
+        }
+
+        let y_min = (min.floor() as i32 - self.density_aperture).max(0);
+        let y_max = (max.ceil() as i32 + self.density_aperture).min(Chunk::Y_AXIS_SIZE as i32);
+
+        (y_min, y_max)
+    }
+
+    /// Vertical range the cavern lattice must cover.
+    ///
+    /// The range keeps the conservative cave window from before the density split: the larger of
+    /// `caves.band` and the global overhang strength extends `min_height..=max_height` on both
+    /// sides. The overhang and density lattices are band-limited by [`Self::density_bounds`]
+    /// instead.
     fn lattice_bounds(&self) -> (i32, i32) {
         let margin = self
             .config
@@ -299,37 +404,69 @@ impl TerrainGenerator {
         (y_min, y_max)
     }
 
+    /// Returns whether one voxel is solid before the surface pass.
+    ///
+    /// Solidity is the sign of
+    /// `(surface - world_y) * stretch + density3d * amplitude`, where `surface` is the bias plus the
+    /// overhang lift. The overhang and density lattices are only sampled within `height ± aperture`:
+    /// above that band the density is strictly negative and below it strictly positive, so the two
+    /// early-outs keep the far voxels from sampling those lattices. The cavern carve still samples
+    /// its full-range lattice for every solid candidate below the bias.
     fn is_solid(
         &self,
         column: ColumnSample,
-        origin: Vec3,
-        voxel: ChunkVoxel,
-        overhang: Option<&Lattice>,
+        world_x: f32,
+        world_y: f32,
+        world_z: f32,
+        lattices: &ChunkLattices,
+    ) -> bool {
+        let aperture = self.density_aperture as f32;
+
+        if world_y > column.height + aperture {
+            return false;
+        }
+
+        let solid = if world_y < column.height - aperture {
+            true
+        } else {
+            let surface = match &lattices.overhang {
+                Some(overhang) => {
+                    column.height
+                        + overhang.sample(world_x, world_y, world_z) * column.overhang_strength
+                }
+                None => column.height,
+            };
+            let mut density = (surface - world_y) * column.stretch;
+
+            if let Some(field) = &lattices.density {
+                density += field.sample(world_x, world_y, world_z) * self.config.density.amplitude;
+            }
+
+            density > 0.0
+        };
+
+        solid && !self.carved(column, world_x, world_y, world_z, lattices.cavern.as_ref())
+    }
+
+    /// Whether the cavern field carves a solid candidate out.
+    fn carved(
+        &self,
+        column: ColumnSample,
+        world_x: f32,
+        world_y: f32,
+        world_z: f32,
         cavern: Option<&Lattice>,
     ) -> bool {
-        let world_x = origin.x + f32::from(voxel.x);
-        let world_y = f32::from(voxel.y);
-        let world_z = origin.z + f32::from(voxel.z);
-
-        let mut surface = column.height;
-        if let Some(overhang) = overhang {
-            surface += overhang.sample(world_x, world_y, world_z) * column.overhang_strength;
-        }
-
-        if world_y >= surface {
+        if world_y >= column.height || column.cave_density <= 0.0 {
             return false;
         }
 
-        if world_y < column.height
-            && column.cave_density > 0.0
-            && let Some(cavern) = cavern
-            && cavern.sample(world_x, world_y, world_z) * column.cave_density
-                > self.config.caves.cavern_threshold
-        {
+        let Some(cavern) = cavern else {
             return false;
-        }
+        };
 
-        true
+        cavern.sample(world_x, world_y, world_z) * column.cave_density
+            > self.config.caves.cavern_threshold
     }
 
     #[cfg(test)]
@@ -338,13 +475,26 @@ impl TerrainGenerator {
     }
 }
 
+/// 3D lattices sampled by one chunk's fill pass.
+struct ChunkLattices {
+    /// Band-limited lattice of the overhang lift.
+    overhang: Option<Lattice>,
+    /// Band-limited lattice of the density field, built only when it moves the surface.
+    density: Option<Lattice>,
+    /// Full-range lattice of the cavern field.
+    cavern: Option<Lattice>,
+}
+
 /// Number of columns cached per axis for a chunk: the 16 chunk columns plus one of margin.
 const HALO: usize = Chunk::X_AXIS_SIZE + 2;
 
 /// Cached shape values for one world column.
 #[derive(Clone, Copy, Default)]
 struct ColumnSample {
+    /// Bias of the density zero crossing, before the 3D density displacement.
     height: f32,
+    /// Vertical gain applied to the bias term of the density.
+    stretch: f32,
     surface_biome: usize,
     overhang_strength: f32,
     cave_density: f32,
@@ -460,9 +610,25 @@ struct Lattice {
 }
 
 impl Lattice {
+    /// Builds a lattice using the cave configuration's strides.
     fn new(field: &NoiseField, origin: Vec3, y_min: i32, y_max: i32, config: &CaveConfig) -> Self {
-        let cell_xz = config.cell_xz as i32;
-        let cell_y = config.cell_y as i32;
+        Self::with_cells(field, origin, y_min, y_max, config.cell_xz, config.cell_y)
+    }
+
+    /// Builds a world-aligned lattice with explicit strides.
+    ///
+    /// The strides must divide the chunk width and height (validated by the caller), so the nodes
+    /// stay on one world grid and neighbouring chunks interpolate identical values.
+    fn with_cells(
+        field: &NoiseField,
+        origin: Vec3,
+        y_min: i32,
+        y_max: i32,
+        cell_xz: u8,
+        cell_y: u8,
+    ) -> Self {
+        let cell_xz = i32::from(cell_xz);
+        let cell_y = i32::from(cell_y);
         let x0 = origin.x as i32;
         let y0 = y_min.div_euclid(cell_y) * cell_y;
         let z0 = origin.z as i32;
@@ -538,7 +704,7 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        config::{BiomeParameters, BiomeShapeConfig},
+        config::{BiomeParameters, BiomeShapeConfig, FieldConfig, SplineConfig},
         *,
     };
     use std::collections::BTreeMap;
@@ -546,6 +712,17 @@ mod tests {
     fn generator(seed: u64) -> TerrainGenerator {
         let mut config = WorldGenConfig::load_default();
         config.seed = seed;
+        TerrainGenerator::new(config)
+    }
+
+    /// Loads the shipped config with the density displacement disabled.
+    ///
+    /// Tests about caves, overhangs and the height surface isolate those stages from the density
+    /// term, which moves the top solid voxel around the column bias.
+    fn generator_without_density(seed: u64) -> TerrainGenerator {
+        let mut config = WorldGenConfig::load_default();
+        config.seed = seed;
+        config.density.amplitude = 0.0;
         TerrainGenerator::new(config)
     }
 
@@ -608,6 +785,55 @@ mod tests {
         kind
     }
 
+    fn lattices(generator: &TerrainGenerator, chunk: Chunk) -> (ChunkSamples, ChunkLattices) {
+        let samples = generator.samples(chunk);
+        let lattices = generator.lattices(chunk, &samples);
+
+        (samples, lattices)
+    }
+
+    /// Recomputes one voxel's density in world space without the early-outs.
+    fn density_at(
+        generator: &TerrainGenerator,
+        column: ColumnSample,
+        lattices: &ChunkLattices,
+        world_x: f32,
+        world_y: f32,
+        world_z: f32,
+    ) -> f32 {
+        let surface = match &lattices.overhang {
+            Some(overhang) => {
+                column.height
+                    + overhang.sample(world_x, world_y, world_z) * column.overhang_strength
+            }
+            None => column.height,
+        };
+        let density3d = lattices.density.as_ref().map_or(0.0, |field| {
+            field.sample(world_x, world_y, world_z) * generator.config().density.amplitude
+        });
+
+        (surface - world_y) * column.stretch + density3d
+    }
+
+    fn top_solid(kind: &ChunkStorage<Kind>, x: u8, z: u8) -> Option<u8> {
+        (0..=Chunk::Y_END)
+            .rev()
+            .find(|&y| !kind.get(ChunkVoxel::new(x, y, z)).is_none())
+    }
+
+    /// Upper bound of the bias clamp: the configured ceiling minus the density margin.
+    fn bias_ceiling(generator: &TerrainGenerator) -> f32 {
+        (generator.config().max_height - generator.config().density.margin()) as f32
+    }
+
+    /// First and last world-space lattice node on the vertical axis.
+    fn lattice_node_range(lattice: &Lattice) -> (i32, i32) {
+        let bottom = lattice.origin[1];
+        let top = bottom + (lattice.size[1] as i32 - 1) * lattice.cell[1] as i32;
+
+        (bottom, top)
+    }
+
     fn kind_counts(kind: &ChunkStorage<Kind>) -> BTreeMap<&'static str, usize> {
         let mut counts = BTreeMap::new();
 
@@ -647,8 +873,11 @@ mod tests {
     #[test]
     fn height_stays_within_configured_bounds_and_varies() {
         let generator = generator(42);
-        let min = generator.config().min_height as f32;
-        let max = generator.config().max_height as f32;
+        let config = generator.config();
+        let min = config.min_height as f32;
+        // The bias is clamped below `max_height` by the density margin, so the density
+        // displacement can use the rest of the configured ceiling.
+        let max = (config.max_height - config.density.margin()) as f32;
         let mut sampled_min = f32::MAX;
         let mut sampled_max = f32::MIN;
 
@@ -792,8 +1021,24 @@ mod tests {
     }
 
     #[test]
+    fn shipped_density_margin_and_ceiling_are_pinned() {
+        let config = WorldGenConfig::load_default();
+
+        assert!(
+            (config.density.min_stretch() - 0.6).abs() < 1e-6,
+            "shipped stretch floor changed: {}",
+            config.density.min_stretch()
+        );
+        assert_eq!(config.density.margin(), 24);
+        assert_eq!(config.max_height - config.density.margin(), 228);
+    }
+
+    #[test]
     fn generator_compresses_peaks_instead_of_plateauing() {
         let mut config = WorldGenConfig::load_default();
+        let margin = config.density.margin();
+        let max = (config.max_height - margin) as f32;
+        let knee = max - 16.0;
 
         for (_, value) in &mut config.landform_mountains.points {
             *value = 340.0;
@@ -811,15 +1056,68 @@ mod tests {
             let height = generator.height(x, z);
 
             assert!(
-                height < 252.0,
+                height < max,
                 "height reached the hard ceiling at ({x}, {z}): {height}"
             );
-            if height > 236.0 {
+            if height > knee {
                 compressed += 1;
             }
         }
 
         assert!(compressed > 0, "no column exercised the soft-clamp branch");
+    }
+
+    /// With density enabled and the terrain saturated against the bias ceiling, the generated
+    /// surface must stay below `max_height`: the margin has to cover the density displacement at
+    /// the highest bias, not only for average columns.
+    #[test]
+    fn density_keeps_saturated_peaks_below_the_ceiling() {
+        let mut config = WorldGenConfig::load_default();
+        config.caves.enabled = false;
+        // Saturate every landform weight: both profiles stay above the clamp for any mask value.
+        for (_, value) in &mut config.landform_plains.points {
+            *value = 340.0;
+        }
+        for (_, value) in &mut config.landform_mountains.points {
+            *value = 340.0;
+        }
+        for (_, value) in &mut config.upheaval_lift.points {
+            *value = 0.0;
+        }
+        let generator = TerrainGenerator::new(config);
+        let ceiling = generator.config().max_height;
+        let upper = bias_ceiling(&generator);
+        let mut displaced_above_bias = 0;
+
+        for chunk in [Chunk::new(0, 0), Chunk::new(1, 0), Chunk::new(-1, 1)] {
+            let kind = generate(&generator, chunk);
+            let origin: Vec3 = chunk.into();
+
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    let top = top_solid(&kind, x as u8, z as u8)
+                        .unwrap_or_else(|| panic!("no solid voxel at ({x}, {z}) in {chunk:?}"));
+                    let bias = generator.height(origin.x + x as f32, origin.z + z as f32);
+
+                    assert!(
+                        bias > upper - 6.0,
+                        "the saturated test did not clamp the bias at ({x}, {z}): {bias}"
+                    );
+                    assert!(
+                        (top as i32) < ceiling,
+                        "density pushed a saturated surface over max_height at ({x}, {z}) in {chunk:?}: {top}"
+                    );
+                    if top as f32 + 1.0 > bias + 0.5 {
+                        displaced_above_bias += 1;
+                    }
+                }
+            }
+        }
+
+        assert!(
+            displaced_above_bias > 0,
+            "density never displaced a saturated surface upward"
+        );
     }
 
     #[test]
@@ -1118,7 +1416,7 @@ mod tests {
 
     #[test]
     fn caves_carve_below_the_surface() {
-        let generator = generator(42);
+        let generator = generator_without_density(42);
         let mut carved = 0usize;
         let mut solid_below = 0usize;
 
@@ -1153,6 +1451,7 @@ mod tests {
     #[test]
     fn overhang_strength_moves_the_surface_up() {
         let mut config = WorldGenConfig::load_default();
+        config.density.amplitude = 0.0;
         config.caves.overhang_strength = 24.0;
         config.caves.cavern_threshold = 1.0;
         for entry in &mut config.biomes.entries {
@@ -1179,14 +1478,8 @@ mod tests {
     }
 
     #[test]
-    fn lattice_is_continuous_across_chunk_borders() {
+    fn band_limited_overhang_lattice_is_continuous_across_chunk_borders() {
         let generator = generator(42);
-        let field = generator
-            .overhang
-            .as_ref()
-            .expect("default config enables caves");
-        let config = &generator.config().caves;
-        let (y_min, y_max) = generator.lattice_bounds();
 
         // (left chunk, right chunk, shared world x, shared world z)
         let cases = [
@@ -1197,46 +1490,82 @@ mod tests {
         ];
 
         for (left_chunk, right_chunk, x, z) in cases {
-            let left = Lattice::new(field, left_chunk.into(), y_min, y_max, config);
-            let right = Lattice::new(field, right_chunk.into(), y_min, y_max, config);
+            let (_, left) = lattices(&generator, left_chunk);
+            let (_, right) = lattices(&generator, right_chunk);
+            let left = left
+                .overhang
+                .expect("default config enables the overhang lattice");
+            let right = right
+                .overhang
+                .expect("default config enables the overhang lattice");
+            let (left_bottom, left_top) = lattice_node_range(&left);
+            let (right_bottom, right_top) = lattice_node_range(&right);
+            let y_min = left_bottom.max(right_bottom);
+            let y_max = left_top.min(right_top);
 
-            for step in 0..32 {
-                let y = step as f32 * 7.0 + 1.0;
-                let a = left.sample(x, y, z);
-                let b = right.sample(x, y, z);
+            assert!(
+                y_min <= y_max,
+                "overhang lattices of {left_chunk:?} and {right_chunk:?} do not overlap"
+            );
+
+            for y in y_min..=y_max {
+                let a = left.sample(x, y as f32, z);
+                let b = right.sample(x, y as f32, z);
 
                 assert!(
                     (a - b).abs() < 1e-5,
-                    "lattice differs at {left_chunk:?}/{right_chunk:?} border: {a} != {b}"
+                    "band-limited overhang lattice differs at {left_chunk:?}/{right_chunk:?} border y={y}: {a} != {b}"
                 );
             }
         }
     }
 
     #[test]
-    fn lattice_covers_the_overhang_range() {
+    fn band_lattices_cover_the_sampled_range() {
         let mut config = WorldGenConfig::load_default();
-        config.caves.band = 0;
         config.caves.overhang_strength = 24.0;
         config.max_height = 200;
+        config.density.amplitude = 24.0;
         let generator = TerrainGenerator::new(config);
-        let (y_min, y_max) = generator.lattice_bounds();
-        let field = generator.overhang.as_ref().expect("caves are enabled");
-        let config = &generator.config().caves;
-        let lattice = Lattice::new(field, Chunk::new(0, 0).into(), y_min, y_max, config);
+        let aperture = generator.density_aperture as f32;
 
-        let bottom = lattice.origin[1];
-        let top = bottom + (lattice.size[1] as i32 - 1) * lattice.cell[1] as i32;
+        for chunk in [
+            Chunk::new(0, 0),
+            Chunk::new(1, 0),
+            Chunk::new(-1, 1),
+            Chunk::new(0, -1),
+        ] {
+            let (samples, lattices) = lattices(&generator, chunk);
+            let overhang = lattices
+                .overhang
+                .as_ref()
+                .expect("caves enable the overhang lattice");
+            let density = lattices
+                .density
+                .as_ref()
+                .expect("amplitude enables the density lattice");
+            let (overhang_bottom, overhang_top) = lattice_node_range(overhang);
+            let (density_bottom, density_top) = lattice_node_range(density);
 
-        assert!(
-            bottom <= y_min,
-            "lattice bottom {bottom} does not cover {y_min}"
-        );
-        assert!(top >= y_max, "lattice top {top} does not cover {y_max}");
-        assert!(
-            y_max >= 200 + 24,
-            "lattice bounds do not include the overhang lift: {y_max}"
-        );
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    let height = samples.column(x, z).height;
+                    // `is_solid` samples the band lattices for `world_y` strictly between these
+                    // bounds; the lattice nodes must cover every such voxel.
+                    let low = (height - aperture).floor() as i32;
+                    let high = (height + aperture).ceil() as i32;
+
+                    assert!(
+                        overhang_bottom <= low && overhang_top >= high,
+                        "overhang lattice {overhang_bottom}..={overhang_top} misses the band {low}..={high} at ({x}, {z}) in {chunk:?}"
+                    );
+                    assert!(
+                        density_bottom <= low && density_top >= high,
+                        "density lattice {density_bottom}..={density_top} misses the band {low}..={high} at ({x}, {z}) in {chunk:?}"
+                    );
+                }
+            }
+        }
     }
 
     fn two_entry_config(transition: f32) -> WorldGenConfig {
@@ -1403,7 +1732,7 @@ mod tests {
             let expected = soft_clamp_height(
                 raw,
                 generator.config().min_height as f32,
-                generator.config().max_height as f32,
+                bias_ceiling(&generator),
             );
             let actual = generator.height(x, z);
 
@@ -1480,7 +1809,7 @@ mod tests {
             let expected = soft_clamp_height(
                 base + peaks_and_valleys * amplitude + detail,
                 generator.config().min_height as f32,
-                generator.config().max_height as f32,
+                bias_ceiling(&generator),
             );
 
             assert!(
@@ -1578,6 +1907,7 @@ mod tests {
     fn caves_disabled_top_matches_height() {
         let mut config = WorldGenConfig::load_default();
         config.caves.enabled = false;
+        config.density.amplitude = 0.0;
         let generator = TerrainGenerator::new(config);
 
         for chunk in [Chunk::new(0, 0), Chunk::new(1, 0), Chunk::new(-1, 0)] {
@@ -1602,6 +1932,7 @@ mod tests {
     #[test]
     fn cave_density_zero_removes_caverns() {
         let mut config = WorldGenConfig::load_default();
+        config.density.amplitude = 0.0;
         config.caves.overhang_strength = 0.0;
         config.caves.cavern_threshold = 0.0;
         for entry in &mut config.biomes.entries {
@@ -1635,6 +1966,7 @@ mod tests {
     fn cave_density_increases_carved_volume() {
         fn carved(density: f32) -> usize {
             let mut config = WorldGenConfig::load_default();
+            config.density.amplitude = 0.0;
             config.caves.overhang_strength = 0.0;
             for entry in &mut config.biomes.entries {
                 entry.shape.cave_density = density;
@@ -1718,6 +2050,7 @@ mod tests {
     #[test]
     fn overhang_strength_zero_keeps_the_surface_at_height() {
         let mut config = WorldGenConfig::load_default();
+        config.density.amplitude = 0.0;
         config.caves.cavern_threshold = 1.0;
         for entry in &mut config.biomes.entries {
             entry.shape.overhang_strength = 0.0;
@@ -1745,6 +2078,612 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn zero_amplitude_reproduces_the_height_surface() {
+        let mut config = WorldGenConfig::load_default();
+        config.seed = 42;
+        config.caves.enabled = false;
+        config.density.amplitude = 0.0;
+        let generator = TerrainGenerator::new(config);
+
+        for chunk in [Chunk::new(0, 0), Chunk::new(1, -1)] {
+            let kind = generate(&generator, chunk);
+            let origin: Vec3 = chunk.into();
+
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    let height = generator.height(origin.x + x as f32, origin.z + z as f32);
+
+                    for y in 0..Chunk::Y_AXIS_SIZE {
+                        let voxel = ChunkVoxel::new(x as u8, y as u8, z as u8);
+                        let expected = (y as f32) < height;
+                        let actual = !kind.get(voxel).is_none();
+
+                        assert_eq!(
+                            actual, expected,
+                            "zero-amplitude density changed ({x}, {y}, {z}) in {chunk:?}"
+                        );
+                    }
+
+                    let top = top_solid(&kind, x as u8, z as u8)
+                        .unwrap_or_else(|| panic!("no solid voxel at ({x}, {z}) in {chunk:?}"));
+                    let expected = (height.ceil() as i32 - 1) as u8;
+
+                    assert_eq!(
+                        top, expected,
+                        "zero-amplitude top differs from the height at ({x}, {z}) in {chunk:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn density_displaces_the_surface_inside_the_configured_ceiling() {
+        let mut config = WorldGenConfig::load_default();
+        config.seed = 42;
+        config.caves.enabled = false;
+        let generator = TerrainGenerator::new(config);
+        let margin = generator.config().density.margin();
+        let min = generator.config().min_height;
+        let max = generator.config().max_height;
+        let mut displaced = 0;
+
+        for chunk in [Chunk::new(0, 0), Chunk::new(1, 0), Chunk::new(-1, 1)] {
+            let kind = generate(&generator, chunk);
+            let origin: Vec3 = chunk.into();
+
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    let height = generator.height(origin.x + x as f32, origin.z + z as f32);
+                    let top = top_solid(&kind, x as u8, z as u8)
+                        .unwrap_or_else(|| panic!("no solid voxel at ({x}, {z}) in {chunk:?}"));
+                    let bias_top = (height.ceil() as i32 - 1) as u8;
+
+                    assert!(
+                        (top as i32) < max,
+                        "density pushed the surface over max_height at ({x}, {z}) in {chunk:?}: {top}"
+                    );
+                    assert!(
+                        top as i32 + 1 >= min - margin,
+                        "density pushed the surface too far below min_height at ({x}, {z}) in {chunk:?}: {top}"
+                    );
+                    if top != bias_top {
+                        displaced += 1;
+                    }
+                }
+            }
+        }
+
+        assert!(displaced > 0, "density never moved the top solid voxel");
+    }
+
+    /// Shipped settings with a strong, uniform density gain to force real overhangs.
+    fn overhang_density_config() -> WorldGenConfig {
+        let mut config = WorldGenConfig::load_default();
+        config.seed = 42;
+        config.caves.enabled = false;
+        config.density.field = FieldConfig {
+            frequency: 0.03,
+            octaves: 3,
+            gain: 0.5,
+            lacunarity: 2.0,
+        };
+        config.density.amplitude = 24.0;
+        config.density.stretch = SplineConfig {
+            points: vec![(-1.0, 0.5), (1.0, 0.5)],
+        };
+
+        config
+    }
+
+    #[test]
+    fn density_field_creates_real_overhangs() {
+        let generator = TerrainGenerator::new(overhang_density_config());
+        assert!(
+            generator.config().density.margin() > 0,
+            "the overhang config must displace the crossing"
+        );
+        let mut overhanging_columns = 0;
+
+        for chunk in [Chunk::new(0, 0), Chunk::new(1, 0), Chunk::new(0, 1)] {
+            let kind = generate(&generator, chunk);
+
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    let mut solid_seen = false;
+                    let mut air_seen = false;
+
+                    for y in 0..Chunk::Y_AXIS_SIZE {
+                        let solid = !kind
+                            .get(ChunkVoxel::new(x as u8, y as u8, z as u8))
+                            .is_none();
+
+                        if solid && air_seen {
+                            overhanging_columns += 1;
+                            break;
+                        }
+                        if solid {
+                            solid_seen = true;
+                        } else if solid_seen {
+                            air_seen = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(
+            overhanging_columns > 0,
+            "the density field never created a solid/air/solid column"
+        );
+    }
+
+    /// The shipped density values must keep producing real overhangs; the synthetic config above
+    /// only proves the pipeline can. Caves are disabled so cave ceilings are not counted.
+    #[test]
+    fn shipped_density_config_produces_real_overhangs() {
+        let mut config = WorldGenConfig::load_default();
+        config.caves.enabled = false;
+        let generator = TerrainGenerator::new(config);
+        let mut overhanging_columns = 0;
+        let mut max_pocket = 0;
+
+        for chunk in [
+            Chunk::new(-1, -1),
+            Chunk::new(0, -1),
+            Chunk::new(1, -1),
+            Chunk::new(-1, 0),
+            Chunk::new(0, 0),
+            Chunk::new(1, 0),
+            Chunk::new(-1, 1),
+            Chunk::new(0, 1),
+            Chunk::new(1, 1),
+        ] {
+            let kind = generate(&generator, chunk);
+
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    let mut solid = false;
+                    let mut air = false;
+                    let mut pocket = 0usize;
+
+                    for y in 0..Chunk::Y_AXIS_SIZE {
+                        let is_solid = !kind
+                            .get(ChunkVoxel::new(x as u8, y as u8, z as u8))
+                            .is_none();
+
+                        if is_solid {
+                            if air {
+                                overhanging_columns += 1;
+                                max_pocket = max_pocket.max(pocket);
+                                break;
+                            }
+                            solid = true;
+                        } else if solid {
+                            air = true;
+                            pocket += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(
+            overhanging_columns > 0,
+            "the shipped density config produced no overhang columns"
+        );
+        assert!(
+            max_pocket >= 2,
+            "the shipped overhang pockets are single blocks: {max_pocket}"
+        );
+    }
+
+    #[test]
+    fn world_space_density_matches_generated_voxels() {
+        let mut config = WorldGenConfig::load_default();
+        config.seed = 42;
+        config.caves.enabled = false;
+        let generator = TerrainGenerator::new(config);
+
+        for chunk in [Chunk::new(0, 0), Chunk::new(1, 0), Chunk::new(-1, 1)] {
+            let kind = generate(&generator, chunk);
+            let (samples, lattices) = lattices(&generator, chunk);
+            let origin: Vec3 = chunk.into();
+
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    let column = samples.column(x, z);
+                    let world_x = origin.x + x as f32;
+                    let world_z = origin.z + z as f32;
+
+                    for y in 0..Chunk::Y_AXIS_SIZE {
+                        let world_y = y as f32;
+                        let density =
+                            density_at(&generator, column, &lattices, world_x, world_y, world_z);
+                        let actual = !kind
+                            .get(ChunkVoxel::new(x as u8, y as u8, z as u8))
+                            .is_none();
+
+                        assert_eq!(
+                            actual,
+                            density > 0.0,
+                            "density sign differs from the generated voxel at ({world_x}, {world_y}, {world_z}) in {chunk:?}: {density}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn world_space_top_solid_matches_generated_chunks() {
+        let mut config = WorldGenConfig::load_default();
+        config.seed = 42;
+        config.caves.enabled = false;
+        let generator = TerrainGenerator::new(config);
+
+        for chunk in [
+            Chunk::new(0, 0),
+            Chunk::new(1, 0),
+            Chunk::new(0, 1),
+            Chunk::new(-1, 0),
+        ] {
+            let kind = generate(&generator, chunk);
+            let (samples, lattices) = lattices(&generator, chunk);
+            let origin: Vec3 = chunk.into();
+
+            for x in 0..Chunk::X_AXIS_SIZE {
+                for z in 0..Chunk::Z_AXIS_SIZE {
+                    let column = samples.column(x, z);
+                    let world_x = origin.x + x as f32;
+                    let world_z = origin.z + z as f32;
+                    let expected = (0..=Chunk::Y_END)
+                        .rev()
+                        .find(|&y| {
+                            density_at(&generator, column, &lattices, world_x, y as f32, world_z)
+                                > 0.0
+                        })
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "world-space probe found no solid voxel at ({x}, {z}) in {chunk:?}"
+                            )
+                        });
+                    let actual = top_solid(&kind, x as u8, z as u8).unwrap_or_else(|| {
+                        panic!("no generated solid voxel at ({x}, {z}) in {chunk:?}")
+                    });
+
+                    assert_eq!(
+                        actual, expected,
+                        "generated top differs from the world-space probe at ({world_x}, {world_z}) in {chunk:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Shipped density with the overhang lift active: generated voxels must match the world-space
+    /// density probe, so the band-limited overhang lattice and the aperture bounds are exercised
+    /// together. Cave density is zero so the cavern carve stays out of the comparison.
+    #[test]
+    fn world_space_density_matches_generated_voxels_with_overhang_lift() {
+        let mut config = WorldGenConfig::load_default();
+        config.seed = 42;
+        for entry in &mut config.biomes.entries {
+            entry.shape.cave_density = 0.0;
+        }
+        let generator = TerrainGenerator::new(config);
+        let chunk = Chunk::new(0, 0);
+        let kind = generate(&generator, chunk);
+        let (samples, lattices) = lattices(&generator, chunk);
+        let origin: Vec3 = chunk.into();
+        let aperture = generator.density_aperture as f32;
+        let density_lattice = lattices
+            .density
+            .as_ref()
+            .expect("the shipped amplitude builds the density lattice");
+        let overhang_lattice = lattices
+            .overhang
+            .as_ref()
+            .expect("the shipped caves enable the overhang lattice");
+
+        assert_eq!(density_lattice.cell, [4.0, 4.0, 4.0]);
+        assert_eq!(overhang_lattice.cell, [4.0, 8.0, 4.0]);
+
+        let full_overhang = Lattice::new(
+            generator
+                .overhang
+                .as_ref()
+                .expect("caves enable the overhang field"),
+            origin,
+            0,
+            Chunk::Y_AXIS_SIZE as i32,
+            &generator.config().caves,
+        );
+
+        for x in 0..Chunk::X_AXIS_SIZE {
+            for z in 0..Chunk::Z_AXIS_SIZE {
+                let column = samples.column(x, z);
+                let world_x = origin.x + x as f32;
+                let world_z = origin.z + z as f32;
+
+                for y in 0..Chunk::Y_AXIS_SIZE {
+                    let world_y = y as f32;
+                    let density =
+                        density_at(&generator, column, &lattices, world_x, world_y, world_z);
+                    let actual = !kind
+                        .get(ChunkVoxel::new(x as u8, y as u8, z as u8))
+                        .is_none();
+
+                    assert_eq!(
+                        actual,
+                        density > 0.0,
+                        "density sign differs from the generated voxel at ({world_x}, {world_y}, {world_z}) in {chunk:?}: {density}"
+                    );
+                }
+
+                // The band-limited overhang lattice must equal the old full-range lattice inside
+                // the band the density decision samples.
+                if (x, z) == (0, 0) || (x, z) == (7, 3) || (x, z) == (15, 12) {
+                    let low = (column.height - aperture).floor() as i32;
+                    let high = (column.height + aperture).ceil() as i32;
+
+                    for y in low..=high {
+                        let banded = overhang_lattice.sample(world_x, y as f32, world_z);
+                        let full = full_overhang.sample(world_x, y as f32, world_z);
+
+                        assert!(
+                            (banded - full).abs() < 1e-5,
+                            "band-limited overhang differs from the full-range lattice at ({world_x}, {y}, {world_z}): {banded} != {full}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn density_lattice_is_continuous_across_chunk_borders() {
+        let generator = generator(42);
+
+        // (left chunk, right chunk, shared world x, shared world z)
+        let cases = [
+            (Chunk::new(0, 0), Chunk::new(1, 0), 16.0, 8.0),
+            (Chunk::new(0, 0), Chunk::new(0, 1), 8.0, 16.0),
+            (Chunk::new(-1, 0), Chunk::new(0, 0), 0.0, 8.0),
+            (Chunk::new(0, -1), Chunk::new(0, 0), 8.0, 0.0),
+        ];
+
+        for (left_chunk, right_chunk, x, z) in cases {
+            let (_, left) = lattices(&generator, left_chunk);
+            let (_, right) = lattices(&generator, right_chunk);
+            let left = left
+                .density
+                .expect("default amplitude builds the density lattice");
+            let right = right
+                .density
+                .expect("default amplitude builds the density lattice");
+            let left_top = left.origin[1] + (left.size[1] as i32 - 1) * left.cell[1] as i32;
+            let right_top = right.origin[1] + (right.size[1] as i32 - 1) * right.cell[1] as i32;
+            let y_min = left.origin[1].max(right.origin[1]);
+            let y_max = left_top.min(right_top);
+
+            assert!(
+                y_min <= y_max,
+                "density lattices of {left_chunk:?} and {right_chunk:?} do not overlap"
+            );
+
+            for y in y_min..=y_max {
+                let a = left.sample(x, y as f32, z);
+                let b = right.sample(x, y as f32, z);
+
+                assert!(
+                    (a - b).abs() < 1e-5,
+                    "density lattice differs at {left_chunk:?}/{right_chunk:?} border y={y}: {a} != {b}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn density_lattice_matches_the_field_at_nodes_and_midpoints() {
+        let generator = generator(42);
+        let (_, lattices) = lattices(&generator, Chunk::new(0, 0));
+        let lattice = lattices
+            .density
+            .as_ref()
+            .expect("default amplitude builds the density lattice");
+        let field = &generator.density;
+
+        for node_y in 0..lattice.size[1] {
+            for node_z in 0..lattice.size[2] {
+                for node_x in 0..lattice.size[0] {
+                    let position = [
+                        lattice.origin[0] as f32 + node_x as f32 * lattice.cell[0],
+                        lattice.origin[1] as f32 + node_y as f32 * lattice.cell[1],
+                        lattice.origin[2] as f32 + node_z as f32 * lattice.cell[2],
+                    ];
+                    let expected = field.sample_3d(position[0], position[1], position[2]);
+                    let actual = lattice.sample(position[0], position[1], position[2]);
+
+                    assert!(
+                        (expected - actual).abs() < 1e-5,
+                        "node {position:?} differs from the field: {expected} != {actual}"
+                    );
+                }
+            }
+        }
+
+        for node_y in 0..lattice.size[1] - 1 {
+            for node_z in 0..lattice.size[2] - 1 {
+                for node_x in 0..lattice.size[0] - 1 {
+                    let mut corners = 0.0;
+                    for dy in 0..=1 {
+                        for dz in 0..=1 {
+                            for dx in 0..=1 {
+                                corners += field.sample_3d(
+                                    lattice.origin[0] as f32
+                                        + (node_x + dx) as f32 * lattice.cell[0],
+                                    lattice.origin[1] as f32
+                                        + (node_y + dy) as f32 * lattice.cell[1],
+                                    lattice.origin[2] as f32
+                                        + (node_z + dz) as f32 * lattice.cell[2],
+                                );
+                            }
+                        }
+                    }
+                    let midpoint = [
+                        lattice.origin[0] as f32 + (node_x as f32 + 0.5) * lattice.cell[0],
+                        lattice.origin[1] as f32 + (node_y as f32 + 0.5) * lattice.cell[1],
+                        lattice.origin[2] as f32 + (node_z as f32 + 0.5) * lattice.cell[2],
+                    ];
+                    let actual = lattice.sample(midpoint[0], midpoint[1], midpoint[2]);
+
+                    assert!(
+                        (actual - corners / 8.0).abs() < 1e-5,
+                        "midpoint {midpoint:?} differs from the corner mean: {} != {}",
+                        actual,
+                        corners / 8.0
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn lod_cells_stay_conservative_with_density_overhangs() {
+        use projekto_core::{chunk, voxel::Light};
+
+        const SCALE: usize = 2;
+        let generator = TerrainGenerator::new(overhang_density_config());
+        let chunk = Chunk::new(0, 0);
+        let kind = generate(&generator, chunk);
+        let light = ChunkStorage::<Light>::default();
+        let vertices = crate::meshing::lod::generate_coarse_vertices(
+            chunk,
+            &kind,
+            &light,
+            &[None; chunk::SIDE_COUNT],
+            &[None; chunk::SIDE_COUNT],
+            |_| Some(&kind),
+            |_| Some(&light),
+            1,
+        );
+
+        let nx = Chunk::X_AXIS_SIZE / SCALE;
+        let ny = Chunk::Y_AXIS_SIZE;
+        let nz = Chunk::Z_AXIS_SIZE / SCALE;
+        let cell_index = |cx: usize, cy: usize, cz: usize| (cy * nz + cz) * nx + cx;
+        let scale = [SCALE as f32, 1.0, SCALE as f32];
+        let mut emitted = vec![false; nx * ny * nz];
+
+        // Every coarse face is a quad; the cell behind the face plane emits it.
+        for face in vertices.as_chunks::<4>().0 {
+            let normal = face[0].normal;
+            let axis = if normal.x.abs() > 0.5 {
+                0
+            } else if normal.y.abs() > 0.5 {
+                1
+            } else {
+                2
+            };
+            let sign = [normal.x, normal.y, normal.z][axis];
+            let mut cell = [0usize; 3];
+
+            for (index, cell_axis) in cell.iter_mut().enumerate() {
+                if index == axis {
+                    let plane = face[0].position[index];
+                    let value = if sign > 0.0 {
+                        plane / scale[index] - 1.0
+                    } else {
+                        plane / scale[index]
+                    };
+                    *cell_axis = value as usize;
+                } else {
+                    let min = face
+                        .iter()
+                        .map(|vertex| vertex.position[index])
+                        .fold(f32::MAX, f32::min);
+                    *cell_axis = (min / scale[index]) as usize;
+                }
+            }
+
+            emitted[cell_index(cell[0], cell[1], cell[2])] = true;
+        }
+
+        assert!(
+            emitted.iter().any(|emitted| *emitted),
+            "the coarse mesh emitted no cells"
+        );
+
+        let mut column_top = [[-1i16; Chunk::Z_AXIS_SIZE]; Chunk::X_AXIS_SIZE];
+        for (x, column) in column_top.iter_mut().enumerate() {
+            for (z, top) in column.iter_mut().enumerate() {
+                for y in (0..Chunk::Y_AXIS_SIZE).rev() {
+                    if !kind
+                        .get(ChunkVoxel::new(x as u8, y as u8, z as u8))
+                        .is_none()
+                    {
+                        *top = y as i16;
+                        break;
+                    }
+                }
+            }
+        }
+
+        let mut open_cells = 0;
+        let mut open_mixed = 0;
+        let mut open_emitted = 0;
+        for cy in 0..ny {
+            for cz in 0..nz {
+                for cx in 0..nx {
+                    let mut open = false;
+                    let mut mixed = false;
+
+                    for dz in 0..SCALE {
+                        for dx in 0..SCALE {
+                            let x = cx * SCALE + dx;
+                            let z = cz * SCALE + dz;
+                            let solid = !kind
+                                .get(ChunkVoxel::new(x as u8, cy as u8, z as u8))
+                                .is_none();
+                            mixed |= solid;
+
+                            // Air below a column's top is a cave or overhang pocket; a coarse
+                            // cell holding one must stay open so the coarse mesh cannot fill it.
+                            if !solid && column_top[x][z] > cy as i16 {
+                                open = true;
+                            }
+                        }
+                    }
+
+                    if open {
+                        open_cells += 1;
+                        if mixed {
+                            open_mixed += 1;
+                        }
+                        if emitted[cell_index(cx, cy, cz)] {
+                            open_emitted += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(
+            open_cells > 0,
+            "the density world has no overhang air below a column top"
+        );
+        assert!(
+            open_mixed > 0,
+            "no open coarse cell mixes solid and air, so the conservative rule is not exercised"
+        );
+        assert_eq!(
+            open_emitted, 0,
+            "{open_emitted} coarse cells with overhang air were rendered solid"
+        );
     }
 
     #[test]
@@ -1795,7 +2734,7 @@ mod tests {
                 let terraced = raw
                     + shape.terrace_strength
                         * (terrace(raw, generator.config().biomes.terrace_step) - raw);
-                let knee = generator.config().max_height as f32 - 16.0;
+                let knee = bias_ceiling(&generator) - 16.0;
 
                 if terraced > knee {
                     clamped_high[index] += 1;
@@ -1843,14 +2782,18 @@ mod tests {
                                 !kind.get(ChunkVoxel::new(x as u8, y, z as u8)).is_none()
                             });
 
+                            // Density air pockets above the bias band would otherwise count as
+                            // carved, so the cave statistics start below the density band.
+                            let band_floor = height - generator.density_aperture as f32;
+
                             if let Some(top) = top
-                                && top as f32 + 8.0 < height
+                                && top as f32 + 8.0 < band_floor
                                 && cave_column[index].is_none()
                             {
                                 cave_column[index] = Some((world_x, world_z, height));
                             }
 
-                            let start = (height as usize).saturating_sub(8);
+                            let start = (band_floor as usize).saturating_sub(8);
                             for y in 1..start {
                                 if kind
                                     .get(ChunkVoxel::new(x as u8, y as u8, z as u8))
@@ -1949,7 +2892,7 @@ mod tests {
                 let expected = soft_clamp_height(
                     raw + strength * (independent_terrace(raw, step) - raw),
                     generator.config().min_height as f32,
-                    generator.config().max_height as f32,
+                    bias_ceiling(&generator),
                 );
                 let actual = generator.height(x, z);
 
