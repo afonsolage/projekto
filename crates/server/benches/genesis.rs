@@ -2,6 +2,9 @@
 //!
 //! Run with `cargo bench -p projekto_server --bench genesis`. The bench drives the same
 //! `GenesisServer` the world uses, so the numbers include task-pool scheduling and light init.
+//! `PROJEKTO_GENESIS_BENCH_RUNS` sets how many times the full batch is generated (default 1);
+//! with more than one run the bench prints the median, minimum and maximum ms/chunk, which is the
+//! documented performance gate.
 
 use std::{
     collections::BTreeMap,
@@ -22,6 +25,7 @@ fn main() {
             .map(|threads| threads.get())
             .unwrap_or(1),
     );
+    let runs = env_parse("PROJEKTO_GENESIS_BENCH_RUNS", 1usize).max(1);
 
     let side = (chunks as f64).sqrt().ceil() as i32;
     let requested: Vec<Chunk> = (0..side)
@@ -29,44 +33,69 @@ fn main() {
         .take(chunks)
         .collect();
 
-    let server = GenesisServer::new(threads);
+    let mut per_run = Vec::with_capacity(runs);
+    let mut last_stats = None;
 
-    let started = Instant::now();
-    let mut tasks: Vec<_> = requested
-        .iter()
-        .map(|&chunk| server.generate(chunk))
-        .collect();
-    let mut results = Vec::with_capacity(requested.len());
+    for _ in 0..runs {
+        let server = GenesisServer::new(threads);
 
-    while !tasks.is_empty() {
-        tasks.retain_mut(|task| match task.try_get_result() {
-            Some(result) => {
-                results.push(result.expect("genesis task failed"));
-                false
+        let started = Instant::now();
+        let mut tasks: Vec<_> = requested
+            .iter()
+            .map(|&chunk| server.generate(chunk))
+            .collect();
+        let mut results = Vec::with_capacity(requested.len());
+
+        while !tasks.is_empty() {
+            tasks.retain_mut(|task| match task.try_get_result() {
+                Some(result) => {
+                    results.push(result.expect("genesis task failed"));
+                    false
+                }
+                None => true,
+            });
+
+            if !tasks.is_empty() {
+                std::thread::sleep(Duration::from_millis(1));
             }
-            None => true,
-        });
-
-        if !tasks.is_empty() {
-            std::thread::sleep(Duration::from_millis(1));
         }
+
+        let elapsed = started.elapsed();
+        assert!(
+            !results.is_empty(),
+            "no chunks were generated; PROJEKTO_GENESIS_BENCH_CHUNKS must be positive"
+        );
+        let per_chunk = elapsed / results.len() as u32;
+
+        println!(
+            "genesis: {} chunks on {} threads in {:.3} s ({:.2} ms/chunk)",
+            results.len(),
+            threads,
+            elapsed.as_secs_f64(),
+            per_chunk.as_secs_f64() * 1000.0
+        );
+        per_run.push(per_chunk.as_secs_f64() * 1000.0);
+        last_stats = Some(collect_stats(&results));
     }
 
-    let elapsed = started.elapsed();
-    assert!(
-        !results.is_empty(),
-        "no chunks were generated; PROJEKTO_GENESIS_BENCH_CHUNKS must be positive"
-    );
-    let per_chunk = elapsed / results.len() as u32;
-    let stats = collect_stats(&results);
+    if runs > 1 {
+        let mut sorted = per_run.clone();
+        sorted.sort_by(f64::total_cmp);
 
-    println!(
-        "genesis: {} chunks on {} threads in {:.3} s ({:.2} ms/chunk)",
-        results.len(),
-        threads,
-        elapsed.as_secs_f64(),
-        per_chunk.as_secs_f64() * 1000.0
-    );
+        let median = if runs.is_multiple_of(2) {
+            (sorted[runs / 2 - 1] + sorted[runs / 2]) / 2.0
+        } else {
+            sorted[runs / 2]
+        };
+
+        println!(
+            "genesis runs: {runs} median={median:.2} ms/chunk min={:.2} max={:.2}",
+            sorted[0],
+            sorted[runs - 1]
+        );
+    }
+
+    let stats = last_stats.expect("at least one run generated chunks");
     println!(
         "height: min={} mean={:.1} max={}",
         stats.height_min, stats.height_mean, stats.height_max
