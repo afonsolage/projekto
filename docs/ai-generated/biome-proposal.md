@@ -114,6 +114,11 @@ the points against real maps.
 
 ## New kinds
 
+**Superseded by #117:** the tinted placeholders described below were replaced by procedurally
+generated tiles at (3, 0), (4, 0) and (5, 0) with neutral tints and face-specific side materials.
+See the [procedural textures proposal](procedural-textures-proposal.md). The per-kind tint
+mechanism remains available for future coloring.
+
 | Kind | ID | Atlas offset | Color | Use |
 |---|---:|---|---|---|
 | Sand | 5 | (2, 0) | (1.9, 1.7, 1.1, 1.0) | Desert top and subsurface |
@@ -392,27 +397,25 @@ biome and generates only the chunks containing them.
 |---|---|
 | No water means no beaches or oceans; all five starting biomes are inland | Keep the land set; water adds Beach and Ocean entries and lowers the floor later |
 | One biome becomes too rare or dominates; an exact point is always inside its own Voronoi cell, so skew is the real failure mode | Points sit just outside the measured deciles; the distribution test fails outside 5-40% per seed |
-| Hard biome edges look artificial | Accept for the starting set; blending is a separate change with its own seam tests |
+| Hard biome edges look artificial | #116 blends height and dithers surface materials across the transition band; the deterministic dither is the documented strategy |
 | Forest is only a Moss floor until trees land | Moss makes it visible now; #43 adds tree density to the same entry |
-| Hand-painted Sand, Moss and Snow tiles cannot be AI-generated | Reuse existing hand-made tiles with color multipliers; dedicated tiles are a follow-up that changes only `kind.ron` offsets and colors |
-| Tinted placeholders read as recolors and ship as final | The proposal documents the placeholders and the hand-painted tiles remain a tracked follow-up |
-| Per-kind tint changes how existing kinds render | Existing kinds keep a (1.0, 1.0, 1.0, 1.0) multiplier, so only the three new kinds are tinted |
+| Sand, Moss and Snow need distinct tiles without AI-generated media | #117 generates dedicated tiles procedurally from authored recipes; no hand-authored tile is required |
+| Tinted placeholders read as recolors and ship as final | #117 replaced the tinted placeholders with generated tiles and neutral tints |
+| Per-kind tint changes how existing kinds render | The tint multiplies vertex light only; every shipped kind currently uses a neutral (1.0, 1.0, 1.0, 1.0) multiplier |
 | Old archives keep the old surface | The version bump and archive regeneration happen in Step 2, before the visual check |
 | Climate sampling pushes genesis over budget | Five-run median bench gate plus the two contingencies above |
 | The surface map cannot count Roughlands because Rock is also the steep kind | The distribution and per-biome tests are the five-biome gate; the map is a visual aid |
 
 ## Follow-ups
 
-- Hand-painted Sand, Moss and Snow tiles to replace the tinted placeholders; only their
-  `kind.ron` offsets and colors change.
-- Water, oceans, beaches and rivers, with a lower height floor and a separate water mesh pass.
-- Blended biome transitions and material blending; #109 added selection weights and biome height
-  shaping.
+- Water, oceans, beaches and rivers in #115, with a lower height floor and a separate water mesh
+  pass.
 - Trees and other biome features in #43, driven by per-biome density fields.
 - Biome-dependent grass and foliage tinting, which first needs a per-biome channel in the mesh or
-  protocol beyond the per-kind color multiplier.
+  protocol beyond the per-kind color multiplier (#119).
 - More biomes, including swamp, savanna and badlands, as additional table entries with their own
-  top kinds.
+  top kinds (#114).
+- Optional artist-authored base tiles for materials that want hand-authored structure (#121).
 
 ---
 
